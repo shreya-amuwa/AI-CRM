@@ -1,0 +1,16 @@
+-- =============================================================================
+-- Public job list: keep exactly one public.career_jobs.
+--
+-- 20261226000200_career_job_catalogue replaced career_jobs(p_page, p_search) with
+-- career_jobs(p_page, p_search, p_team, p_mode, p_location) (the three filters default to ''),
+-- dropping the old one first. When 20261220010000_candidate_careers_foundation is run again
+-- later (as the live database shows), it re-creates the old two-parameter function next to the new
+-- one. A call with only page and search (the careers portal's plain list, and every visitor
+-- without a filter) then matches both, and the database refuses it:
+--   PGRST203 "Could not choose the best candidate function between ..."
+-- which the API answers as 500, so the public job list shows an error.
+--
+-- Dropping the old overload leaves the catalogue version, which answers the same call (its filters
+-- default to empty). Safe to run twice; no data is touched.
+-- =============================================================================
+drop function if exists public.career_jobs(integer, text);

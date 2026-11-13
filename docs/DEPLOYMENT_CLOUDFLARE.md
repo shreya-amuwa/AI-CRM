@@ -1,4 +1,7 @@
-# Moving the CRM from Vercel to Cloudflare Workers (+ Resend for e-mail)
+# Moving the CRM from Vercel to Cloudflare Workers (+ AWS SES for e-mail)
+
+> **E-mail provider update:** the owner chose **AWS SES** instead of Resend. Setup: `AWS_SES_SETUP.md`. The step-by-step go-live is in
+> `GO_LIVE_RUNBOOK.md`. Where this page says Resend, read SES: the same backup rules apply (`EMAIL_PROVIDER=ses`, keys `SES_*`).
 
 Why: the Vercel Hobby plan's limits (function invocations, build minutes, the commit-author block in `DEPLOYMENT_VERCEL.md`, cron only
 twice a day) do not fit a production CRM. Cloudflare Workers runs the same code at the edge, serves the static frontend for free and without

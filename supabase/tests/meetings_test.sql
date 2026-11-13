@@ -1,13 +1,13 @@
 -- =============================================================================
--- Meetings engine (migration 20261231000900): booking, overlaps, CEO approval, booking links, Google sync queue, reminders,
+-- Meetings engine (migration 20270101000500): booking, overlaps, CEO approval, booking links, Google sync queue, reminders,
 -- e-mails to guests, and the mirrors of demos / interviews / HR meetings. Reuses sa (Super Admin = the CEO), tm_a, ck_a, ck_b.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
 \echo '--- 136. Meetings: one booking engine with Google Calendar'
 reset role;
-\i supabase/migrations/20261231000900_meetings_google_calendar.sql
-\i supabase/migrations/20261231000900_meetings_google_calendar.sql
+\i supabase/migrations/20270101000500_meetings_google_calendar.sql
+\i supabase/migrations/20270101000500_meetings_google_calendar.sql
 
 -- a clean slate for this suite (re-runnable)
 delete from meeting_delegates where host_id in (test.id('sa'), test.id('tm_a'));
@@ -267,7 +267,7 @@ insert into ba_demos (contact_id, title, starts_at, ends_at, mode, assigned_to, 
 select id, 'Backfill demo', now() + interval '14 days', now() + interval '14 days 1 hour', 'IN_PERSON', test.id('tm_a'), test.id('tm_a'), now() - interval '3 days' from ba_contacts limit 1;
 alter table ba_demos enable trigger ba_demos_meeting_mirror;
 select test.check((select count(*) = 0 from meetings m join ba_demos d on d.id = m.source_id where d.title = 'Backfill demo'), 'a demo made before the calendar existed is not in it yet');
-\i supabase/migrations/20261231000900_meetings_google_calendar.sql
+\i supabase/migrations/20270101000500_meetings_google_calendar.sql
 select test.check((select count(*) = 1 from meetings m join ba_demos d on d.id = m.source_id where m.source_type = 'ba_demo' and d.title = 'Backfill demo' and m.mode = 'IN_PERSON'),
   'the migration brings already-planned demos into the calendar');
 select test.check((select updated_at < now() - interval '2 days' from ba_demos where title = 'Backfill demo'), 'without touching the demo itself');

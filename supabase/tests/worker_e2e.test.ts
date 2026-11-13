@@ -10,7 +10,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 import { decryptSecret } from '../../server/automations/secrets.js';
-import { presignUrl } from '../../server/storage/sigv4.js';
+import { presignUrl, signRequest } from '../../server/storage/sigv4.js';
 import { renderInvoicePdf } from '../../server/invoices/pdf.js';
 import { renderNdaPdf } from '../../server/hrDocuments/render.js';
 import { signHook } from '../../server/automations/authEmailHook.js';
@@ -70,26 +70,35 @@ async function startWorker(args: string[], port: number): Promise<{ output: () =
   throw new Error('wrangler dev did not start');
 }
 
-// ---- a stand-in for Resend's API: records every e-mail the Worker sends; an e-mail to quota@... gets Resend's "daily quota" refusal ---
-const mails: { auth: string | undefined; body: any }[] = [];
-const resend = createHttpServer((req, res) => {
+// ---- a stand-in for AWS SES (API v2): checks each request's signature as AWS does and records the e-mail; an e-mail to quota@... gets
+// SES's "daily quota exceeded" refusal ---------------------------------------------------------------------------------------------------
+const SES_KEY = { id: 'AKIAWORKERTEST', secret: 'worker/ses+SECRET' };
+const mails: { signed: boolean; body: any }[] = [];
+const sesServer = createHttpServer((req, res) => {
   let b = '';
   req.on('data', c => (b += c));
   req.on('end', () => {
     const body = JSON.parse(b || '{}');
-    if (JSON.stringify(body.to ?? '').includes('quota@')) {
-      res.writeHead(429, { 'content-type': 'application/json' });
-      return res.end('{"name":"daily_quota_exceeded","message":"You have reached your daily email sending quota."}');
+    const date = String(req.headers['x-amz-date'] || '');
+    const iso = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T${date.slice(9, 11)}:${date.slice(11, 13)}:${date.slice(13, 15)}Z`;
+    const port = (sesServer.address() as { port: number }).port;
+    const expected = signRequest({
+      method: 'POST', url: `http://127.0.0.1:${port}/v2/email/outbound-emails`, service: 'ses', region: 'ap-south-1', accessKeyId: SES_KEY.id,
+      secretAccessKey: SES_KEY.secret, headers: { 'content-type': String(req.headers['content-type']) }, body: b, now: new Date(iso)
+    }).authorization;
+    if (JSON.stringify(body.Destination ?? '').includes('quota@')) {
+      res.writeHead(429, { 'content-type': 'application/json', 'x-amzn-errortype': 'TooManyRequestsException:' });
+      return res.end('{"message":"Daily message quota exceeded."}');
     }
-    if (req.method === 'POST' && req.url === '/emails') mails.push({ auth: req.headers.authorization, body });
+    if (req.method === 'POST' && req.url === '/v2/email/outbound-emails') mails.push({ signed: req.headers.authorization === expected, body });
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ id: `re_${mails.length}` }));
+    res.end(JSON.stringify({ MessageId: `ses-${mails.length}` }));
   });
 });
-// ---- the meta@amuwa.com mailbox (SMTP), reached from the Worker through Cloudflare's TCP sockets (the Resend fallback) ------------
+// ---- the meta@amuwa.com mailbox (SMTP), reached from the Worker through Cloudflare's TCP sockets (the SES fallback) ------------
 const mailbox = await startFakeSmtp({ mode: 'plain', user: 'meta@amuwa.com', pass: 'app-password' });
-await new Promise<void>(r => resend.listen(0, '127.0.0.1', r));
-const resendUrl = `http://127.0.0.1:${(resend.address() as { port: number }).port}`;
+await new Promise<void>(r => sesServer.listen(0, '127.0.0.1', r));
+const sesUrl = `http://127.0.0.1:${(sesServer.address() as { port: number }).port}`;
 
 // ---- the Worker's settings (what the owner sets as Worker secrets / variables in production) ------------------------------------
 const HOOK_KEY = Buffer.from('0123456789abcdef0123456789abcdef');
@@ -101,9 +110,13 @@ const settings: Record<string, string> = {
   WEBHOOK_VERIFY_TOKEN: 'verify-me',
   CRON_SECRET: 'cron-secret-0123456789abcdef',
   SCHEDULED_ENABLED: 'true',
-  EMAIL_PROVIDER: 'resend',
-  EMAIL_API_KEY: 're_worker_test_key',
-  EMAIL_API_BASE_URL: resendUrl,
+  PORTAL_FORWARD_SECRET: 'portal-forward-secret-worker-0123456789abc',
+  EMAIL_PROVIDER: 'ses',
+  SES_REGION: 'ap-south-1',
+  SES_ACCESS_KEY_ID: SES_KEY.id,
+  SES_SECRET_ACCESS_KEY: SES_KEY.secret,
+  SES_MAX_PER_SECOND: '100',
+  EMAIL_API_BASE_URL: sesUrl,
   EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>',
   SMTP_HOST: '127.0.0.1',
   SMTP_PORT: String(mailbox.port),
@@ -176,6 +189,22 @@ const db = new pg.Pool();
   j = await r.json();
   check(r.status === 200 && j.data.length >= 12, 'departments come from the database');
 
+  // ---- 3b. abuse protection inside the Workers runtime: the portal's signed visitor address, the database-backed limits, throwaway domains
+  {
+    const SECRET = settings.PORTAL_FORWARD_SECRET;
+    const signedFor = (ip: string) => {
+      const t = Math.floor(Date.now() / 1000);
+      return { 'x-portal-client-ip': ip, 'x-portal-client-ts': String(t), 'x-portal-client-sig': createHmac('sha256', SECRET).update(`${ip}.${t}`).digest('hex') };
+    };
+    const guard = (ip: string, email: string) => fetch(`${base}/api/v1/candidate-auth/guard`, { method: 'POST', headers: { 'content-type': 'application/json', ...signedFor(ip) }, body: JSON.stringify({ action: 'reset', email }) });
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) codes.push((await guard('203.0.113.77', `w${i}@example.com`)).status);
+    check(codes.slice(0, 5).every(c => c === 200) && codes[5] === 429, 'Worker: reset guard limited per (signed) visitor, counted in the database', codes);
+    check((await guard('203.0.113.78', 'x@example.com')).status === 200, 'Worker: another visitor is not affected');
+    const reg = await fetch(`${base}/api/v1/candidate-auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', ...signedFor('203.0.113.79') }, body: JSON.stringify({ name: 'Temp', email: 'a@mailinator.com', phone: '9876543210', password: 'Very-long-pass-1' }) });
+    check(reg.status === 422, 'Worker: a throwaway sign-up address is refused');
+  }
+
   // ---- 4. /api/proxy: signed-in users only, never an internal address
   r = await fetch(`${base}/api/proxy?url=${encodeURIComponent('https://example.com/')}`);
   check(r.status === 401, '/api/proxy without a token: 401');
@@ -201,7 +230,7 @@ const db = new pg.Pool();
   r = await fetch(`${base}/api/webhook?hub.challenge=ch4ll3nge&hub.verify_token=verify-me`);
   check(r.status === 200 && (await r.text()) === 'ch4ll3nge', 'Meta subscription handshake');
 
-  // ---- 6. e-mail through Resend: the Supabase auth e-mail hook, signed as Supabase signs it
+  // ---- 6. e-mail through AWS SES: the Supabase auth e-mail hook, signed as Supabase signs it
   const body = JSON.stringify({
     user: { email: 'asha@example.com', user_metadata: {} },
     email_data: { token: '123456', token_hash: 'hash_abc', redirect_to: 'https://crm.amuwacorporation.com/', email_action_type: 'recovery' }
@@ -214,14 +243,15 @@ const db = new pg.Pool();
     body
   });
   check(r.status === 200 && JSON.stringify(await r.json()) === '{}', 'auth e-mail hook: Supabase gets 200 {}');
-  check(mails.length === 1, 'one e-mail reached Resend', mails.length);
+  check(mails.length === 1, 'one e-mail reached SES', mails.length);
   const m = mails[0];
-  check(m.auth === `Bearer ${settings.EMAIL_API_KEY}`, 'Resend gets the API key as a Bearer token');
-  check(JSON.stringify(m.body.to) === '["asha@example.com"]' && /<meta@amuwa\.com>$/.test(m.body.from) && m.body.subject && /hash_abc/.test(m.body.html) && m.body.text, 'recipient, sender, subject, HTML and text are right', m.body);
+  check(m.signed, 'the Worker signs the SES request so that AWS can verify it (node:crypto inside the Workers runtime)');
+  const simple = m.body.Content?.Simple;
+  check(JSON.stringify(m.body.Destination.ToAddresses) === '["asha@example.com"]' && /<meta@amuwa\.com>$/.test(m.body.FromEmailAddress) && simple?.Subject?.Data && /hash_abc/.test(simple?.Body?.Html?.Data) && simple?.Body?.Text?.Data, 'recipient, sender, subject, HTML and text are right', m.body);
   r = await fetch(`${base}/api/v1/internal/auth/email-hook`, { method: 'POST', headers: { 'content-type': 'application/json', 'webhook-id': id, 'webhook-timestamp': ts, 'webhook-signature': 'v1,AAAA' }, body });
   check(r.status === 401 && mails.length === 1, 'a forged hook request is refused and sends nothing');
 
-  // ---- 6b. Resend's daily limit reached: the same e-mail goes out through the meta@amuwa.com mailbox (SMTP over Cloudflare sockets)
+  // ---- 6b. SES's daily quota reached: the same e-mail goes out through the meta@amuwa.com mailbox (SMTP over Cloudflare sockets)
   const quotaBody = body.replace('asha@example.com', 'quota@example.com');
   const qid = 'msg_worker_quota';
   r = await fetch(`${base}/api/v1/internal/auth/email-hook`, {
@@ -229,8 +259,8 @@ const db = new pg.Pool();
     headers: { 'content-type': 'application/json', 'webhook-id': qid, 'webhook-timestamp': ts, 'webhook-signature': `v1,${signHook(HOOK_KEY, qid, ts, quotaBody)}` },
     body: quotaBody
   });
-  check(r.status === 200 && JSON.stringify(await r.json()) === '{}', 'Resend over its limit: Supabase still gets 200 {}');
-  check(mails.length === 1 && mailbox.mails.length === 1, 'the e-mail went out through the SMTP mailbox instead', { resend: mails.length, smtp: mailbox.mails.length });
+  check(r.status === 200 && JSON.stringify(await r.json()) === '{}', 'SES over its quota: Supabase still gets 200 {}');
+  check(mails.length === 1 && mailbox.mails.length === 1, 'the e-mail went out through the SMTP mailbox instead', { ses: mails.length, smtp: mailbox.mails.length });
   const fb = mailbox.mails[0];
   check(fb.from === 'meta@amuwa.com' && JSON.stringify(fb.rcpts) === '["quota@example.com"]' && /^From: .*<meta@amuwa\.com>$/m.test(fb.data) && /hash_abc/.test(mimePart(fb.data, 'text/html; charset=utf-8') ?? ''), 'sender, recipient and the reset link are right in the fallback e-mail', fb.data.slice(0, 500));
 
@@ -248,7 +278,7 @@ const db = new pg.Pool();
 }
 
 await db.end();
-resend.close();
+sesServer.close();
 await mailbox.close();
 for (const c of children) c.kill();
 console.log(`\n=== ${passed} CLOUDFLARE WORKER END-TO-END CHECKS PASSED ===`);

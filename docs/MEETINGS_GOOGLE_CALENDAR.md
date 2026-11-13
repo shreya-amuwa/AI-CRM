@@ -1,7 +1,7 @@
 # Meetings: Google Calendar, booking links and CEO approval
 
 One booking system for appointments, demos, interviews, meetings and meetings with the CEO (the Super Admin).
-Migration `20261231000900_meetings_google_calendar.sql`.
+Migration `20270101000500_meetings_google_calendar.sql`.
 
 ## What people see
 
@@ -104,7 +104,7 @@ Without the Google variables everything else still works: the calendar, booking 
 
 ### 3. Database
 
-Run `supabase/migrations/20261231000900_meetings_google_calendar.sql` in the Supabase SQL editor. It is additive, safe to run twice, and uses no temp tables. It also brings already-planned future demos, interviews and confirmed HR meetings into the calendar once.
+Run `supabase/migrations/20270101000500_meetings_google_calendar.sql` in the Supabase SQL editor. It is additive, safe to run twice, and uses no temp tables. It also brings already-planned future demos, interviews and confirmed HR meetings into the calendar once.
 
 ### 4. Reminders
 
@@ -134,7 +134,7 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
 
 ## Files
 
-- **Database:** `supabase/migrations/20261231000900_meetings_google_calendar.sql`
+- **Database:** `supabase/migrations/20270101000500_meetings_google_calendar.sql`
 - **Server:** `server/meetings/`:
   - `google.ts`: OAuth and Calendar API
   - `slots.ts`: free slots and time zones

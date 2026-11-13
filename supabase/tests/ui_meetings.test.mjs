@@ -1,4 +1,4 @@
-// Browser test of Meetings (20261231000900): the calendar, a CEO's approval, a new meeting with a colleague (their busy time shown) and a guest,
+// Browser test of Meetings (20270101000500): the calendar, a CEO's approval, a new meeting with a colleague (their busy time shown) and a guest,
 // asking the CEO for time, the Google connect button and the return from Google, a booking link, the public booking page (a guest picks a slot
 // and books it) and the guest's private link (accepting a proposed time), at desktop and phone width. The API is a fake in this test's server.
 import { createRequire } from 'node:module';

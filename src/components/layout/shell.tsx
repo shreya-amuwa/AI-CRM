@@ -8,7 +8,7 @@ import { closeMenu, toggleMenu, useMenu } from './menuState';
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 export const ATTENDANCE_NAV_ID = '__attendance';
-// Meetings (20261231000900): the one calendar with Google Calendar, booking links and CEO requests, also in every dashboard's menu
+// Meetings (20270101000500): the one calendar with Google Calendar, booking links and CEO requests, also in every dashboard's menu
 const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 export const MEETINGS_NAV_ID = '__meetings';
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */

@@ -2961,3 +2961,14 @@ export const publicBookingSchema = z.object({
 }).strict();
 export const publicBookingCancelSchema = z.object({ reason: optionalText(1000) }).strict();
 export const bookingSlugSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{2,62}[a-z0-9]$/, 'Unknown booking link.');
+// --- Candidate Portal abuse protection (docs/ABUSE_PROTECTION.md) ------------------------------------------------------------------------
+// POST /api/v1/candidate-auth/guard: the portal asks before a sign-in, a reset link or an application. The Turnstile token travels in the
+// x-turnstile-token header, the visitor's address in the signed x-portal-client-* headers.
+export const CANDIDATE_GUARD_ACTIONS = ['sign_in', 'reset', 'apply'] as const;
+export const candidateGuardSchema = z
+  .object({
+    action: z.enum(CANDIDATE_GUARD_ACTIONS),
+    email: z.string().trim().max(254).optional()
+  })
+  .strict();
+export type CandidateGuardInput = z.infer<typeof candidateGuardSchema>;

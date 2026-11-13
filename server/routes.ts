@@ -563,6 +563,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/sales-head/sheets', handler: salesHead.sheets },
   { method: 'POST', path: '/sales-head/sheets', handler: salesHead.assignSheet, options: S },
   { method: 'POST', path: '/sales-head/sheets/:id/source', handler: salesHead.storeSource, options: S },
+  { method: 'GET', path: '/sales-head/sheets/:id/issues', handler: salesHead.sheetIssues },
   { method: 'GET', path: '/sales-head/leads', handler: salesHead.leads },
   { method: 'GET', path: '/sales-head/leads/:id', handler: salesHead.lead },
   { method: 'POST', path: '/sales-head/leads/:id/assign', handler: salesHead.assignInbound, options: S },
