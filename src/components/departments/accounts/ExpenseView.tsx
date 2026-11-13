@@ -383,7 +383,7 @@ export const ExpenseView: React.FC = () => {
   const sampleAppsScriptCode = `/**
  * Google Apps Script to automatically push new expense rows to your CRM
  */
-const WEBHOOK_URL = "https://ai-crm-drab.vercel.app/api/webhook";
+const WEBHOOK_URL = "${window.location.origin}/api/webhook";
 
 function onEdit(e) {
   if (!e || !e.range) return;

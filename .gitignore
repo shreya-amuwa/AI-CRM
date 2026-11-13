@@ -30,3 +30,8 @@ docs-site/dist-client/
 
 # In-browser text reader files, copied from node_modules by scripts/copy-ocr-assets.mjs
 public/ocr/
+
+# Cloudflare Wrangler: local state and local secrets (never commit .dev.vars)
+.wrangler/
+.dev.vars
+.dev.vars.*

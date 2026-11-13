@@ -1,0 +1,43 @@
+// Cloudflare Workers deployment of the CRM (frontend + API in one Worker). See docs/DEPLOYMENT_CLOUDFLARE.md.
+// Secrets (SUPABASE_SERVICE_ROLE_KEY, EMAIL_API_KEY, CRON_SECRET, ...) are NOT kept here: set them in the Cloudflare dashboard
+// (Worker -> Settings -> Variables and Secrets) or with `npx wrangler secret put NAME`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ai-crm",
+  "main": "worker/entry.ts",
+  "compatibility_date": "2026-11-01",
+  // Node.js APIs the server uses (crypto, Buffer, AsyncLocalStorage) and process.env filled from the variables / secrets.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // A path with no file goes to the Worker, which answers index.html for app screens and 404 for /api, /assets and /ocr.
+    "not_found_handling": "none",
+    "html_handling": "auto-trailing-slash"
+  },
+  // Was vercel.json "crons" (UTC): 09:00 and 10:30 IST, the automations' safety net and retries. They do nothing until the dashboard
+  // variable SCHEDULED_ENABLED is "true" (worker/index.ts), so a rehearsal copy and Vercel never run the automations at the same time.
+  "triggers": {
+    "crons": ["30 3 * * *", "0 5 * * *"]
+  },
+  // Only what is the same for every deployment. Everything else from .env.example (EMAIL_PROVIDER, SCHEDULED_ENABLED, ...) is a dashboard
+  // variable or a secret, so it can be changed without a code change.
+  "vars": {
+    // Tells server/security/clientNetwork.ts that the caller's address and place come from Cloudflare (worker/index.ts).
+    "CRM_PLATFORM": "cloudflare"
+  },
+  // Keep the variables set in the dashboard when a new version deploys (without this, every deploy would remove them, e.g. switch the
+  // scheduled automations off again or drop EMAIL_PROVIDER). Secrets are never touched by a deploy.
+  "keep_vars": true,
+  // nodemailer needs Node's net / tls, which Workers lack: on the Worker, SMTP (the meta@amuwa.com fallback) uses Cloudflare's TCP sockets
+  // through server/automations/smtpSocket.ts instead (registered in worker/entry.ts).
+  // @hono/node-server is the Node.js adapter (Vercel, Vite dev, tests); importing it replaces the global Response class, which Workers refuse.
+  "alias": {
+    "nodemailer": "./worker/stubs/nodemailer.ts",
+    "@hono/node-server": "./worker/stubs/honoNodeServer.ts"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true
+}

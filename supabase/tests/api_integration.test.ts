@@ -25,6 +25,7 @@ process.env.RATE_LIMIT_USER_PER_MIN = '5000';
 process.env.RATE_LIMIT_IMPORT_PER_MIN = '3';
 process.env.RATE_LIMIT_SENSITIVE_PER_MIN = '1000'; // (the invoice tests make well over 100 sensitive calls as one Accounts user)
 process.env.API_ACCESS_LOG = 'off';
+process.env.RESEND_MAX_PER_SECOND = '100'; // the mock e-mail provider has no rate limit: do not space the many test e-mails out
 
 const { handleApiRequest } = await import('../../server/app.js');
 const db = new pg.Pool();

@@ -80,3 +80,5 @@ jobs:
         run: npm run test:db
       - name: End-to-end API tests (HTTP → PostgREST → Postgres)
         run: npm run test:api
+      - name: Cloudflare Worker end-to-end (Workers runtime → PostgREST → Postgres)
+        run: npm run test:worker
