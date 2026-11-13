@@ -85,14 +85,15 @@ const post = (body: unknown, ip = '203.0.113.7') =>
   check(typeof c.__auth === 'string' && (c.__auth as string).startsWith('Bearer '), 'end to end: the admin call uses the server-side service key (never anything from the browser)');
 
   mode = 'exists';
-  const dup = await post(good, '203.0.113.11');
+  // each case its own e-mail: at most 3 sign-up attempts per e-mail an hour (docs/ABUSE_PROTECTION.md)
+  const dup = await post({ ...good, email: 'dup@example.com' }, '203.0.113.11');
   const dj = (await dup.json()) as { success: boolean; error: { code: string; message: string } };
   check(dup.status === 409 && dj.error.code === 'CONFLICT' && /Sign in instead/.test(dj.error.message), 'end to end: an e-mail that already has an account is refused with "sign in instead" and nothing is changed');
   mode = 'weak';
-  const weak = await post(good, '203.0.113.12');
+  const weak = await post({ ...good, email: 'weak@example.com' }, '203.0.113.12');
   check(weak.status === 422, 'end to end: a password the auth server rejects is a validation error (422)', weak.status);
   mode = 'down';
-  const down = await post(good, '203.0.113.13');
+  const down = await post({ ...good, email: 'down@example.com' }, '203.0.113.13');
   const downText = await down.text();
   check(down.status >= 500 && !/hunter2|secret detail/.test(downText), 'end to end: an auth-server failure is a generic error without internals', { status: down.status, downText });
   mode = 'ok';
@@ -105,13 +106,13 @@ const post = (body: unknown, ip = '203.0.113.7') =>
   const notJson = await post('not json', '203.0.113.16'); // (no e-mail to count against)
   check(notJson.status === 422, 'end to end: a body that is not JSON is refused (422)', notJson.status);
 
-  // rate limits: 10 per address per hour, 5 per e-mail per hour
-  let last = 0;
-  for (let i = 0; i < 6; i++) last = (await post({ ...good, email: 'same@example.com' }, `198.51.100.${i}`)).status;
-  check(last === 429, 'end to end: the sixth registration for the same e-mail within an hour is rate limited (429)', last);
-  let lastIp = 0;
-  for (let i = 0; i < 11; i++) lastIp = (await post({ ...good, email: `person${i}@example.com` }, '198.51.100.99')).status;
-  check(lastIp === 429, 'end to end: the eleventh registration from one address within an hour is rate limited (429)', lastIp);
+  // rate limits (docs/ABUSE_PROTECTION.md): 5 per address per hour, 3 per e-mail per hour
+  const perEmail: number[] = [];
+  for (let i = 0; i < 4; i++) perEmail.push((await post({ ...good, email: 'same@example.com' }, `198.51.100.${i}`)).status);
+  check(perEmail.slice(0, 3).every(s => s !== 429) && perEmail[3] === 429, 'end to end: the fourth registration for the same e-mail within an hour is rate limited (429)', perEmail);
+  const perIp: number[] = [];
+  for (let i = 0; i < 6; i++) perIp.push((await post({ ...good, email: `person${i}@example.com` }, '198.51.100.99')).status);
+  check(perIp.slice(0, 5).every(s => s !== 429) && perIp[5] === 429, 'end to end: the sixth registration from one address within an hour is rate limited (429)', perIp);
 }
 console.error = origin;
 fake.close();

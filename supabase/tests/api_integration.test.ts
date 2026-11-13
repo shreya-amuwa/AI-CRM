@@ -10302,6 +10302,35 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   fake.server.close();
 }
 
+// ---------------------------------------------------------------------------
+// Abuse protection against the real database: limits counted in rate_limit_consume (shared by every server instance), per candidate
+// thanks to the portal's signed visitor address. docs/ABUSE_PROTECTION.md
+{
+  const SECRET = 'portal-forward-secret-for-api-tests-0123456789';
+  process.env.PORTAL_FORWARD_SECRET = SECRET;
+  delete process.env.TURNSTILE_SECRET_KEY; // Turnstile off here: covered by abuse_protection.test.ts
+  const signedFor = (ip: string) => {
+    const ts = Math.floor(Date.now() / 1000);
+    return { 'x-portal-client-ip': ip, 'x-portal-client-ts': String(ts), 'x-portal-client-sig': crypto.createHmac('sha256', SECRET).update(`${ip}.${ts}`).digest('hex') };
+  };
+  const guard = (email: string, headers: Record<string, string>) => fetch(`${base}/candidate-auth/guard`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ action: 'sign_in', email }) });
+  const ipA = '203.0.113.201', ipB = '203.0.113.202';
+  const statuses: number[] = [];
+  for (let i = 0; i < 21; i++) statuses.push((await guard(`dbguard${i}@example.com`, signedFor(ipA))).status);
+  check(statuses.slice(0, 20).every(s => s === 200) && statuses[20] === 429, 'abuse: candidate sign-in guard: 20 per visitor a quarter hour, counted in the database', statuses);
+  const { rows } = await db.query(`select hits from private.rate_limit_counters where bucket = $1 order by window_start desc limit 1`, [`cand-signin:ip:${ipA}`]);
+  check(rows[0]?.hits === 21, 'abuse: the count lives in private.rate_limit_counters (shared across servers)', rows);
+  check((await guard('other@example.com', signedFor(ipB))).status === 200, 'abuse: another candidate behind the same portal server is not affected');
+  const forged = await guard('forged@example.com', { 'x-portal-client-ip': ipB, 'x-portal-client-ts': String(Math.floor(Date.now() / 1000)), 'x-portal-client-sig': '0'.repeat(64) });
+  check(forged.status === 200, 'abuse: a forged signature is ignored (the caller is counted under its own address)');
+  const reg = await fetch(`${base}/candidate-auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', ...signedFor('203.0.113.203') }, body: JSON.stringify({ name: 'Temp Person', email: 'temp@yopmail.com', phone: '9876543210', password: 'Very-long-pass-1' }) });
+  const regBody = (await reg.json()) as any;
+  check(reg.status === 422 && /permanent e-mail/.test(regBody.error.message), 'abuse: sign-up with a throwaway address is refused', regBody);
+  const { rows: made } = await db.query(`select 1 from auth.users where email = 'temp@yopmail.com'`);
+  check(made.length === 0, 'abuse: and no account was created');
+  delete process.env.PORTAL_FORWARD_SECRET;
+}
+
 {
   console.log('--- super admin overview: attendance and business by department');
   let r3 = await api(null, 'GET', '/dashboard/company-departments');
