@@ -36,6 +36,11 @@
     "nodemailer": "./worker/stubs/nodemailer.ts",
     "@hono/node-server": "./worker/stubs/honoNodeServer.ts"
   },
+  // Per-address flood limit (server/security/abuse.ts): 600 requests a minute, counted by Cloudflare at each location. The candidate
+  // portal's calls count per candidate (the signed visitor address), not as one address.
+  "ratelimits": [
+    { "name": "FLOOD_LIMITER", "namespace_id": "1001", "simple": { "limit": 600, "period": 60 } }
+  ],
   "observability": {
     "enabled": true
   },
