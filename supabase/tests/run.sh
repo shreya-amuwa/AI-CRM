@@ -144,6 +144,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/leave_multi_level_test.sql 2>&1 | 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/careers_test.sql
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/careers_direct_registration_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/careers_catalogue_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/career_jobs_single_function_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/recruiter_workflow_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/recruiter_vacancy_management_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_chat_integration_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
