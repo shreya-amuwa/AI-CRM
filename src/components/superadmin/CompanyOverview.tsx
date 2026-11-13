@@ -7,10 +7,12 @@ import { useAuth } from '../../context/AuthContext';
 import { PageTitle } from '../layout/shell';
 import { Card, CardHead, ghostBtn, LoadingLine } from '../tasks/head/headParts';
 import { money } from '../accounts/finance/FinanceBits';
+import { OverviewDepartments } from './OverviewDepartments';
 
 /**
  * Super Admin: the company in one page. Everything shown is a figure the database worked out from the real records
  * (supabase/migrations/20261110000100_dashboards_overview.sql): this page adds nothing of its own and invents nothing.
+ *   0. who is absent in each department, and each department's business in a period (OverviewDepartments)
  *   1. how is the company doing (a compact KPI strip)  2. income vs expense, month by month
  *   3. how is each department doing                      4. what needs attention, and what just happened
  */
@@ -58,9 +60,12 @@ export const CompanyOverview: React.FC<{ onOpenDepartment: (id: string) => void 
   const [data, setData] = useState<CompanyOverviewData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // tells the attendance and department section to reload whenever the page does
+  const [reloadSignal, setReloadSignal] = useState(0);
 
   const load = useCallback(() => {
     setLoading(true);
+    setReloadSignal(n => n + 1);
     dashboardApi.company().then(
       d => {
         setData(d);
@@ -118,6 +123,8 @@ export const CompanyOverview: React.FC<{ onOpenDepartment: (id: string) => void 
         </div>
       )}
 
+      <OverviewDepartments reloadSignal={reloadSignal} />
+
       {!data && !error && <LoadingLine label="Loading the company figures…" />}
 
       {data && (
@@ -153,7 +160,7 @@ const KpiStrip: React.FC<{ d: CompanyOverviewData }> = ({ d }) => {
   const net = m.incomeThisMonth - m.expensesThisMonth;
   return (
     <section aria-label="Company summary" className="rounded-2xl border border-slate-200 overflow-hidden">
-      <dl className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-px bg-slate-100">
+      <dl className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-px bg-slate-100">
         <Kpi
           label="Customers and leads"
           value={num(d.customers.total - d.customers.lost)}
@@ -167,11 +174,6 @@ const KpiStrip: React.FC<{ d: CompanyOverviewData }> = ({ d }) => {
         />
         <Kpi label="Expenses this month" value={money(m.expensesThisMonth)} foot={m.expensesPending > 0 ? `${money(m.expensesPending)} still to be paid` : 'Recorded expenses'} />
         <Kpi label="Net this month" value={money(net)} foot="Income minus expenses" tone={net < 0 ? 'red' : 'neutral'} />
-        <Kpi
-          label="Outstanding balance"
-          value={money(m.outstandingBalance)}
-          foot={`${num(m.customersWithBalance)} customer${m.customersWithBalance === 1 ? '' : 's'} still owe a balance`}
-        />
         <Kpi
           label="Awaiting confirmation"
           value={num(m.pendingConfirmations)}
