@@ -155,6 +155,12 @@ const idToken = ['x', Buffer.from(JSON.stringify({ email: 'Person@Gmail.com' }))
   check(b.length === 1 && b[0].start === '2026-11-18T04:00:00Z', 'free/busy gives busy times only');
 }
 
+{
+  const { f, calls } = fakeFetch([{ status: 302, body: {} }]);
+  const e = await throws(() => insertEvent('at', 'primary', body, f)) as any;
+  check(e && /unexpected redirect/.test(e.message) && calls[0].init.redirect === 'manual', 'a redirect is refused, never followed (and the fetch option works on Cloudflare Workers too)');
+}
+
 // ---------------------------------------------------------------------------
 // the guest e-mails and the calendar file
 // ---------------------------------------------------------------------------

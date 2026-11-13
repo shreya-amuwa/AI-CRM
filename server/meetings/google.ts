@@ -111,10 +111,12 @@ type Fetch = typeof fetch;
 async function call(f: Fetch, url: string, init: RequestInit): Promise<{ status: number; json: any; text: string }> {
   let res: Response;
   try {
-    res = await f(url, { ...init, redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) });
+    // 'manual', not 'error': Cloudflare Workers accept only 'follow' and 'manual'. Google's APIs never redirect; one that does is refused below.
+    res = await f(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (err) {
     throw new GoogleApiError(`Google could not be reached: ${(err as Error).message?.slice(0, 120) ?? 'network error'}`, 0, true);
   }
+  if (res.status >= 300 && res.status < 400) throw new GoogleApiError(`Google answered with an unexpected redirect (HTTP ${res.status}).`, res.status, false);
   const text = await res.text();
   let json: any = null;
   try {
