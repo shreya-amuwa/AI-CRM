@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesTaskAssignee, SalesTaskList
+  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import { getServiceClient } from '../db/supabase.js';
 import { unwrap } from './base.js';
@@ -23,6 +23,7 @@ export class SalesHeadRepository {
       p_assignee: i.assigneeId, p_file_name: i.fileName, p_note: i.note ?? null, p_rows: i.rows, p_hash: i.hash, p_commit: i.commit
     });
   }
+  sheetIssues(sheetId: string) { return this.rpc<SalesSheetIssues>('sales_lead_sheet_issues', { p_sheet: sheetId }); }
   sourceBegin(sheetId: string) { return this.rpc<{ id: string; fileName: string; departmentId: string; contentHash: string }>('sales_lead_sheet_source_begin', { p_sheet: sheetId }); }
   /** After the database allowed it and the file is stored: keep the reference next to the sheet (service role only). */
   async recordSource(sheetId: string, file: { bucket: string; path: string; provider: string; reference: string; etag: string | null; size: number }) {

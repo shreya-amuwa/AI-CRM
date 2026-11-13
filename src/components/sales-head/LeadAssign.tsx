@@ -1,18 +1,32 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FileSpreadsheet } from 'lucide-react';
-import type { SalesLeadAssignee, SalesSheet, SalesSheetCheck } from '../../../shared/contracts';
+import type { SalesLeadAssignee, SalesSheet, SalesSheetCheck, SalesSheetIssues } from '../../../shared/contracts';
 import { TELECALLER_SHEET_MAX_BYTES } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { salesHeadApi } from '../../lib/api/endpoints';
 import { buildLeadRows, LEAD_FIELDS, missingFields, readLeadSheet, type LeadMapping, type LeadSheetRead } from '../../lib/salesLeadSheet';
 import { sha256Hex, toBase64 } from '../../lib/telecallerSheet';
-import { readXlsx } from '../../lib/xlsxReader';
+import { readCsv } from '../../lib/csvReader';
+import { isXlsFile, readXls } from '../../lib/xlsReader';
+import { readXlsx, type Workbook } from '../../lib/xlsxReader';
 import { PageTitle } from '../layout/shell';
 import { Card } from '../tasks/head/headParts';
 import { Dialog, ErrorBanner, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, dateText, tcBtn, tcInput } from '../telecaller/ui';
 
-const XLSX_TYPES = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream', ''];
+const ACCEPT = '.xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv';
+const isZip = (b: ArrayBuffer) => { const h = new Uint8Array(b, 0, Math.min(4, b.byteLength)); return h[0] === 0x50 && h[1] === 0x4b && h[2] === 0x03 && h[3] === 0x04; };
+
+/** Reads the workbook by what the file really is (its first bytes), not by its name: .xlsx (zip), .xls (Excel 97-2003) or .csv (text). */
+async function readSheetFile(name: string, bytes: ArrayBuffer): Promise<Workbook> {
+  if (isZip(bytes)) return readXlsx(new Blob([bytes]));
+  if (isXlsFile(bytes)) return readXls(new Blob([bytes]));
+  if (/\.csv$/i.test(name)) return readCsv(bytes);
+  throw new Error('Choose an Excel (.xlsx, .xls) or CSV file.');
+}
+
+/** Who receives a sheet and what happens to it. */
+const roleOf = (p: Pick<SalesLeadAssignee, 'mode' | 'role'>) => (p.mode === 'TELECALLER' ? 'Telecaller' : p.role);
 
 interface Picked {
   fileName: string;
@@ -23,12 +37,13 @@ interface Picked {
 }
 
 /**
- * Lead Assign: the Sales Department Head gives an Excel sheet of contacts to a Telecaller (who calls them and turns the interested ones into
- * leads). The file is read in the browser, the columns are matched (and can be corrected), every row is checked by the database - nothing is
- * saved on a preview - and only after the head confirms is the sheet assigned and the original file stored. Rows with a problem are listed,
- * never dropped silently.
+ * Sheet Upload / Lead Assign (one page, two menu entries): the Sales Department Head uploads a sheet of contacts (.xlsx, .xls or .csv) and gives
+ * it to a Sales person of their department - a Team Lead or Team Member gets the rows as leads in their own pipeline, a Telecaller as a call
+ * list. The file is read in the browser, the columns are matched (and can be corrected), every row is checked by the database - nothing is saved
+ * on a preview - and only after the head confirms is the sheet given and the original file stored. Rows with a problem are listed, never dropped
+ * silently, and are kept with the sheet for the upload history.
  */
-export const LeadAssign: React.FC = () => {
+export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign' }) => {
   const [people, setPeople] = useState<SalesLeadAssignee[] | null>(null);
   const [sheets, setSheets] = useState<SalesSheet[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +58,7 @@ export const LeadAssign: React.FC = () => {
   const [confirming, setConfirming] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ sheet: SalesSheet; data: SalesSheetIssues | null; error: string | null } | null>(null);
   const busy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -77,14 +93,13 @@ export const LeadAssign: React.FC = () => {
     setPicked(null);
     setCheck(null);
     if (!file) return;
-    if (/\.xls$/i.test(file.name)) return setProblem('This is an old .xls file. Open it in Excel and save it as .xlsx, then upload it again.');
-    if (!/\.xlsx$/i.test(file.name) || !XLSX_TYPES.includes(file.type)) return setProblem('Choose an Excel (.xlsx) file.');
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) return setProblem('Choose an Excel (.xlsx, .xls) or CSV file.');
     if (file.size > TELECALLER_SHEET_MAX_BYTES) return setProblem(`The file is too large (${Math.round(TELECALLER_SHEET_MAX_BYTES / 1024)} KB at most).`);
     if (file.size === 0) return setProblem('The file is empty.');
     setReading(true);
     try {
       const bytes = await file.arrayBuffer();
-      const book = await readXlsx(new Blob([bytes]));
+      const book = await readSheetFile(file.name, bytes);
       const sheet = book.sheets[0];
       if (!sheet) return setProblem('The workbook has no sheets.');
       const read = readLeadSheet(sheet.rows);
@@ -129,7 +144,9 @@ export const LeadAssign: React.FC = () => {
         setConfirming(false);
         return;
       }
-      let text = `${r.summary.valid} contacts from ${picked.fileName} were given to ${assignee.name}, who will call them.`;
+      let text = r.mode === 'LEADS'
+        ? `${r.summary.valid} leads from ${picked.fileName} are now in ${assignee.name}'s pipeline (My Leads).`
+        : `${r.summary.valid} contacts from ${picked.fileName} were given to ${assignee.name}, who will call them.`;
       if (r.summary.invalid + r.summary.duplicates > 0) text += ` ${r.summary.invalid + r.summary.duplicates} rows were left out (see the history).`;
       try {
         await salesHeadApi.storeSource(r.sheetId, toBase64(picked.bytes));
@@ -151,16 +168,21 @@ export const LeadAssign: React.FC = () => {
   };
 
   const blocked = !check || check.summary.valid === 0 || check.alreadyAssigned || checking;
+  const groupsOfPeople = people ? (['Team Lead', 'Team Member', 'Telecaller'] as const).map(r => ({ role: r, list: people.filter(p => roleOf(p) === r) })).filter(g => g.list.length) : [];
+  const openFailed = (sheet: SalesSheet) => {
+    setFailed({ sheet, data: null, error: null });
+    salesHeadApi.sheetIssues(sheet.id).then(d => setFailed(f => (f && f.sheet.id === sheet.id ? { ...f, data: d } : f)), e => setFailed(f => (f && f.sheet.id === sheet.id ? { ...f, error: errorMessage(e) } : f)));
+  };
 
   return (
     <div className="space-y-5">
-      <PageTitle title="Lead Assign" subtitle="Give an Excel sheet of contacts to your Telecaller. They call the contacts and pass the interested ones on as leads." />
+      <PageTitle title={title} subtitle="Upload an Excel (.xlsx, .xls) or CSV sheet of contacts and give it to a Sales person of your department: a Team Lead or Team Member gets them as leads in their pipeline, a Telecaller as contacts to call." />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {done && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" aria-hidden="true" />{done}</div>}
 
       {people === null ? <Spinner /> : people.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white">
-          <EmptyState title="No Telecaller in your department yet">Add a Sales team member with the Sales role <strong>Telecaller</strong> in <em>Team Members &amp; Access</em>, then give a sheet to them here.</EmptyState>
+          <EmptyState title="No Sales team member in your department yet">Add a Sales Team Lead, Team Member or Telecaller in <em>Team Members &amp; Access</em>, then give a sheet to them here.</EmptyState>
         </div>
       ) : (
         <Card className="p-5 space-y-4" label="Upload and assign a lead sheet">
@@ -168,12 +190,18 @@ export const LeadAssign: React.FC = () => {
             <div>
               <label htmlFor="la-assignee" className="block text-xs font-medium text-slate-600 mb-1">Give the sheet to <span aria-hidden="true">*</span></label>
               <select id="la-assignee" className={tcInput} value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
-                <option value="">Choose a Telecaller…</option>
-                {people.map(p => <option key={p.id} value={p.id}>{p.name} · Telecaller · {p.team} ({p.openContacts} calls pending)</option>)}
+                <option value="">Choose a Sales person…</option>
+                {groupsOfPeople.map(g => (
+                  <optgroup key={g.role} label={`${g.role}s`}>
+                    {g.list.map(p => <option key={p.id} value={p.id}>{p.name} · {roleOf(p)} · {p.team} ({p.mode === 'TELECALLER' ? `${p.openContacts} calls pending` : `${p.openLeads ?? 0} open leads`})</option>)}
+                  </optgroup>
+                ))}
               </select>
               {assignee && (
                 <p className="mt-1.5 text-xs text-slate-500" data-testid="assign-mode">
-                  The Telecaller sees these contacts in their Tasks, calls them, and turns the interested ones into leads.
+                  {assignee.mode === 'TELECALLER'
+                    ? 'The Telecaller sees these contacts in their Tasks, calls them, and turns the interested ones into leads.'
+                    : `The valid rows become new leads in ${assignee.name}'s own pipeline (My Leads). ${assignee.role === 'Team Lead' ? 'They' : 'They, their Team Lead'} and you see them.`}
                 </p>
               )}
             </div>
@@ -183,17 +211,17 @@ export const LeadAssign: React.FC = () => {
             </div>
           </div>
           <div>
-            <label htmlFor="la-file" className="block text-xs font-medium text-slate-600 mb-1">Excel file (.xlsx, up to {Math.round(TELECALLER_SHEET_MAX_BYTES / 1024)} KB) <span aria-hidden="true">*</span></label>
+            <label htmlFor="la-file" className="block text-xs font-medium text-slate-600 mb-1">Sheet file (.xlsx, .xls or .csv, up to {Math.round(TELECALLER_SHEET_MAX_BYTES / 1024)} KB) <span aria-hidden="true">*</span></label>
             <input
               id="la-file"
               ref={fileInput}
               type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              accept={ACCEPT}
               disabled={reading || assigning}
               onChange={e => void onFile(e.target.files?.[0])}
               className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-blue-50 file:px-4 file:py-2.5 file:text-sm file:font-bold file:text-blue-700 hover:file:bg-blue-100"
             />
-            <p className="mt-1.5 text-xs text-slate-500">Columns: Contact Name and Phone Number are required; Company Name, Email and Remarks are optional. Other headings can be matched below. Only .xlsx files are read.</p>
+            <p className="mt-1.5 text-xs text-slate-500">Columns: Contact Name and Phone Number are required; Company Name, Email and Remarks are optional. Other headings can be matched below. The first sheet of a workbook is read.</p>
           </div>
 
           {reading && <Spinner label="Reading the sheet…" />}
@@ -260,7 +288,7 @@ export const LeadAssign: React.FC = () => {
               )}
               <div className="flex justify-end gap-2">
                 <button type="button" className={tcBtn.secondary} onClick={reset} disabled={assigning}>Cancel</button>
-                <button type="button" className={tcBtn.primary} onClick={() => setConfirming(true)} disabled={blocked || assigning}>Review and give {check.summary.valid} contacts to {assignee?.name ?? 'the Telecaller'}</button>
+                <button type="button" className={tcBtn.primary} onClick={() => setConfirming(true)} disabled={blocked || assigning}>Review and give {check.summary.valid} {assignee?.mode === 'LEADS' ? 'leads' : 'contacts'} to {assignee?.name ?? 'the Sales person'}</button>
               </div>
             </div>
           )}
@@ -268,13 +296,13 @@ export const LeadAssign: React.FC = () => {
       )}
 
       {confirming && check && assignee && picked && (
-         <Dialog title="Give this sheet to the Telecaller?" description="Please check who receives it." onClose={() => !assigning && setConfirming(false)} persistent={assigning}>
+         <Dialog title={`Give this sheet to ${assignee.name}?`} description="Please check who receives it." onClose={() => !assigning && setConfirming(false)} persistent={assigning}>
           <div className="space-y-4">
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div><dt className="text-[11px] font-semibold text-slate-500">Give to</dt><dd className="font-bold text-slate-900" data-testid="confirm-name">{assignee.name}</dd></div>
-              <div><dt className="text-[11px] font-semibold text-slate-500">Role</dt><dd className="text-slate-900" data-testid="confirm-role">Telecaller · {assignee.team}</dd></div>
+              <div><dt className="text-[11px] font-semibold text-slate-500">Role</dt><dd className="text-slate-900" data-testid="confirm-role">{roleOf(assignee)} · {assignee.team}</dd></div>
               <div><dt className="text-[11px] font-semibold text-slate-500">Sheet</dt><dd className="text-slate-900 break-all">{picked.fileName}</dd></div>
-              <div><dt className="text-[11px] font-semibold text-slate-500">Contacts</dt><dd className="text-slate-900">{check.summary.valid} valid · {check.summary.invalid + check.summary.duplicates} left out</dd></div>
+              <div><dt className="text-[11px] font-semibold text-slate-500">{assignee.mode === 'LEADS' ? 'New leads' : 'Contacts'}</dt><dd className="text-slate-900">{check.summary.valid} valid · {check.summary.invalid + check.summary.duplicates} left out</dd></div>
             </dl>
             <div className="flex justify-end gap-2">
               <button type="button" className={tcBtn.secondary} onClick={() => setConfirming(false)} disabled={assigning}>Back</button>
@@ -284,17 +312,41 @@ export const LeadAssign: React.FC = () => {
         </Dialog>
       )}
 
+      {failed && (
+        <Dialog title={`Rows left out of ${failed.sheet.fileName}`} description="Fix these rows in the file and upload them again if you need them." onClose={() => setFailed(null)}>
+          {failed.error ? <ErrorBanner message={failed.error} /> : !failed.data ? <Spinner /> : (
+            <div className="max-h-[60vh] overflow-auto rounded-xl border border-slate-200" data-testid="failed-rows">
+              <table className="w-full text-left text-sm">
+                <thead><tr className="text-[11px] uppercase tracking-wide text-slate-500 bg-slate-50">{['Row', 'Problem', 'What the row had'].map(h => <th key={h} scope="col" className="px-3 py-2 font-bold">{h}</th>)}</tr></thead>
+                <tbody className="divide-y divide-slate-100 align-top">
+                  {failed.data.issues.map(i => (
+                    <tr key={`${i.row}-${i.message}`}>
+                      <td className="px-3 py-2 text-slate-500">{i.row}</td>
+                      <td className={`px-3 py-2 ${i.kind === 'DUPLICATE' ? 'text-amber-800' : 'text-rose-700'}`}>{i.kind === 'DUPLICATE' ? 'Duplicate' : 'Invalid'}: {i.message}</td>
+                      <td className="px-3 py-2 break-words text-slate-800">
+                        <span className="block font-semibold">{i.name || 'No name'}</span>
+                        <span className="block text-xs text-slate-600">{[i.phone || 'no phone', i.email, i.company].filter(Boolean).join(' · ')}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Dialog>
+      )}
+
       <Card label="Uploaded sheets">
         <h2 className="px-5 pt-5 pb-3 text-base font-extrabold text-slate-900">Uploaded sheets</h2>
         {sheets.length === 0 ? <EmptyState title="Nothing uploaded yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[1000px]">
-              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Sheet', 'Assigned to', 'Uploaded by', 'Uploaded', 'Assigned', 'Rows', 'Valid', 'Invalid', 'Duplicates', 'Where it stands', 'Original file'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
+              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Sheet', 'Assigned to', 'Uploaded by', 'Uploaded', 'Assigned', 'Rows', 'Valid', 'Invalid', 'Duplicates', 'Status', 'Failed rows', 'Original file'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {sheets.map(s => (
                   <tr key={s.id}>
                     <td className="px-4 py-3 font-semibold text-slate-900">{s.fileName}{s.note ? <span className="block text-xs font-normal text-slate-500">{s.note}</span> : null}</td>
-                    <td className="px-4 py-3">{s.assignedTo}<span className="block text-xs text-slate-500">{s.mode === 'TELECALLER' ? 'Telecaller contact sheet' : 'Leads (earlier upload)'}</span></td>
+                    <td className="px-4 py-3">{s.assignedTo}<span className="block text-xs text-slate-500">{s.mode === 'TELECALLER' ? 'Telecaller · contacts to call' : `${s.assigneeRole ?? 'Sales'} · leads in their pipeline`}</span></td>
                     <td className="px-4 py-3">{s.uploadedBy || '-'}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{dateText(s.uploadedAt)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{dateText(s.assignedAt)}</td>
@@ -303,8 +355,13 @@ export const LeadAssign: React.FC = () => {
                     <td className="px-4 py-3 text-rose-700">{s.invalid}</td>
                     <td className="px-4 py-3 text-amber-700">{s.duplicates}</td>
                     <td className="px-4 py-3 text-slate-600">
-                      <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">Assigned</span>
+                      <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">{s.mode === 'LEADS' ? 'Imported' : 'Assigned'}</span>
                       <span className="block text-xs mt-1">{s.mode === 'TELECALLER' ? `${s.contactsPending ?? 0} to call · ${s.contactsCalled ?? 0} called` : `${s.leadsNow ?? 0} in pipeline · ${s.converted ?? 0} converted`}</span>
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {s.invalid + s.duplicates === 0 ? <span className="text-slate-400">None</span>
+                        : s.issuesKept ? <button type="button" className="text-blue-700 font-bold hover:underline" onClick={() => openFailed(s)} aria-label={`View the ${s.invalid + s.duplicates} rows left out of ${s.fileName}`}>View {s.invalid + s.duplicates}</button>
+                        : <span className="text-xs text-slate-500" title="Uploaded before the left-out rows were kept">{s.invalid + s.duplicates} (not kept)</span>}
                     </td>
                     <td className="px-4 py-3 text-slate-500">{s.hasSourceFile ? 'Stored' : '-'}</td>
                   </tr>
