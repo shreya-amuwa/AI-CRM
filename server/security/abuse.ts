@@ -209,7 +209,14 @@ export const ABUSE_LIMITS = {
   // public job listings
   JOBS_PER_IP_MINUTE: 120,
   // staff "sign-in refused" reports
-  LOGIN_FAIL_REPORT_PER_IP_15MIN: 10
+  LOGIN_FAIL_REPORT_PER_IP_15MIN: 10,
+  // public booking links (meetings): pages and slots, bookings, and a guest's cancel / answer to a proposed time
+  BOOKING_VIEW_PER_IP_5MIN: 60,
+  BOOKING_PER_IP_15MIN: 5,
+  BOOKING_PER_IP_DAY: 20,
+  BOOKING_PER_EMAIL_DAY: 5,
+  BOOKING_SITE_HOUR: 200,
+  BOOKING_MANAGE_PER_IP_15MIN: 10
 } as const;
 export type AbuseLimit = keyof typeof ABUSE_LIMITS;
 

@@ -57,6 +57,12 @@ Each is an environment variable of the same name on the CRM; change it without a
 | `CAND_PROFILE_SAVE_PER_HOUR` | 60 | profile saves per candidate an hour |
 | `JOBS_PER_IP_MINUTE` | 120 | public job listing requests per visitor a minute |
 | `LOGIN_FAIL_REPORT_PER_IP_15MIN` | 10 | staff "sign-in refused" reports per address a quarter hour |
+| `BOOKING_VIEW_PER_IP_5MIN` | 60 | booking-link page / free-slot and private-link views per visitor in 5 minutes |
+| `BOOKING_PER_IP_15MIN` | 5 | bookings through a booking link per visitor a quarter hour |
+| `BOOKING_PER_IP_DAY` | 20 | bookings per visitor a day |
+| `BOOKING_PER_EMAIL_DAY` | 5 | booking attempts per guest e-mail a day (the database also allows at most 3 open bookings per guest) |
+| `BOOKING_SITE_HOUR` | 200 | bookings for the whole site an hour (stops a flood from many addresses) |
+| `BOOKING_MANAGE_PER_IP_15MIN` | 10 | a guest's cancellations / answers to a proposed time per visitor a quarter hour |
 
 A refused request gets `429 RATE_LIMITED` with `Retry-After`; "forgot password" answers the same whether or not the account exists.
 

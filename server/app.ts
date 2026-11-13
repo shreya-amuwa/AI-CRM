@@ -268,25 +268,38 @@ app.get('/integrations/google/callback', async c => {
   return c.redirect(await finishGoogleConnect(c.req.query()), 302);
 });
 
-// Meetings: public booking links ("/book/<slug>") for customers, leads and candidates. No login; rate-limited per address.
+// Meetings: public booking links ("/book/<slug>") for customers, leads and candidates. No login. Bookings and a guest's changes are counted in
+// the database (one count across every server instance, docs/ABUSE_PROTECTION.md); page and slot reads only in memory, like the job list.
 app.get('/public/booking/:slug', async c => {
-  await enforce([{ key: `booking-page:${clientIp(c)}`, limit: 60, window: 300 }], 'memory');
+  await enforce([{ key: `booking-page:${clientIp(c)}`, limit: limitOf('BOOKING_VIEW_PER_IP_5MIN'), window: 300 }], 'memory');
   return c.json(ok(await bookingPage(c.req.param('slug'))));
 });
 app.post('/public/booking/:slug', async c => {
-  await enforce([{ key: `booking-book:${clientIp(c)}`, limit: 5, window: 900 }, { key: `booking-book-day:${clientIp(c)}`, limit: 20, window: 86_400 }], 'memory');
-  return c.json(ok(await bookSlot(c.req.param('slug'), await readJson(c))), 201);
+  const body = await readJson(c);
+  const ip = clientIp(c);
+  const email = emailKey((body as { email?: unknown } | undefined)?.email);
+  await enforce(
+    [
+      { key: `booking-book:ip:${ip}`, limit: limitOf('BOOKING_PER_IP_15MIN'), window: 900 },
+      { key: `booking-book-day:ip:${ip}`, limit: limitOf('BOOKING_PER_IP_DAY'), window: 86_400 },
+      ...(email ? [{ key: `booking-book:email:${email}`, limit: limitOf('BOOKING_PER_EMAIL_DAY'), window: 86_400 }] : []),
+      // a ceiling for the whole site: a booking flood from many addresses stops here
+      { key: 'booking-book:site', limit: limitOf('BOOKING_SITE_HOUR'), window: 3600 }
+    ],
+    'shared'
+  );
+  return c.json(ok(await bookSlot(c.req.param('slug'), body)), 201);
 });
 app.get('/public/booking/manage/:token', async c => {
-  await enforce([{ key: `booking-manage:${clientIp(c)}`, limit: 60, window: 300 }], 'memory');
+  await enforce([{ key: `booking-manage:${clientIp(c)}`, limit: limitOf('BOOKING_VIEW_PER_IP_5MIN'), window: 300 }], 'memory');
   return c.json(ok(await viewBooking(c.req.param('token'))));
 });
 app.post('/public/booking/manage/:token/cancel', async c => {
-  await enforce([{ key: `booking-manage-w:${clientIp(c)}`, limit: 10, window: 900 }], 'memory');
+  await enforce([{ key: `booking-manage-w:ip:${clientIp(c)}`, limit: limitOf('BOOKING_MANAGE_PER_IP_15MIN'), window: 900 }], 'shared');
   return c.json(ok(await cancelBooking(c.req.param('token'), await readJson(c))));
 });
 app.post('/public/booking/manage/:token/proposal', async c => {
-  await enforce([{ key: `booking-manage-w:${clientIp(c)}`, limit: 10, window: 900 }], 'memory');
+  await enforce([{ key: `booking-manage-w:ip:${clientIp(c)}`, limit: limitOf('BOOKING_MANAGE_PER_IP_15MIN'), window: 900 }], 'shared');
   return c.json(ok(await answerBookingProposal(c.req.param('token'), await readJson(c))));
 });
 

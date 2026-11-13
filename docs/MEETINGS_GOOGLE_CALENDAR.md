@@ -121,7 +121,7 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
   - the gap between meetings
   - at most 3 open bookings per guest e-mail per link
 - **Only Super Admins can be asked** for their time. Other colleagues are invited, not booked.
-- **The public booking functions are not open to the public.** Only the server calls them, after its per-address rate limits and a honeypot field. A guest's private link is signed (HMAC) and cannot be guessed from the meeting id.
+- **The public booking functions are not open to the public.** Only the server calls them, after its rate limits and a honeypot field. Bookings are limited per visitor, per guest e-mail and for the whole site, and a guest's cancel or answer per visitor, all counted in the database so every server instance shares one count. The `BOOKING_*` settings in `docs/ABUSE_PROTECTION.md` change them. A guest's private link is signed (HMAC) and cannot be guessed from the meeting id.
 - **Audit and history:** every change is in the meeting's history (append-only) and the audit log, including Google connect and disconnect.
 
 ## Rollback
