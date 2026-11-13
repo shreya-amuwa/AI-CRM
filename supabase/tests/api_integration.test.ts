@@ -10365,6 +10365,31 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(g.status === 302 && /google=(not-configured|expired)/.test(g.headers.get('location') || ''), 'meetings: a forged Google callback connects nothing', g.headers.get('location'));
 }
 
+{
+  console.log('--- super admin overview: attendance and business by department');
+  let r3 = await api(null, 'GET', '/dashboard/company-departments');
+  check(r3.status === 401, 'overview departments: needs a sign-in', r3);
+  for (const who of ['dh', 'th', 'a', 'accm']) {
+    if (!tokens.has(who)) continue;
+    r3 = await api(who, 'GET', '/dashboard/company-departments');
+    check(r3.status === 403, `overview departments: ${who} cannot read it`, r3);
+  }
+  r3 = await api('sa', 'GET', '/dashboard/company-departments?from=2026-02-10&to=2026-02-01');
+  check(r3.status === 422, 'overview departments: a period that ends before it starts is refused', r3);
+  r3 = await api('sa', 'GET', '/dashboard/company-departments?attendanceDate=yesterday');
+  check(r3.status === 422, 'overview departments: a date that is not YYYY-MM-DD is refused', r3);
+  r3 = await api('sa', 'GET', '/dashboard/company-departments');
+  const od = r3.json?.data;
+  check(r3.status === 200 && Array.isArray(od.attendance) && Array.isArray(od.performance) && typeof od.period?.from === 'string', 'overview departments: the Super Admin gets attendance and business by department', r3);
+  const revenueDepts = Number((await db.query(`select count(*) from departments where generates_revenue`)).rows[0].count);
+  check(od.performance.length === revenueDepts, 'overview departments: one business card per revenue department', od.performance);
+  const income = (await db.query(`select department_id, sum(amount)::float s from private.verified_income_attributed() group by department_id`)).rows;
+  check(od.performance.every((p: any) => Number(p.departmentIncome) === Number(income.find((x: any) => x.department_id === p.departmentId)?.s ?? 0)),
+    'overview departments: Department Income is the verified income attributed to each department (as Accounts counts it)', od.performance);
+  const active = Number((await db.query(`select count(*) from profiles where status = 'ACTIVE' and role <> 'SUPER_ADMIN' and (created_at at time zone 'Asia/Kolkata')::date <= private.office_today()`)).rows[0].count);
+  check(od.attendance.reduce((n: number, d: any) => n + d.staff, 0) === active && od.attendance.every((d: any) => d.absentCount === d.absent.length && d.present + d.absentCount === d.staff),
+    'overview departments: every active employee is counted once, and the absent list matches the count', od.attendance);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

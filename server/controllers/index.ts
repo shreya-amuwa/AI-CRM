@@ -369,6 +369,7 @@ export const auditController = {
 
 export const dashboardController = {
   company: (async ctx => ok(await svc(ctx).dashboards.companyOverview(ctx.actor))) as Handler,
+  departments: (async ctx => ok(await svc(ctx).dashboards.overviewDepartments(ctx.actor, ctx.req.query))) as Handler,
   workflow: (async ctx => ok(await svc(ctx).dashboards.companyWorkflow(ctx.actor))) as Handler,
   scope: (async ctx => ok(await svc(ctx).dashboards.scopeOverview(ctx.actor, ctx.req.query))) as Handler
 };

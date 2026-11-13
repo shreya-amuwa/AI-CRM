@@ -501,6 +501,12 @@ export const auditSearchQuerySchema = z.object({
 /** A scoped dashboard overview: only the Super Admin may name a department (everyone else gets their own scope). */
 export const dashboardScopeQuerySchema = z.object({ departmentId: uuidSchema.optional() });
 
+// --- Super Admin Overview by department: attendance today (or a chosen day) and each department's business in a period ---
+export const overviewDepartmentsQuerySchema = z
+  .object({ from: isoDate.optional(), to: isoDate.optional(), attendanceDate: isoDate.optional() })
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export type OverviewDepartmentsQuery = z.infer<typeof overviewDepartmentsQuerySchema>;
+
 /** A browser-side export (CSV and the like) is recorded: what it was and how many rows. */
 export const dataExportSchema = z
   .object({
