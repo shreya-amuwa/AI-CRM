@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { getEnv } from '../config/env.js';
-import { automationSettings, type AutomationSettings } from './config.js';
+import { automationSettings, senderSettings, type AutomationSettings } from './config.js';
 import { sendEmail, type SendResult } from './providers.js';
 import type { RenderedEmail } from './templates.js';
 
@@ -211,7 +211,8 @@ export interface HookDeps {
 }
 
 const defaults: HookDeps = {
-  settings: automationSettings,
+  // sign-up / reset / invite / magic-link e-mails: EMAIL_FROM_AUTH when set
+  settings: () => senderSettings('auth', automationSettings()),
   send: sendEmail,
   supabaseUrl: () => getEnv().supabaseUrl,
   secret: () => process.env.SUPABASE_AUTH_HOOK_SECRET,

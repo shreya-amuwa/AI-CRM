@@ -63,3 +63,51 @@ export function presignUrl(i: PresignInput): string {
   const signature = createHmac('sha256', kSigning).update(stringToSign).digest('hex');
   return `${i.protocol ?? 'https'}://${i.host}${canonicalPath}?${canonicalQuery}&X-Amz-Signature=${signature}`;
 }
+
+/**
+ * AWS Signature V4 for an API request sent with its signature in the Authorization header (used for Amazon SES). Returns the headers
+ * to send: the ones given, plus host, x-amz-date and authorization. The body is signed (its SHA-256 is part of the signature), so a
+ * request changed on the way is refused by AWS.
+ */
+export interface SignRequestInput {
+  method: string;
+  url: string;
+  /** e.g. "ses" */
+  service: string;
+  region: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  headers?: Record<string, string>;
+  body?: string;
+  now?: Date;
+}
+
+export function signRequest(i: SignRequestInput): Record<string, string> {
+  const url = new URL(i.url);
+  const now = i.now ?? new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const scope = `${dateStamp}/${i.region}/${i.service}/aws4_request`;
+  const payloadHash = sha256hex(i.body ?? '');
+
+  const headers: Record<string, string> = {};
+  for (const [k, v] of Object.entries(i.headers ?? {})) headers[k.toLowerCase()] = String(v).trim().replace(/\s+/g, ' ');
+  headers.host = url.host;
+  headers['x-amz-date'] = amzDate;
+  const names = Object.keys(headers).sort();
+
+  const query = [...url.searchParams.entries()]
+    .map(([k, v]) => [rfc3986(k), rfc3986(v)] as const)
+    .sort(([a, x], [b, y]) => (a === b ? (x < y ? -1 : x > y ? 1 : 0) : a < b ? -1 : 1))
+    .map(([k, v]) => `${k}=${v}`)
+    .join('&');
+  const path = url.pathname.split('/').map(seg => rfc3986(decodeURIComponent(seg))).join('/') || '/';
+  const canonicalRequest = [i.method.toUpperCase(), path, query, names.map(n => `${n}:${headers[n]}\n`).join(''), names.join(';'), payloadHash].join('\n');
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256hex(canonicalRequest)].join('\n');
+  const kSigning = hmac(hmac(hmac(hmac('AWS4' + i.secretAccessKey, dateStamp), i.region), i.service), 'aws4_request');
+  const signature = createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+  return {
+    ...headers,
+    authorization: `AWS4-HMAC-SHA256 Credential=${i.accessKeyId}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}`
+  };
+}

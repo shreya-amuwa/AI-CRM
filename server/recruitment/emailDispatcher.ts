@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
-import { automationSettings, COMPANY, liveChannels, type AutomationSettings } from '../automations/config.js';
+import { automationSettings, COMPANY, liveChannels, senderSettings, type AutomationSettings } from '../automations/config.js';
 import { sendEmail } from '../automations/providers.js';
 import { EMAIL_RE, maskEmail } from '../automations/rules.js';
 import { formatDecisionDate, renderDecisionEmail, type DecisionEmailType } from './emailTemplates.js';
@@ -60,7 +60,7 @@ export async function processDecisionEmail(s: AutomationSettings, ev: ClaimedDec
 }
 
 export async function runDecisionEmailDispatch(opts: { limit?: number; budgetMs?: number; db?: SupabaseClient; settings?: AutomationSettings; send?: MailSender } = {}): Promise<DecisionEmailRunSummary> {
-  const s = opts.settings ?? automationSettings();
+  const s = opts.settings ?? senderSettings('careers', automationSettings());
   const summary: DecisionEmailRunSummary = { mode: s.mode, claimed: 0, sent: 0, dryRun: 0, skipped: 0, retrying: 0, failed: 0 };
   if (s.mode === 'off') return { ...summary, note: 'E-mail automation is switched off (AUTOMATION_MODE=off).' };
   if (process.env.RECRUITMENT_EMAIL?.trim().toLowerCase() === 'off') return { ...summary, note: 'Recruitment e-mails are switched off (RECRUITMENT_EMAIL=off).' };

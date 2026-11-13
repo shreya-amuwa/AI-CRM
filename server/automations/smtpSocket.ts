@@ -85,7 +85,7 @@ function encodeWord(s: string): string {
 }
 function cleanAddress(email: string): string {
   const v = email.trim();
-  if (!/^[^\s<>()",;:\\[\]]+@[^\s<>()",;:\\[\]]+$/.test(v)) throw new SmtpError(null, 'An e-mail address is not valid.');
+  if (!/^[^\s@<>()",;:\\[\]]+@[^\s@<>()",;:\\[\]]+\.[^\s@<>()",;:\\[\]]+$/.test(v)) throw new SmtpError(null, 'An e-mail address is not valid.');
   return v;
 }
 function mailbox(name: string, email: string): string {
@@ -93,6 +93,10 @@ function mailbox(name: string, email: string): string {
   const n = oneLine(name);
   if (!n || n === addr) return `<${addr}>`;
   return `${ascii(n) ? `"${n.replace(/["\\]/g, '\\$&')}"` : encodeWord(n)} <${addr}>`;
+}
+/** "Name <address>" with the name encoded for headers when needed (RFC 2047); the address is checked. Throws SmtpError when invalid. */
+export function formatMailbox(name: string, email: string): string {
+  return mailbox(name, email);
 }
 const wrap76 = (b64: string) => b64.replace(/.{1,76}/g, '$&\r\n');
 const base64Part = (contentType: string, data: Uint8Array | string, extra: string[] = []) =>
