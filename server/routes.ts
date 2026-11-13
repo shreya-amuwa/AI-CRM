@@ -678,6 +678,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/security/data-exports', handler: audit.recordExport, options: S },
   // Dashboards: the whole company (Super Admin) and the scope of a Team Lead / Department Head
   { method: 'GET', path: '/dashboard/company-overview', handler: dashboards.company },
+  { method: 'GET', path: '/dashboard/company-departments', handler: dashboards.departments },
   { method: 'GET', path: '/dashboard/company-workflow', handler: dashboards.workflow },
   { method: 'GET', path: '/dashboard/scope-overview', handler: dashboards.scope }
 ];
