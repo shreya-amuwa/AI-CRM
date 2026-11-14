@@ -481,6 +481,8 @@ export const LeadStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Initial Hydration: Load any recent persistent leads from Supabase crm_leads table
     const hydrateCloudLeads = async () => {
       try {
+        // signed out (the sign-in page): the table is not readable anonymously, so asking would only log a refused (401) request
+        if (!(await supabase.auth.getSession()).data.session) return;
         const { data, error } = await supabase
           .from('crm_leads')
           .select('*')
