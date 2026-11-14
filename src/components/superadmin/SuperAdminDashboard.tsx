@@ -88,8 +88,9 @@ export const SuperAdminDashboard: React.FC = () => {
       flush={page === 'chat'}
       topActions={
         <>
-          <button type="button" className={`${primaryBtn} !h-10 !px-4`} onClick={() => openTeam('add')}>
-            <UserPlus className="w-4 h-4" aria-hidden="true" /> Add Team Member
+          {/* on a phone only the icon shows, so the top bar fits the screen */}
+          <button type="button" className={`${primaryBtn} !h-10 !px-3 sm:!px-4`} onClick={() => openTeam('add')} aria-label="Add Team Member" title="Add Team Member">
+            <UserPlus className="w-4 h-4" aria-hidden="true" /> <span className="hidden sm:inline">Add Team Member</span>
           </button>
           <NotificationBell />
         </>
