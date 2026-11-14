@@ -99,6 +99,8 @@ export const MeetingsPage: React.FC = () => {
   const [tab, setTab] = useState<Tab>('calendar');
   const [google, setGoogle] = useState<GoogleCalendarStatus | null>(null);
   const [approvals, setApprovals] = useState<Meeting[]>([]);
+  // The CEO (Super Admin) does not ask themselves for time: their "New meeting" goes straight onto their own calendar.
+  const [isCeo, setIsCeo] = useState(false);
   const [flash, setFlash] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null);
   const [composer, setComposer] = useState<null | 'meeting' | 'ceo'>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -121,6 +123,7 @@ export const MeetingsPage: React.FC = () => {
   useEffect(() => {
     meetingsApi.google().then(setGoogle).catch(() => setGoogle(null));
     meetingsApi.approvals().then(setApprovals).catch(() => setApprovals([]));
+    meetingsApi.settings().then(x => setIsCeo(x.isCeo)).catch(() => setIsCeo(false));
   }, [reloadKey]);
 
   const done = (text: string) => {
@@ -133,10 +136,10 @@ export const MeetingsPage: React.FC = () => {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900 font-heading flex items-center gap-2"><CalendarDays className="w-5 h-5 text-indigo-600" /> Meetings</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Appointments, demos, interviews, meetings and meetings with the CEO — in one calendar, synced to your Google Calendar.</p>
+          <p className="text-sm text-slate-500 mt-0.5">{isCeo ? 'Appointments, demos, interviews, meetings and requests for your time' : 'Appointments, demos, interviews, meetings and meetings with the CEO'} — in one calendar, synced to your Google Calendar.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={btnGhost} onClick={() => setComposer('ceo')}><Crown className="w-4 h-4 text-amber-500" /> Ask the CEO for time</button>
+          {!isCeo && <button type="button" className={btnGhost} onClick={() => setComposer('ceo')}><Crown className="w-4 h-4 text-amber-500" /> Ask the CEO for time</button>}
           <button type="button" className={btnPrimary} onClick={() => setComposer('meeting')}><CalendarPlus className="w-4 h-4" /> New meeting</button>
         </div>
       </div>

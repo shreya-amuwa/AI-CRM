@@ -42,6 +42,7 @@ const state = {
   approvals: [meeting({ id: 'bbbbbbbb-0000-4000-8000-000000000002', title: 'Budget for Pune', kind: 'CEO_MEETING', kindLabel: 'Meeting with the CEO', status: 'REQUESTED',
     hostId: CEO.id, hostName: CEO.name, createdBy: COL.id, createdByName: COL.name, canDecide: true, canManage: true, startsAt: at(tomorrow, '15:00'), endsAt: at(tomorrow, '15:30') })],
   bookingTypes: [],
+  viewerIsCeo: false,
   calls: []
 };
 const slots = [at(tomorrow, '10:00'), at(tomorrow, '10:30'), at(tomorrow, '11:00')];
@@ -64,7 +65,7 @@ function api(req, res, body) {
     state.meetings.push(m);
     return ok(res, m, 201);
   }
-  if (p === '/meetings/settings' && req.method === 'GET') return ok(res, { timezone: 'Asia/Kolkata', availability: [], availabilityIsDefault: true, delegates: [], bookingTypes: state.bookingTypes, isCeo: false });
+  if (p === '/meetings/settings' && req.method === 'GET') return ok(res, { timezone: 'Asia/Kolkata', availability: [], availabilityIsDefault: true, delegates: [], bookingTypes: state.bookingTypes, isCeo: state.viewerIsCeo });
   if (p === '/meetings/settings/booking-links') {
     const l = { ...body, id: 'dddddddd-0000-4000-8000-000000000001', hostId: 'me', createdAt: new Date().toISOString(), kind: body.kind ?? 'APPOINTMENT' };
     state.bookingTypes = [l];
@@ -202,6 +203,16 @@ try {
   await page.evaluate(() => window.mount());
   await page.getByText(/Google Calendar connected\. Your meetings now appear/).waitFor();
   check(!page.url().includes('google='), 'the outcome is shown once and the address is cleaned');
+  check(await page.getByRole('button', { name: /Ask the CEO for time/ }).isVisible(), 'an employee can ask the CEO for time');
+
+  // 7b. the CEO's own view: no "Ask the CEO for time" (they book on their own calendar with "New meeting")
+  state.viewerIsCeo = true;
+  await page.goto(base);
+  await page.evaluate(() => window.mount());
+  await page.getByText(/requests for your time/).waitFor();
+  check(await page.getByRole('button', { name: /Ask the CEO for time/ }).count() === 0, 'the CEO is not offered "Ask the CEO for time"');
+  check(await page.getByRole('button', { name: /New meeting/ }).isVisible(), 'the CEO can still book a new meeting');
+  state.viewerIsCeo = false;
 
   // 8. the public booking page
   const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Kolkata' });
