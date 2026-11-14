@@ -90,6 +90,10 @@ const STATUS_NOTICES: Record<string, string> = {
 async function sendClientToDashboard(): Promise<boolean> {
   const supabase = getSupabase();
   if (!supabase) return false;
+  // Only a client login carries client_customer_id (set with the service key when the login is made). Staff are never asked, so a staff
+  // page load makes no refused (403) client_me call.
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.user?.app_metadata?.client_customer_id) return false;
   const { error } = await supabase.rpc('client_me');
   if (error) return false;
   window.location.assign('/client/dashboard/overview');
