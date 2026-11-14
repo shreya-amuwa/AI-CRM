@@ -179,6 +179,25 @@ const json = async (r: Response) => (await r.json()) as any;
   check((await jobs({ 'x-portal-server': 'f'.repeat(64) })).status === 429, 'a forged x-portal-server does not exempt anyone');
   delete process.env.JOBS_PER_IP_MINUTE;
 
+  // public booking links (meetings): limited per visitor, per guest e-mail and for the whole site; a guest's cancel per visitor
+  const book = (email: string, ip: string) =>
+    app.request('/api/v1/public/booking/abuse-test', { method: 'POST', headers: { 'content-type': 'application/json', 'x-real-ip': ip }, body: JSON.stringify({ startsAt: '2030-01-07T05:00:00Z', name: 'Guest', email }) });
+  const bs: number[] = [];
+  for (let i = 0; i < ABUSE_LIMITS.BOOKING_PER_IP_15MIN + 1; i++) bs.push((await book(`b${i}@example.com`, '192.0.2.131')).status);
+  check(bs.slice(0, -1).every(s => s !== 429) && bs.at(-1) === 429, `bookings: ${ABUSE_LIMITS.BOOKING_PER_IP_15MIN} a quarter hour per visitor`, bs);
+  bs.length = 0;
+  for (let i = 0; i < ABUSE_LIMITS.BOOKING_PER_EMAIL_DAY + 1; i++) bs.push((await book('Same.Guest@Example.com', `192.0.2.${140 + i}`)).status);
+  check(bs.slice(0, -1).every(s => s !== 429) && bs.at(-1) === 429, 'bookings for one guest e-mail from many addresses: limited per e-mail', bs);
+  process.env.BOOKING_SITE_HOUR = '2';
+  bs.length = 0;
+  for (let i = 0; i < 3; i++) bs.push((await book(`site-b${i}@example.com`, `192.0.2.${160 + i}`)).status);
+  check(bs.at(-1) === 429, 'bookings: a ceiling for the whole site stops a flood spread over many addresses', bs);
+  delete process.env.BOOKING_SITE_HOUR;
+  const cancel = () => app.request('/api/v1/public/booking/manage/not-a-token/cancel', { method: 'POST', headers: { 'content-type': 'application/json', 'x-real-ip': '192.0.2.170' }, body: '{}' });
+  bs.length = 0;
+  for (let i = 0; i < ABUSE_LIMITS.BOOKING_MANAGE_PER_IP_15MIN + 1; i++) bs.push((await cancel()).status);
+  check(bs.slice(0, -1).every(s => s !== 429) && bs.at(-1) === 429, `a guest's cancel / answer: ${ABUSE_LIMITS.BOOKING_MANAGE_PER_IP_15MIN} a quarter hour per visitor`, bs);
+
   // the edge limiter (Worker): a refusal is a 429 before any other work
   useEdgeLimiter(async () => false);
   r = await app.request('/api/v1/health');

@@ -10335,6 +10335,70 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   delete process.env.PORTAL_FORWARD_SECRET;
 }
 
+// 20270101000500: meetings (one calendar, CEO approval, booking links for outside people)
+{
+  process.env.MEETING_LINK_SECRET = 'm'.repeat(40);
+  const at = (days: number, hourUtc: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + days); d.setUTCHours(hourUtc, 0, 0, 0); return d.toISOString(); };
+  let m = await api('tm2', 'GET', '/meetings/google');
+  check(m.status === 200 && m.json.data.configured === false && m.json.data.connected === false, 'meetings: Google is not configured here; the status says so', m);
+  m = await api('tm2', 'POST', '/meetings/google/connect');
+  check(m.status === 503, 'meetings: connecting Google without the server set-up explains it', m);
+  m = await api('tm2', 'POST', '/meetings', { title: 'API review', startsAt: at(3, 5), endsAt: at(3, 6), guests: [{ name: 'Guest', email: 'guest@example.com' }] });
+  check(m.status === 201 && m.json.data.status === 'SCHEDULED' && m.json.data.googleSyncStatus === 'NOT_CONNECTED', 'meetings: an employee books a meeting with a guest', m);
+  const mid = m.json.data.id;
+  m = await api('tm2', 'POST', '/meetings', { title: 'Clash', startsAt: at(3, 5), endsAt: at(3, 6) });
+  check(m.status === 409, 'meetings: a double booking is refused', m);
+  m = await api('tm2', 'POST', '/meetings', { title: 'Bad', startsAt: at(3, 6), endsAt: at(3, 5) });
+  check(m.status === 422, 'meetings: an end before the start is refused', m);
+  m = await api('tm2', 'GET', `/meetings?from=${encodeURIComponent(at(0, 0))}&to=${encodeURIComponent(at(10, 0))}`);
+  check(m.status === 200 && m.json.data.some((x: any) => x.id === mid), 'meetings: it is in the calendar', m);
+  m = await api('sh', 'GET', `/meetings/${mid}`);
+  check(m.status === 404, 'meetings: a colleague who is not invited cannot open it', m);
+  m = await api('tm2', 'POST', '/meetings', { title: 'Ask the CEO', hostId: sa.id, startsAt: at(4, 6), endsAt: at(4, 7) });
+  check(m.status === 201 && m.json.data.status === 'REQUESTED' && m.json.data.kind === 'CEO_MEETING', 'meetings: asking the CEO for time makes a request', m);
+  const ceo = m.json.data;
+  m = await api('tm2', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'APPROVE' });
+  check(m.status === 403, 'meetings: the one asking cannot approve it', m);
+  m = await api('sa', 'GET', '/meetings/approvals');
+  check(m.status === 200 && m.json.data.some((x: any) => x.id === ceo.id), 'meetings: the CEO sees it waiting', m);
+  m = await api('sa', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'PROPOSE' });
+  check(m.status === 422, 'meetings: proposing needs a time', m);
+  m = await api('sa', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'APPROVE', note: 'Fine' });
+  check(m.status === 200 && m.json.data.status === 'SCHEDULED', 'meetings: the CEO approves', m);
+  m = await api('tm2', 'POST', `/meetings/${mid}/cancel`, { reason: 'Moved to email' });
+  check(m.status === 200 && m.json.data.status === 'CANCELLED', 'meetings: the host cancels', m);
+
+  // a booking link: open all week (IST), no notice, so a slot is always offered
+  m = await api('tm2', 'POST', '/meetings/settings/availability', { timezone: 'Asia/Kolkata', availability: [0, 1, 2, 3, 4, 5, 6].map(weekday => ({ weekday, start: '00:00', end: '23:30' })) });
+  check(m.status === 200 && m.json.data.availability.length === 7, 'meetings: working hours are saved', m);
+  m = await api('tm2', 'POST', '/meetings/settings/booking-links', { slug: 'api-tm2-demo', title: 'Product demo', kind: 'DEMO', durationMinutes: 30, minNoticeMinutes: 0, maxDaysAhead: 3 });
+  check(m.status === 200 && m.json.data.slug === 'api-tm2-demo', 'meetings: a booking link is created', m);
+  m = await api('sh', 'POST', '/meetings/settings/booking-links', { slug: 'api-tm2-demo', title: 'Copy' });
+  check(m.status === 409, 'meetings: a link name is unique', m);
+  m = await api(null, 'GET', '/public/booking/api-tm2-demo');
+  check(m.status === 200 && m.json.data.slots.length > 0 && m.json.data.hostName && !('hostId' in m.json.data), 'meetings: anyone opens the booking page and sees free slots (no internal ids)', m);
+  const slot = m.json.data.slots[0];
+  m = await api(null, 'POST', '/public/booking/api-tm2-demo', { startsAt: slot, name: 'Asha Guest', email: 'asha.guest@example.com' });
+  check(m.status === 201 && m.json.data.status === 'SCHEDULED' && /\/book\/manage\//.test(m.json.data.manageUrl), 'meetings: a guest books a slot and gets a private link', m);
+  const manage = m.json.data.manageUrl.split('/book/manage/')[1];
+  m = await api(null, 'POST', '/public/booking/api-tm2-demo', { startsAt: slot, name: 'Other Guest', email: 'other@example.com' });
+  check(m.status === 409, 'meetings: the same slot cannot be booked twice', m);
+  m = await api(null, 'POST', '/public/booking/api-tm2-demo', { startsAt: slot, name: 'Bot', email: 'bot@example.com', website: 'http://spam' });
+  check(m.status === 422, 'meetings: the honeypot stops bots', m);
+  m = await api(null, 'GET', `/public/booking/manage/${manage}`);
+  check(m.status === 200 && m.json.data.status === 'SCHEDULED', 'meetings: the private link shows the booking', m);
+  m = await api(null, 'GET', `/public/booking/manage/${manage.slice(0, -2)}xx`);
+  check(m.status === 404, 'meetings: an altered private link is refused', m);
+  m = await api(null, 'POST', `/public/booking/manage/${manage}/cancel`, { reason: 'Busy' });
+  check(m.status === 200 && m.json.data.status === 'CANCELLED', 'meetings: the guest cancels from the private link', m);
+  m = await api(null, 'GET', '/public/booking/no-such-link');
+  check(m.status === 404, 'meetings: an unknown link is not found', m);
+  m = await api(null, 'GET', '/meetings');
+  check(m.status === 401, 'meetings: the staff calendar needs a login', m);
+  const g = await fetch(base + '/integrations/google/callback?state=forged&code=x', { redirect: 'manual' });
+  check(g.status === 302 && /google=(not-configured|expired)/.test(g.headers.get('location') || ''), 'meetings: a forged Google callback connects nothing', g.headers.get('location'));
+}
+
 {
   console.log('--- super admin overview: attendance and business by department');
   let r3 = await api(null, 'GET', '/dashboard/company-departments');

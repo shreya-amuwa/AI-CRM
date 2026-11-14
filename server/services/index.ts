@@ -14,6 +14,8 @@ import { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
 import { AccountsFinanceService } from './AccountsFinanceService.js';
+import { MeetingService } from './MeetingService.js';
+import { MeetingRepository } from '../repositories/MeetingRepository.js';
 import { BusinessReportService } from './BusinessReportService.js';
 import { DepartmentIncomeService } from './DepartmentIncomeService.js';
 import { DepartmentIncomeRepository } from '../repositories/DepartmentIncomeRepository.js';
@@ -103,6 +105,7 @@ export function createServices(db: SupabaseClient) {
     customerImport: new CustomerImportService(db),
     chat: new ChatService(new ChatRepository(db), new StorageRepository()),
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
+    meetings: new MeetingService(new MeetingRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),

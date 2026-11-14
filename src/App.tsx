@@ -42,6 +42,7 @@ const AmuwaSettingsPanel = lazy(() => import('./components/departments/amuwa/Amu
 const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews'));
 // Attendance from the department menu: the same Punch In / Out page as every other dashboard (HR also sees the register, as on its own panel)
 const AttendancePage = lazy(() => import('./components/attendance/AttendancePage'));
+const MeetingsPage = lazy(() => import('./components/meetings/MeetingsPage'));
 const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
@@ -457,6 +458,8 @@ const MainAppContent: React.FC = () => {
         <main className={currentActiveTab === 'chat' ? 'flex-1 min-w-0 w-full' : 'flex-1 min-w-0 p-3 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full'}>
           {currentActiveTab === 'my_attendance' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><AttendancePage hrView={currentDeptId === 'hr'} /></Suspense>
+          ) : currentActiveTab === 'my_meetings' && showSidebar ? (
+            <Suspense fallback={<ScreenLoader />}><MeetingsPage /></Suspense>
           ) : currentDept && currentDeptId ? (
             /* Sub-department selection screen: ALWAYS show choice cards when no sub-department is selected */
             hasSubDeptChoice && currentSubDept === null ? (

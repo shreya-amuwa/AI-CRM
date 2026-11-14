@@ -1,6 +1,9 @@
 import {runCareerAutomation} from './automations/careerDispatcher.js';
 import { CareerRepository } from './repositories/CareerRepository.js';
 import { candidateRoutes } from './candidateRoutes.js';
+import { finishGoogleConnect } from './meetings/connect.js';
+import { answerBookingProposal, bookingPage, bookSlot, cancelBooking, viewBooking } from './meetings/publicBooking.js';
+import { runMeetingsDispatch } from './meetings/worker.js';
 import { createUserClient, getAnonClient } from './db/supabase.js';
 import { extractBearerToken } from './auth/authenticate.js';
 import { getRequestListener } from '@hono/node-server';
@@ -225,8 +228,10 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Company report analysis: write the analysis of every consolidated week HR submitted that is still waiting for it. Idempotent.
   const reportAnalysis = await runReportAnalysisAutomation().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Attendance: the place name of punches that have coordinates and no name yet (one lookup a second, as the free geocoder asks). Never throws.
+  // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
+  const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
@@ -255,6 +260,47 @@ app.post('/integrations/biometric/punch', async c => {
   if (error) throw fromDatabaseError(error);
   if (data === 'UNKNOWN_EMPLOYEE') throw new AppError('NOT_FOUND', 'No active employee has this e-mail.');
   return c.json(ok({ recorded: true }));
+});
+
+// Meetings: Google's return from an employee's "Connect Google Calendar" (no CRM login: the signed state names the employee). Redirects back.
+app.get('/integrations/google/callback', async c => {
+  await enforce([{ key: `google-callback:${clientIp(c)}`, limit: 20, window: 900 }], 'memory');
+  return c.redirect(await finishGoogleConnect(c.req.query()), 302);
+});
+
+// Meetings: public booking links ("/book/<slug>") for customers, leads and candidates. No login. Bookings and a guest's changes are counted in
+// the database (one count across every server instance, docs/ABUSE_PROTECTION.md); page and slot reads only in memory, like the job list.
+app.get('/public/booking/:slug', async c => {
+  await enforce([{ key: `booking-page:${clientIp(c)}`, limit: limitOf('BOOKING_VIEW_PER_IP_5MIN'), window: 300 }], 'memory');
+  return c.json(ok(await bookingPage(c.req.param('slug'))));
+});
+app.post('/public/booking/:slug', async c => {
+  const body = await readJson(c);
+  const ip = clientIp(c);
+  const email = emailKey((body as { email?: unknown } | undefined)?.email);
+  await enforce(
+    [
+      { key: `booking-book:ip:${ip}`, limit: limitOf('BOOKING_PER_IP_15MIN'), window: 900 },
+      { key: `booking-book-day:ip:${ip}`, limit: limitOf('BOOKING_PER_IP_DAY'), window: 86_400 },
+      ...(email ? [{ key: `booking-book:email:${email}`, limit: limitOf('BOOKING_PER_EMAIL_DAY'), window: 86_400 }] : []),
+      // a ceiling for the whole site: a booking flood from many addresses stops here
+      { key: 'booking-book:site', limit: limitOf('BOOKING_SITE_HOUR'), window: 3600 }
+    ],
+    'shared'
+  );
+  return c.json(ok(await bookSlot(c.req.param('slug'), body)), 201);
+});
+app.get('/public/booking/manage/:token', async c => {
+  await enforce([{ key: `booking-manage:${clientIp(c)}`, limit: limitOf('BOOKING_VIEW_PER_IP_5MIN'), window: 300 }], 'memory');
+  return c.json(ok(await viewBooking(c.req.param('token'))));
+});
+app.post('/public/booking/manage/:token/cancel', async c => {
+  await enforce([{ key: `booking-manage-w:ip:${clientIp(c)}`, limit: limitOf('BOOKING_MANAGE_PER_IP_15MIN'), window: 900 }], 'shared');
+  return c.json(ok(await cancelBooking(c.req.param('token'), await readJson(c))));
+});
+app.post('/public/booking/manage/:token/proposal', async c => {
+  await enforce([{ key: `booking-manage-w:ip:${clientIp(c)}`, limit: limitOf('BOOKING_MANAGE_PER_IP_15MIN'), window: 900 }], 'shared');
+  return c.json(ok(await answerBookingProposal(c.req.param('token'), await readJson(c))));
 });
 
 // Candidate-portal registration (no login yet, so public): creates an already confirmed candidate account; the portal then signs the candidate in
@@ -562,7 +608,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

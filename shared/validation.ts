@@ -2861,6 +2861,106 @@ export function hrEmployeeFileMimeOf(fileName: string, browserType: string): HrE
   return byExt[ext] ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// Meetings (Google Calendar, booking links, CEO approval)
+// ---------------------------------------------------------------------------
+const isoInstant = z.string().trim().max(40).refine(v => !Number.isNaN(Date.parse(v)) && /T/.test(v), 'Use a date and time (ISO 8601).');
+export const CALENDAR_MEETING_KINDS = ['APPOINTMENT', 'DEMO', 'MEETING', 'INTERVIEW', 'CEO_MEETING'] as const;
+export const CALENDAR_MEETING_MODES = ['GOOGLE_MEET', 'ONLINE_LINK', 'IN_PERSON', 'PHONE'] as const;
+const meetingGuestSchema = z.object({
+  name: optionalText(200),
+  email: emailSchema,
+  phone: z.preprocess(v => (v === '' ? null : v), phoneSchema.nullable().optional())
+}).strict();
+
+export const meetingCreateSchema = z.object({
+  title: trimmed(200).min(2, 'Give the meeting a title.'),
+  description: optionalText(4000),
+  kind: z.enum(CALENDAR_MEETING_KINDS).default('MEETING'),
+  hostId: uuidSchema.optional().nullable(),
+  startsAt: isoInstant,
+  endsAt: isoInstant,
+  timezone: optionalText(64),
+  mode: z.enum(CALENDAR_MEETING_MODES).default('GOOGLE_MEET'),
+  location: optionalText(500),
+  meetLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable().optional()),
+  customerId: uuidSchema.optional().nullable(),
+  attendeeIds: z.array(uuidSchema).max(30, 'Invite at most 30 colleagues.').default([]),
+  guests: z.array(meetingGuestSchema).max(30, 'Invite at most 30 guests.').default([]),
+  allowOverlap: z.boolean().default(false)
+}).strict()
+  .refine(v => Date.parse(v.endsAt) > Date.parse(v.startsAt), { message: 'The meeting must end after it starts.', path: ['endsAt'] })
+  .refine(v => v.mode !== 'ONLINE_LINK' || !!v.meetLink, { message: 'Give the meeting link.', path: ['meetLink'] });
+
+export const meetingListQuerySchema = z.object({
+  from: isoInstant,
+  to: isoInstant,
+  hostId: uuidSchema.optional()
+}).strict().refine(v => Date.parse(v.to) > Date.parse(v.from), { message: '"to" must be after "from".', path: ['to'] });
+
+export const meetingRescheduleSchema = z.object({
+  startsAt: isoInstant,
+  endsAt: isoInstant,
+  note: optionalText(1000),
+  version: z.number().int().min(1).optional()
+}).strict().refine(v => Date.parse(v.endsAt) > Date.parse(v.startsAt), { message: 'The meeting must end after it starts.', path: ['endsAt'] });
+
+export const calendarMeetingCancelSchema = z.object({ reason: optionalText(1000), version: z.number().int().min(1).optional() }).strict();
+export const meetingCompleteSchema = z.object({ note: optionalText(1000) }).strict();
+export const meetingDecisionSchema = z.object({
+  decision: z.enum(['APPROVE', 'DECLINE', 'PROPOSE']),
+  note: optionalText(1000),
+  startsAt: isoInstant.optional().nullable(),
+  endsAt: isoInstant.optional().nullable(),
+  version: z.number().int().min(1).optional()
+}).strict().refine(v => v.decision !== 'PROPOSE' || (!!v.startsAt && !!v.endsAt && Date.parse(v.endsAt) > Date.parse(v.startsAt)),
+  { message: 'Propose a start and an end time.', path: ['startsAt'] });
+export const meetingProposalAnswerSchema = z.object({ accept: z.boolean() }).strict();
+export const meetingResponseSchema = z.object({ response: z.enum(['ACCEPTED', 'DECLINED', 'TENTATIVE']) }).strict();
+export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
+export const meetingBusySchema = z.object({
+  profileIds: z.array(uuidSchema).min(1).max(30),
+  from: isoInstant,
+  to: isoInstant
+}).strict().refine(v => Date.parse(v.to) > Date.parse(v.from) && Date.parse(v.to) - Date.parse(v.from) <= 62 * 86_400_000,
+  { message: 'Ask for at most 62 days.', path: ['to'] });
+
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM.');
+export const meetingAvailabilitySchema = z.object({
+  timezone: trimmed(64).min(1),
+  availability: z.array(z.object({ weekday: z.number().int().min(0).max(6), start: hhmm, end: hhmm }).strict()
+    .refine(w => w.end > w.start, { message: 'Each window must end after it starts.' })).max(50)
+}).strict();
+
+export const meetingBookingLinkSchema = z.object({
+  id: uuidSchema.optional().nullable(),
+  slug: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{2,62}[a-z0-9]$/, 'Use 4-64 lowercase letters, digits or dashes.'),
+  title: trimmed(120).min(2, 'Give the link a title.'),
+  description: optionalText(2000),
+  kind: z.enum(CALENDAR_MEETING_KINDS).optional(),
+  durationMinutes: z.number().int().min(10).max(480).default(30),
+  bufferMinutes: z.number().int().min(0).max(120).default(0),
+  minNoticeMinutes: z.number().int().min(0).max(20160).default(120),
+  maxDaysAhead: z.number().int().min(1).max(180).default(30),
+  mode: z.enum(['GOOGLE_MEET', 'IN_PERSON', 'PHONE']).default('GOOGLE_MEET'),
+  location: optionalText(300),
+  requiresApproval: z.boolean().default(false),
+  isActive: z.boolean().default(true)
+}).strict();
+
+export const meetingDelegatesSchema = z.object({ delegateIds: z.array(uuidSchema).max(10, 'Name at most 10 delegates.') }).strict();
+
+/** A guest booking through a public link. `website` is a honeypot: people never fill it in, bots do. */
+export const publicBookingSchema = z.object({
+  startsAt: isoInstant,
+  name: trimmed(200).min(2, 'Give your name.'),
+  email: emailSchema,
+  phone: z.preprocess(v => (v === '' ? null : v), phoneSchema.nullable().optional()),
+  notes: optionalText(2000),
+  website: z.string().max(200).optional()
+}).strict();
+export const publicBookingCancelSchema = z.object({ reason: optionalText(1000) }).strict();
+export const bookingSlugSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9-]{2,62}[a-z0-9]$/, 'Unknown booking link.');
 // --- Candidate Portal abuse protection (docs/ABUSE_PROTECTION.md) ------------------------------------------------------------------------
 // POST /api/v1/candidate-auth/guard: the portal asks before a sign-in, a reset link or an application. The Turnstile token travels in the
 // x-turnstile-token header, the visitor's address in the signed x-portal-client-* headers.
