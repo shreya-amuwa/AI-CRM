@@ -35,3 +35,4 @@ public/ocr/
 .wrangler/
 .dev.vars
 .dev.vars.*
+.perf-api.tmp

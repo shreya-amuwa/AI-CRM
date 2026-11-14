@@ -4,7 +4,7 @@ import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymen
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { sendInvoiceEmail } from '../invoices/mailer.js';
-import { renderInvoicePdf, type InvoicePdfInput } from '../invoices/pdf.js';
+import type { InvoicePdfInput, renderInvoicePdf } from '../invoices/pdf.js';
 import { invoiceWhatsAppDelivery, invoiceWhatsAppMode, runInvoiceWhatsApp, type InvoiceWhatsAppRunSummary } from '../invoices/whatsapp.js';
 import type { ClaimedStage, GeneratedInvoiceRepository } from '../repositories/GeneratedInvoiceRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
@@ -67,7 +67,8 @@ export class GeneratedInvoiceService {
   constructor(
     private readonly repo: GeneratedInvoiceRepository,
     private readonly storage: StorageRepository,
-    private readonly work: InvoiceWork = { render: renderInvoicePdf, mail: sendInvoiceEmail }
+    // pdf-lib is loaded the first time an invoice PDF is drawn, not on every start of the API.
+    private readonly work: InvoiceWork = { render: async (inv, opts) => (await import('../invoices/pdf.js')).renderInvoicePdf(inv, opts), mail: sendInvoiceEmail }
   ) {}
 
   prefill(customerId: unknown, query: unknown): Promise<InvoicePrefill> {

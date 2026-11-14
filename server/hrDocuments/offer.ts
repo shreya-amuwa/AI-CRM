@@ -14,7 +14,7 @@ import { longDate } from './render.js';
  * The wording is the letter's own (shared/hrLetters.ts: a master template version, possibly edited for this letter) with the employee's values
  * filled in. The same fields give the same bytes, so a preview is exactly what is stored.
  */
-export const OFFER_FILE_PREFIX = 'Offer-Letter';
+export { OFFER_FILE_PREFIX } from './constants.js';
 
 const BLACK = rgb(0, 0, 0);
 const SIZE = 10.5;
