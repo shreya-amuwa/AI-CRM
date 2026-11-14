@@ -11,7 +11,8 @@ import {
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { baAiSettings, callAiJson, checkAnswer, QUOTATION_SYSTEM, SCOPE_SYSTEM } from '../ba/ai.js';
-import { renderQuotationPdf, renderScopePdf } from '../ba/pdf.js';
+// pdf-lib is loaded only when a quotation / scope PDF is drawn, not on every start of the API.
+const baPdf = () => import('../ba/pdf.js');
 import type { BusinessAssociateRepository } from '../repositories/BusinessAssociateRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
 
@@ -97,7 +98,7 @@ export class BusinessAssociateService {
   async finalizeQuotation(id: unknown): Promise<BaQuotation> {
     const quotationId = parse(uuidSchema, id);
     const snap = await this.repo.finalizeQuotationBegin(quotationId);
-    const bytes = await renderQuotationPdf(snap);
+    const bytes = await (await baPdf()).renderQuotationPdf(snap);
     const path = `${snap.departmentId}/${snap.contactId}/quotation-${snap.number}-r${snap.revision}.pdf`;
     const file = await this.storage.storeGenerated(BUCKET, path, bytes, 'application/pdf');
     return this.repo.finalizeQuotationRecord(quotationId, { bucket: BUCKET, path, provider: file.provider, reference: file.reference, etag: file.etag, size: file.size });
@@ -174,7 +175,7 @@ export class BusinessAssociateService {
   async finalizeScope(id: unknown): Promise<BaScope> {
     const scopeId = parse(uuidSchema, id);
     const snap = await this.repo.finalizeScopeBegin(scopeId);
-    const bytes = await renderScopePdf(snap);
+    const bytes = await (await baPdf()).renderScopePdf(snap);
     const path = `${snap.departmentId}/${snap.contactId}/scope-v${snap.version}.pdf`;
     const file = await this.storage.storeGenerated(BUCKET, path, bytes, 'application/pdf');
     return this.repo.finalizeScopeRecord(scopeId, { bucket: BUCKET, path, provider: file.provider, reference: file.reference, etag: file.etag, size: file.size });

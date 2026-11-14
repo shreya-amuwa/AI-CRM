@@ -4,8 +4,10 @@ import { DEFAULT_EXPERIENCE_CONTENT } from '../../shared/hrLetters.js';
 import { hrDocListQuerySchema, hrDocPrefillQuerySchema, hrDocRequestSchema, hrLetterTemplateSaveSchema, hrLetterTemplateVersionParamSchema, hrLetterTypeSchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
-import { OFFER_FILE_PREFIX, renderOfferPdf } from '../hrDocuments/offer.js';
-import { DEFAULT_SIGNATORY, EXPERIENCE_FILE_PREFIX, NDA_FILE_PREFIX, renderExperiencePdf, renderNdaPdf } from '../hrDocuments/render.js';
+import { DEFAULT_SIGNATORY, EXPERIENCE_FILE_PREFIX, NDA_FILE_PREFIX, OFFER_FILE_PREFIX } from '../hrDocuments/constants.js';
+// The PDF drawing code (and pdf-lib) is loaded only when a letter is actually generated, not on every start of the API.
+const pdfOffer = () => import('../hrDocuments/offer.js');
+const pdfLetters = () => import('../hrDocuments/render.js');
 import type { HrDocumentRepository } from '../repositories/HrDocumentRepository.js';
 import type { StorageRepository } from '../repositories/StorageRepository.js';
 
@@ -35,11 +37,11 @@ export class HrDocumentService {
     if (!p.ready) throw new AppError('VALIDATION_ERROR', p.problems[0]?.message ?? 'This letter cannot be made for this employee.');
     const e = p.employee;
     if (req.type === 'NDA') {
-      return { req, e, fields: { ...req.fields }, bytes: await renderNdaPdf(req.fields), fileName: `${NDA_FILE_PREFIX}-${slug(e.name)}-${req.fields.letterDate}.pdf` };
+      return { req, e, fields: { ...req.fields }, bytes: await (await pdfLetters()).renderNdaPdf(req.fields), fileName: `${NDA_FILE_PREFIX}-${slug(e.name)}-${req.fields.letterDate}.pdf` };
     }
     if (req.type === 'OFFER') {
       // the wording (a master version, possibly edited for this letter) is stored with the letter: a later master edit never changes it
-      return { req, e, fields: { ...req.fields }, bytes: await renderOfferPdf(req.fields), fileName: `${OFFER_FILE_PREFIX}-${slug(e.name)}-${req.fields.letterDate}.pdf` };
+      return { req, e, fields: { ...req.fields }, bytes: await (await pdfOffer()).renderOfferPdf(req.fields), fileName: `${OFFER_FILE_PREFIX}-${slug(e.name)}-${req.fields.letterDate}.pdf` };
     }
     const f = req.fields;
     const content = f.content ?? DEFAULT_EXPERIENCE_CONTENT;
@@ -50,7 +52,7 @@ export class HrDocumentService {
     return {
       req, e,
       fields: { ...f, joiningDate: e.joiningDate, content, templateVersion },
-      bytes: await renderExperiencePdf(f, e.joiningDate, content),
+      bytes: await (await pdfLetters()).renderExperiencePdf(f, e.joiningDate, content),
       fileName: `${EXPERIENCE_FILE_PREFIX}-${slug(e.name)}-${f.letterDate}.pdf`
     };
   }

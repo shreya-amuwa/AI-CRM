@@ -7,18 +7,8 @@ import { SecureChatProvider } from './lib/chat/useSecureChat';
 import { TabProvider, useTabs } from './context/TabContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { SessionEvictionModal } from './components/auth/SessionEvictionModal';
-import { SuperAdminDashboard } from './components/superadmin/SuperAdminDashboard';
 import { Header } from './components/layout/Header';
 import { ClientNotices } from './components/notices/ClientNotices';
-import { ProbationConfirmations } from './components/hr/ProbationConfirmations';
-import { PaidLeaveManagement } from './components/hr/PaidLeaveManagement';
-import { RecruitmentManagement } from './components/hr/RecruitmentManagement';
-import { EmployeeIssuesManagement } from './components/hr/EmployeeIssuesManagement';
-import { HrEmployeeRequestsPage } from './components/employees/HrEmployeeRequestsPage';
-import { MeetingRequestsManagement } from './components/hr/MeetingRequestsManagement';
-import { HrLettersPage } from './components/departments/hr/HrLettersPage';
-import { TrainingWorkspace } from './components/hr/TrainingWorkspace';
-import { BusinessReports } from './components/reports/BusinessReports';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
@@ -35,6 +25,18 @@ import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole 
 
 // Dashboards and department panels are loaded on demand, so signing in only
 // downloads the code for the screen the user actually opens.
+// Role- and page-specific screens are loaded when they are opened, not for everyone at sign-in (each pulls in large feature code that a
+// Team Member, a Sales user or an Accounts user never uses: staff management, top performers, HR pages, reports).
+const SuperAdminDashboard = lazy(() => import('./components/superadmin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
+const TrainingWorkspace = lazy(() => import('./components/hr/TrainingWorkspace').then(m => ({ default: m.TrainingWorkspace })));
+const RecruitmentManagement = lazy(() => import('./components/hr/RecruitmentManagement').then(m => ({ default: m.RecruitmentManagement })));
+const ProbationConfirmations = lazy(() => import('./components/hr/ProbationConfirmations').then(m => ({ default: m.ProbationConfirmations })));
+const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
+const EmployeeIssuesManagement = lazy(() => import('./components/hr/EmployeeIssuesManagement').then(m => ({ default: m.EmployeeIssuesManagement })));
+const HrEmployeeRequestsPage = lazy(() => import('./components/employees/HrEmployeeRequestsPage').then(m => ({ default: m.HrEmployeeRequestsPage })));
+const MeetingRequestsManagement = lazy(() => import('./components/hr/MeetingRequestsManagement').then(m => ({ default: m.MeetingRequestsManagement })));
+const HrLettersPage = lazy(() => import('./components/departments/hr/HrLettersPage').then(m => ({ default: m.HrLettersPage })));
+const BusinessReports = lazy(() => import('./components/reports/BusinessReports').then(m => ({ default: m.BusinessReports })));
 const SupportMemberDashboard = lazy(() => import('./components/support-member/SupportMemberDashboard').then(m => ({ default: m.SupportMemberDashboard })));
 const StaffManagementPanel = lazy(() => import('./components/common/StaffManagementPanel').then(m => ({ default: m.StaffManagementPanel })));
 const AmuwaHqPanel = lazy(() => import('./components/departments/amuwa/AmuwaHqPanel').then(m => ({ default: m.AmuwaHqPanel })));
@@ -388,7 +390,7 @@ const MainAppContent: React.FC = () => {
     if (user.role !== 'superadmin') return <ScreenLoader />;
     return (
       <div className="bg-slate-50 text-slate-900 min-h-screen">
-        <SuperAdminDashboard />
+        <Suspense fallback={<ScreenLoader />}><SuperAdminDashboard /></Suspense>
         <SessionEvictionModal />
       </div>
     );
@@ -524,23 +526,23 @@ const MainAppContent: React.FC = () => {
               /* Super Admin of Wabastore Support: Team Members, Access Control, Team Performance, Customers, Tickets */
               <SupportSuperAdminDashboard activeTab={currentActiveTab} />
             ) : currentActiveTab === 'staff_add' && currentDeptId === 'hr' ? (
-              <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" />
+              <Suspense fallback={<ScreenLoader />}><StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view="add" /></Suspense>
             ) : currentActiveTab === 'hr_requests' && currentDeptId === 'hr' ? (
-              <HrEmployeeRequestsPage />
+              <Suspense fallback={<ScreenLoader />}><HrEmployeeRequestsPage /></Suspense>
             ) : currentActiveTab === 'hr_recruitment' && currentDeptId === 'hr' ? (
-              <RecruitmentManagement />
+              <Suspense fallback={<ScreenLoader />}><RecruitmentManagement /></Suspense>
             ) : currentActiveTab === 'hr_training' && currentDeptId === 'hr' ? (
-              <TrainingWorkspace />
+              <Suspense fallback={<ScreenLoader />}><TrainingWorkspace /></Suspense>
             ) : currentActiveTab === 'hr_probation' && currentDeptId === 'hr' ? (
-              <ProbationConfirmations />
+              <Suspense fallback={<ScreenLoader />}><ProbationConfirmations /></Suspense>
             ) : currentActiveTab === 'hr_paid_leave' && currentDeptId === 'hr' ? (
-              <PaidLeaveManagement />
+              <Suspense fallback={<ScreenLoader />}><PaidLeaveManagement /></Suspense>
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (
-              <EmployeeIssuesManagement />
+              <Suspense fallback={<ScreenLoader />}><EmployeeIssuesManagement /></Suspense>
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
-              <MeetingRequestsManagement />
+              <Suspense fallback={<ScreenLoader />}><MeetingRequestsManagement /></Suspense>
             ) : (currentActiveTab === 'hr_letter_nda' || currentActiveTab === 'hr_letter_offer' || currentActiveTab === 'hr_letter_experience') && currentDeptId === 'hr' ? (
-              <HrLettersPage initialType={currentActiveTab === 'hr_letter_nda' ? 'NDA' : currentActiveTab === 'hr_letter_offer' ? 'OFFER' : 'EXPERIENCE'} />
+              <Suspense fallback={<ScreenLoader />}><HrLettersPage initialType={currentActiveTab === 'hr_letter_nda' ? 'NDA' : currentActiveTab === 'hr_letter_offer' ? 'OFFER' : 'EXPERIENCE'} /></Suspense>
             ) : currentActiveTab === 'hr_field_tracking' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><ActiveFieldVisits audience="hr" /></Suspense>
             ) : currentActiveTab === 'hr_reviews' && currentDeptId === 'hr' ? (
@@ -548,9 +550,9 @@ const MainAppContent: React.FC = () => {
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
             ) : currentActiveTab === 'business_reports' && currentDeptId === 'accounts' ? (
-              <BusinessReports />
+              <Suspense fallback={<ScreenLoader />}><BusinessReports /></Suspense>
             ) : currentActiveTab === 'staff_access' ? (
-              <StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view={currentDeptId === 'hr' ? 'manage' : 'all'} />
+              <Suspense fallback={<ScreenLoader />}><StaffManagementPanel departmentSlug={currentDeptId} subDept={currentSubDept} view={currentDeptId === 'hr' ? 'manage' : 'all'} /></Suspense>
             ) : currentActiveTab === 'chat' ? (
               <ChatRoute />
             ) : currentActiveTab === 'notifications' ? (

@@ -1,4 +1,5 @@
-import nodemailer from 'nodemailer';
+// Type only: nodemailer itself is loaded in sendSmtp, when a message is really sent through SMTP (it is slow to load, so it is kept out of every start of the API).
+import type nodemailer from 'nodemailer';
 import type { AutomationSettings } from './config.js';
 import { buildMime, formatMailbox, smtpSendRaw, SmtpError, socketConnector } from './smtpSocket.js';
 import { signRequest } from '../storage/sigv4.js';
@@ -97,7 +98,8 @@ async function sendSmtp(s: AutomationSettings, to: { email: string; name: string
   if (socketConnector()) return sendSmtpSocket(s, to, mail, attachments);
   let transport: ReturnType<typeof nodemailer.createTransport>;
   try {
-    transport = nodemailer.createTransport({
+    const { default: nodemailerModule } = await import('nodemailer');
+    transport = nodemailerModule.createTransport({
       host: smtp.host,
       port: smtp.port,
       secure: smtp.secure,

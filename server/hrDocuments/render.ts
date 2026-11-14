@@ -16,10 +16,8 @@ import { EXPERIENCE_TEMPLATE_BASE64, NDA_TEMPLATE_BASE64 } from './templateAsset
  * The same fields give the same bytes (the PDF dates are the letter's date), so a preview is exactly what is stored.
  */
 
-export const NDA_FILE_PREFIX = 'NDA';
-export const EXPERIENCE_FILE_PREFIX = 'Experience-Letter';
-/** The signatory printed on the supplied Experience Letter. HR can change it per letter. */
-export const DEFAULT_SIGNATORY = { name: 'Aarti Kalange', title: 'Ceo' };
+// (the file-name prefixes and the default signatory live in ./constants.ts so callers that only need them do not load pdf-lib)
+export { NDA_FILE_PREFIX, EXPERIENCE_FILE_PREFIX, DEFAULT_SIGNATORY } from './constants.js';
 
 type Fonts = { regular: PDFFont; bold: PDFFont };
 interface Run { text: string; bold?: boolean }
