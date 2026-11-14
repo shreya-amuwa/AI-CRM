@@ -167,6 +167,16 @@ const base = `http://127.0.0.1:${appPort}`;
   check(r.status === 404, 'a missing script is 404, not the app page');
   r = await fetch(`${base}/documentation/`);
   check(r.status === 200 && /<html/i.test(await r.text()), 'the documentation site is served');
+  // The Privacy Policy and Terms of Service (Google's sign-in consent screen links to them): public, readable without any script.
+  for (const [path, title] of [['/privacy', 'Privacy Policy'], ['/terms', 'Terms of Service']]) {
+    r = await fetch(`${base}${path}/`);
+    const page = await r.text();
+    check(r.status === 200 && page.includes(`<h1>${title}</h1>`) && !/<script/i.test(page) && r.headers.get('x-frame-options') === 'DENY', `${path}/ serves the ${title}, without scripts, with the security headers`);
+    r = await fetch(`${base}${path}`);
+    check(r.status === 200 && r.url.endsWith(`${path}/`) && (await r.text()).includes(`<h1>${title}</h1>`), `${path} (no closing slash) reaches the ${title}`, { url: r.url, status: r.status });
+  }
+  r = await fetch(`${base}/privacy/`);
+  check((await r.text()).includes('Limited Use requirements'), 'the Privacy Policy carries Google\'s Limited Use statement');
 }
 
 // ---- 3. the API against the database ------------------------------------------------------------------------------------------
