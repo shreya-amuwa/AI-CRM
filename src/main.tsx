@@ -19,6 +19,8 @@ if (/^\/(candidate|careers)(\/|$)/.test(window.location.pathname)) window.locati
 // The user documentation is a static site served at /documentation/ (built with the app). Only the address without the closing slash
 // reaches the app, so send it on.
 if (window.location.pathname === '/documentation') window.location.replace('/documentation/' + window.location.search + window.location.hash);
+// The Privacy Policy and Terms of Service are static pages too (public/privacy/, public/terms/): no sign-in, no script.
+if (window.location.pathname === '/privacy' || window.location.pathname === '/terms') window.location.replace(window.location.pathname + '/' + window.location.search + window.location.hash);
 
 // A set-password link that Supabase could not send to our page (expired or already used) lands on the site's main address with
 // #error=...otp_expired. Show the client the friendly "this link has expired" page instead of the staff sign-in.
