@@ -5856,3 +5856,44 @@ export interface LeadUploadIssues {
   batch: LeadUploadBatch;
   rows: { row: number; outcome: Exclude<LeadUploadOutcome, 'NEW' | 'CREATED'>; message: string | null; data: Partial<LeadUploadRawRow> }[];
 }
+
+// ---------------------------------------------------------------------------
+// BolifyAI panel recharge reminder calls (GET /reminder-calls; Super Admin and HR staff)
+// ---------------------------------------------------------------------------
+/** SCHEDULED / RETRY / PROCESSING / DRY_RUN read as "Pending"; ACCEPTED as "Submitted" (BolifyAI took the request, not "answered"). */
+export type ReminderCallStatus = 'SCHEDULED' | 'PROCESSING' | 'ACCEPTED' | 'COMPLETED' | 'FAILED' | 'RETRY' | 'SKIPPED' | 'CANCELLED' | 'DRY_RUN';
+export interface ReminderCallRow {
+  id: string;
+  customerId: string;
+  customer: string;
+  company: string | null;
+  /** Masked (+91XXXXXX1234); null when the customer has no valid mobile. */
+  phone: string | null;
+  serviceCode: string;
+  serviceName: string;
+  planName: string | null;
+  /** Calendar dates (Asia/Kolkata), YYYY-MM-DD. */
+  expiryDate: string;
+  daysLeft: number;
+  stage: number;
+  scheduledDate: string;
+  /** UTC timestamps (ISO); shown in IST. */
+  submittedAt: string | null;
+  status: ReminderCallStatus;
+  attempts: number;
+  responseCode: number | null;
+  response: { httpStatus?: number; success?: boolean; message?: string; callId?: string } | null;
+  callId: string | null;
+  callOutcome: 'COMPLETED' | 'NOT_ANSWERED' | 'BUSY' | 'FAILED' | null;
+  callDurationSeconds: number | null;
+  completedAt: string | null;
+  reason: string | null;
+  updatedAt: string;
+}
+export interface ReminderCallList {
+  today: string;
+  total: number;
+  counts: { all: number; stage7: number; stage5: number; stage1: number; pending: number; submitted: number; failed: number; completed: number; skipped: number };
+  lastSchedule: { ranAt: string; day: string; created: number; cancelled: number } | null;
+  rows: ReminderCallRow[];
+}

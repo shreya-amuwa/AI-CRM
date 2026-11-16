@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 
 /**
- * Subscription expiry reminder calls (7, 3 and 1 day before a service expires).
+ * Panel recharge / subscription expiry reminder calls (7, 5 and 1 day before a service expires; Asia/Kolkata calendar days).
  *
  * The database decides WHAT is due and keeps one row per customer, service, expiry date and stage under a unique key
  * (sub_reminder_schedule), re-checks eligibility the moment a reminder is claimed (renewed, cancelled, no consent, no mobile,
@@ -11,8 +11,8 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
  * AUTOMATION_MODE_AI_CALL:
  *   off      nothing happens.
  *   dry_run  (default) reminders are decided and logged as "would call"; nobody is called, nothing leaves the server.
- *   live     calls are placed through the calling provider (BolifyAI, see bolify.ts). Without BOLIFY_WEBHOOK_URL there is no provider, so live
- *            behaves like "off" and says so: nobody is called.
+ *   live     calls are placed through the calling provider (BolifyAI, see bolify.ts: BOLIFY_API_KEY, or the older BOLIFY_WEBHOOK_URL). Without
+ *            either there is no provider, so live behaves like "off" and says so: nobody is called.
  */
 export type AiCallMode = 'off' | 'dry_run' | 'live';
 
@@ -33,7 +33,8 @@ export interface ReminderRunSummary {
 export interface ReminderCall {
   id: string;
   attempts: number;
-  stage: 7 | 3 | 1;
+  /** 7, 5 or 1 (3 only on reminders made before the 7 / 5 / 1 change). */
+  stage: 7 | 5 | 3 | 1;
   expiryDate: string;
   daysLeft: number;
   phone: string;
@@ -50,7 +51,7 @@ export interface ReminderCall {
 
 /** A calling provider (BolifyAI: bolify.ts). SKIPPED is for a call the provider layer chose not to place (for example a staging allow-list). */
 export interface ReminderCallSender {
-  place(call: ReminderCall): Promise<{ outcome: 'ACCEPTED' | 'RETRY' | 'FAILED' | 'SKIPPED'; detail: string; code?: number | null; callId?: string | null }>;
+  place(call: ReminderCall): Promise<{ outcome: 'ACCEPTED' | 'RETRY' | 'FAILED' | 'SKIPPED'; detail: string; code?: number | null; callId?: string | null; response?: { httpStatus: number; success?: boolean; message?: string; callId?: string } | null }>;
 }
 
 export function aiCallMode(env: NodeJS.ProcessEnv = process.env): AiCallMode {
@@ -69,7 +70,7 @@ export async function runSubscriptionReminders(
   if (mode === 'off') return { ...out, note: 'Reminder calls are switched off (AUTOMATION_MODE_AI_CALL=off).' };
   if (!opts.db && !hasServiceClient()) return { ...out, note: 'The server has no service key.' };
   if (mode === 'live' && !opts.sender) {
-    return { ...out, mode: 'off', note: 'Live calling is not available: no calling provider is connected (set BOLIFY_WEBHOOK_URL). Nothing was scheduled or called.' };
+    return { ...out, mode: 'off', note: 'Live calling is not available: no calling provider is connected (set BOLIFY_API_KEY, or the older BOLIFY_WEBHOOK_URL). Nothing was scheduled or called.' };
   }
   const db = opts.db ?? getServiceClient();
   try {
@@ -85,7 +86,7 @@ export async function runSubscriptionReminders(
       if (calls.length === 0) break;
       for (const call of calls) {
         out.claimed += 1;
-        let result: { outcome: 'DRY_RUN' | 'ACCEPTED' | 'RETRY' | 'FAILED' | 'SKIPPED'; detail: string; code?: number | null; callId?: string | null };
+        let result: { outcome: 'DRY_RUN' | 'ACCEPTED' | 'RETRY' | 'FAILED' | 'SKIPPED'; detail: string; code?: number | null; callId?: string | null; response?: { httpStatus: number; success?: boolean; message?: string; callId?: string } | null };
         if (mode !== 'live' || !opts.sender) {
           result = {
             outcome: 'DRY_RUN',
@@ -95,12 +96,16 @@ export async function runSubscriptionReminders(
           try {
             result = await opts.sender.place(call);
           } catch (err) {
-            result = { outcome: 'RETRY', detail: `Could not reach the calling service (${(err as Error).name || 'error'}).` };
+            // the request may have left: not retried, so the customer is never called twice
+            result = { outcome: 'FAILED', detail: `The call could not be confirmed (${(err as Error).name || 'error'}). Not retried automatically.` };
           }
         }
-        const fin = await db.rpc('sub_reminder_finish', {
-          p_reminder: call.id, p_outcome: result.outcome, p_detail: result.detail, p_response_code: result.code ?? null, p_call_id: result.callId ?? null
-        });
+        const args = { p_reminder: call.id, p_outcome: result.outcome, p_detail: result.detail, p_response_code: result.code ?? null, p_call_id: result.callId ?? null };
+        let fin = await db.rpc('sub_reminder_finish', result.response ? { ...args, p_response: result.response } : args);
+        // a database without 20270103000100 has no p_response yet: record the attempt without the reply rather than losing it
+        if (fin.error && result.response && /p_response|PGRST202|function/i.test(`${fin.error.code ?? ''} ${fin.error.message}`)) {
+          fin = await db.rpc('sub_reminder_finish', args);
+        }
         if (fin.error) throw new Error(`sub_reminder_finish: ${fin.error.message}`);
         const status = (fin.data as { status: string }).status;
         if (status === 'DRY_RUN') out.dryRun += 1;

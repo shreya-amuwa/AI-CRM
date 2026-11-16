@@ -68,6 +68,11 @@ export const welcomeEmailsController = {
   resend: (async ctx => { const r = await svc(ctx).welcomeEmails.resend(ctx.params.id); await welcomeEmailQuietly(); return ok(r); }) as Handler
 };
 
+// BolifyAI panel recharge reminder calls: read only (the database checks the Super Admin / HR staff)
+export const reminderCallsController = {
+  list: (async ctx => ok(await svc(ctx).reminderCalls.list(ctx.req.query))) as Handler
+};
+
 export const employeesController = {
   submit: (async ctx => ok(await svc(ctx).employees.submit(ctx.actor, ctx.req.body), 201)) as Handler,
   list: (async ctx => ok(await svc(ctx).employees.list(ctx.actor, ctx.req.query))) as Handler,

@@ -8,6 +8,7 @@ import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, Tr
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   WelcomeEmailItem, WelcomeEmailList,
+  ReminderCallList,
   OperationsHeadReviewItem, OperationsOverviewRow,
   CustomerWorkflow, CustomerWorkflowStatuses, TcWorkflowStatus, MetaWorkflowStatus,
   PerformersDepartment, PerformersCompany, PerformerRecognition, PerformerEvaluationRun,
@@ -1008,6 +1009,11 @@ export const workflowApi = {
 export const welcomeEmailsApi = {
   list: (q: { status?: string; employee?: string } = {}) => api.get<WelcomeEmailList>('/welcome-emails', { ...q }),
   resend: (employeeId: string) => api.post<WelcomeEmailItem>(`/welcome-emails/${employeeId}/resend`, {})
+};
+
+/** BolifyAI panel recharge reminder calls (7, 5 and 1 day before expiry): read only, for the Super Admin and HR staff. */
+export const reminderCallsApi = {
+  list: (q: { filter?: string; page?: number; pageSize?: number } = {}) => api.get<ReminderCallList>('/reminder-calls', { ...q })
 };
 
 export const employeesApi = {

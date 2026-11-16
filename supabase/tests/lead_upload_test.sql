@@ -1,5 +1,5 @@
 -- =============================================================================
--- Upload Leads (migration 20270103000100): every Sales employee uploads leads; each lead is made by create_lead and owned by the uploader unless the
+-- Upload Leads (migration 20270104000100): every Sales employee uploads leads; each lead is made by create_lead and owned by the uploader unless the
 -- existing assignment rule allows another owner; duplicates and invalid rows are reported and never created; a retried chunk creates nothing twice.
 -- Runs at the end of run.sh (uses the Wabastore / Whatsbox users of the earlier suites).
 -- =============================================================================

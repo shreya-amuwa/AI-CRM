@@ -1,4 +1,4 @@
-# Subscription expiry reminder calls (7, 3 and 1 day before expiry)
+# Subscription expiry reminder calls (7, 5 and 1 day before expiry)
 
 **Status: the decision, tracking and BolifyAI sender are built.** By default the system runs in *dry run*: it decides which reminders are due
 and records "would call", and nothing leaves the server. With `BOLIFY_WEBHOOK_URL` set and `AUTOMATION_MODE_AI_CALL=live` the calls are placed
@@ -12,7 +12,7 @@ Invoice, payment and activation dates are never used. Set them with the Excel im
 ## How it works
 | Piece | What it does |
 |---|---|
-| `sub_reminder_schedule()` | Daily decider. Creates one reminder for each customer + service + expiry date + stage (7, 3, 1) where the expiry is exactly that many calendar days away (Asia/Kolkata). Unique key `SUBREM\|customer\|service\|expiry\|stage`: running it twice, or from two servers, creates nothing twice. A day that was missed is not made up. |
+| `sub_reminder_schedule()` | Daily decider. Creates one reminder for each customer + service + expiry date + stage (7, 5, 1 since `20270103000100`; 7, 3, 1 before) where the expiry is exactly that many calendar days away (Asia/Kolkata). Unique key `SUBREM\|customer\|service\|expiry\|stage`: running it twice, or from two servers, creates nothing twice. A day that was missed is not made up. |
 | `sub_reminder_claim()` | Takes due reminders (SKIP LOCKED + lease). Re-checks at that moment: expiry date changed or service renewed / cancelled / paused / expired → **cancelled**; consent missing or "do not call", or no valid Indian mobile → **skipped** with the reason; call window closed → **skipped** (never sent late, never in a burst the next day). |
 | `sub_reminder_finish()` | Records DRY_RUN / ACCEPTED / RETRY / FAILED / SKIPPED. **ACCEPTED means the provider took the request, not that a call happened.** At most 3 attempts (10 then 30 minutes apart), then FAILED. A live attempt whose result was never recorded (server stopped) is failed, not repeated, so a customer is not called twice. |
 | `subscription_reminder_events` | Append-only log of every step. Audit log entries: `SUBSCRIPTION_REMINDER_ACCEPTED / _FAILED`, `CUSTOMER_CALL_CONSENT_CHANGED`, `CUSTOMER_SERVICE_TERM_CHANGED`, `REMINDER_CALL_SETTINGS_CHANGED`. |
@@ -35,7 +35,7 @@ Invoice, payment and activation dates are never used. Set them with the Excel im
 | `CRON_SECRET` / `AUTOMATION_DISPATCH_SECRET` | Authenticate the scheduler endpoint (16+ characters). |
 
 ## The same reminders by e-mail and WhatsApp (Wabastore)
-The same three stages (7, 3 and 1 day before the expiry date) are also sent as an **e-mail** and a **WhatsApp message**. They reuse the call reminders' table,
+E-mail and WhatsApp keep their own stages (15, 7, 3 and 1 day before the expiry date and on it, see `SUBSCRIPTION_ACTIVATION.md`) and are sent as an **e-mail** and a **WhatsApp message**. They reuse the call reminders' table,
 schedule, window (10:00 to 19:00 IST), retry rules (3 attempts, 10 then 30 minutes apart), audit trail and customer timeline; a row now has a `channel`
 (`CALL`, `EMAIL`, `WHATSAPP`). The unique key includes the channel, so one customer + service + expiry + stage + channel is created once.
 

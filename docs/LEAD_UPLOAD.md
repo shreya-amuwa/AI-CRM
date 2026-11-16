@@ -96,7 +96,7 @@ is never created, and never changes the existing record. The message names the e
 
 ## Rollout
 
-Run `supabase/migrations/20270103000100_lead_bulk_upload.sql` once in the Supabase SQL editor (safe to run again; adds two tables, one nullable column,
+Run `supabase/migrations/20270104000100_lead_bulk_upload.sql` once in the Supabase SQL editor (safe to run again; adds two tables, one nullable column,
 one trigger and functions; redefines `private.tg_customers_after_write` with one added condition). Until it is run the button opens the window and the
 preview shows the database error; nothing else changes.
 

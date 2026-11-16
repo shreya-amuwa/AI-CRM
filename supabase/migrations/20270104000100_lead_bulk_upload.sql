@@ -16,7 +16,7 @@
 --    that fails leaves no half-made lead and does not stop the others. A retried chunk does not create anything twice (one outcome per row).
 --
 -- Additive and safe to run twice: new tables, one nullable column, one trigger, new functions. Nothing is deleted or changed in existing data.
--- Run after 20270102000100_customers_rls_set_based.sql.
+-- Run after 20270103000100_bolify_recharge_reminder_calls.sql.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
