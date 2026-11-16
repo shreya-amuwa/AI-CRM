@@ -105,6 +105,7 @@ export const LeadWhatsAppSettingsPage: React.FC = () => {
       {s && (
         <>
           <ModeBanner s={s} />
+          {s.templateName === META_TEMPLATE.name && <MetaTemplate />}
           <SettingsForm key={s.updatedAt} settings={s} justSaved={justSaved} onSaved={v => { setS(v); setJustSaved(true); }} />
           <Recent s={s} />
         </>
@@ -112,6 +113,31 @@ export const LeadWhatsAppSettingsPage: React.FC = () => {
     </div>
   );
 };
+
+/** The template submitted to Meta (Utility, English). The settings must give its three variables in this order. docs/LEAD_WHATSAPP.md has the same text. */
+export const META_TEMPLATE = {
+  name: 'amuwa_services_intro',
+  body: [
+    'Hello {{1}}, thank you for your enquiry with Amuwa Corporation.',
+    'Your request has been assigned to {{2}}, your sales executive, who will contact you shortly about your requirement.',
+    'For reference, we support businesses with WhatsApp Business API, Blue Tick verification, RCS messaging and website development.',
+    'You can reach your sales executive directly on {{3}}. Reply to this message if you would like to change the time of the call.'
+  ],
+  variables: ['LEAD_NAME', 'SALES_PERSON_NAME', 'SALES_PERSON_PHONE'] as LeadWhatsAppVariable[]
+};
+
+const MetaTemplate: React.FC = () => (
+  <section className="rounded-xl border border-slate-200 p-4 space-y-2" aria-label="Template submitted to Meta">
+    <h3 className="text-sm font-bold text-slate-900">Template submitted to Meta</h3>
+    <p className="text-[11px] text-slate-500">{META_TEMPLATE.name} · Utility · English · footer "Amuwa Corporation"</p>
+    <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-slate-800 space-y-2 break-words">
+      {META_TEMPLATE.body.map((line, i) => <p key={i}>{line}</p>)}
+    </div>
+    <p className="text-[11px] text-slate-500">
+      {META_TEMPLATE.variables.map((v, i) => `{{${i + 1}}} ${variableLabel(v)}`).join(' · ')}. Keep the variables below in this order.
+    </p>
+  </section>
+);
 
 const ModeBanner: React.FC<{ s: LeadWhatsAppSettings }> = ({ s }) => {
   const mode = s.delivery?.mode ?? 'dry_run';

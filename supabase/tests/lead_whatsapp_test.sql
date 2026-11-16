@@ -8,6 +8,12 @@
 \echo '--- lead welcome WhatsApp'
 reset role;
 select set_config('request.jwt.claims', '', false);
+-- a fresh database starts with the template submitted to Meta, switched off and not approved (a database where someone saved settings keeps theirs)
+select test.check((select updated_by is not null
+                          or (not enabled and template_name = 'amuwa_services_intro' and template_language = 'en' and not template_approved
+                              and variables = array['LEAD_NAME', 'SALES_PERSON_NAME', 'SALES_PERSON_PHONE'])
+                     from lead_whatsapp_settings),
+  'fresh settings: amuwa_services_intro (en), lead name / sales person name / phone, switched off, not approved');
 -- a clean start when the suite is run twice on the same database
 delete from lead_whatsapp_dispatches;
 delete from customer_activities where customer_id in (select id from customers where name like 'LW %');

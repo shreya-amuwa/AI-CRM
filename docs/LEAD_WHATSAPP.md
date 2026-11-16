@@ -20,6 +20,40 @@ A lead gets **one** WhatsApp message about the services of Amuwa Corporation. It
 - **No valid number.** A lead with no valid Indian WhatsApp or mobile number is recorded as *Skipped*. It gets "Send again" once a number is added.
 - **When it goes out.** Straight after the assignment. The scheduled automation run (`/internal/automations/dispatch`) retries and picks up anything left waiting.
 
+## The Meta template
+Submit this to Meta, through Wabastore or WhatsApp Manager. A fresh database already has these settings filled in, switched off and not approved.
+
+- **Name:** `amuwa_services_intro`
+- **Category:** Utility
+- **Language:** English (`en`)
+- **Variables:** `{{1}}` lead name, `{{2}}` sales person name, `{{3}}` sales person phone. These match the CRM settings LEAD_NAME, SALES_PERSON_NAME, SALES_PERSON_PHONE, in that order.
+- **Body:**
+
+```
+Hello {{1}}, thank you for your enquiry with Amuwa Corporation.
+
+Your request has been assigned to {{2}}, your sales executive, who will contact you shortly about your requirement.
+
+For reference, we support businesses with WhatsApp Business API, Blue Tick verification, RCS messaging and website development.
+
+You can reach your sales executive directly on {{3}}. Reply to this message if you would like to change the time of the call.
+```
+
+- **Footer:** `Amuwa Corporation`. Optional.
+- **Buttons:** none. Buttons that link to offers push a template towards Marketing.
+- **Sample values for Meta's review form:** `{{1}}` Ravi Joshi, `{{2}}` Priya Shah, `{{3}}` +91 98765 43210.
+
+**Getting it filed as Utility.** Meta classifies a template by its content, not by the category you pick. A template it judges promotional is re-filed as Marketing. This text is built to stay on the Utility side:
+- it confirms the lead's own enquiry and who will handle it;
+- the services line is neutral ("for reference, we support…");
+- it has no offers, prices, discounts or "buy now".
+
+Because the services line is there, Meta may still re-file it. If that happens, removing that one line is the surest way to get Utility.
+
+**Opt-in.** WhatsApp business messages, Utility included, should only go to people who asked to hear from you. Leads from telecaller sheet uploads and imports are often cold contacts. If they block or report the message, the number's quality rating drops and its sending limits can fall. Watch the quality rating in WhatsApp Manager after going live.
+
+When the template name in the settings is `amuwa_services_intro`, the *Lead Welcome WhatsApp* page shows this text in a "Template submitted to Meta" box.
+
 ## Settings (Super Admin, Sales Department Head)
 Open *Lead Welcome WhatsApp* in either menu: the Super Admin's Automations group, or the Sales Department Head dashboard.
 
@@ -81,10 +115,10 @@ A missing value is never sent empty, because WhatsApp refuses a template with an
 ## Going live
 1. Run the migration in the Supabase SQL editor.
 2. Make sure `WABASTORE_WEBHOOK_URL` and `WABASTORE_API_KEY` are set on the server.
-3. In *Lead Welcome WhatsApp*:
+3. Submit `amuwa_services_intro` (above) to Meta. Once it is approved, in *Lead Welcome WhatsApp*:
+   - check the template name, language and variables (already filled in on a fresh database);
    - switch it on;
-   - enter the template name, its language and its variables in order;
-   - tick "approved" once Meta has approved the template.
+   - tick "approved".
 4. Optional: try it on a staging number first with `AUTOMATION_TEST_RECIPIENTS`.
 5. Set `AUTOMATION_MODE_LEAD_WHATSAPP=live`, or `AUTOMATION_MODE=live`, which also covers the other automations.
 

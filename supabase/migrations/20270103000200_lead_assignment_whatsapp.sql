@@ -34,7 +34,11 @@ create table if not exists public.lead_whatsapp_settings (
   updated_by uuid references public.profiles (id) on delete set null,
   updated_at timestamptz not null default now()
 );
-insert into public.lead_whatsapp_settings (id) values (true) on conflict (id) do nothing;
+-- starts with the template submitted to Meta (docs/LEAD_WHATSAPP.md, "The Meta template"), switched OFF and NOT approved: nothing is sent until
+-- the Super Admin / Sales Department Head switches it on and ticks "approved" once Meta has approved it. A database that already has the row keeps it.
+insert into public.lead_whatsapp_settings (id, enabled, template_name, template_language, template_approved, variables)
+values (true, false, 'amuwa_services_intro', 'en', false, array['LEAD_NAME', 'SALES_PERSON_NAME', 'SALES_PERSON_PHONE'])
+on conflict (id) do nothing;
 alter table public.lead_whatsapp_settings enable row level security;
 revoke all on public.lead_whatsapp_settings from public, anon, authenticated;
 

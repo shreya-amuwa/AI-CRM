@@ -104,6 +104,10 @@ try {
     check(saved.enabled && saved.templateName === 'amuwa_services_intro' && saved.templateApproved && saved.variables.join() === 'LEAD_NAME,SALES_PERSON_PHONE,SALES_PERSON_NAME',
       `${label}: on, the template, its approval and the variables in the chosen order are saved`, saved);
     check(await page.getByText('Live', { exact: true }).isVisible(), `${label}: now live`);
+    check(await page.getByRole('region', { name: 'Template submitted to Meta' }).isVisible()
+      && await page.getByText(/Your request has been assigned to \{\{2\}\}, your sales executive/).isVisible()
+      && await page.getByText(/\{\{1\}\} Lead name · \{\{2\}\} Sales person name · \{\{3\}\} Sales person phone/).isVisible(),
+      `${label}: the template submitted to Meta is shown with its variables`);
 
     // changing the approved template asks for the approval again
     await page.getByLabel(/Template name/).fill('amuwa_services_intro_v2');
