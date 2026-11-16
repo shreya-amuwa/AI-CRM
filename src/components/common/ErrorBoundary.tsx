@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import * as Sentry from '@sentry/react';
 import { isChunkLoadError, reloadForNewVersion } from '../../lib/chunkReload';
 
 interface Props {
@@ -24,8 +25,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary caught error]:', error, errorInfo);
-    // An old tab after a deployment: reload once to get the new version.
-    if (isChunkLoadError(error)) reloadForNewVersion();
+    // An old tab after a deployment: reload once to get the new version (not a defect, not reported).
+    if (isChunkLoadError(error)) { reloadForNewVersion(); return; }
+    // A screen that crashed: reported with the component stack (the report is masked, see src/instrument.ts); does nothing without a DSN.
+    Sentry.captureException(error, { contexts: { react: { componentStack: errorInfo.componentStack ?? '' } } });
   }
 
   private handleReset = () => {
