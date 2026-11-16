@@ -6,6 +6,7 @@ import { WorkflowBadge } from '../../payments/PaymentBits';
 import { errorMessage } from '../../../lib/api/client';
 import { rowOpen } from '../../../lib/rowClick';
 import { leadScopeApi, pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
+import { UploadLeadsButton } from '../../leads/LeadUpload';
 import { AccountsDetails, LEAD_SCOPE_EMPTY, LeadOwner, LeadScopeTabs, ReadOnlyLeadDialog, useLeadScopeCounts } from '../../leads/LeadScope';
 import {
   Avatar,
@@ -184,9 +185,12 @@ export const LeadsView: React.FC<{
           <p className="text-sm text-slate-500 mt-0.5">{scope?.subtitle || (leadFilters ? 'Customers interested in our services: your own leads, and your department\'s leads to view.' : 'Customers interested in our services. You see only the leads assigned to you.')}</p>
         </div>
         {!scope && (
-          <button type="button" className={`${btn.primary} py-2.5`} onClick={onAdd}>
-            <Plus className="w-4 h-4" /> Add lead
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={`${btn.primary} py-2.5`} onClick={onAdd}>
+              <Plus className="w-4 h-4" /> Add lead
+            </button>
+            <UploadLeadsButton onUploaded={() => { load(); notifyPipelineChanged(); }} />
+          </div>
         )}
       </div>
 

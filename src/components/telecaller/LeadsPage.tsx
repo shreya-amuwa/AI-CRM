@@ -6,6 +6,7 @@ import {
 import { telecallerLeadSchema } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { leadScopeApi, telecallerApi } from '../../lib/api/endpoints';
+import { UploadLeadsButton } from '../leads/LeadUpload';
 import { AccountsDetails, LEAD_SCOPE_EMPTY, LeadOwner, LeadScopeTabs, ReadOnlyLeadDialog, useLeadScopeCounts } from '../leads/LeadScope';
 import { WorkflowBadge } from '../payments/PaymentBits';
 import { PageTitle } from '../layout/shell';
@@ -92,7 +93,12 @@ export const LeadsPage: React.FC<{
       <PageTitle
         title="Leads"
         subtitle={subtitle ?? 'Customers you have spoken to. Mark each one Hot, Warm or Cold and keep track of the next call.'}
-        actions={<button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" className={tcBtn.primary} onClick={() => setDialog({ mode: 'add' })}><Plus className="w-4 h-4" aria-hidden="true" /> Add Lead</button>
+            <UploadLeadsButton className="inline-flex items-center justify-center gap-2 h-11 px-4 rounded-xl border border-blue-200 bg-white text-blue-700 text-sm font-bold hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" onUploaded={() => { setPage(1); load(); refreshCounts(); onChanged(); }} />
+          </div>
+        }
       />
 
       {scopeFilters && <LeadScopeTabs scope={scope} onChange={setScope} counts={counts} />}

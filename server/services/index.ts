@@ -61,6 +61,8 @@ import { HrEmployeeFileService } from './HrEmployeeFileService.js';
 import { HrEmployeeFileRepository } from '../repositories/HrEmployeeFileRepository.js';
 import { TrainingService } from './TrainingService.js';
 import { TelecallerService } from './TelecallerService.js';
+import { LeadUploadService } from './LeadUploadService.js';
+import { LeadUploadRepository } from '../repositories/LeadUploadRepository.js';
 import { FieldVisitService } from './FieldVisitService.js';
 import { FieldVisitRepository } from '../repositories/FieldVisitRepository.js';
 import { SalesHeadService } from './SalesHeadService.js';
@@ -86,6 +88,7 @@ export function createServices(db: SupabaseClient) {
     training: new TrainingService(new TrainingRepository(db)),
     fieldVisit: new FieldVisitService(new FieldVisitRepository(db)),
     telecaller: new TelecallerService(new TelecallerRepository(db), new StorageRepository()),
+    leadUploads: new LeadUploadService(new LeadUploadRepository(db)),
     salesHead: new SalesHeadService(new SalesHeadRepository(db), new StorageRepository()),
     ba: new BusinessAssociateService(new BusinessAssociateRepository(db), new StorageRepository()),
     customers: new CustomerService(new CustomerRepository(db)),

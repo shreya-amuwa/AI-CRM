@@ -2972,3 +2972,56 @@ export const candidateGuardSchema = z
   })
   .strict();
 export type CandidateGuardInput = z.infer<typeof candidateGuardSchema>;
+
+// ---------------------------------------------------------------------------
+// Upload Leads (docs/LEAD_UPLOAD.md). Each row is checked with the Add Lead rules (leadUploadLeadSchema reuses leadCreateSchema's fields);
+// a row that fails is reported with its row number, it never fails the whole request.
+// ---------------------------------------------------------------------------
+export const LEAD_UPLOAD_MAX_ROWS = 5000;
+/** rows imported per request (each request is one database transaction) */
+export const LEAD_UPLOAD_CHUNK_ROWS = 100;
+const leadUploadCell = z.preprocess(
+  v => (v === null || v === undefined ? '' : typeof v === 'number' ? String(v) : v),
+  z.string().max(5000, 'A value in this row is too long.')
+);
+export const leadUploadRawRowSchema = z
+  .object({
+    row: z.number().int().min(1).max(1_000_000),
+    name: leadUploadCell, contactPerson: leadUploadCell, phone: leadUploadCell, email: leadUploadCell, company: leadUploadCell,
+    businessType: leadUploadCell, location: leadUploadCell, services: leadUploadCell, leadSource: leadUploadCell,
+    description: leadUploadCell, followUpDate: leadUploadCell, assignee: leadUploadCell
+  })
+  .strict();
+const uniqueRowNumbers = (rows: { row: number }[]) => new Set(rows.map(r => r.row)).size === rows.length;
+export const leadUploadCheckSchema = z
+  .object({ rows: z.array(leadUploadRawRowSchema).min(1, 'The file has no lead rows.').max(LEAD_UPLOAD_MAX_ROWS, `A file can have at most ${LEAD_UPLOAD_MAX_ROWS} leads. Split it into smaller files.`) })
+  .strict()
+  .refine(v => uniqueRowNumbers(v.rows), { message: 'Each row number can appear once.' });
+export const leadUploadStartSchema = z
+  .object({
+    clientRequestId: uuidSchema,
+    fileName: trimmed(200).min(1, 'The file name is missing.'),
+    fileType: z.enum(['XLSX', 'CSV'], { errorMap: () => ({ message: 'Upload an Excel (.xlsx) or CSV (.csv) file.' }) }),
+    fileHash: z.string().regex(/^[0-9a-f]{64}$/, 'The file could not be identified.'),
+    totalRows: z.number().int().min(1).max(LEAD_UPLOAD_MAX_ROWS)
+  })
+  .strict();
+export const leadUploadRowsSchema = z
+  .object({ rows: z.array(leadUploadRawRowSchema).min(1).max(LEAD_UPLOAD_CHUNK_ROWS * 2) })
+  .strict()
+  .refine(v => uniqueRowNumbers(v.rows), { message: 'Each row number can appear once.' });
+/** The lead values of one row, with the same rules as the Add Lead form. */
+export const leadUploadLeadSchema = z
+  .object({
+    name: leadCreateSchema.shape.name,
+    company: leadCreateSchema.shape.company,
+    phone: leadCreateSchema.shape.phone,
+    email: leadCreateSchema.shape.email,
+    city: leadCreateSchema.shape.city,
+    businessCategory: leadCreateSchema.shape.businessCategory,
+    leadSource: leadCreateSchema.shape.leadSource,
+    nextFollowUpAt: leadCreateSchema.shape.nextFollowUpAt,
+    notes: leadCreateSchema.shape.notes
+  })
+  .strict();
+export type LeadUploadLeadInput = z.infer<typeof leadUploadLeadSchema>;
