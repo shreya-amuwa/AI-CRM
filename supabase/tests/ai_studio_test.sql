@@ -8,6 +8,7 @@
 \echo '--- 130. AI Studio'
 reset role;
 \i supabase/migrations/20270105000100_ai_studio.sql
+\i supabase/migrations/20270106000100_ai_studio_superadmin_head.sql
 
 -- count checks on tables the app roles cannot read (notifications are visible to their recipient only): run as the table owner
 create or replace function test.sq(p_sql text) returns text language plpgsql security definer as $$
@@ -213,7 +214,7 @@ select test.login('ai_dh');
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r1'), 'APPROVE', null)$$, 'the Head cannot skip the Team Lead', 'not waiting for your decision');
 select test.login('sa');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'r1')) ->> 'id')::uuid = (select id from ai_t where name = 'r1'), 'the Super Admin can read it');
-select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r1'), 'APPROVE', null)$$, 'but takes no part in the approval', 'FORBIDDEN');
+select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r1'), 'APPROVE', null)$$, 'but the Super Admin cannot skip the Team Lead either', 'not waiting for your decision');
 
 select test.login('ai_tl1');
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r1'), 'RETURN', null)$$, 'returning needs remarks', 'remarks');
@@ -307,6 +308,45 @@ select test.must_fail($$select ai_studio_set_lead(test.id('ai_tm_orphan'), test.
 select ai_studio_set_lead(test.id('ai_tm_orphan'), test.id('ai_tl2'));
 select test.login('ai_tl1');
 select test.must_fail($$select ai_studio_set_lead(test.id('ai_tm1a'), test.id('ai_tl1'))$$, 'a Team Lead cannot move people between leads', 'FORBIDDEN');
+\echo '   the Super Admin is the Department Head: the final approval (no Department Head account involved)'
+select test.login('ai_tm1b');
+insert into ai_t select 'r4', (ai_studio_report_save(null, test.proj('AI CRM'), null, current_date, 'Designed the dashboard', null, null, null, null, true) ->> 'id')::uuid;
+select test.login('sa');
+select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r4'), 'APPROVE', null)$$, 'the Super Admin cannot decide before the Team Lead', 'not waiting for your decision');
+select test.login('ai_tl1');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'r4'), 'APPROVE', 'Fine') ->> 'status') = 'PENDING_DH_APPROVAL', 'the Team Lead approves: the report reaches the Super Admin');
+select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('sa') and type = 'AI_STUDIO_REPORT_PENDING_HEAD' and entity_id = (select id from ai_t where name = 'r4')$q$)::boolean, 'the Super Admin is notified');
+select test.login('sa');
+select test.check((ai_studio_reports_list('department', null, 'PENDING_DH_APPROVAL') -> 'items') @> jsonb_build_array(jsonb_build_object('authorName', 'AI Member 1B')), 'the Super Admin sees it among the reports awaiting the final decision');
+select test.check((ai_studio_report_get((select id from ai_t where name = 'r4')) ->> 'canReview')::boolean, 'and may decide it');
+select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r4'), 'RETURN', null)$$, 'a return needs remarks', 'remarks');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'r4'), 'RETURN', 'Add screenshots') ->> 'status') = 'RETURNED_BY_DH', 'the Super Admin can return it with remarks');
+select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tm1b') and type = 'AI_STUDIO_REPORT_RETURNED' and entity_id = (select id from ai_t where name = 'r4')$q$)::boolean
+               and test.sq($q$select count(*) >= 1 from notifications where recipient_id = test.id('ai_tl1') and type = 'AI_STUDIO_REPORT_RETURNED' and body like '%screenshots%'$q$)::boolean, 'the Team Member and the Team Lead are told');
+select test.login('ai_tm1b');
+select ai_studio_report_save((select id from ai_t where name = 'r4'), test.proj('AI CRM'), null, current_date, 'Designed the dashboard, screenshots added', null, null, null, null, true);
+select test.login('ai_tl1');
+select ai_studio_report_review((select id from ai_t where name = 'r4'), 'APPROVE', null);
+select test.login('sa');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'r4'), 'APPROVE', 'Approved') ->> 'status') = 'APPROVED', 'the Super Admin gives the final approval');
+select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r4'), 'RETURN', 'late')$$, 'there is no stage after the Super Admin', 'not waiting');
+select test.login('ai_tm1b');
+select test.check((ai_studio_report_get((select id from ai_t where name = 'r4')) ->> 'status') = 'APPROVED' and (ai_studio_report_get((select id from ai_t where name = 'r4')) -> 'history' -> -1 ->> 'actorName') = 'Root', 'the final status and the Super Admin''s step are visible to the Team Member');
+select test.login('ai_tl1');
+select test.check((ai_studio_report_get((select id from ai_t where name = 'r4')) ->> 'status') = 'APPROVED', 'and to the Team Lead');
+select test.login('ai_tl2');
+select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'r4'))$$, 'another Team Lead sees nothing of it', 'NOT_FOUND');
+select test.login('dh_wab');
+select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r4'), 'RETURN', 'Not mine to decide')$$, 'another department''s head cannot decide it', 'FORBIDDEN');
+-- a Team Lead's own report goes to the Super Admin
+select test.login('ai_tl2');
+insert into ai_t select 'r5', (ai_studio_report_save(null, test.proj('AIQR'), null, current_date, 'Reviewed the AIQR designs', null, null, null, null, true) ->> 'id')::uuid;
+select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' from ai_studio_daily_reports where id = (select id from ai_t where name = 'r5')$q$)::boolean, 'a Team Lead''s own report waits for the Super Admin');
+select test.login('sa');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'r5'), 'APPROVE', null) ->> 'status') = 'APPROVED', 'and the Super Admin approves it');
+select test.check((ai_studio_overview() -> 'department' ->> 'reportsAwaitingHead')::int >= 0 and (ai_studio_overview() ->> 'role') = 'ADMIN', 'the Super Admin''s AI Studio overview works');
+select test.must_fail($$select ai_studio_task_update((select id from ai_t where name = 'b1'), 'IN_PROGRESS', 10, 'x')$$, 'the Super Admin is not a worker: tasks are updated by their assignee', 'FORBIDDEN');
+
 \echo '   removing a person from a project'
 select test.login('ai_dh');
 select test.must_fail($$select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_tm1b'), false)$$, 'someone with an open task stays on the project', 'open tasks');
@@ -319,6 +359,7 @@ select test.check(test.sq($q$select not private.ai_studio_on_project(test.proj('
 \echo '   shared features work for AI Studio people (attendance, chat, leave, notifications)'
 reset role;
 select test.check(private.chat_may_message(test.id('ai_tm1a'), test.id('ai_tl1')) and private.chat_may_message(test.id('ai_tl1'), test.id('ai_tm1a')), 'a Team Member and their Team Lead can chat');
+select test.check(private.chat_may_message(test.id('sa'), test.id('ai_tl1')) and private.chat_may_message(test.id('ai_tm1a'), test.id('sa')) and private.chat_may_message(test.id('ai_tl2'), test.id('sa')), 'the Super Admin and the AI Studio team can chat both ways');
 select test.check(private.chat_may_message(test.id('ai_tl1'), test.id('ai_dh')) and private.chat_may_message(test.id('ai_dh'), test.id('ai_tm1a')), 'the Team Lead and the Department Head can chat; the Head reaches the members');
 set role authenticated;
 select test.login('ai_tm1a');

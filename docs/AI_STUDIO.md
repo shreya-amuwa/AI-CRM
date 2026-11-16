@@ -1,24 +1,29 @@
 # AI Studio department
 
-A project-based department inside the existing CRM: **AI CRM, AI Website, AIQR** and any project the Department Head adds. Migration
-`supabase/migrations/20270105000100_ai_studio.sql` (safe to run twice; nothing is deleted, no other department is touched).
+A project-based department inside the existing CRM: **AI CRM, AI Website, AIQR** and any project the Department Head adds. Migrations
+`supabase/migrations/20270105000100_ai_studio.sql` and `20270106000100_ai_studio_superadmin_head.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
 Tests: `supabase/tests/ai_studio_test.sql` (database, permission-denied cases included), the *AI Studio* block of `api_integration.test.ts`,
-`supabase/tests/ai_studio.test.ts` (routing, form rules) and the browser test `supabase/tests/e2e/run-ai-studio.sh` (Head, two Team Leads, two Team Members and the Super Admin in real browsers: projects, tasks, the three-step report approval, phone width).
+`supabase/tests/ai_studio.test.ts` (routing, form rules) and the browser test `supabase/tests/e2e/run-ai-studio.sh` (the Super Admin, two Team Leads and two Team Members in real browsers: the unchanged Super Admin dashboard, the workspace, creating a Team Lead and a Team Member through the forms, tasks, the Team Member -> Team Lead -> Super Admin approval, phone and tablet widths).
 
-## People and what they open
+## Who manages AI Studio: the Super Admin is its Department Head
+
+There is **no Department Head account** for AI Studio and none has to be created. The Super Admin keeps their own role and dashboard and manages AI Studio through
+`private.ai_studio_role() = 'ADMIN'` (projects, people, tasks, every report, and the **final approval** of daily reports). Nothing is granted to any other role.
 
 | Person | Stored as | `profiles.default_dashboard` | Opens |
 | --- | --- | --- | --- |
-| Department Head | `DEPARTMENT_HEAD`, department `ai-studio` | `ai-studio-head` | `/ai-studio/dashboard/:id` (Head menu) |
-| Team Lead | `TEAM_HEAD` | `ai-studio-lead` | same address (Lead menu) |
+| Super Admin | `SUPER_ADMIN` (unchanged, not placed in the department) | `super-admin` | the existing Super Admin dashboard, plus one new sidebar entry **AI Studio** (group "AI Studio") that opens the AI Studio workspace |
+| Team Lead | `TEAM_HEAD`, department `ai-studio` | `ai-studio-lead` | `/ai-studio/dashboard/:id` (Lead menu) |
 | Team Member | `TEAM_MEMBER` | `ai-studio-member` | same address (Member menu) |
-| Super Admin | `SUPER_ADMIN` (unchanged) | `super-admin` | Department Hub > AI Studio (overview, projects, tasks, reports; people in *Team Members & Access*) |
+| Department Head (optional, not needed) | `DEPARTMENT_HEAD` | `ai-studio-head` | same address (Head menu); if one ever exists they have the same powers inside AI Studio |
 
-Nobody in AI Studio gets Super Admin or any extra administrative right. The department, its team ("AI Studio Team") and the people are ordinary
-rows of `departments`, `teams` and `profiles`; employees are created through the existing flow (`POST /users`: the Super Admin makes the Head, the Head
-makes Team Leads and Team Members, a Team Lead adds their own Team Members). A Team Member belongs to **one** Team Lead through the existing
-`profiles.manager_id` (`private.direct_lead_of`), exactly as in every other department; the Head names or changes it with the existing
-`assign_direct_lead` (wrapped by `ai_studio_set_lead`, which also requires the new lead to be on the member's projects).
+**The workspace** (`AiStudioWorkspace`, opened from the Super Admin sidebar or from the AI Studio card in Departments; "Back to Super Admin" returns): menu
+Attendance, Meeting Requests (the CRM's own pages that the shell adds to every menu; Attendance opens the register narrowed to AI Studio), Overview, Projects,
+Team Leads, Team Members, Tasks, Daily Reports, Chat, Notification Center. *Add Team Lead* / *Add Team Member* are the CRM's employee form with the department and the role fixed
+(`StaffManagementPanel lockedRole`): Select Project (with Add Project) and, for a Team Member, the reporting Team Lead (active AI Studio Team Leads only; only that lead's projects are offered).
+
+Employees are created through the existing flow (`POST /users`); a Team Lead adds their own Team Members. A Team Member belongs to **one** Team Lead through the existing
+`profiles.manager_id` (`private.direct_lead_of`); the Super Admin names or changes it with `ai_studio_set_lead` (wrapping the existing `assign_direct_lead`; the new lead must be on the member's projects).
 
 ## Data (all new tables are `ai_studio_*`; RLS on, no grants to `anon` / `authenticated`, all access through `security definer` functions)
 
@@ -47,13 +52,12 @@ Team Member task functions of the other departments.
   (`SUBMITTED` is recorded as the first history step; the report is then immediately *Pending ... Approval*).
 
   ```
-  Team Member submits -> Pending Team Lead Approval -> (Team Lead approves) -> Pending Department Head Approval -> (Head approves) -> Approved
-  Team Lead submits   -> Pending Department Head Approval -> Approved
+  Team Member submits -> Pending Team Lead Approval -> (Team Lead approves) -> Pending Department Head Approval -> (Super Admin approves) -> Approved
+  Team Lead submits   -> Pending Department Head Approval -> (Super Admin approves) -> Approved   (no stage after the Super Admin)
   A return (remarks required) goes back to the author; resubmitting repeats the chain from the start and keeps every earlier step in the history.
   ```
 
-  Only the report's own Team Lead decides stage 1, only the Department Head stage 2 and only after stage 1; nobody decides their own report; the Super Admin
-  reads but takes no part. A draft is private to its author. One report per person, day, project and task (a double click opens the same report). A Team
+  Only the report's own Team Lead decides stage 1, only the Super Admin (the Department Head of AI Studio) stage 2 and only after stage 1; nobody decides their own report. A draft is private to its author. One report per person, day, project and task (a double click opens the same report). A Team
   Member without a Team Lead cannot submit (the form says so). Dates: today back to 60 days (Indian time), never the future.
 * **Another department** (including another Department Head) gets `FORBIDDEN` from every AI Studio function.
 
@@ -70,7 +74,7 @@ Menu order: **Attendance, Meeting Request** (the shell's own pages, label set wi
 Notification Center; Leave and the bell are in the top bar. The Head's menu: Overview, Project Management, Tasks, Team Management, Daily Reports.
 All screens reuse the Department Head design pieces (`tasks/head/headParts`), the pipeline's inputs and dialogs and `DashboardShell`.
 
-*Add Team Member* (`StaffManagementPanel`): for the AI Studio department a Team Lead or Team Member also gets **Select Project** (projects read from the
+*Add Team Member* (`StaffManagementPanel`, also the Super Admin's general Team Members page): for the AI Studio department a Team Lead or Team Member also gets **Select Project** (projects read from the
 database; one or more; **Add Project** opens *Project Name* + optional *Project Description* + *Save Project*, the new project is stored and selected) and, when
 the Head or Super Admin adds a Team Member, **Team Lead**. `POST /users` takes `aiStudioProjectIds` / `aiStudioLeadId`; `ai_studio_project_check` validates them BEFORE the
 account exists and the account is removed again if assigning fails. On a database without the migration, creating people in other departments still works.
@@ -83,9 +87,9 @@ Schemas: `shared/validation.ts` (AI Studio block), types: `shared/contracts.ts`.
 
 ## Rollout
 
-1. Run `20270105000100_ai_studio.sql` in the Supabase SQL editor (one script; ends with `notify pgrst, 'reload schema'`).
+1. Run `20270105000100_ai_studio.sql`, then `20270106000100_ai_studio_superadmin_head.sql`, in the Supabase SQL editor (each one script; each ends with `notify pgrst, 'reload schema'`).
 2. Deploy the app. Before the migration the app still works; the AI Studio department does not exist yet.
-3. Super Admin: Department Hub > AI Studio > *Team Members & Access* > Add the Department Head; the Head adds Team Leads (choosing their projects) and Team Members.
+3. Super Admin: sidebar > AI Studio > Team Leads > Add Team Lead (choosing their projects), then Team Members > Add Team Member (choosing the Team Lead and project). No Department Head is created.
 
 ## Known limits
 

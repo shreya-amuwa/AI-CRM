@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, RotateCcw, ShieldCheck, Trophy, UserPlus, Users } from 'lucide-react';
+import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, RotateCcw, ShieldCheck, Sparkles, Trophy, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -19,8 +19,9 @@ import { SecurityAuditLogs } from './SecurityAuditLogs';
 import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
+const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'ai-studio' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -59,6 +60,8 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
         ]
       },
+      // AI Studio: the Super Admin is its Department Head; the entry opens AI Studio's own workspace (a button there brings the Super Admin back)
+      { label: 'AI Studio', items: [{ id: 'ai-studio', label: 'AI Studio', icon: Sparkles }] },
       { label: 'Governance', items: [{ id: 'security', label: 'Security & Audit Logs', icon: ShieldCheck }] },
       { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }] },
       {
@@ -71,6 +74,14 @@ export const SuperAdminDashboard: React.FC = () => {
     ],
     [chatUnread]
   );
+
+  if (page === 'ai-studio') {
+    return (
+      <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>
+        <AiStudioWorkspace onExit={() => setPage('overview')} />
+      </Suspense>
+    );
+  }
 
   return (
     <DashboardShell

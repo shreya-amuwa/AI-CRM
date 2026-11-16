@@ -61,7 +61,7 @@ const DepartmentAccountsBillingView = lazy(() => import('./components/department
 const TeamMemberDashboard = lazy(() => import('./components/team-member/TeamMemberDashboard').then(m => ({ default: m.TeamMemberDashboard })));
 const RecruiterDashboard = lazy(() => import('./components/hr-recruiter/RecruiterDashboard').then(m => ({ default: m.RecruiterDashboard })));
 const AiStudioDashboard = lazy(() => import('./components/ai-studio/AiStudioDashboard').then(m => ({ default: m.AiStudioDashboard })));
-const AiStudioAdminPanel = lazy(() => import('./components/ai-studio/AiStudioAdminPanel').then(m => ({ default: m.AiStudioAdminPanel })));
+const AiStudioWorkspace = lazy(() => import('./components/ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
 const BusinessAssociateDashboard = lazy(() => import('./components/business-associate/BusinessAssociateDashboard').then(m => ({ default: m.BusinessAssociateDashboard })));
 import { DepartmentPicker } from './components/scope/DepartmentPicker';
@@ -431,6 +431,15 @@ const MainAppContent: React.FC = () => {
     navigateTo('/department-hub');
   };
 
+  // AI Studio is managed by the Super Admin as its Department Head: its own workspace (the Super Admin dashboard has an AI Studio entry that opens the same one)
+  if (user.role === 'superadmin' && currentDeptId === 'ai-studio' && currentDept) {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <AiStudioWorkspace onExit={handleReturnToHub} />
+      </Suspense>
+    );
+  }
+
   const handleTabUpdate = (newActiveTab: ActiveTab, newSubDept?: any) => {
     if (newActiveTab === 'hr_recruitment_portal' && user) {
       navigateTo(`/hr-recruiter/dashboard/${user.id}`);
@@ -582,8 +591,6 @@ const MainAppContent: React.FC = () => {
               <LeadsTable
                 departmentId={currentDeptId}
               />
-            ) : currentDeptId === 'ai-studio' ? (
-              <Suspense fallback={<ScreenLoader />}><AiStudioAdminPanel activeTab={currentActiveTab} onSelectTab={(tab: any) => handleTabUpdate(tab)} /></Suspense>
             ) : currentDeptId === 'amuwa' ? (
               <AmuwaHqPanel activeTab={currentActiveTab} />
             ) : currentDeptId === 'hr' ? (

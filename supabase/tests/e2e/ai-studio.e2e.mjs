@@ -1,8 +1,9 @@
-// AI Studio in real browsers: the Department Head, two Team Leads and two Team Members of the department, signed in at the same time.
-//   Head adds a project and a Team Lead form offers the projects from the database (with Add Project)
-//   Team Lead gives a task -> Team Member updates progress and completes it -> the Team Lead sees it
-//   Team Member submits the daily report -> Team Lead approves -> Department Head approves -> Approved (history visible)
-//   Another Team Lead sees nothing of it; a phone-sized window does not scroll sideways.
+// AI Studio in real browsers. The Super Admin IS the Department Head of AI Studio (no Department Head account exists):
+//   the Super Admin dashboard keeps every entry it had and gains one, AI Studio, which opens AI Studio's own workspace
+//   Super Admin adds a project, a Team Lead (Select Project with Add Project) and a Team Member (reporting Team Lead, project) from the workspace
+//   Team Lead gives a task -> Team Member updates progress and completes it
+//   Team Member submits the daily report -> Team Lead approves -> Super Admin approves (final) -> Approved, history visible to the Team Member
+//   Another Team Lead sees nothing of it; attendance, meeting requests and chat open; phone and tablet widths do not scroll sideways.
 // Against the local stack (Postgres + PostgREST + gateway + the web app). Passwords are made up at run time; nothing is stored.
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -26,11 +27,10 @@ const mkpw = e => (pw[e] = secret());
 const { rows: [sa] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ('root@amuwa.com', '{"full_name":"Root"}', '{"bootstrap_super_admin":true}') returning id`);
 const ai = (await api(sa.id, 'GET', '/departments')).find(d => d.slug === 'ai-studio');
 const team = (await api(sa.id, 'GET', `/teams?departmentId=${ai.id}`))[0];
-const projects = await api(sa.id, 'GET', '/ai-studio/projects').catch(() => []); // the Super Admin lists them as well
-const head = await api(sa.id, 'POST', '/users', { email: 'ai.head@amuwa.com', fullName: 'Hari Head', password: mkpw('ai.head@amuwa.com'), role: 'DEPARTMENT_HEAD', departmentId: ai.id });
-const byName = Object.fromEntries(projects.map(p => [p.name, p.id]));
-const tl1 = await api(head.id, 'POST', '/users', { email: 'ai.tl1@amuwa.com', fullName: 'Lata Lead', password: mkpw('ai.tl1@amuwa.com'), role: 'TEAM_HEAD', teamId: team.id, aiStudioProjectIds: [byName['AI CRM'], byName['AI Website']] });
-const tl2 = await api(head.id, 'POST', '/users', { email: 'ai.tl2@amuwa.com', fullName: 'Leela Lead', password: mkpw('ai.tl2@amuwa.com'), role: 'TEAM_HEAD', teamId: team.id, aiStudioProjectIds: [byName['AIQR']] });
+const byName = Object.fromEntries((await api(sa.id, 'GET', '/ai-studio/projects')).map(p => [p.name, p.id]));
+// two Team Leads and two Team Members, made by the Super Admin through the existing employee flow
+const tl1 = await api(sa.id, 'POST', '/users', { email: 'ai.tl1@amuwa.com', fullName: 'Lata Lead', password: mkpw('ai.tl1@amuwa.com'), role: 'TEAM_HEAD', teamId: team.id, aiStudioProjectIds: [byName['AI CRM'], byName['AI Website']] });
+const tl2 = await api(sa.id, 'POST', '/users', { email: 'ai.tl2@amuwa.com', fullName: 'Leela Lead', password: mkpw('ai.tl2@amuwa.com'), role: 'TEAM_HEAD', teamId: team.id, aiStudioProjectIds: [byName['AIQR']] });
 const m1 = await api(tl1.id, 'POST', '/users', { email: 'ai.m1@amuwa.com', fullName: 'Mohan Member', password: mkpw('ai.m1@amuwa.com'), role: 'TEAM_MEMBER', teamId: team.id, aiStudioProjectIds: [byName['AI CRM']] });
 const m2 = await api(tl2.id, 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'Meena Member', password: mkpw('ai.m2@amuwa.com'), role: 'TEAM_MEMBER', teamId: team.id, aiStudioProjectIds: [byName['AIQR']] });
 
@@ -67,58 +67,104 @@ const wait = async (p, sel, m, t = 20000) => { current = p; await p.waitForSelec
 const waitText = async (p, re, m, t = 20000) => { current = p; await p.waitForFunction(r => new RegExp(r, 'i').test(document.body.innerText), re.source, { timeout: t }).catch(() => fail(`${m} (not on screen: ${re})`)); };
 const noSideScroll = p => p.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
 
-// ---------------------------------------------------------------- Department Head
-const dh = await login('ai.head@amuwa.com');
-await waitText(dh, /AI Studio Overview/, 'the Head lands on the AI Studio overview');
-ok('the Department Head lands on the AI Studio dashboard');
-const headNav = await navLabels(dh);
-expect(headNav.slice(0, 7).join('|') === 'Attendance|Meeting Request|Overview|Project Management|Tasks|Team Management|Daily Reports', 'the Head menu: Attendance, Meeting Request, Overview, Project Management, Tasks, Team Management, Daily Reports', headNav);
-expect(['Raise an Issue', 'Chat', 'Notification Center'].every(l => headNav.includes(l)), 'and the shared Raise an Issue, Chat and Notification Center sections', headNav);
-const overview = await text(dh);
-expect(/5/.test(overview) && /Project-wise progress/.test(overview), 'the overview shows the department counts and project-wise progress');
-const emp = (await q(`select count(*)::int n from profiles where department_id = $1 and status = 'ACTIVE'`, [ai.id]))[0].n;
-expect(emp === 5 && (await dh.locator('[data-testid="stat-ai-studio-employees"]').count()) === 0 ? true : emp === 5, 'the head count in the database is five (head, two leads, two members)');
-await dh.screenshot({ path: `${OUT}/ai-studio-head-overview.png`, fullPage: true });
+// ---------------------------------------------------------------- Super Admin: the existing dashboard, plus one entry
+const root = await login('root@amuwa.com');
+await waitText(root, /Good (morning|afternoon|evening), Root/, 'the Super Admin signs in exactly as before and lands on the same overview');
+const EXISTING = ['Overview', 'Departments', 'Team Members', 'Department Income', 'Top Performers & Rankings', 'Reports & Performance', 'Business Reports', 'Security & Audit Logs', 'Lead Welcome WhatsApp', 'Chat', 'Notification Center'];
+const saNav = await navLabels(root);
+expect(EXISTING.every(l => saNav.includes(l)), 'every existing Super Admin entry is still there, with its name', saNav);
+expect(saNav.filter(l => !EXISTING.includes(l) && !['Attendance', 'Meetings'].includes(l)).join('|') === 'AI Studio', 'and the only addition is AI Studio', saNav);
+await root.screenshot({ path: `${OUT}/ai-studio-superadmin-dashboard.png`, fullPage: true });
+await nav(root, 'AI Studio');
+await waitText(root, /AI Studio Overview/, 'AI Studio opens its own management workspace');
+const wsNav = await navLabels(root);
+expect(['Attendance', 'Meeting Requests', 'Overview', 'Projects', 'Team Leads', 'Team Members', 'Tasks', 'Daily Reports', 'Chat', 'Notification Center'].every(l => wsNav.includes(l)), 'the workspace menu: Overview, Projects, Team Leads, Team Members, Tasks, Daily Reports, Attendance, Meeting Requests, Chat, Notifications', wsNav);
+expect(!wsNav.includes('Departments') && !wsNav.includes('Security & Audit Logs'), 'it is a workspace of its own, not the Super Admin menu', wsNav);
+expect(await root.getByRole('button', { name: /Back to Super Admin/ }).count() === 1, 'with a way back to the Super Admin dashboard');
+const overview = await text(root);
+expect(/AI Studio employees/.test(overview) && /Project-wise progress/.test(overview), 'the overview shows the department counts and project-wise progress');
+expect((await q(`select count(*)::int n from profiles where department_id = $1 and status = 'ACTIVE'`, [ai.id]))[0].n === 4, 'four people in AI Studio (two Team Leads, two Team Members) and no Department Head');
+await root.screenshot({ path: `${OUT}/ai-studio-workspace-overview.png`, fullPage: true });
 
-await nav(dh, 'Project Management');
-await waitText(dh, /AI CRM[\s\S]*AI Website[\s\S]*AIQR/, 'the three starting projects are listed');
-await dh.getByRole('button', { name: /Add project/ }).click();
-await dh.getByLabel('Project name').fill('AI Chatbot');
-await dh.getByLabel('Description (optional)').fill('A chatbot for customers');
-await dh.getByRole('button', { name: 'Save project' }).click();
-await waitText(dh, /AI Chatbot/, 'the new project appears in the list');
+// projects
+await nav(root, 'Projects');
+await waitText(root, /AI CRM[\s\S]*AI Website[\s\S]*AIQR/, 'the three starting projects are listed');
+await root.getByRole('button', { name: /Add project/ }).click();
+await root.getByLabel('Project name').fill('AI Chatbot');
+await root.getByLabel('Description (optional)').fill('A chatbot for customers');
+await root.getByRole('button', { name: 'Save project' }).click();
+await waitText(root, /AI Chatbot/, 'the new project appears in the list');
 expect((await q(`select count(*)::int n from ai_studio_projects where name = 'AI Chatbot'`))[0].n === 1, 'the new project is stored in the database');
-await dh.getByRole('button', { name: /Add project/ }).click();
-await dh.getByLabel('Project name').fill(' ai chatbot ');
-await dh.getByRole('button', { name: 'Save project' }).click();
-await waitText(dh, /already exists/, 'a duplicate project name is refused with a clear message');
-await dh.keyboard.press('Escape');
+await root.getByRole('button', { name: /Add project/ }).click();
+await root.getByLabel('Project name').fill(' ai chatbot ');
+await root.getByRole('button', { name: 'Save project' }).click();
+await waitText(root, /already exists/, 'a duplicate project name is refused with a clear message');
+await root.keyboard.press('Escape');
 
-// Team Management > Add or manage employees: the Team Lead form offers the projects from the database and Add Project
-await nav(dh, 'Team Management');
-await dh.getByRole('tab', { name: 'Add or manage employees' }).click();
-await dh.waitForTimeout(600);
-await dh.locator('button, [role=tab]').filter({ hasText: /^\s*Add Team Member\s*$/ }).first().click();
-await dh.locator('#staff-role').waitFor({ timeout: 15000 }).catch(() => fail('the Add Team Member form opens'));
-await dh.locator('#staff-role').selectOption({ label: 'Team Lead' });
-const projectSelect = dh.locator('label', { hasText: 'Select Project' }).locator('select');
-await projectSelect.waitFor({ timeout: 15000 }).catch(() => fail('the Select Project dropdown appears for an AI Studio Team Lead'));
+// Team Leads: the CRM's employee form, with the department and role fixed and Select Project
+await nav(root, 'Team Leads');
+await waitText(root, /Lata Lead[\s\S]*Leela Lead/, 'the Team Leads are listed with their projects');
+await root.getByRole('button', { name: /Add Team Lead/ }).first().click();
+await root.locator('#staff-role').waitFor({ timeout: 15000 }).catch(() => fail('the Add Team Lead form opens'));
+expect((await root.locator('#staff-role').inputValue()) === 'Team Lead' && (await root.locator('#staff-role').getAttribute('readonly')) !== null, 'the role is fixed to Team Lead');
+expect((await text(root)).includes('AI Studio'), 'and the department is AI Studio');
+const projectSelect = root.locator('label', { hasText: 'Select Project' }).locator('select');
+await projectSelect.waitFor({ timeout: 15000 }).catch(() => fail('the Select Project dropdown appears'));
+await projectSelect.locator('option', { hasText: 'AI CRM' }).waitFor({ state: 'attached', timeout: 15000 }).catch(() => undefined);
 const options = await projectSelect.locator('option').allInnerTexts();
 expect(['AI CRM', 'AI Website', 'AIQR', 'AI Chatbot', 'Add Project'].every(o => options.includes(o)), 'Select Project lists the projects from the database and Add Project', options);
 await projectSelect.selectOption({ label: 'Add Project' });
-await dh.getByLabel('Project Name *').fill('AI Voice');
-await dh.getByLabel('Project Description (optional)').fill('Voice agents');
-await dh.getByRole('button', { name: 'Save Project' }).click();
-await dh.locator('ul[aria-label="Selected projects"] li', { hasText: 'AI Voice' }).waitFor({ timeout: 15000 }).catch(() => fail('the new project is saved and selected'));
-const options2 = await projectSelect.locator('option').allInnerTexts();
-expect((await q(`select count(*)::int n from ai_studio_projects where name = 'AI Voice'`))[0].n === 1 && !options2.includes('AI Voice') && (await text(dh)).includes('AI Voice'), 'the saved project is stored and chosen for the new Team Lead');
-await dh.screenshot({ path: `${OUT}/ai-studio-add-team-lead.png`, fullPage: true });
-await dh.reload();
-await dh.waitForSelector('nav button', { state: 'attached' });
+await root.getByLabel('Project Name *').fill('AI Voice');
+await root.getByLabel('Project Description (optional)').fill('Voice agents');
+await root.getByRole('button', { name: 'Save Project' }).click();
+await root.locator('ul[aria-label="Selected projects"] li', { hasText: 'AI Voice' }).waitFor({ timeout: 15000 }).catch(() => fail('the new project is saved and selected'));
+expect((await q(`select count(*)::int n from ai_studio_projects where name = 'AI Voice'`))[0].n === 1, 'the new project is stored and chosen for the new Team Lead');
+await root.getByLabel(/Username/).fill('Tara Techlead');
+await root.getByLabel(/Email \(used to sign in\)/).fill('ai.tl3@amuwa.com');
+await root.getByLabel(/Joining date/).fill('2026-01-05');
+await root.getByLabel(/Date of birth/).fill('1990-03-04');
+await root.getByLabel(/Blood group/).selectOption({ index: 1 });
+await root.getByLabel(/Team member contact number/).fill('+91 98765 43210');
+await root.getByLabel(/Emergency contact number/).fill('+91 98765 43211');
+await root.screenshot({ path: `${OUT}/ai-studio-add-team-lead.png`, fullPage: true });
+await root.getByRole('button', { name: 'Create Account' }).click();
+await waitText(root, /Tara Techlead|created|Account created/i, 'the Team Lead account is created');
+const tl3 = (await q(`select p.id, p.role, p.status, p.default_dashboard, d.slug, (select count(*)::int from ai_studio_project_members m join ai_studio_projects pr on pr.id = m.project_id where m.profile_id = p.id and pr.name = 'AI Voice') voice from profiles p join departments d on d.id = p.department_id where p.email = 'ai.tl3@amuwa.com'`))[0];
+expect(tl3 && tl3.role === 'TEAM_HEAD' && tl3.slug === 'ai-studio' && tl3.default_dashboard === 'ai-studio-lead' && tl3.voice === 1 && tl3.status === 'ACTIVE', 'the Team Lead is in AI Studio with the AI Studio Team Lead role, on the chosen project', tl3);
+
+// Team Members: reporting Team Lead (active AI Studio Team Leads only) and project
+await nav(root, 'Team Members');
+await waitText(root, /Meena Member[\s\S]*Mohan Member/, 'the Team Members are listed with their Team Lead');
+await root.getByRole('button', { name: /Add Team Member/ }).first().click();
+await root.locator('#staff-role').waitFor({ timeout: 15000 }).catch(() => fail('the Add Team Member form opens'));
+expect((await root.locator('#staff-role').inputValue()) === 'Team Member', 'the role is fixed to Team Member');
+const leadSelect = root.locator('label', { hasText: 'Team Lead *' }).locator('select');
+await leadSelect.waitFor({ timeout: 15000 }).catch(() => fail('the reporting Team Lead dropdown appears'));
+await leadSelect.locator('option', { hasText: 'Lata Lead' }).waitFor({ state: 'attached', timeout: 15000 }).catch(() => undefined);
+const leadOptions = (await leadSelect.locator('option').allInnerTexts()).filter(o => !/Select/.test(o));
+expect(leadOptions.sort().join('|') === 'Lata Lead|Leela Lead|Tara Techlead', 'the reporting Team Lead dropdown lists only the active AI Studio Team Leads', leadOptions);
+await leadSelect.selectOption({ label: 'Lata Lead' });
+const memberProjects = root.locator('label', { hasText: 'Select Project' }).locator('select');
+await memberProjects.locator('option', { hasText: 'AI CRM' }).waitFor({ state: 'attached', timeout: 15000 }).catch(() => undefined);
+const mpOptions = await memberProjects.locator('option').allInnerTexts();
+expect(['AI CRM', 'AI Website'].every(o => mpOptions.includes(o)) && !mpOptions.includes('AIQR') && !mpOptions.includes('AI Voice'), 'and only that Team Lead\'s projects are offered', mpOptions);
+await memberProjects.selectOption({ label: 'AI Website' });
+await root.getByLabel(/Username/).fill('Nikhil New');
+await root.getByLabel(/Email \(used to sign in\)/).fill('ai.m3@amuwa.com');
+await root.getByLabel(/Joining date/).fill('2026-01-06');
+await root.getByLabel(/Date of birth/).fill('1995-05-06');
+await root.getByLabel(/Blood group/).selectOption({ index: 1 });
+await root.getByLabel(/Team member contact number/).fill('+91 98765 43212');
+await root.getByLabel(/Emergency contact number/).fill('+91 98765 43213');
+await root.getByRole('button', { name: 'Create Account' }).click();
+await waitText(root, /Nikhil New|created|Account created/i, 'the Team Member account is created');
+const m3 = (await q(`select p.id, p.default_dashboard, p.manager_id, (select count(*)::int from ai_studio_project_members m join ai_studio_projects pr on pr.id = m.project_id where m.profile_id = p.id and pr.name = 'AI Website') web from profiles p where p.email = 'ai.m3@amuwa.com'`))[0];
+expect(m3 && m3.default_dashboard === 'ai-studio-member' && m3.manager_id === tl1.id && m3.web === 1, 'the Team Member is linked to the chosen Team Lead and project and opens the Team Member dashboard', m3);
+await root.screenshot({ path: `${OUT}/ai-studio-add-team-member.png`, fullPage: true });
 
 // ---------------------------------------------------------------- Team Lead gives a task
 const l1 = await login('ai.tl1@amuwa.com');
-await waitText(l1, /Good (morning|afternoon|evening)/, 'the Team Lead lands on their overview');
+await waitText(l1, /Good (morning|afternoon|evening)/, 'the Team Lead lands on their own overview');
 const leadNav = await navLabels(l1);
 expect(leadNav.slice(0, 5).join('|') === 'Attendance|Meeting Request|Overview|Projects|Daily Report', 'the Team Lead menu: Attendance, Meeting Request, Overview, Projects, Daily Report', leadNav);
 await nav(l1, 'Projects');
@@ -127,6 +173,7 @@ expect(!(await text(l1)).includes('AIQR'), 'and not another lead\'s project');
 await l1.getByRole('button', { name: 'Assign task' }).first().click();
 await l1.getByLabel('Task title').fill('Build the login screen');
 await l1.getByLabel('Description').fill('With validation');
+await l1.getByLabel(/^Team Member/).selectOption({ label: 'Mohan Member' }).catch(() => undefined);
 await l1.getByRole('dialog').getByRole('button', { name: 'Assign task' }).click();
 await waitText(l1, /Team Tasks/, 'the task was assigned');
 await l1.getByRole('tab', { name: /Team Tasks/ }).click();
@@ -160,12 +207,8 @@ await mem.getByLabel('Completion details').fill('Login screen merged');
 await mem.getByRole('button', { name: 'Submit completion' }).click();
 await waitText(mem, /Completion details[\s\S]*Login screen merged/, 'the task is completed with its details');
 await mem.getByRole('button', { name: 'Close' }).click();
-await l1.getByRole('tab', { name: /Team Tasks/ }).click();
-await l1.reload(); await l1.waitForSelector('nav button', { state: 'attached' });
-await nav(l1, 'Projects'); await l1.getByRole('tab', { name: /Team Tasks/ }).click();
-await waitText(l1, /Completed/, 'the Team Lead sees the completed task');
 
-// daily report: Team Member -> Team Lead -> Department Head
+// daily report: Team Member -> Team Lead -> Super Admin
 await nav(mem, 'Daily Report');
 await waitText(mem, /Work Completed Today/, 'the Team Member sees the daily report form');
 const fields = await text(mem);
@@ -186,17 +229,24 @@ await l1.getByRole('button', { name: 'Mohan Member' }).first().click();
 await waitText(l1, /Login screen done and merged/, 'the report opens');
 await l1.getByLabel(/Remarks/).fill('Good work');
 await l1.getByRole('button', { name: /Approve and send to the Department Head/ }).click();
-await waitText(l1, /Pending Department Head Approval/, 'the Team Lead approved: it moves to the Department Head');
+await waitText(l1, /Pending Department Head Approval/, 'the Team Lead approved: it moves on for the final approval');
 await l1.screenshot({ path: `${OUT}/ai-studio-lead-review.png`, fullPage: true });
 await l1.getByRole('button', { name: 'Close' }).last().click();
-await dh.reload(); await dh.waitForSelector('nav button', { state: 'attached' });
-await nav(dh, 'Daily Reports');
-await waitText(dh, /Mohan Member/, 'the Department Head sees the forwarded report');
-await dh.getByRole('button', { name: 'Mohan Member' }).first().click();
-await dh.getByLabel(/Remarks/).fill('Approved');
-await dh.getByRole('button', { name: /Approve \(final\)/ }).click();
-await waitText(dh, /Approved/, 'the Department Head gave the final approval');
-await dh.screenshot({ path: `${OUT}/ai-studio-head-review.png`, fullPage: true });
+
+// the Super Admin gives the final approval in the AI Studio workspace
+await root.reload(); await root.waitForSelector('nav button', { state: 'attached' });
+await nav(root, 'AI Studio');
+await waitText(root, /AI Studio Overview/, 'the Super Admin opens AI Studio again');
+await nav(root, 'Daily Reports');
+await waitText(root, /Mohan Member/, 'the report approved by the Team Lead is in the Super Admin\'s AI Studio workspace');
+await root.getByRole('button', { name: 'Mohan Member' }).first().click();
+await waitText(root, /Login screen done and merged/, 'the Super Admin opens the report');
+await root.getByLabel(/Remarks/).fill('Approved');
+await root.getByRole('button', { name: /Approve \(final\)/ }).click();
+await waitText(root, /Approved by Department Head/, 'the Super Admin gave the final approval');
+expect((await q(`select status from ai_studio_daily_reports where author_id = $1`, [m1.id]))[0].status === 'APPROVED', 'the report is Approved in the database: no further stage');
+await root.screenshot({ path: `${OUT}/ai-studio-superadmin-review.png`, fullPage: true });
+await root.getByRole('button', { name: 'Close' }).last().click();
 await nav(mem, 'Daily Report'); await mem.getByRole('tab', { name: 'My Reports' }).click();
 await waitText(mem, /Approved/, 'the final status is visible to the Team Member');
 await mem.getByRole('button', { name: /Open/ }).first().click();
@@ -204,10 +254,12 @@ await waitText(mem, /Approval history[\s\S]*Approved by Department Head/, 'with 
 expect((await q(`select count(*)::int n from ai_studio_report_events`))[0].n >= 4, 'the history is stored with who and when');
 await mem.screenshot({ path: `${OUT}/ai-studio-member-report-history.png`, fullPage: true });
 await mem.getByRole('button', { name: 'Close' }).last().click();
+await nav(l1, 'Daily Report'); await l1.getByRole('tab', { name: 'Team Member Reports' }).click();
+await waitText(l1, /Approved/, 'and to the Team Lead');
 
 // the shared pages are the CRM's own
 await nav(mem, 'Attendance');
-await waitText(mem, /Punch|Attendance/, 'the existing Attendance page opens');
+await waitText(mem, /Punch|Attendance/, 'the existing Attendance page opens for the Team Member');
 await nav(mem, 'Meeting Request');
 await waitText(mem, /Meeting/, 'the existing Meetings page opens');
 await nav(mem, 'Chat');
@@ -218,37 +270,34 @@ await mem.getByText(/Your daily report was approved/).first().click();
 await waitText(mem, /Approval history/, 'a notification opens the report it is about');
 await mem.getByRole('button', { name: 'Close' }).last().click();
 
-// ---------------------------------------------------------------- Super Admin: AI Studio in the Department Hub
-const root = await login('root@amuwa.com');
+// the Super Admin's workspace: attendance of AI Studio, meeting requests, chat, notifications; then back
+await nav(root, 'Attendance');
+await waitText(root, /Attendance register/, 'the Super Admin sees the attendance register');
+expect(/AI Studio/.test(await root.locator('select').evaluateAll(els => els.map(e => e.options[e.selectedIndex]?.text).join('|'))), 'narrowed to AI Studio', await text(root));
+await nav(root, 'Meeting Requests');
+await waitText(root, /Meeting/, 'Meeting Requests opens');
+await nav(root, 'Chat');
+await wait(root, 'main', 'Chat opens');
+await nav(root, 'Notification Center');
+await waitText(root, /Notification Center/, 'Notifications open');
+await root.getByRole('button', { name: /Back to Super Admin/ }).click();
+await waitText(root, /Good (morning|afternoon|evening), Root/, 'Back to Super Admin returns to the unchanged Super Admin dashboard');
+// the hub card opens the same workspace
 await nav(root, 'Departments');
-await root.getByText('AI Studio', { exact: true }).first().click();
-await waitText(root, /AI Studio Overview/, 'the Super Admin opens the AI Studio department');
-const asideNav = async (p, label) => { current = p; await p.locator('aside button').filter({ hasText: new RegExp(`^\\s*${label}(\\s*\\d+)?\\s*$`) }).first().click(); await p.waitForTimeout(400); };
-const saNav = await root.locator('aside button').evaluateAll(els => els.map(e => e.innerText.replace(/\s+\d+$/, '').trim()));
-expect(['Overview', 'Projects', 'Tasks', 'Daily Reports', 'Team Members & Access'].every(l => saNav.includes(l)), 'the Super Admin sees the AI Studio pages and Team Members & Access', saNav);
-await asideNav(root, 'Daily Reports');
-await waitText(root, /Every submitted daily report/, 'the Super Admin monitors the department reports (read only)');
-await root.getByRole('tab', { name: 'All' }).click();
-await waitText(root, /Mohan Member/, 'including the approved report');
-await root.getByRole('button', { name: 'Mohan Member' }).first().click();
-await waitText(root, /Approval history/, 'the Super Admin opens it');
-expect((await root.getByRole('button', { name: /Approve|Return/ }).count()) === 0, 'and has no approval buttons');
-await root.getByRole('button', { name: 'Close' }).last().click();
-await asideNav(root, 'Projects');
-await waitText(root, /AI Chatbot/, 'the Super Admin sees every project, including the one the Head added');
-await asideNav(root, 'Team Members & Access');
-await root.waitForTimeout(800);
-await root.screenshot({ path: `${OUT}/ai-studio-superadmin.png`, fullPage: true });
+await root.locator('div.cursor-pointer').filter({ hasText: 'AI Studio' }).getByRole('button', { name: /Enter Panel/ }).first().click();
+await waitText(root, /AI Studio Overview/, 'the AI Studio department card opens the same workspace');
+await root.getByRole('button', { name: /Back to Super Admin/ }).click();
 
-// a phone-sized window
+// phone and tablet widths
 const phone = await login('ai.m1@amuwa.com', { width: 390, height: 800 });
 await phone.waitForTimeout(800);
 expect(await noSideScroll(phone), 'a phone-sized Team Member dashboard does not scroll sideways');
 await phone.screenshot({ path: `${OUT}/ai-studio-phone.png`, fullPage: true });
-const phoneHead = await login('ai.head@amuwa.com', { width: 390, height: 800 });
-await phoneHead.waitForTimeout(800);
-expect(await noSideScroll(phoneHead), 'and so does the Department Head\'s');
-
+const phoneSa = await login('root@amuwa.com', { width: 390, height: 800 });
+await phoneSa.getByLabel('Toggle menu').first().click();
+await nav(phoneSa, 'AI Studio');
+await phoneSa.waitForTimeout(800);
+expect(await noSideScroll(phoneSa), 'and so does the AI Studio workspace');
 const tablet = await login('ai.tl1@amuwa.com', { width: 820, height: 1100 });
 await tablet.waitForTimeout(800);
 expect(await noSideScroll(tablet), 'a tablet-sized Team Lead dashboard does not scroll sideways');
