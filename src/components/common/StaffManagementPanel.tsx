@@ -61,6 +61,8 @@ interface StaffManagementPanelProps {
   onDepartmentChange?: (slug: string) => void;
   /** Changes when access was saved elsewhere: the lists reload. */
   refreshToken?: number;
+  /** The role is fixed (the AI Studio workspace has separate Add Team Lead / Add Team Member forms): the Role field is shown but not editable. */
+  lockedRole?: 'TEAM_HEAD' | 'TEAM_MEMBER';
 }
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
@@ -91,7 +93,7 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: 'bg-slate-100 text-slate-600 border-slate-200'
 };
 
-export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated, departmentOptions, onDepartmentChange }) => {
+export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated, departmentOptions, onDepartmentChange, lockedRole }) => {
   const { profile } = useAuth();
   const { departments, allDepartments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
@@ -191,7 +193,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // The choice IS the designation; it maps to the existing role (Team Member, or Department Head for HR Admin Head), so no new role system exists.
   const hrMode = departmentSlug === 'hr';
   const hrOptions = useMemo(() => HR_DESIGNATIONS.filter(d => allowedRoles.includes(HR_DESIGNATION_ROLE[d])), [allowedRoles]);
-  const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : choice;
+  const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : lockedRole && allowedRoles.includes(lockedRole) ? lockedRole : choice;
   const consultant = effectiveChoice === 'TECHNICAL_CONSULTANT';
   const metaVerifier = effectiveChoice === 'META_VERIFIER';
   const operationsHead = effectiveChoice === 'OPERATIONS_HEAD';
@@ -721,6 +723,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               >
                 {hrOptions.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
+            ) : lockedRole ? (
+              <input id="staff-role" className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={ROLE_LABELS[lockedRole]} readOnly aria-readonly="true" />
             ) : (
               <select
                 id="staff-role"
@@ -1175,7 +1179,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           }}
         />
       )}
-      {(profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD') && view !== 'members' && <ReassignmentQueuePanel />}
+      {(profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD') && view !== 'members' && !lockedRole && <ReassignmentQueuePanel />}
       {offboardFor && <OffboardingDialog member={offboardFor} onClose={() => { setOffboardFor(null); void loadMembers(); }} />}
       {verifierFor && <VerifierDepartmentsDialog member={verifierFor} departments={operationsChoices} onClose={() => { setVerifierFor(null); void loadMembers(); }} />}
       {confirmBox && <ConfirmDialog request={confirmBox} onClose={() => setConfirmBox(null)} />}

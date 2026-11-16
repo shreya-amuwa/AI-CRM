@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3, CalendarDays, FolderKanban, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3, CalendarDays } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -93,9 +93,6 @@ export type ActiveTab =
   | 'my_attendance'
   | 'my_meetings'
   | 'business_reports'
-  | 'ai_projects'
-  | 'ai_tasks'
-  | 'ai_reports'
   | 'chat'
   | 'notifications';
 
@@ -192,14 +189,6 @@ const DEPARTMENT_NAV_MAP: Record<string, { id: ActiveTab; label: string; icon: a
     { id: 'business_reports' as ActiveTab, label: 'Business Reports', icon: BarChart3 },
     { id: 'expense', label: 'Expenses', icon: Receipt },
     { id: 'invoice', label: 'Invoices & Quotations', icon: FileText },
-    NOTIFICATION_TAB // MUST BE LAST!
-  ],
-  // AI Studio (the Super Admin's view: the Department Head's overview, projects, tasks and reports; people are managed in Team Members & Access)
-  'ai-studio': [
-    { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
-    { id: 'ai_projects' as ActiveTab, label: 'Projects', icon: FolderKanban },
-    { id: 'ai_tasks' as ActiveTab, label: 'Tasks', icon: ListChecks },
-    { id: 'ai_reports' as ActiveTab, label: 'Daily Reports', icon: FileText },
     NOTIFICATION_TAB // MUST BE LAST!
   ],
   // Education & Training (Accounts excluded per requirement)

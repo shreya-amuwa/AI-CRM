@@ -298,17 +298,18 @@ export const DailyReportsPage: React.FC<{ role: 'LEAD' | 'MEMBER' }> = ({ role }
   );
 };
 
-/** Department Head / Super Admin: the reports of the department, filtered by project, Team Lead, employee, date and status. Only the Department Head decides. */
+/** Super Admin (the Department Head of AI Studio) / Department Head: the reports of the department, filtered by project, Team Lead, employee, date and status; they give the final decision. */
 export const DepartmentReports: React.FC<{ role: AiStudioRole }> = ({ role }) => {
   const projects = useLoad<AiStudioProject[]>(() => aiStudioApi.projects(), []);
   const people = useLoad<AiStudioPerson[]>(() => aiStudioApi.people(), []);
+  // the Super Admin is the Department Head of AI Studio (and a Department Head, if the department has one, too): both give the final decision
   return (
     <div className="space-y-6">
       <PageTitle
         title="Daily Reports"
-        subtitle={role === 'HEAD' ? 'Reports your Team Leads approved wait for your decision. Team Leads\' own reports come straight to you.' : 'Every submitted daily report of AI Studio (read only).'}
+        subtitle={role === 'LEAD' || role === 'MEMBER' ? 'Daily reports of AI Studio.' : 'Reports your Team Leads approved wait for your final decision. Team Leads\' own reports come straight to you.'}
       />
-      <ReportList view="department" projects={projects.data ?? []} people={people.data ?? []} waitingStatus={role === 'HEAD' ? 'PENDING_DH_APPROVAL' : undefined} />
+      <ReportList view="department" projects={projects.data ?? []} people={people.data ?? []} waitingStatus="PENDING_DH_APPROVAL" />
     </div>
   );
 };

@@ -234,11 +234,12 @@ const PunchDetail: React.FC<{ title: string; p: PunchInfo | null }> = ({ title, 
 const STATUSES: AttendanceStatus[] = ['NOT_PUNCHED_IN', 'PUNCHED_IN', 'ON_LUNCH', 'RESUMED_WORK', 'PUNCHED_OUT', 'INCOMPLETE'];
 
 /** HR / Super Admin: every employee's attendance for one office day (India time). Each load is written to the audit log. */
-export const HrAttendanceRegister: React.FC = () => {
+export const HrAttendanceRegister: React.FC<{ defaultDepartment?: { id: string; name: string } }> = ({ defaultDepartment }) => {
   const [date, setDate] = useState(istToday());
   const [data, setData] = useState<AttendanceRegister | null>(null);
   const [error, setError] = useState('');
-  const [dept, setDept] = useState('');
+  // a workspace of one department (AI Studio) opens the register already narrowed to it
+  const [dept, setDept] = useState(defaultDepartment?.id ?? '');
   const [emp, setEmp] = useState('');
   const [status, setStatus] = useState<'' | AttendanceStatus>('');
   const [open, setOpen] = useState<string | null>(null);
@@ -256,7 +257,7 @@ export const HrAttendanceRegister: React.FC = () => {
     }, e => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
     return () => { alive = false; };
   }, [date]);
-  const departments = useMemo(() => [...new Map((data?.rows ?? []).filter(r => r.departmentId).map(r => [r.departmentId!, r.department ?? '-'])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [data]);
+  const departments = useMemo(() => [...new Map([...(defaultDepartment ? [[defaultDepartment.id, defaultDepartment.name] as [string, string]] : []), ...(data?.rows ?? []).filter(r => r.departmentId).map(r => [r.departmentId!, r.department ?? '-'] as [string, string])]).entries()].sort((a, b) => a[1].localeCompare(b[1])), [data, defaultDepartment]);
   const employees = useMemo(() => (data?.rows ?? []).filter(r => !dept || r.departmentId === dept).map(r => ({ id: r.profileId, name: r.name })), [data, dept]);
   const counts = useMemo(() => Object.fromEntries(STATUSES.map(s => [s, (data?.rows ?? []).filter(r => r.status === s).length])) as Record<AttendanceStatus, number>, [data]);
   const rows = (data?.rows ?? []).filter(r => (!dept || r.departmentId === dept) && (!emp || r.profileId === emp) && (!status || r.status === status));
@@ -349,7 +350,7 @@ export const HrAttendanceRegister: React.FC = () => {
 };
 
 /** The Attendance section of the side panel: what each person sees follows their role (the database checks again). */
-export const AttendancePage: React.FC<{ hrView?: boolean }> = ({ hrView = false }) => {
+export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { id: string; name: string } }> = ({ hrView = false, defaultDepartment }) => {
   const { profile } = useAuth();
   const isSa = profile?.role === 'SUPER_ADMIN';
   // HR staff (not the recruiters) and the Super Admin; the database checks it again
@@ -374,7 +375,7 @@ export const AttendancePage: React.FC<{ hrView?: boolean }> = ({ hrView = false 
             className={`px-3.5 h-9 rounded-xl text-sm font-bold border ${tab === t.id ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>{t.label}</button>)}
         </div>
       ) : null}
-      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : <HrAttendanceRegister />}
+      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : <HrAttendanceRegister defaultDepartment={defaultDepartment} />}
     </div>
   );
 };
