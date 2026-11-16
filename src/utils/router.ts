@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -77,6 +77,12 @@ export const parseCurrentRoute = (): ParsedRoute => {
       type: 'sales-head',
       paramId: shMatch[1]
     };
+  }
+
+  // 1a2b4. /ai-studio/dashboard/:id[/:page] - AI Studio employees only
+  const aiMatch = path.match(/^\/ai-studio\/dashboard\/([^/]+)(?:\/[^/]+)?$/);
+  if (aiMatch) {
+    return { path, type: 'ai-studio', paramId: aiMatch[1] };
   }
 
   // 1a2c. /sales-role/:id - a Sales role whose dashboard is not set up yet
@@ -183,6 +189,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
       return `/sales-role/${user.id}`;
     case 'sales-head':
       return `/sales-head/dashboard/${user.id}`;
+    case 'ai-studio':
+      return `/ai-studio/dashboard/${user.id}`;
     case 'accounts-staff':
       return `/accounts/dashboard/${user.id}`;
     case 'admin':
@@ -301,6 +309,14 @@ export const validateRouteAccess = (
     return { allowed: false, redirectTo: `/sales-head/dashboard/${user.id}` };
   }
 
+  // AI Studio employees open only their own AI Studio dashboard.
+  if (user.role === 'ai-studio') {
+    if (route.type === 'ai-studio' && route.paramId === user.id) {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: `/ai-studio/dashboard/${user.id}` };
+  }
+
   // A Sales role without a dashboard yet sees the notice page, and nothing else.
   if (user.role === 'sales-role') {
     if (route.type === 'sales-role' && route.paramId === user.id) {
@@ -325,7 +341,7 @@ export const validateRouteAccess = (
 
   // If user is admin:
   if (user.role === 'admin') {
-    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head') {
+    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head' || route.type === 'ai-studio') {
       return { allowed: false, redirectTo: `/admin/dashboard/${user.departmentId || 'wabastore'}` };
     }
     return { allowed: true };

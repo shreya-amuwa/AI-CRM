@@ -25,13 +25,15 @@ import { AppError } from '../http/errors.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import type { HrRepository } from '../repositories/HrRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
+import type { AiStudioRepository } from '../repositories/AiStudioRepository.js';
 import { temporaryPassword } from '../automations/secrets.js';
 
 export class UserService {
   constructor(
     private readonly profiles: ProfileRepository,
     private readonly authAdmin = new AuthAdminRepository(),
-    private readonly hr?: HrRepository
+    private readonly hr?: HrRepository,
+    private readonly aiStudio?: AiStudioRepository
   ) {}
 
   /** Own profile - available to every authenticated user, whatever the status. */
@@ -78,6 +80,9 @@ export class UserService {
     // The department decides the designations: an HR employee is an HR Assistant, an HR Recruiter or an HR Admin Head (the Department Head of HR) and nothing
     // else, and an HR designation is refused anywhere else. Checked by the database BEFORE the account exists (and again when the details are saved).
     await this.profiles.assertDesignationAllowed({ role: input.role, departmentId: homeDepartment, teamId: input.teamId, designation: input.details?.designation, operationsHead: input.operationsHead });
+    // AI Studio: a new Team Lead / Team Member needs a project (and a Team Member a Team Lead on it), checked BEFORE the account exists. Nothing happens
+    // for another department.
+    await this.aiStudio?.checkPlacement({ departmentId: input.departmentId, role: input.role, teamId: input.teamId, projectIds: input.aiStudioProjectIds, leadId: input.aiStudioLeadId });
     if (input.technicalConsultant && (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SUPPORT')) {
       throw new AppError('VALIDATION_ERROR', 'A Technical Consultant must be in a support team.');
     }
@@ -89,7 +94,7 @@ export class UserService {
       if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'DEPARTMENT_HEAD' && actor.role !== 'TEAM_HEAD') throw new AppError('FORBIDDEN', 'Only the Super Admin, the Department Head or the Team Lead can set a Sales role.');
       if (!input.teamId || (await this.profiles.teamDivision(input.teamId)) !== 'SALES') throw new AppError('VALIDATION_ERROR', 'A Sales role can only be given to a member of a Sales team.');
     }
-    const { details, salesSubRole, additionalAccess: requestedAccess, operationsHead, departmentIds: _departmentIds, verifierDepartmentIds, ...account } = input;
+    const { details, salesSubRole, aiStudioProjectIds, aiStudioLeadId, additionalAccess: requestedAccess, operationsHead, departmentIds: _departmentIds, verifierDepartmentIds, ...account } = input;
     void _departmentIds;
     // A Meta Verifier who verifies for several departments: the Super Admin (or the Operations Head who owns them) gives them in the same step; the database
     // re-checks who may, and the account is not left half-made if it refuses.
@@ -143,6 +148,17 @@ export class UserService {
         await this.profiles.setVerifierDepartments(id, verifierDepartments);
       } catch (err) {
         // Never leave a verifier without the departments that were asked for.
+        await this.authAdmin.deleteUser(id).catch(() => undefined);
+        throw err;
+      }
+    }
+    if (aiStudioProjectIds?.length || aiStudioLeadId) {
+      try {
+        // the Department Head / Super Admin name the Team Lead of a new Team Member; a Team Lead's own member is theirs already
+        if (aiStudioLeadId && actor.role !== 'TEAM_HEAD') await this.aiStudio!.assignDirectLead(id, aiStudioLeadId);
+        for (const projectId of new Set(aiStudioProjectIds ?? [])) await this.aiStudio!.assignProject(projectId, id, true);
+      } catch (err) {
+        // Never leave an AI Studio employee without the projects that were asked for.
         await this.authAdmin.deleteUser(id).catch(() => undefined);
         throw err;
       }

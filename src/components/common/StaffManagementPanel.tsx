@@ -12,6 +12,7 @@ import { errorMessage } from '../../lib/api/client';
 import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
 import { OperationsDepartmentsField } from './OperationsDepartmentsField';
+import { ProjectPicker } from '../ai-studio/ProjectPicker';
 import { VerifierDepartmentsDialog } from '../scope/VerifierDepartmentsDialog';
 import { OffboardingDialog } from '../scope/OffboardingDialog';
 import { ReassignmentQueuePanel } from '../scope/ReassignmentQueuePanel';
@@ -122,6 +123,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // The HR department has its own three designations instead of the generic roles (see hrMode below).
   const [hrChoice, setHrChoice] = useState<HrDesignation>('HR Assistant');
   const [teamId, setTeamId] = useState('');
+  // AI Studio: the project(s) of a new Team Lead / Team Member, and the Team Lead of a new Team Member
+  const [aiProjects, setAiProjects] = useState<string[]>([]);
+  const [aiLead, setAiLead] = useState('');
   const [salesSubRole, setSalesSubRole] = useState<SalesSubRole | ''>('');
   const [formOpen, setFormOpen] = useState(false);
   const manage = view !== 'members';
@@ -347,6 +351,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setEmergencyContact('');
     setContactNumber('');
     setSalesSubRole('');
+    setAiProjects([]);
+    setAiLead('');
     setHeadFn('');
     setHeadDepts(departmentId ? [departmentId] : []);
     setOpsDepts([]);
@@ -437,6 +443,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setFormError(mismatch);
       return;
     }
+    const aiStudio = departmentSlug === 'ai-studio' && (role === 'TEAM_HEAD' || role === 'TEAM_MEMBER');
+    if (aiStudio) {
+      if (role === 'TEAM_MEMBER' && profile?.role !== 'TEAM_HEAD' && !aiLead) { setFormError('Choose the Team Lead of the new Team Member.'); return; }
+      if (aiProjects.length === 0) { setFormError(`Select a project for the AI Studio ${role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'}.`); return; }
+    }
     const parsed = userCreateSchema.safeParse({
       email,
       fullName,
@@ -452,6 +463,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       headDivision: headPlan?.headDivision,
       operationsHead: operationsHead || undefined,
       additionalAccess: headPlan && headPlan.additionalAccess.length ? headPlan.additionalAccess : undefined,
+      aiStudioProjectIds: aiStudio ? aiProjects : undefined,
+      aiStudioLeadId: aiStudio && role === 'TEAM_MEMBER' && profile?.role !== 'TEAM_HEAD' ? aiLead : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
     });
     if (!parsed.success) {
@@ -744,6 +757,19 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 ))}
               </select>
             </label>
+          )}
+
+          {departmentSlug === 'ai-studio' && (role === 'TEAM_HEAD' || role === 'TEAM_MEMBER') && !operationsHead && (
+            <ProjectPicker
+              role={role}
+              actorRole={profile.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : profile.role === 'TEAM_HEAD' ? 'TEAM_HEAD' : 'DEPARTMENT_HEAD'}
+              projectIds={aiProjects}
+              onProjects={setAiProjects}
+              leadId={aiLead}
+              onLead={setAiLead}
+              teamId={teamId}
+              inputClass={inputClass}
+            />
           )}
 
           {operationsHead && <OperationsDepartmentsField departments={operationsChoices} selected={opsDepts} onSelected={setOpsDepts} />}

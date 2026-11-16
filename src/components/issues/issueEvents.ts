@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { openReports } from '../reports/reportEvents';
+import { openAiStudio } from '../ai-studio/aiStudioEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -62,6 +63,10 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   // a weekly report that reached HR opens HR's Performance Reviews; the consolidated report / analysis opens the Super Admin's Reports & Performance
   if (n.entityType === 'work_report_package' && n.type === 'REPORT_WEEKLY_SENT_TO_HR') { openHrCase({ section: 'reviews' }); return true; }
   if (n.entityType === 'hr_consolidated_report') { openReports({}); return true; }
+  // AI Studio: a task or a daily report opens its page of the AI Studio dashboard, on that item
+  if (n.entityType === 'ai_studio_task') { openAiStudio({ kind: 'task', id: n.entityId ?? undefined }); return true; }
+  if (n.entityType === 'ai_studio_report') { openAiStudio({ kind: 'report', id: n.entityId ?? undefined }); return true; }
+  if (n.entityType === 'ai_studio_project') { openAiStudio({ kind: 'task' }); return true; }
   if (n.entityType === 'work_report' || n.entityType === 'work_report_package') {
     openReports({ id: n.entityType === 'work_report' ? n.entityId ?? undefined : undefined });
     return true;
