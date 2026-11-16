@@ -54,7 +54,7 @@ check(!leadWhatsAppSettingsSchema.safeParse({ enabled: true, templateApproved: t
 
 // ---------------------------------------------------------------- the routes that assign leads send at once
 check(assignsLeads('POST', '/pipeline/leads') && assignsLeads('PATCH', '/pipeline/leads/abc') && assignsLeads('POST', '/sales-head/sheets') && assignsLeads('POST', '/sales-head/leads/x/assign')
-  && assignsLeads('POST', '/telecaller/lists') && assignsLeads('POST', '/ba/leads') && assignsLeads('POST', '/customers/import') && assignsLeads('POST', '/field-visits/lead-queue/x/assign'),
+  && assignsLeads('POST', '/telecaller/lists') && assignsLeads('POST', '/lead-uploads/abc/rows') && assignsLeads('POST', '/ba/leads') && assignsLeads('POST', '/customers/import') && assignsLeads('POST', '/field-visits/lead-queue/x/assign'),
   'creating, assigning, uploading and importing leads send the welcome message at once');
 check(!assignsLeads('GET', '/pipeline/leads') && !assignsLeads('POST', '/meetings') && !assignsLeads('POST', '/sales-head/sheets/x/source'), 'reads and unrelated routes do not');
 

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Lead welcome WhatsApp (migration 20270103000200): a lead's first sales person queues ONE message; who counts; reassigning adds nothing;
+-- Lead welcome WhatsApp (migration 20270104000200): a lead's first sales person queues ONE message; who counts; reassigning adds nothing;
 -- no valid number = SKIPPED; settings permissions; history / send again; claim / finish / delivery reports; the worker is service-role only.
 -- Nothing is sent: the "provider" is whatever the test records through lead_whatsapp_finish. Runs last (uses the authorization suite's users).
 -- =============================================================================

@@ -5831,6 +5831,64 @@ export interface PublicBookingView {
 }
 
 // ---------------------------------------------------------------------------
+// Upload Leads (docs/LEAD_UPLOAD.md): a Sales employee adds many leads from an Excel / CSV file
+// ---------------------------------------------------------------------------
+/** One row of the file as read in the browser: the text of each mapped column (empty when the column is missing). */
+export interface LeadUploadRawRow {
+  /** the row number in the file (the heading row is 1) */
+  row: number;
+  name: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  company: string;
+  businessType: string;
+  location: string;
+  services: string;
+  leadSource: string;
+  description: string;
+  followUpDate: string;
+  assignee: string;
+}
+export type LeadUploadOutcome = 'NEW' | 'CREATED' | 'DUPLICATE' | 'INVALID' | 'FAILED';
+export interface LeadUploadCheckRow {
+  row: number;
+  outcome: 'NEW' | 'DUPLICATE' | 'INVALID';
+  message?: string;
+  ownerId?: string;
+  ownerName?: string;
+  /** the existing record, when the caller may open it */
+  duplicateOf?: string | null;
+}
+export interface LeadUploadCheckResult {
+  rows: LeadUploadCheckRow[];
+  summary: { total: number; new: number; duplicates: number; invalid: number };
+}
+export type LeadUploadStatus = 'PROCESSING' | 'COMPLETED' | 'INTERRUPTED';
+export interface LeadUploadBatch {
+  id: string;
+  fileName: string;
+  fileType: 'XLSX' | 'CSV';
+  status: LeadUploadStatus;
+  totalRows: number;
+  processedRows: number;
+  created: number;
+  duplicates: number;
+  invalid: number;
+  failed: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+export interface LeadUploadChunkResult {
+  batch: LeadUploadBatch;
+  results: { row: number; outcome: Exclude<LeadUploadOutcome, 'NEW'>; message?: string; leadId?: string }[];
+}
+export interface LeadUploadIssues {
+  batch: LeadUploadBatch;
+  rows: { row: number; outcome: Exclude<LeadUploadOutcome, 'NEW' | 'CREATED'>; message: string | null; data: Partial<LeadUploadRawRow> }[];
+}
+
+// ---------------------------------------------------------------------------
 // BolifyAI panel recharge reminder calls (GET /reminder-calls; Super Admin and HR staff)
 // ---------------------------------------------------------------------------
 /** SCHEDULED / RETRY / PROCESSING / DRY_RUN read as "Pending"; ACCEPTED as "Submitted" (BolifyAI took the request, not "answered"). */

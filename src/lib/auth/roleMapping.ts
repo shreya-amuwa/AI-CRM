@@ -136,6 +136,16 @@ export function isSalesTeamMember(p: Pick<Profile, 'role' | 'team'>): boolean {
   return p.role === 'TEAM_MEMBER' && p.team?.division === 'SALES';
 }
 
+/**
+ * Upload Leads is offered to every Sales employee: a Sales Team Member (any Sales role), a Sales Team Lead and the Sales Department Head.
+ * Navigation only: the database (private.can_upload_leads) decides.
+ */
+export function canUploadLeads(p: Pick<Profile, 'role' | 'team' | 'department' | 'headDivision' | 'defaultDashboard'>): boolean {
+  if (p.department?.slug === 'hr' || p.department?.slug === 'accounts') return false;
+  if (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') return p.team?.division === 'SALES';
+  return isSalesHead(p);
+}
+
 /** A support team member created (or marked) as Technical Consultant. */
 export function isTechnicalConsultant(p: Pick<Profile, 'role' | 'isTechnicalConsultant' | 'team'>): boolean {
   return p.role === 'TEAM_MEMBER' && !!p.isTechnicalConsultant && p.team?.division === 'SUPPORT';

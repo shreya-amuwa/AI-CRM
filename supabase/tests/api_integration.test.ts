@@ -10502,6 +10502,85 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 // ---------------------------------------------------------------------------
+// Upload Leads (docs/LEAD_UPLOAD.md): preview, chunks, retries, summary, the rows not created, who may upload
+// ---------------------------------------------------------------------------
+{
+  const svcNames = (await db.query(`select name, code from crm_services where is_active order by sort_order limit 2`)).rows as { name: string; code: string }[];
+  const blank = { name: '', contactPerson: '', phone: '', email: '', company: '', businessType: '', location: '', services: svcNames[0].name, leadSource: '', description: '', followUpDate: '', assignee: '' };
+  const row = (n: number, o: Record<string, string>) => ({ row: n, ...blank, ...o });
+  const rows = [
+    row(2, { name: 'Bulk Lead One', phone: '+91 97770 00001', company: 'Bulk One Co', email: 'Bulk.One@example.com', followUpDate: '05-01-2027', leadSource: 'referral', contactPerson: 'Sunil' }),
+    row(3, { name: 'Bulk Lead Two', phone: '9777000002', company: 'Bulk Two Co', services: `${svcNames[0].name}; ${svcNames[1].code}` }),
+    row(4, { name: 'Bulk Bad Phone', phone: '12345', company: 'Bad Co' }),
+    row(5, { name: 'Bulk Twice', phone: '97770 00001', company: 'Again Co' }),
+    row(6, { name: 'Bulk Unknown Service', phone: '9777000006', company: 'X Co', services: 'Nonexistent thing' }),
+    row(7, { name: '', phone: '9777000007', company: 'No Name Co' })
+  ];
+  for (const who of ['tc', 'accm']) {
+    r = await api(who, 'POST', '/lead-uploads/check', { rows });
+    check(r.status === 403, `upload leads API: ${who} (not Sales) cannot upload leads (403)`, r);
+  }
+  r = await api('a', 'POST', '/lead-uploads/check', { rows });
+  check(r.status === 200 && r.json.data.summary.total === 6 && r.json.data.summary.new === 2 && r.json.data.summary.duplicates === 1 && r.json.data.summary.invalid === 3, 'upload leads API: the preview finds 2 new, 1 duplicate, 3 invalid', r);
+  const byRow = new Map((r.json.data.rows as any[]).map(x => [x.row, x]));
+  check(/Mobile Number/.test(byRow.get(4).message) && /Unknown service/.test(byRow.get(6).message) && /Customer Name/.test(byRow.get(7).message) && byRow.get(5).outcome === 'DUPLICATE',
+    'upload leads API: each problem has its row and its column', r.json.data.rows);
+  r = await api('a', 'POST', '/lead-uploads/check', { rows: [{ ...rows[0], unknown: 'x' }] });
+  check(r.status === 422, 'upload leads API: an unknown field is refused', r);
+  check((await db.query(`select count(*)::int n from customers where name like 'Bulk Lead%'`)).rows[0].n === 0, 'upload leads API: the preview saves nothing');
+
+  const start = { clientRequestId: crypto.randomUUID(), fileName: 'expo.xlsx', fileType: 'XLSX', fileHash: crypto.createHash('sha256').update('expo-file').digest('hex'), totalRows: rows.length };
+  r = await api('a', 'POST', '/lead-uploads', { ...start, fileType: 'PDF' });
+  check(r.status === 422, 'upload leads API: only Excel or CSV', r);
+  r = await api('a', 'POST', '/lead-uploads', start);
+  const batchId = r.json.data?.id as string;
+  check(r.status === 201 && batchId && r.json.data.status === 'PROCESSING', 'upload leads API: an upload starts', r);
+  r = await api('a', 'POST', '/lead-uploads', start);
+  check(r.status === 201 && r.json.data.id === batchId, 'upload leads API: the same request id gives the same upload', r);
+  r = await api('a', 'POST', `/lead-uploads/${batchId}/rows`, { rows: rows.slice(0, 3) });
+  check(r.status === 200 && r.json.data.results.filter((x: any) => x.outcome === 'CREATED').length === 2, 'upload leads API: the first chunk creates two leads', r);
+  r = await api('a', 'POST', `/lead-uploads/${batchId}/rows`, { rows: rows.slice(0, 3) });
+  check(r.status === 200 && r.json.data.results.length === 0, 'upload leads API: the same chunk again does nothing', r);
+  r = await api('a', 'POST', `/lead-uploads/${batchId}/finish`);
+  check(r.status === 409, 'upload leads API: not finished before every row is sent', r);
+  r = await api('th', 'POST', `/lead-uploads/${batchId}/rows`, { rows: rows.slice(3) });
+  check(r.status === 404, 'upload leads API: another person cannot add rows to it', r);
+  r = await api('a', 'POST', `/lead-uploads/${batchId}/rows`, { rows: rows.slice(3) });
+  check(r.status === 200, 'upload leads API: the second chunk', r);
+  r = await api('a', 'POST', `/lead-uploads/${batchId}/finish`);
+  check(r.status === 200 && r.json.data.status === 'COMPLETED' && r.json.data.totalRows === 6 && r.json.data.created === 2 && r.json.data.duplicates === 1 && r.json.data.invalid === 3 && r.json.data.failed === 0,
+    'upload leads API: the summary', r);
+  const made = (await db.query(`select owner_id, created_by, lifecycle_stage, lead_source, email, phone, notes, lead_upload_batch_id from customers where name like 'Bulk Lead%' order by name`)).rows;
+  check(made.length === 2 && made.every((c: any) => c.owner_id === memberA && c.created_by === memberA && c.lifecycle_stage === 'LEAD' && c.lead_upload_batch_id === batchId)
+    && made[0].lead_source === 'Referral' && made[0].email === 'bulk.one@example.com' && made[0].phone === '9777000001' && made[0].notes === 'Contact person: Sunil',
+    'upload leads API: the leads are owned by the uploader, with the Upload Batch ID and the Add Lead values', made);
+  check((await db.query(`select count(*)::int n from customer_services s join customers c on c.id = s.customer_id where c.name = 'Bulk Lead Two'`)).rows[0].n === 2, 'upload leads API: a lead with two services');
+  r = await api('a', 'GET', '/pipeline/customers?stage=LEAD&search=Bulk%20Lead');
+  check(r.status === 200 && r.json.data.total === 2, 'upload leads API: the leads are in the Lead section', r);
+  r = await api('a', 'GET', `/lead-uploads/${batchId}/issues`);
+  check(r.status === 200 && r.json.data.rows.length === 4 && r.json.data.rows[0].row === 4 && r.json.data.rows[0].data.phone === '12345' && r.json.data.rows.every((x: any) => x.message),
+    'upload leads API: the rows not created, with their values and reasons', r);
+  r = await api('th', 'GET', `/lead-uploads/${batchId}/issues`);
+  check(r.status === 404, 'upload leads API: another person cannot read them', r);
+  r = await api('a', 'GET', '/lead-uploads/not-an-id/issues');
+  check(r.status === 422, 'upload leads API: a malformed id is refused', r);
+  r = await api('a', 'GET', '/lead-uploads');
+  check(r.status === 200 && r.json.data[0].id === batchId && r.json.data[0].created === 2, 'upload leads API: the upload history', r);
+  r = await api('a', 'POST', '/lead-uploads', { ...start, clientRequestId: crypto.randomUUID() });
+  check(r.status === 409, 'upload leads API: the same file is not imported twice', r);
+
+  // the Sales Department Head and the Team Lead upload into their own Lead section
+  for (const [who, phone, name] of [['sh', '9777000101', 'Bulk Head Lead'], ['th', '9777000102', 'Bulk Lead Lead']] as const) {
+    r = await api(who, 'POST', '/lead-uploads', { clientRequestId: crypto.randomUUID(), fileName: `${who}.csv`, fileType: 'CSV', fileHash: crypto.createHash('sha256').update(who).digest('hex'), totalRows: 1 });
+    const id = r.json.data?.id as string;
+    r = await api(who, 'POST', `/lead-uploads/${id}/rows`, { rows: [row(2, { name, phone, company: `${name} Co` })] });
+    check(r.status === 200 && r.json.data.results[0].outcome === 'CREATED', `upload leads API: ${who} uploads a lead`, r);
+    r = await api(who, 'GET', `/pipeline/customers?stage=LEAD&mine=true&search=${encodeURIComponent(name)}`);
+    check(r.status === 200 && r.json.data.total === 1, `upload leads API: and it is in ${who}'s own leads`, r);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // BolifyAI panel recharge reminder calls (20270103000100): the calling API with x-api-key (a local mock; never the real service), the 5-day stage,
 // no duplicate call, timeouts not retried, safe test mode, the HR / Admin list, and the call-result callback.
 // ---------------------------------------------------------------------------
@@ -10625,7 +10704,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   mock.close();
   for (const k of ['BOLIFY_API_KEY', 'BOLIFY_API_URL', 'BOLIFY_TIMEOUT_MS', 'AUTOMATION_TEST_RECIPIENTS', 'BOLIFY_CALLBACK_SECRET', 'AUTOMATION_MODE_AI_CALL']) delete process.env[k];
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
-// 20270103000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
+// 20270104000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
 {
   const modeBefore = process.env.AUTOMATION_MODE_LEAD_WHATSAPP;
   process.env.AUTOMATION_MODE_LEAD_WHATSAPP = 'dry_run';

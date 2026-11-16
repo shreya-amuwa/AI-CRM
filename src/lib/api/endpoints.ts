@@ -5,6 +5,7 @@
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
+import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   WelcomeEmailItem, WelcomeEmailList,
   ReminderCallList,
@@ -1035,6 +1036,17 @@ export const employeesApi = {
   directory: (departmentId?: string) => api.get<DepartmentEmployeeDirectory>('/department/employees', { departmentId }),
   assignToLead: (memberId: string, body: { leadId: string; note?: string }) => api.post<null>(`/department/employees/${memberId}/assign-lead`, body),
   assignments: (memberId: string) => api.get<TeamAssignmentRecord[]>(`/department/employees/${memberId}/assignments`)
+};
+
+// Upload Leads (docs/LEAD_UPLOAD.md): preview, then start / send the rows in chunks / finish
+export const leadUploadApi = {
+  check: (rows: LeadUploadRawRow[]) => api.post<LeadUploadCheckResult>('/lead-uploads/check', { rows }),
+  start: (body: { clientRequestId: string; fileName: string; fileType: 'XLSX' | 'CSV'; fileHash: string; totalRows: number }) =>
+    api.post<LeadUploadBatch>('/lead-uploads', body),
+  rows: (batchId: string, rows: LeadUploadRawRow[]) => api.post<LeadUploadChunkResult>(`/lead-uploads/${batchId}/rows`, { rows }),
+  finish: (batchId: string) => api.post<LeadUploadBatch>(`/lead-uploads/${batchId}/finish`, {}),
+  history: () => api.get<LeadUploadBatch[]>('/lead-uploads'),
+  issues: (batchId: string) => api.get<LeadUploadIssues>(`/lead-uploads/${batchId}/issues`)
 };
 
 /** The lead welcome WhatsApp ("our services", once when a lead first reaches a sales person). */

@@ -652,6 +652,16 @@ export const telecallerController = {
   updateLead: (async ctx => ok(await svc(ctx).telecaller.updateLead(ctx.params.id, ctx.req.body))) as Handler
 };
 
+// Upload Leads (every Sales employee; the database refuses everybody else)
+export const leadUploadsController = {
+  check: (async ctx => ok(await svc(ctx).leadUploads.check(ctx.req.body))) as Handler,
+  history: (async ctx => ok(await svc(ctx).leadUploads.history())) as Handler,
+  start: (async ctx => ok(await svc(ctx).leadUploads.start(ctx.req.body), 201)) as Handler,
+  rows: (async ctx => ok(await svc(ctx).leadUploads.rows(ctx.params.id, ctx.req.body))) as Handler,
+  finish: (async ctx => ok(await svc(ctx).leadUploads.finish(ctx.params.id))) as Handler,
+  issues: (async ctx => ok(await svc(ctx).leadUploads.issues(ctx.params.id))) as Handler
+};
+
 export const fieldVisitController = {
   overview: (async ctx => ok(await svc(ctx).fieldVisit.overview())) as Handler,
   leads: (async ctx => ok(await svc(ctx).fieldVisit.leads(ctx.req.query))) as Handler,

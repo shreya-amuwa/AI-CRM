@@ -1,4 +1,4 @@
-// Browser test of the lead welcome WhatsApp (20270103000200): the settings page of the Super Admin / Sales Department Head (mode, template,
+// Browser test of the lead welcome WhatsApp (20270104000200): the settings page of the Super Admin / Sales Department Head (mode, template,
 // variables in order, the approval rule, the latest messages) and a lead's status with "Send again", at desktop and phone width.
 // The API is a fake in this test's server.
 import { createRequire } from 'node:module';
