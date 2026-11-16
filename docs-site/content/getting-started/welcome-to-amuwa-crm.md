@@ -17,7 +17,7 @@ Amuwa AI CRM is the unified operational platform connecting lead acquisition, co
 
 :::prereq
 - You must have an active corporate staff account approved by your Department Head, HR, or Super Admin.
-- Use the internal staff portal (`https://ai-crm-drab.vercel.app/`) for employee operations, or direct external customers to the Client Dashboard (`/client/login`).
+- Use the internal staff portal (`https://crm.amuwacorporation.com/`) for employee operations, or direct external customers to the Client Dashboard (`/client/login`).
 :::
 
 ## Business units and organizational structure
@@ -50,7 +50,7 @@ Amuwa AI CRM maintains a strict security and routing boundary between internal e
 
 | Feature | Internal Staff CRM | External Client Dashboard |
 | --- | --- | --- |
-| **Sign-In Entry Point** | `https://ai-crm-drab.vercel.app/` (`/login`) | `/client/login` (and `/client/set-password` for first-time setup) |
+| **Sign-In Entry Point** | `https://crm.amuwacorporation.com/` (`/login`) | `/client/login` (and `/client/set-password` for first-time setup) |
 | **Target Users** | Super Admin, Department Heads, Team Leads, Sales, Telecallers, Business Associates, Support, Technical Consultants, Accounts, HR | Authorized business customers and client point-of-contact users |
 | **Available Tools** | 4-stage sales pipeline, calling sheets, payment confirmation ledger, invoice builder, onboarding verification, HR & audit logs | **Overview**, **My Services**, **Monthly Plans**, **Explore Services**, **Invoices & Payments**, **Documents**, **Support Tickets**, **Chat with Team**, and **Calendar** |
 | **Documentation Manual** | This Internal Employee Manual | [Client Help Center](/client/welcome-client-portal) |

@@ -17,7 +17,7 @@ Amuwa AI CRM uses role-based authentication backed by Supabase Auth. Depending o
 
 :::prereq
 - Use your official work email address (for example, `name@amuwa.com`) and password.
-- Internal staff must sign in at the main CRM login page (`https://ai-crm-drab.vercel.app/`).
+- Internal staff must sign in at the main CRM login page (`https://crm.amuwacorporation.com/`).
 - External customers must sign in at `/client/login` — staff credentials will not work on the client login form, and client credentials will not work on the staff login form.
 :::
 

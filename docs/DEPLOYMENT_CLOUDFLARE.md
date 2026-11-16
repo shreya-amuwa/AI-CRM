@@ -102,8 +102,10 @@ dashboards, never into chat, files or commits.
    * Production branch: `main`.
    * Build command: `npm run build`. Deploy command: `npx wrangler deploy`.
      Non-production branch deploy command: `npx wrangler versions upload` (every pull request gets a preview link).
-   * **Build variables** (used when the frontend is built, public values only):
-     `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (same values as on Vercel).
+   * **Build variables** (Worker -> Settings -> **Build** -> Variables and secrets; used when the frontend is built, public values only):
+     `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (same values as on Vercel). They must be BUILD variables: a runtime Worker variable is not
+     visible to `vite build`. `scripts/check-build-env.mjs` (part of `npm run build`) stops a Cloudflare build that lacks them, or that has a secret
+     in a `VITE_` name (it recognises Cloudflare's own build through `WORKERS_CI`; add the build variable `REQUIRE_BUILD_ENV=1` if it does not).
 2. Worker → **Settings → Variables and Secrets**. Add every value you have on Vercel today (Vercel → Project → Settings → Environment Variables),
    as **Secret** for anything sensitive. `CRM_PLATFORM` and `EMAIL_PROVIDER` are already set by `wrangler.jsonc`. At minimum:
 
@@ -136,7 +138,13 @@ dashboards, never into chat, files or commits.
    * Senders of the **lead webhook** (n8n, WhatsApp, forms, the Google Apps Script on the Expenses page), the **Wabastore delivery-status webhook**
      and the **biometric gateway**, if they used the `ai-crm-drab.vercel.app` address.
    * The staff manual links (`docs-site/content/...`) still name `ai-crm-drab.vercel.app`: update them in a small follow-up change once the final address is known.
-4. Send one test of each e-mail type you rely on (a password reset, a new employee welcome e-mail, an invoice e-mail) and check Resend → **Emails**.
+3b. **Run the smoke test** from your computer against the new address: `node scripts/cf-smoke.mjs https://<address> --expect=cloudflare --supabase-host=<project>.supabase.co`.
+   Every line must be PASS; read each WARN. It checks routing, headers, caching, the API's privacy, the webhook and e-mail-hook addresses, and
+   what `/api/v1/health` says about the platform, the schedule and file storage. The sign-in, upload and chat checks are in `CLOUDFLARE_AUDIT.md`.
+4. **Run the automations on ONE platform only.** At go-live set `SCHEDULED_ENABLED=true` on the Worker AND `VERCEL_CRON_PAUSED=true` on Vercel (a
+   variable, no redeploy of code needed) in the same hour; `/api/v1/health` shows `scheduledAutomations` for each. Until the Worker has
+   `SCHEDULED_ENABLED=true` the Worker's cron does nothing, and until Vercel is paused its cron keeps calling the same database.
+5. Send one test of each e-mail type you rely on (a password reset, a new employee welcome e-mail, an invoice e-mail) and check Resend → **Emails**.
 
 ### Step D: after a week without problems
 

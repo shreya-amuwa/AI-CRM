@@ -1,5 +1,7 @@
 import { getEnv } from './config/env.js';
 import { getAnonClient } from './db/supabase.js';
+import { platformName, scheduledAutomations } from './platform.js';
+import { activeProviderName } from './storage/config.js';
 
 /**
  * GET /api/v1/health - unauthenticated deployment check. Reports whether the
@@ -7,6 +9,14 @@ import { getAnonClient } from './db/supabase.js';
  */
 export async function healthCheck() {
   const checks: Record<string, string> = {};
+  // Where this is running and whether it runs the scheduled automations: lets a move between platforms be checked from one address.
+  checks.platform = platformName();
+  checks.scheduledAutomations = scheduledAutomations();
+  try {
+    checks.fileStorage = activeProviderName() === 'R2' ? 'r2' : 'supabase';
+  } catch {
+    checks.fileStorage = 'misconfigured (STORAGE_PROVIDER=r2 needs the R2_* settings)';
+  }
   let env;
   try {
     env = getEnv();
