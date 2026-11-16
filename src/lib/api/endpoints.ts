@@ -123,6 +123,9 @@ import type {
   InvoiceWhatsAppDispatch,
   InvoiceWhatsAppResult,
   InvoiceWhatsAppSettings,
+  LeadWhatsAppMessage,
+  LeadWhatsAppSettings,
+  LeadWhatsAppVariable,
   PaymentInvoiceBilling,
   PaymentInvoiceOutcome,
   AccountsPaymentCounts,
@@ -1044,4 +1047,13 @@ export const leadUploadApi = {
   finish: (batchId: string) => api.post<LeadUploadBatch>(`/lead-uploads/${batchId}/finish`, {}),
   history: () => api.get<LeadUploadBatch[]>('/lead-uploads'),
   issues: (batchId: string) => api.get<LeadUploadIssues>(`/lead-uploads/${batchId}/issues`)
+};
+
+/** The lead welcome WhatsApp ("our services", once when a lead first reaches a sales person). */
+export const leadWhatsAppApi = {
+  settings: () => api.get<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings'),
+  saveSettings: (body: { enabled: boolean; templateName: string | null; templateLanguage: string; templateApproved: boolean; variables: LeadWhatsAppVariable[] }) =>
+    api.post<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings', body),
+  history: (customerId: string) => api.get<LeadWhatsAppMessage[]>(`/leads/${customerId}/whatsapp`),
+  resend: (customerId: string) => api.post<LeadWhatsAppMessage>(`/leads/${customerId}/whatsapp/retry`, {})
 };

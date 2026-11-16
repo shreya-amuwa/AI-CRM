@@ -6,6 +6,7 @@ import { pipelineApi } from '../../../lib/api/endpoints';
 import { fmtDate, fmtDateTime, MoneyTiles, PaymentHistory, PaymentStatusBadge, WorkflowBadge } from '../../payments/PaymentBits';
 import { ErrorBanner, Loading, Modal } from '../../support-member/SupportParts';
 import { ActivityCard } from './LeadForms';
+import { LeadWhatsAppStatus } from '../../leads/LeadWhatsApp';
 import { ServiceChips, useServiceCatalog } from './shared';
 
 /** A customer's details in a pop-up (opened by clicking a row). Read-only. */
@@ -74,6 +75,7 @@ export const CustomerQuickView: React.FC<{ id: string; title?: string; onClose: 
               </p>
             </div>
           )}
+          <LeadWhatsAppStatus customerId={id} />
           <ActivityCard activities={c.activities} title="Last activities" />
           <div className="flex justify-end"><DeleteCustomerButton customerId={id} name={c.company || c.name} onDeleted={onClose} /></div>
         </div>

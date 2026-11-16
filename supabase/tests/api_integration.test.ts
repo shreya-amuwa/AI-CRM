@@ -10704,6 +10704,35 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   mock.close();
   for (const k of ['BOLIFY_API_KEY', 'BOLIFY_API_URL', 'BOLIFY_TIMEOUT_MS', 'AUTOMATION_TEST_RECIPIENTS', 'BOLIFY_CALLBACK_SECRET', 'AUTOMATION_MODE_AI_CALL']) delete process.env[k];
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+// 20270104000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
+{
+  const modeBefore = process.env.AUTOMATION_MODE_LEAD_WHATSAPP;
+  process.env.AUTOMATION_MODE_LEAD_WHATSAPP = 'dry_run';
+  let w = await api('a', 'GET', '/sales/lead-whatsapp/settings');
+  check(w.status === 403, 'lead WhatsApp: a sales person cannot read the settings', w);
+  w = await api('sa', 'POST', '/sales/lead-whatsapp/settings', { enabled: true, templateName: 'amuwa_services_intro', templateLanguage: 'en', templateApproved: true, variables: ['LEAD_NAME', 'NOT_A_FIELD'] });
+  check(w.status === 422, 'lead WhatsApp: an unknown variable is refused', w);
+  w = await api('sa', 'POST', '/sales/lead-whatsapp/settings', { enabled: true, templateName: 'amuwa_services_intro', templateLanguage: 'en', templateApproved: true, variables: ['LEAD_NAME', 'SALES_PERSON_NAME'] });
+  check(w.status === 200 && w.json.data.enabled && w.json.data.templateApproved && w.json.data.delivery?.mode === 'dry_run' && w.json.data.delivery.ready === false,
+    'lead WhatsApp: the Super Admin switches it on; the server says it is in test mode', w);
+  w = await api('a', 'POST', '/pipeline/leads', { name: 'Welcome Lead', company: 'Welcome Traders', phone: '+91 98200 77001', leadSource: 'Instagram', services: ['AI_CALLING'] });
+  check(w.status === 201, 'lead WhatsApp: a Sales member adds a lead', w);
+  const welcomeLead = w.json.data.id;
+  w = await api('a', 'GET', `/leads/${welcomeLead}/whatsapp`);
+  check(w.status === 200 && w.json.data.length === 1 && w.json.data[0].status === 'DRY_RUN' && w.json.data[0].recipient === '+91XXXXXX7001',
+    'lead WhatsApp: adding the lead queued its welcome message and the test-mode run handled it at once (nothing sent)', w);
+  w = await api('a', 'PATCH', `/pipeline/leads/${welcomeLead}`, { name: 'Welcome Lead', company: 'Welcome Traders', phone: '+91 98200 77001', leadSource: 'Instagram', services: ['AI_CALLING'] });
+  check((await db.query(`select count(*)::int as n from lead_whatsapp_dispatches where customer_id = $1`, [welcomeLead])).rows[0].n === 1, 'lead WhatsApp: saving the lead again adds nothing');
+  w = await api('b', 'GET', `/leads/${welcomeLead}/whatsapp`);
+  check(w.status === 404 || w.status === 403, 'lead WhatsApp: another member cannot read it', w);
+  w = await api('a', 'GET', '/leads/not-an-id/whatsapp');
+  check(w.status === 422, 'lead WhatsApp: a malformed lead id is refused', w);
+  w = await api('a', 'POST', `/leads/${welcomeLead}/whatsapp/retry`);
+  check(w.status === 200 && ['PENDING', 'DRY_RUN'].includes(w.json.data.status), 'lead WhatsApp: a test-run message can be sent again (still a test run here)', w);
+  w = await api('sa', 'GET', '/sales/lead-whatsapp/settings');
+  check(w.status === 200 && w.json.data.recent.some((m: any) => m.customerId === welcomeLead), 'lead WhatsApp: the settings list the latest messages', w);
+  await api('sa', 'POST', '/sales/lead-whatsapp/settings', { enabled: false, templateName: null, templateLanguage: 'en', templateApproved: false, variables: ['LEAD_NAME'] });
+  if (modeBefore === undefined) delete process.env.AUTOMATION_MODE_LEAD_WHATSAPP; else process.env.AUTOMATION_MODE_LEAD_WHATSAPP = modeBefore;
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

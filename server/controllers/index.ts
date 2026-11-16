@@ -159,6 +159,13 @@ export const chatController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+export const leadWhatsAppController = {
+  settings: (async ctx => ok(await svc(ctx).leadWhatsApp.settings())) as Handler,
+  setSettings: (async ctx => ok(await svc(ctx).leadWhatsApp.setSettings(ctx.req.body))) as Handler,
+  history: (async ctx => ok(await svc(ctx).leadWhatsApp.history(ctx.params.id))) as Handler,
+  resend: (async ctx => ok(await svc(ctx).leadWhatsApp.resend(ctx.params.id))) as Handler
+};
+
 export const meetingsController = {
   list: (async ctx => ok(await svc(ctx).meetings.list(ctx.req.query))) as Handler,
   detail: (async ctx => ok(await svc(ctx).meetings.detail(ctx.params.id))) as Handler,
