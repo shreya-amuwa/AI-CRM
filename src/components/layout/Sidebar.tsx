@@ -86,6 +86,7 @@ export type ActiveTab =
   | 'hr_meetings'
   | 'hr_reviews'
   | 'hr_field_tracking'
+  | 'hr_recharge_calls'
   | 'hr_letter_nda'
   | 'hr_letter_offer'
   | 'hr_letter_experience'
@@ -346,6 +347,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
     // work-related field visit location records (the database decides: HR staff, not recruiters)
     { id: 'hr_field_tracking' as ActiveTab, label: 'Field Visit Tracking', icon: MapPin },
+    // BolifyAI panel recharge reminder calls (7 / 5 / 1 day before expiry): read only; the database allows HR staff and the Super Admin
+    ...(user?.profile?.hrSubRole !== 'HR_RECRUITER' ? [{ id: 'hr_recharge_calls' as ActiveTab, label: 'Recharge Reminder Calls', icon: PhoneCall }] : []),
     // weekly department reports approved by the Operations Head: individual reviews and the consolidated report (the Super Admin has her own page)
     ...(user?.role !== 'superadmin' ? [{ id: 'hr_reviews' as ActiveTab, label: 'Performance Reviews', icon: ClipboardCheck }] : []),
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),

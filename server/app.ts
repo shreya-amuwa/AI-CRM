@@ -39,7 +39,7 @@ import { runTopPerformersAutomation } from './topPerformers/writer.js';
 import { runReportAnalysisAutomation } from './reportAnalysis/writer.js';
 import { runTrainingAutomation } from './automations/trainingDispatcher.js';
 import { runSubscriptionReminders } from './automations/subscriptionReminders.js';
-import { bolifySender } from './automations/bolify.js';
+import { bolifyCallResult, bolifySender } from './automations/bolify.js';
 import { runAllSubscriptionMessages } from './automations/subscriptionMessages.js';
 import { applyDeliveryReport, normalizeProviderStatus, runInvoiceWhatsApp } from './invoices/whatsapp.js';
 import { StorageRepository } from './repositories/StorageRepository.js';
@@ -178,6 +178,31 @@ app.post('/internal/whatsapp/status', async c => {
   return c.json(ok(await applyDeliveryReport(ref, status, detail)));
 });
 
+// BolifyAI call results for the reminder calls: POST { call_id, status, duration?, detail? } with "Authorization: Bearer <BOLIFY_CALLBACK_SECRET>"
+// (16+ characters). status: completed / answered -> COMPLETED; no-answer -> NOT_ANSWERED; busy -> BUSY; failed -> FAILED; anything else is ignored.
+// The field names are provisional until BolifyAI's callback format is confirmed (bolifyCallResult in server/automations/bolify.ts).
+app.post('/internal/bolify/call-status', async c => {
+  const secret = (process.env.BOLIFY_CALLBACK_SECRET || '').trim();
+  if (secret.length < 16) throw new AppError('SERVICE_UNAVAILABLE', 'Call results are not configured.');
+  const given = Buffer.from((c.req.header('authorization') || '').replace(/^Bearer\s+/i, '') || c.req.header('x-webhook-secret') || '');
+  const want = Buffer.from(secret);
+  if (want.length !== given.length || !timingSafeEqual(want, given)) throw new AppError('UNAUTHENTICATED');
+  if (Number(c.req.header('content-length') || 0) > 20_000) throw new AppError('VALIDATION_ERROR', 'The report is too large.');
+  const parsed = bolifyCallResult(await c.req.json().catch(() => null));
+  if (!parsed) throw new AppError('VALIDATION_ERROR', 'Send the call id and its status.');
+  if (!parsed.outcome) return c.json(ok({ matched: false, ignored: true }));
+  if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'The server has no service key.');
+  const { data, error } = await getServiceClient().rpc('sub_reminder_call_result', {
+    p_call_id: parsed.callId, p_outcome: parsed.outcome, p_duration_seconds: parsed.durationSeconds, p_detail: parsed.detail
+  });
+  if (error) {
+    if (/NOT_FOUND/.test(error.message)) return c.json(ok({ matched: false }));
+    if (/VALIDATION_ERROR/.test(error.message)) throw new AppError('VALIDATION_ERROR', 'The call result is not valid.');
+    throw new AppError('SERVICE_UNAVAILABLE', 'The call result could not be recorded.');
+  }
+  return c.json(ok({ matched: true, ...(data as Record<string, unknown>) }));
+});
+
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
 // (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
 app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
@@ -214,8 +239,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const recruitmentEmails = await runDecisionEmailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Department Head e-mails about payments and expenses: the retries (and anything left waiting).
   const financeMail = await runFinanceMailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  // Subscription expiry reminder calls (7, 3 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
-  // calls through BolifyAI when BOLIFY_WEBHOOK_URL is set.
+  // Panel recharge reminder calls (7, 5 and 1 day before expiry): decided and tracked in the database. Dry run by default; live places the
+  // calls through BolifyAI when BOLIFY_API_KEY (or the older BOLIFY_WEBHOOK_URL) is set.
   const subscriptionReminders = await runSubscriptionReminders({ sender: bolifySender() });
   // The same reminders by e-mail and WhatsApp (Wabastore): dry run by default; live only with an approved wording and a connected provider.
   const subscriptionMessages = await runAllSubscriptionMessages();
@@ -611,7 +636,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

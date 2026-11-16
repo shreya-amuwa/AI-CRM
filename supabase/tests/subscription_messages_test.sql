@@ -168,10 +168,11 @@ select test.login('sa');
 select test.must_fail($$select set_reminder_channels(null, true)$$, 'each channel needs a choice', 'Choose on or off');
 select test.check((select set_reminder_channels(false, true) ->> 'emailEnabled' = 'false'), 'the Super Admin switches the e-mail reminders off');
 reset role;
-select test.check((select (sub_reminder_schedule('2027-03-14') ->> 'created')::int >= 10), 'three days before: reminders are created ...');
+select test.check((select (sub_reminder_schedule('2027-03-14') ->> 'created')::int >= 5), 'three days before: reminders are created ...');
 select test.check((select count(*) = 0 from subscription_reminders where channel = 'EMAIL' and stage = 3 and customer_id::text in (select v from mr))
                and (select count(*) = 5 from subscription_reminders where channel = 'WHATSAPP' and stage = 3 and customer_id::text in (select v from mr))
-               and (select count(*) = 5 from subscription_reminders where channel = 'CALL' and stage = 3 and customer_id::text in (select v from mr)), '... for the calls and WhatsApp, none for the switched-off e-mail');
+               and (select count(*) = 0 from subscription_reminders where channel = 'CALL' and stage = 3 and customer_id::text in (select v from mr)),
+  '... for WhatsApp, none for the switched-off e-mail, and no call (calls are 7, 5 and 1 day before, 20270103000100)');
 select test.check((select jsonb_array_length(sub_message_claim('EMAIL', 50, 'dry_run', 300, timestamptz '2027-03-14 10:30+05:30')) = 0), 'a switched-off channel claims nothing');
 update reminder_call_settings set email_enabled = true;
 select test.check((select (sub_reminder_schedule('2027-03-16') ->> 'created')::int >= 15), 'one day before: all three channels');
