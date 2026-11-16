@@ -97,9 +97,9 @@ const tooLarge = () => {
   throw new AppError('VALIDATION_ERROR', 'Request body is too large.');
 };
 const defaultBodyLimit = bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge });
-// The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows).
+// The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows); so does the Upload Leads preview.
 const importBodyLimit = bodyLimit({ maxSize: IMPORT_BODY_BYTES, onError: tooLarge });
-app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
+app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/lead-uploads/check' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
 // Layer 1: coarse per-IP flood protection before any auth work. On the Worker: Cloudflare's rate limiter (counts across the edge location,
 // not per isolate); elsewhere, or if it fails: the in-memory limiter.
 app.use('*', async (c, next) => {
