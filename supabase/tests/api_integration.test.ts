@@ -10704,6 +10704,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   mock.close();
   for (const k of ['BOLIFY_API_KEY', 'BOLIFY_API_URL', 'BOLIFY_TIMEOUT_MS', 'AUTOMATION_TEST_RECIPIENTS', 'BOLIFY_CALLBACK_SECRET', 'AUTOMATION_MODE_AI_CALL']) delete process.env[k];
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+}
 // 20270104000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
 {
   const modeBefore = process.env.AUTOMATION_MODE_LEAD_WHATSAPP;
