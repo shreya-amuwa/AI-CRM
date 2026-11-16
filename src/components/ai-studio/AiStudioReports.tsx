@@ -1,0 +1,314 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { AI_STUDIO_REPORT_STATUS_LABELS, type AiStudioPerson, type AiStudioProject, type AiStudioReportContext, type AiStudioReportDetail, type AiStudioReportPage, type AiStudioReportStatus, type AiStudioRole } from '../../../shared/contracts';
+import { aiStudioReportReviewSchema, aiStudioReportSchema } from '../../../shared/validation';
+import { aiStudioApi } from '../../lib/api/aiStudio';
+import { errorMessage } from '../../lib/api/client';
+import { PageTitle } from '../layout/shell';
+import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipeline/shared';
+import { Card, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../tasks/head/headParts';
+import { notifyAiStudioChanged, peekPendingAiStudio, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
+import { ReportStatusBadge, TableWrap, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
+
+const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean }[] = [
+  { key: 'workCompleted', label: 'Work Completed Today', required: true },
+  { key: 'workInProgress', label: 'Work In Progress' },
+  { key: 'pendingWork', label: 'Pending Work' },
+  { key: 'blockers', label: 'Challenges / Blockers' },
+  { key: 'remarks', label: 'Remarks or Additional Updates' }
+];
+
+/**
+ * The daily report form (Team Member and Team Lead): the date, the project, the task, and what was done. "Save draft" keeps it private; "Submit Daily Report" sends it
+ * for approval (a Team Member's goes to their Team Lead, a Team Lead's to the Department Head). A returned report opens here again with the reviewer's remarks.
+ */
+export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r: AiStudioReportDetail) => void; onCancel?: () => void }> = ({ existing, onDone, onCancel }) => {
+  const ctx = useLoad<AiStudioReportContext>(() => aiStudioApi.reportContext(), []);
+  const [date, setDate] = useState(existing?.reportDate ?? todayIso());
+  const [projectId, setProjectId] = useState(existing?.projectId ?? '');
+  const [taskId, setTaskId] = useState(existing?.taskId ?? '');
+  const [text, setText] = useState({
+    workCompleted: existing?.workCompleted ?? '', workInProgress: existing?.workInProgress ?? '', pendingWork: existing?.pendingWork ?? '', blockers: existing?.blockers ?? '', remarks: existing?.remarks ?? ''
+  });
+  const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
+  const [error, setError] = useState('');
+  const projects = ctx.data?.projects ?? [];
+  useEffect(() => { if (!projectId && projects.length) setProjectId(projects[0].id); }, [projects, projectId]);
+  const tasks = useMemo(() => (ctx.data?.tasks ?? []).filter(t => t.projectId === projectId), [ctx.data, projectId]);
+  useEffect(() => { if (taskId && !tasks.some(t => t.id === taskId)) setTaskId(''); }, [tasks, taskId]);
+
+  const save = async (submit: boolean) => {
+    const parsed = aiStudioReportSchema.safeParse({ projectId, taskId: taskId || null, reportDate: date, ...text, submit });
+    if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Please check the form.'); return; }
+    setSaving(submit ? 'submit' : 'draft');
+    setError('');
+    const body = { projectId, taskId: taskId || null, reportDate: date, workCompleted: text.workCompleted, workInProgress: text.workInProgress, pendingWork: text.pendingWork, blockers: text.blockers, remarks: text.remarks, submit };
+    try {
+      const saved = existing ? await aiStudioApi.updateReport(existing.id, body) : await aiStudioApi.createReport(body);
+      notifyAiStudioChanged();
+      onDone(saved);
+    } catch (err) { setError(errorMessage(err)); setSaving(null); }
+  };
+
+  if (ctx.loading && !ctx.data) return <Spinner label="Loading the report form…" />;
+  if (ctx.error) return <ErrorBanner message={ctx.error} onRetry={ctx.reload} />;
+  if (projects.length === 0) return <Card className="p-8 text-center text-sm text-slate-500">You are not on a project yet, so there is nothing to report on. Ask your {ctx.data?.role === 'LEAD' ? 'Department Head' : 'Team Lead'} to add you to one.</Card>;
+  const returnedNote = existing?.status === 'RETURNED_BY_TL' ? existing.tlComment : existing?.status === 'RETURNED_BY_DH' ? existing.dhComment : null;
+  return (
+    <form onSubmit={e => { e.preventDefault(); void save(true); }} aria-label="Daily report" className="space-y-4">
+      {returnedNote && (
+        <div role="status" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
+          <strong>{existing?.status === 'RETURNED_BY_TL' ? 'Your Team Lead' : 'The Department Head'} returned this report:</strong> {returnedNote}
+        </div>
+      )}
+      <Card className="p-5 space-y-4">
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Field label="Report date" htmlFor="ai-rp-date" required>
+            <input id="ai-rp-date" type="date" className={fieldCls} value={date} min={new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10)} max={ctx.data?.today ?? todayIso()} onChange={e => setDate(e.target.value)} />
+          </Field>
+          <Field label="Project" htmlFor="ai-rp-project" required>
+            <select id="ai-rp-project" className={fieldCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Assigned task" htmlFor="ai-rp-task">
+            <select id="ai-rp-task" className={fieldCls} value={taskId} onChange={e => setTaskId(e.target.value)}>
+              <option value="">No specific task</option>
+              {tasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+            </select>
+          </Field>
+        </div>
+        {PARTS.map(p => (
+          <Field key={p.key} label={p.label} htmlFor={`ai-rp-${p.key}`} required={p.required}>
+            <textarea id={`ai-rp-${p.key}`} className={textareaCls} rows={p.key === 'workCompleted' ? 4 : 3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
+          </Field>
+        ))}
+        <p className="text-xs text-slate-500">
+          {ctx.data?.hasReviewer
+            ? `When you submit, this report goes to ${ctx.data.reviewer} for approval${ctx.data.role === 'MEMBER' ? ', then to the Department Head' : ''}.`
+            : ctx.data?.role === 'MEMBER' ? 'You are not assigned to a Team Lead yet, so you cannot submit. Ask your Department Head. You can still save a draft.' : 'There is no Department Head to review this report yet.'}
+        </p>
+        {error && <ErrorBanner message={error} />}
+        <div className="flex flex-wrap gap-2">
+          <button type="submit" className={primaryBtn} disabled={!!saving || (ctx.data?.role === 'MEMBER' && !ctx.data.hasReviewer)}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
+          <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
+          {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
+        </div>
+      </Card>
+    </form>
+  );
+};
+
+/** One report in full, with its approval history, and (when the database says so) the decision form or the edit form. */
+export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged?: () => void }> = ({ id, onClose, onChanged }) => {
+  const { data: r, error, reload } = useLoad<AiStudioReportDetail>(() => aiStudioApi.report(id), [id]);
+  const [editing, setEditing] = useState(false);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const decide = async (decision: 'APPROVE' | 'RETURN') => {
+    const parsed = aiStudioReportReviewSchema.safeParse({ decision, comment });
+    if (!parsed.success) { setProblem(parsed.error.issues[0]?.message ?? 'Please check the remarks.'); return; }
+    setBusy(true);
+    setProblem('');
+    try {
+      await aiStudioApi.review(id, decision, parsed.data.comment ?? undefined);
+      setComment('');
+      notifyAiStudioChanged();
+      onChanged?.();
+      reload();
+    } catch (err) { setProblem(errorMessage(err)); } finally { setBusy(false); }
+  };
+  if (editing && r) {
+    return (
+      <Dialog title="Edit report" onClose={() => setEditing(false)} wide persistent>
+        <ReportForm existing={r} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onChanged?.(); reload(); }} />
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog title={r ? `Daily report · ${dateText(r.reportDate)}` : 'Daily report'} description={r ? `${r.authorName} · ${r.projectName}${r.taskTitle ? ` · ${r.taskTitle}` : ''}` : undefined} onClose={onClose} wide>
+      {error && <ErrorBanner message={error} onRetry={reload} />}
+      {!r && !error && <Spinner label="Loading the report…" />}
+      {r && (
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <ReportStatusBadge status={r.status} />
+            <span className="text-slate-500">Submitted {dateTimeText(r.submittedAt)}{r.revision > 1 ? ` · version ${r.revision}` : ''}</span>
+            {r.leadName && r.authorRole === 'MEMBER' && <span className="text-slate-500">Team Lead: {r.leadName}</span>}
+          </div>
+          {PARTS.map(p => (
+            <div key={p.key}>
+              <div className="text-xs font-semibold text-slate-500 mb-1">{p.label}</div>
+              <p className="text-sm text-slate-800 whitespace-pre-wrap">{r[p.key] || <span className="text-slate-400">-</span>}</p>
+            </div>
+          ))}
+          {r.canReview && (
+            <div className="rounded-2xl border border-slate-200 p-4 space-y-3" role="group" aria-label="Review this report">
+              <h3 className="text-sm font-extrabold text-slate-900">{r.reviewStage === 'TEAM_LEAD' ? 'Team Lead review' : 'Department Head review'}</h3>
+              <Field label="Remarks (needed when you return the report)" htmlFor="ai-rv-comment">
+                <textarea id="ai-rv-comment" className={textareaCls} rows={3} maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} />
+              </Field>
+              {problem && <ErrorBanner message={problem} />}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className={primaryBtn} disabled={busy} onClick={() => void decide('APPROVE')}>{r.reviewStage === 'TEAM_LEAD' ? 'Approve and send to the Department Head' : 'Approve (final)'}</button>
+                <button type="button" className={ghostBtn} disabled={busy} onClick={() => void decide('RETURN')}>Return / request changes</button>
+              </div>
+            </div>
+          )}
+          {r.canEdit && <div><button type="button" className={primaryBtn} onClick={() => setEditing(true)}>{r.status === 'DRAFT' ? 'Edit draft' : 'Edit and resubmit'}</button></div>}
+          <div>
+            <h3 className="text-sm font-extrabold text-slate-900 mb-2">Approval history</h3>
+            <ol className="space-y-2">
+              {r.history.map(h => (
+                <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
+                  <div className="font-semibold text-slate-800">
+                    {h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
+                    <span className="font-normal text-slate-500"> · {h.actorName ?? 'Someone'} · {dateTimeText(h.createdAt)} · {AI_STUDIO_REPORT_STATUS_LABELS[h.toStatus]}</span>
+                  </div>
+                  {h.comment && <p className="text-slate-600 whitespace-pre-wrap">{h.comment}</p>}
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="flex justify-end"><button type="button" className={ghostBtn} onClick={onClose}>Close</button></div>
+        </div>
+      )}
+    </Dialog>
+  );
+};
+
+interface Filters { projectId: string; status: string; leadId: string; authorId: string; from: string; to: string }
+const NO_FILTERS: Filters = { projectId: '', status: '', leadId: '', authorId: '', from: '', to: '' };
+
+/**
+ * A list of reports. 'mine' is the author's own (drafts included), 'team' a Team Lead's team, 'department' every submitted report for the Department Head. The database
+ * filters and pages; the tabs show how many reports wait at each step.
+ */
+export const ReportList: React.FC<{
+  view: 'mine' | 'team' | 'department';
+  projects: AiStudioProject[];
+  people?: AiStudioPerson[];
+  waitingStatus?: AiStudioReportStatus;
+  onNew?: () => void;
+}> = ({ view, projects, people = [], waitingStatus, onNew }) => {
+  const [f, setF] = useState<Filters>({ ...NO_FILTERS, status: waitingStatus ?? '' });
+  const [page, setPage] = useState(1);
+  const pendingReport = usePendingAiStudio('report');
+  const [openId, setOpenId] = useState<string | null>(pendingReport);
+  const { data, error, loading, reload } = useLoad<AiStudioReportPage>(
+    () => aiStudioApi.reports({ view, projectId: f.projectId || undefined, status: f.status || undefined, leadId: f.leadId || undefined, authorId: f.authorId || undefined, from: f.from || undefined, to: f.to || undefined, page, pageSize: 10 }),
+    [view, f, page]
+  );
+  useAiStudioChanged(reload);
+  const set = (patch: Partial<Filters>) => { setF(prev => ({ ...prev, ...patch })); setPage(1); };
+  const counts = data?.counts ?? {};
+  const tabs: { id: string; label: string; count?: number }[] =
+    view === 'department'
+      ? [{ id: 'PENDING_DH_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'With Team Leads', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }, { id: '', label: 'All' }]
+      : view === 'team'
+      ? [{ id: 'PENDING_TL_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'With Department Head', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }, { id: '', label: 'All' }]
+      : [{ id: '', label: 'All' }, { id: 'DRAFT', label: 'Drafts', count: counts.DRAFT ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'Pending Team Lead', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'Pending Department Head', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }];
+  const leads = people.filter(p => p.role === 'TEAM_HEAD');
+  const members = people.filter(p => p.role === 'TEAM_MEMBER' || (view === 'department' && p.role === 'TEAM_HEAD'));
+  return (
+    <Card>
+      <div className="p-4 border-b border-slate-100 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Tabs label="Report status" value={f.status} options={tabs} onChange={v => set({ status: v })} />
+          {onNew && <button type="button" className={primaryBtn} onClick={onNew}><Plus className="w-4 h-4" aria-hidden="true" /> New report</button>}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <select aria-label="Project" className={`${fieldCls} !w-auto min-w-[9rem]`} value={f.projectId} onChange={e => set({ projectId: e.target.value })}>
+            <option value="">All projects</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {view === 'department' && (
+            <select aria-label="Team Lead" className={`${fieldCls} !w-auto min-w-[9rem]`} value={f.leadId} onChange={e => set({ leadId: e.target.value })}>
+              <option value="">All Team Leads</option>{leads.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
+            </select>
+          )}
+          {view !== 'mine' && (
+            <select aria-label="Employee" className={`${fieldCls} !w-auto min-w-[9rem]`} value={f.authorId} onChange={e => set({ authorId: e.target.value })}>
+              <option value="">All employees</option>{members.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
+            </select>
+          )}
+          <label className="flex items-center gap-1.5 text-xs text-slate-500">From <input type="date" className={`${fieldCls} !w-auto`} value={f.from} max={f.to || undefined} onChange={e => set({ from: e.target.value })} /></label>
+          <label className="flex items-center gap-1.5 text-xs text-slate-500">To <input type="date" className={`${fieldCls} !w-auto`} value={f.to} min={f.from || undefined} onChange={e => set({ to: e.target.value })} /></label>
+          {(f.projectId || f.leadId || f.authorId || f.from || f.to) && <button type="button" className={ghostBtn} onClick={() => set({ ...NO_FILTERS, status: f.status })}>Clear filters</button>}
+        </div>
+      </div>
+      {error && <div className="p-4"><ErrorBanner message={error} onRetry={reload} /></div>}
+      {loading && !data && <Spinner label="Loading reports…" />}
+      {data && data.items.length === 0 && !error && <p className="py-12 px-6 text-center text-sm text-slate-500">No reports here.</p>}
+      {data && data.items.length > 0 && (
+        <TableWrap>
+          <table className="w-full min-w-[46rem]">
+            <thead className="border-b border-slate-100">
+              <tr>{view !== 'mine' && <th className={thCls}>Employee</th>}<th className={thCls}>Project</th><th className={thCls}>Report date</th><th className={thCls}>Submitted</th><th className={thCls}>Status</th><th className={thCls}><span className="sr-only">Open</span></th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {data.items.map(r => (
+                <tr key={r.id} className="hover:bg-slate-50">
+                  {view !== 'mine' && <td className={tdCls}><button type="button" onClick={() => setOpenId(r.id)} className="font-bold text-slate-900 hover:text-blue-700 text-left">{r.authorName}</button><div className="text-xs text-slate-500">{r.authorRole === 'LEAD' ? 'Team Lead' : r.leadName ? `Team: ${r.leadName}` : 'Team Member'}</div></td>}
+                  <td className={tdCls}>{r.projectName}{r.taskTitle && <div className="text-xs text-slate-500">{r.taskTitle}</div>}</td>
+                  <td className={tdCls}>{dateText(r.reportDate)}</td>
+                  <td className={tdCls}>{dateTimeText(r.submittedAt)}</td>
+                  <td className={tdCls}><ReportStatusBadge status={r.status} /></td>
+                  <td className={tdCls}><button type="button" onClick={() => setOpenId(r.id)} className="text-blue-600 hover:underline text-xs font-bold">Open</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </TableWrap>
+      )}
+      {data && data.total > data.pageSize && <div className="p-4 border-t border-slate-100"><Pager page={data.page} pageSize={data.pageSize} total={data.total} noun="reports" onPage={setPage} /></div>}
+      {openId && <ReportDialog id={openId} onClose={() => setOpenId(null)} onChanged={reload} />}
+    </Card>
+  );
+};
+
+type ReportTab = 'submit' | 'mine' | 'team';
+
+/**
+ * Daily Report: the Team Member writes and follows their reports; the Team Lead does the same and also reviews their team's reports. The Department Head's approval page is
+ * `DepartmentReports`.
+ */
+export const DailyReportsPage: React.FC<{ role: 'LEAD' | 'MEMBER' }> = ({ role }) => {
+  const [tab, setTab] = useState<ReportTab>(() => (peekPendingAiStudio('report') ? (role === 'LEAD' ? 'team' : 'mine') : role === 'MEMBER' ? 'submit' : 'mine'));
+  const [composing, setComposing] = useState(false);
+  const [version, setVersion] = useState(0);
+  const projects = useLoad<AiStudioProject[]>(() => aiStudioApi.projects(), []);
+  const list = projects.data ?? [];
+  const tabs: { id: ReportTab; label: string }[] = role === 'MEMBER'
+    ? [{ id: 'submit', label: 'Submit Daily Report' }, { id: 'mine', label: 'My Reports' }]
+    : [{ id: 'mine', label: 'My Daily Reports' }, { id: 'team', label: 'Team Member Reports' }];
+  return (
+    <div className="space-y-6">
+      <PageTitle
+        title="Daily Report"
+        subtitle={role === 'LEAD' ? 'Write your own daily report, and review the reports of your Team Members.' : 'Write your daily report and follow it through your Team Lead and the Department Head.'}
+      />
+      <Tabs<ReportTab> label="Daily report views" value={tab} options={tabs} onChange={t => { setTab(t); setComposing(false); }} />
+      {tab === 'submit' && <ReportForm key={version} onDone={() => { setVersion(v => v + 1); setTab('mine'); }} />}
+      {tab === 'mine' && (composing
+        ? <ReportForm onDone={() => setComposing(false)} onCancel={() => setComposing(false)} />
+        : <ReportList key={version} view="mine" projects={list} onNew={() => (role === 'MEMBER' ? setTab('submit') : setComposing(true))} />)}
+      {tab === 'team' && <ReportList view="team" projects={list} waitingStatus="PENDING_TL_APPROVAL" />}
+    </div>
+  );
+};
+
+/** Department Head / Super Admin: the reports of the department, filtered by project, Team Lead, employee, date and status. Only the Department Head decides. */
+export const DepartmentReports: React.FC<{ role: AiStudioRole }> = ({ role }) => {
+  const projects = useLoad<AiStudioProject[]>(() => aiStudioApi.projects(), []);
+  const people = useLoad<AiStudioPerson[]>(() => aiStudioApi.people(), []);
+  return (
+    <div className="space-y-6">
+      <PageTitle
+        title="Daily Reports"
+        subtitle={role === 'HEAD' ? 'Reports your Team Leads approved wait for your decision. Team Leads\' own reports come straight to you.' : 'Every submitted daily report of AI Studio (read only).'}
+      />
+      <ReportList view="department" projects={projects.data ?? []} people={people.data ?? []} waitingStatus={role === 'HEAD' ? 'PENDING_DH_APPROVAL' : undefined} />
+    </div>
+  );
+};

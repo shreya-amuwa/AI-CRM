@@ -13,6 +13,10 @@ import { MAX_LINES, paiseToDecimal, toPaise, toRateBp } from './invoiceCalc.js';
 import {
   ACCOUNT_STATUSES,
   ADDON_REQUEST_STATUSES,
+  AI_STUDIO_PRIORITIES,
+  AI_STUDIO_PROJECT_STATUSES,
+  AI_STUDIO_REPORT_STATUSES,
+  AI_STUDIO_TASK_STATUSES,
   CUSTOMER_DOCUMENT_MAX_BYTES,
   HR_EMPLOYEE_FILE_KINDS,
   HR_EMPLOYEE_FILE_MAX_BYTES,
@@ -303,6 +307,9 @@ export const userCreateSchema = z
     verifierDepartmentIds: z.array(uuidSchema).max(40, 'Choose at most 40 departments.').optional(),
     /** More (department, function) pairs the head works in, besides their own department and side. Another DEPARTMENT is for an Operations Head only. Super Admin only. */
     additionalAccess: z.array(z.object({ departmentId: uuidSchema, division: z.enum(HEAD_DIVISIONS) }).strict()).max(40).optional(),
+    /** AI Studio only: the project(s) of a new Team Lead / Team Member, and (when a Department Head or the Super Admin adds a Team Member) their Team Lead. */
+    aiStudioProjectIds: z.array(uuidSchema).max(30).optional(),
+    aiStudioLeadId: uuidSchema.optional(),
     /** Joining date, date of birth, blood group, emergency contact, designation. */
     details: memberDetailsSchema.optional()
   })
@@ -350,6 +357,14 @@ export const userCreateSchema = z
   .refine(u => !(u.salesSubRole && u.technicalConsultant), {
     message: 'A person is either a Technical Consultant or has a Sales role.',
     path: ['salesSubRole']
+  })
+  .refine(u => !u.aiStudioLeadId || u.role === 'TEAM_MEMBER', {
+    message: 'Only a Team Member has a Team Lead to choose.',
+    path: ['aiStudioLeadId']
+  })
+  .refine(u => !u.aiStudioProjectIds?.length || u.role === 'TEAM_HEAD' || u.role === 'TEAM_MEMBER', {
+    message: 'Projects are given to Team Leads and Team Members.',
+    path: ['aiStudioProjectIds']
   });
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 
@@ -3047,3 +3062,97 @@ export const reminderCallListQuerySchema = z
   })
   .strict();
 export type ReminderCallListQuery = z.infer<typeof reminderCallListQuerySchema>;
+
+
+// ---- AI Studio (migration 20270105000100) -------------------------------------------------------------------------------------------------
+export const aiStudioProjectSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Enter the project name (at least 2 characters).').max(120, 'The project name can have at most 120 characters.'),
+    description: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The description can have at most 2000 characters.').nullable().optional()),
+    status: z.enum(AI_STUDIO_PROJECT_STATUSES).optional()
+  })
+  .strict();
+export type AiStudioProjectInput = z.infer<typeof aiStudioProjectSchema>;
+
+export const aiStudioSetLeadSchema = z.object({ leadId: uuidSchema }).strict();
+export const aiStudioProjectAssignSchema = z.object({ profileId: uuidSchema, assign: z.boolean().default(true) }).strict();
+
+const aiStudioLinks = z.array(z.string().trim().max(500).regex(/^https?:\/\/\S+$/i, 'An attachment must be a link that starts with http:// or https://.')).max(5, 'Add at most 5 links.');
+
+export const aiStudioTaskCreateSchema = z
+  .object({
+    projectId: uuidSchema,
+    assigneeId: uuidSchema,
+    title: z.string().trim().min(1, 'Enter the task title.').max(200, 'The title can have at most 200 characters.'),
+    description: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'The description can have at most 4000 characters.').nullable().optional()),
+    priority: z.enum(AI_STUDIO_PRIORITIES).default('MEDIUM'),
+    dueDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    attachments: aiStudioLinks.optional()
+  })
+  .strict();
+export type AiStudioTaskCreateInput = z.infer<typeof aiStudioTaskCreateSchema>;
+
+export const aiStudioTaskEditSchema = aiStudioTaskCreateSchema.omit({ projectId: true, assigneeId: true, attachments: true });
+
+/** The assignee's progress: complete needs details (the note); the percentage matters until then. */
+export const aiStudioTaskUpdateSchema = z
+  .object({
+    status: z.enum(['IN_PROGRESS', 'ON_HOLD', 'COMPLETED']),
+    progress: z.coerce.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.').default(0),
+    note: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The note can have at most 2000 characters.').nullable().optional()),
+    attachments: aiStudioLinks.optional()
+  })
+  .strict()
+  .refine(v => v.status === 'COMPLETED' || v.progress <= 99, { message: 'Progress below 100: complete the task to reach 100.', path: ['progress'] })
+  .refine(v => v.status !== 'COMPLETED' || (v.note ?? '').length >= 3, { message: 'Describe what was completed before you complete the task.', path: ['note'] })
+  .refine(v => v.status !== 'ON_HOLD' || (v.note ?? '').length >= 1, { message: 'Say why the task is on hold.', path: ['note'] });
+
+export const aiStudioTasksQuerySchema = z
+  .object({
+    scope: z.enum(['mine', 'ongoing', 'team']).default('mine'),
+    projectId: uuidSchema.optional(),
+    status: z.enum([...AI_STUDIO_TASK_STATUSES, 'OPEN']).optional(),
+    assigneeId: uuidSchema.optional(),
+    page: z.coerce.number().int().min(1).max(5000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .strict();
+
+export const aiStudioReportSchema = z
+  .object({
+    projectId: uuidSchema,
+    taskId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
+    reportDate: isoDate,
+    workCompleted: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional()),
+    workInProgress: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional()),
+    pendingWork: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional()),
+    blockers: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional()),
+    remarks: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional()),
+    /** true: send it for approval now; false: keep it as a draft. */
+    submit: z.boolean().default(false)
+  })
+  .strict()
+  .refine(v => !v.submit || (v.workCompleted ?? '').length > 0, { message: 'Describe the work completed today before you submit.', path: ['workCompleted'] });
+export type AiStudioReportInput = z.infer<typeof aiStudioReportSchema>;
+
+export const aiStudioReportReviewSchema = z
+  .object({
+    decision: z.enum(['APPROVE', 'RETURN']),
+    comment: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The remarks can have at most 2000 characters.').nullable().optional())
+  })
+  .strict()
+  .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write the remarks the employee should act on.', path: ['comment'] });
+
+export const aiStudioReportsQuerySchema = z
+  .object({
+    view: z.enum(['mine', 'team', 'department']).default('mine'),
+    projectId: uuidSchema.optional(),
+    status: z.enum(AI_STUDIO_REPORT_STATUSES).optional(),
+    leadId: uuidSchema.optional(),
+    authorId: uuidSchema.optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    page: z.coerce.number().int().min(1).max(5000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .strict();

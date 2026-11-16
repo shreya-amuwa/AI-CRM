@@ -64,6 +64,10 @@ export type DefaultDashboard =
   | 'business-associate'
   /** An HR Recruiter (a designation of the HR department's staff): opens the recruiter dashboard. */
   | 'hr-recruiter'
+  /** AI Studio: the department's Department Head, Team Lead and Team Member each open their own dashboard. */
+  | 'ai-studio-head'
+  | 'ai-studio-lead'
+  | 'ai-studio-member'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -5927,4 +5931,165 @@ export interface ReminderCallList {
   counts: { all: number; stage7: number; stage5: number; stage1: number; pending: number; submitted: number; failed: number; completed: number; skipped: number };
   lastSchedule: { ranAt: string; day: string; created: number; cancelled: number } | null;
   rows: ReminderCallRow[];
+}
+
+
+// ---- AI Studio (migration 20270105000100): projects, tasks and daily reports -------------------------------------------------------------
+export const AI_STUDIO_SLUG = 'ai-studio';
+export const AI_STUDIO_PROJECT_STATUSES = ['ACTIVE', 'ON_HOLD', 'COMPLETED', 'ARCHIVED'] as const;
+export type AiStudioProjectStatus = (typeof AI_STUDIO_PROJECT_STATUSES)[number];
+export const AI_STUDIO_TASK_STATUSES = ['ASSIGNED', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED'] as const;
+export type AiStudioTaskStatus = (typeof AI_STUDIO_TASK_STATUSES)[number];
+export const AI_STUDIO_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type AiStudioPriority = (typeof AI_STUDIO_PRIORITIES)[number];
+export const AI_STUDIO_REPORT_STATUSES = ['DRAFT', 'SUBMITTED', 'PENDING_TL_APPROVAL', 'RETURNED_BY_TL', 'PENDING_DH_APPROVAL', 'RETURNED_BY_DH', 'APPROVED'] as const;
+export type AiStudioReportStatus = (typeof AI_STUDIO_REPORT_STATUSES)[number];
+export const AI_STUDIO_REPORT_STATUS_LABELS: Record<AiStudioReportStatus, string> = {
+  DRAFT: 'Draft',
+  SUBMITTED: 'Submitted',
+  PENDING_TL_APPROVAL: 'Pending Team Lead Approval',
+  RETURNED_BY_TL: 'Returned by Team Lead',
+  PENDING_DH_APPROVAL: 'Pending Department Head Approval',
+  RETURNED_BY_DH: 'Returned by Department Head',
+  APPROVED: 'Approved'
+};
+export type AiStudioRole = 'ADMIN' | 'HEAD' | 'LEAD' | 'MEMBER';
+
+export interface AiStudioTaskCounts { total: number; assigned: number; ongoing: number; onHold: number; completed: number; progress: number }
+export interface AiStudioProject {
+  id: string;
+  name: string;
+  description: string | null;
+  status: AiStudioProjectStatus;
+  createdAt: string;
+  /** The caller works on this project. */
+  mine: boolean;
+  leads: { id: string; name: string }[];
+  memberCount: number;
+  tasks: AiStudioTaskCounts;
+}
+export interface AiStudioPerson {
+  id: string;
+  fullName: string;
+  email: string;
+  role: Role;
+  position: string | null;
+  status: AccountStatus;
+  leadId: string | null;
+  leadName: string | null;
+  projects: { id: string; name: string }[];
+  openTasks: number;
+  completedTasks: number;
+}
+export interface AiStudioTask {
+  id: string;
+  projectId: string;
+  projectName: string;
+  title: string;
+  description: string | null;
+  priority: AiStudioPriority;
+  status: AiStudioTaskStatus;
+  progress: number;
+  dueDate: string | null;
+  assignedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  assigneeId: string;
+  assigneeName: string;
+  assignedById: string | null;
+  assignedByName: string | null;
+  lastUpdateNote: string | null;
+  lastUpdateAt: string | null;
+  completionNote: string | null;
+  attachments: string[];
+  overdue: boolean;
+}
+export interface AiStudioTaskHistoryEntry { id: string; kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED'; status: AiStudioTaskStatus; progress: number; note: string | null; authorName: string | null; createdAt: string }
+export interface AiStudioTaskDetail extends AiStudioTask { canUpdate: boolean; canEdit: boolean; history: AiStudioTaskHistoryEntry[] }
+export interface AiStudioTaskPage { items: AiStudioTask[]; total: number; page: number; pageSize: number }
+
+export interface AiStudioReportSummary {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: 'MEMBER' | 'LEAD';
+  projectId: string;
+  projectName: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  reportDate: string;
+  status: AiStudioReportStatus;
+  revision: number;
+  leadId: string | null;
+  leadName: string | null;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  updatedAt: string;
+}
+export interface AiStudioReportHistoryEntry {
+  id: string;
+  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED';
+  stage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
+  fromStatus: string | null;
+  toStatus: AiStudioReportStatus;
+  comment: string | null;
+  actorName: string | null;
+  actorRole: string | null;
+  revision: number;
+  createdAt: string;
+}
+export interface AiStudioReportDetail extends AiStudioReportSummary {
+  workCompleted: string | null;
+  workInProgress: string | null;
+  pendingWork: string | null;
+  blockers: string | null;
+  remarks: string | null;
+  tlComment: string | null;
+  tlReviewedAt: string | null;
+  tlReviewerName: string | null;
+  dhComment: string | null;
+  dhReviewedAt: string | null;
+  dhReviewerName: string | null;
+  canEdit: boolean;
+  canReview: boolean;
+  reviewStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
+  history: AiStudioReportHistoryEntry[];
+}
+export interface AiStudioReportPage { items: AiStudioReportSummary[]; total: number; page: number; pageSize: number; counts: Partial<Record<AiStudioReportStatus, number>> }
+export interface AiStudioReportContext {
+  role: AiStudioRole;
+  today: string;
+  /** The Team Lead (a Team Member's report) or the Department Head(s) (a Team Lead's report) who review the report. */
+  reviewer: string | null;
+  hasReviewer: boolean;
+  projects: { id: string; name: string }[];
+  tasks: { id: string; projectId: string; title: string; status: AiStudioTaskStatus }[];
+}
+export interface AiStudioOverview {
+  role: AiStudioRole;
+  today: string;
+  projects?: { id: string; name: string; status: AiStudioProjectStatus; tasks: number; completed: number }[];
+  myTasks?: { total: number; assigned: number; ongoing: number; completed: number; pending: number; overdue: number };
+  upcoming?: AiStudioTask[];
+  recent?: { kind: 'TASK' | 'REPORT'; text: string; at: string; entityType: 'ai_studio_task' | 'ai_studio_report'; entityId: string }[];
+  dailyReport?: { todayStatus: AiStudioReportStatus | null; todayCount: number; returned: number; pendingApproval: number; approved: number };
+  team?: {
+    members: number;
+    tasks: { total: number; ongoing: number; completed: number; pending: number; overdue: number };
+    reportsToReview: number;
+    reportsToday: number;
+  };
+  department?: {
+    employees: number;
+    leads: number;
+    members: number;
+    unassignedMembers: number;
+    activeProjects: number;
+    tasks: { assigned: number; ongoing: number; completed: number; pending: number; overdue: number };
+    reportsAwaitingHead: number;
+    reportsAwaitingLead: number;
+    reportsApproved: number;
+    reportsToday: number;
+    projects: { id: string; name: string; status: AiStudioProjectStatus; total: number; completed: number; ongoing: number; progress: number; leads: string[] }[];
+  };
 }

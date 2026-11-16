@@ -78,7 +78,8 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-check(r.status === 200 && r.json.data.length === 12 && r.json.data.some((d: any) => d.slug === 'wabatalk'), 'departments come from the database');
+// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before
+check(r.status === 200 && r.json.data.length === 13 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -10704,6 +10705,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   mock.close();
   for (const k of ['BOLIFY_API_KEY', 'BOLIFY_API_URL', 'BOLIFY_TIMEOUT_MS', 'AUTOMATION_TEST_RECIPIENTS', 'BOLIFY_CALLBACK_SECRET', 'AUTOMATION_MODE_AI_CALL']) delete process.env[k];
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+}
 // 20270104000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
 {
   const modeBefore = process.env.AUTOMATION_MODE_LEAD_WHATSAPP;
@@ -10733,6 +10735,184 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(w.status === 200 && w.json.data.recent.some((m: any) => m.customerId === welcomeLead), 'lead WhatsApp: the settings list the latest messages', w);
   await api('sa', 'POST', '/sales/lead-whatsapp/settings', { enabled: false, templateName: null, templateLanguage: 'en', templateApproved: false, variables: ['LEAD_NAME'] });
   if (modeBefore === undefined) delete process.env.AUTOMATION_MODE_LEAD_WHATSAPP; else process.env.AUTOMATION_MODE_LEAD_WHATSAPP = modeBefore;
+}
+
+
+// 20270105000100: AI Studio (projects, tasks, daily reports: Team Member -> Team Lead -> Department Head)
+{
+  const pw = 'Sup3rSecret!';
+  let q = await api('sa', 'GET', '/departments');
+  const aiDept = q.json.data.find((d: any) => d.slug === 'ai-studio');
+  q = await api('sa', 'GET', `/teams?departmentId=${aiDept.id}`);
+  const aiTeam = q.json.data[0];
+  check(aiDept && aiTeam, 'AI Studio: the department and its team come from the database');
+
+  // people: the Super Admin makes the Department Head
+  q = await api('sa', 'POST', '/users', { email: 'ai.head@amuwa.com', fullName: 'AI Head', role: 'DEPARTMENT_HEAD', departmentId: aiDept.id });
+  check(q.status === 201 && q.json.data.department.slug === 'ai-studio', 'AI Studio: the Super Admin adds the Department Head', q);
+  tokens.set('aih', tokenFor(q.json.data.id));
+  q = await api('aih', 'GET', '/me');
+  check(q.json.data.defaultDashboard === 'ai-studio-head', 'AI Studio: the Head opens the AI Studio Head dashboard', q);
+
+  // projects from the database; the three starting ones, then a new one
+  q = await api('aih', 'GET', '/ai-studio/projects');
+  const crm = q.json.data.find((p: any) => p.name === 'AI CRM');
+  const web = q.json.data.find((p: any) => p.name === 'AI Website');
+  const aiqr = q.json.data.find((p: any) => p.name === 'AIQR');
+  check(q.status === 200 && q.json.data.length === 3 && crm && web && aiqr, 'AI Studio: the Head sees AI CRM, AI Website and AIQR', q);
+  q = await api('aih', 'POST', '/ai-studio/projects', { name: 'AI Chatbot', description: 'A chatbot' });
+  check(q.status === 201 && q.json.data.name === 'AI Chatbot', 'AI Studio: the Head adds a project', q);
+  const bot = q.json.data;
+  q = await api('aih', 'POST', '/ai-studio/projects', { name: ' ai chatbot ' });
+  check(q.status === 409, 'AI Studio: a duplicate project name is refused', q);
+  q = await api('aih', 'POST', '/ai-studio/projects', { name: 'X' });
+  check(q.status === 422, 'AI Studio: a one-letter name is refused', q);
+  q = await api('aih', 'GET', '/ai-studio/projects');
+  check(q.json.data.length === 4 && q.json.data.some((p: any) => p.id === bot.id), 'AI Studio: the new project is in the list (nothing is hard-coded)', q);
+
+  // Team Leads: a project is required
+  q = await api('aih', 'POST', '/users', { email: 'ai.tl0@amuwa.com', fullName: 'No Project', role: 'TEAM_HEAD', teamId: aiTeam.id });
+  check(q.status === 422 && /Select a project/.test(q.json.error.message), 'AI Studio: a Team Lead cannot be created without a project', q);
+  check((await db.query(`select count(*)::int as n from auth.users where email = 'ai.tl0@amuwa.com'`)).rows[0].n === 0, 'AI Studio: and no account was left behind');
+  q = await api('aih', 'POST', '/users', { email: 'ai.tl1@amuwa.com', fullName: 'AI Lead One', role: 'TEAM_HEAD', teamId: aiTeam.id, aiStudioProjectIds: [crm.id, web.id] });
+  check(q.status === 201 && q.json.data.defaultDashboard === 'ai-studio-lead', 'AI Studio: the Head creates a Team Lead on two projects', q);
+  tokens.set('ail1', tokenFor(q.json.data.id));
+  const lead1 = q.json.data.id;
+  q = await api('aih', 'POST', '/users', { email: 'ai.tl2@amuwa.com', fullName: 'AI Lead Two', role: 'TEAM_HEAD', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id, bot.id] });
+  check(q.status === 201, 'AI Studio: and a second Team Lead on other projects', q);
+  tokens.set('ail2', tokenFor(q.json.data.id));
+  const lead2 = q.json.data.id;
+  q = await api('ail1', 'GET', '/ai-studio/projects');
+  check(q.json.data.length === 2 && q.json.data.every((p: any) => ['AI CRM', 'AI Website'].includes(p.name)), 'AI Studio: a Team Lead sees only their own projects', q);
+  q = await api('aih', 'POST', '/users', { email: 'ai.bad@amuwa.com', fullName: 'Bad', role: 'TEAM_HEAD', teamId: aiTeam.id, aiStudioProjectIds: ['00000000-0000-4000-8000-000000000001'] });
+  check(q.status === 422, 'AI Studio: an unknown project is refused', q);
+  q = await api('ail1', 'POST', '/ai-studio/projects', { name: 'Sneaky' });
+  check(q.status === 403, 'AI Studio: a Team Lead cannot add a project', q);
+
+  // Team Members: by their Team Lead, or by the Head naming the Team Lead
+  q = await api('ail1', 'POST', '/users', { email: 'ai.m1@amuwa.com', fullName: 'AI Member One', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [crm.id] });
+  check(q.status === 201 && q.json.data.defaultDashboard === 'ai-studio-member', 'AI Studio: a Team Lead adds a Team Member on their project', q);
+  tokens.set('aim1', tokenFor(q.json.data.id));
+  const member1 = q.json.data.id;
+  q = await api('ail1', 'POST', '/users', { email: 'ai.m1x@amuwa.com', fullName: 'Wrong Project', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id] });
+  check(q.status === 422, 'AI Studio: a Team Lead cannot give a member a project they are not on', q);
+  q = await api('aih', 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'AI Member Two', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id] });
+  check(q.status === 422 && /Team Lead/.test(q.json.error.message), 'AI Studio: the Head must name the Team Lead of a new member', q);
+  q = await api('aih', 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'AI Member Two', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [crm.id], aiStudioLeadId: lead2 });
+  check(q.status === 422, 'AI Studio: the member cannot get a project the named Team Lead is not on', q);
+  q = await api('aih', 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'AI Member Two', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id], aiStudioLeadId: lead2 });
+  check(q.status === 201, 'AI Studio: the Head adds a member under the second Team Lead', q);
+  tokens.set('aim2', tokenFor(q.json.data.id));
+  const member2 = q.json.data.id;
+  q = await api('aih', 'GET', '/ai-studio/people');
+  const m2 = q.json.data.find((p: any) => p.id === member2);
+  check(q.status === 200 && q.json.data.length === 5 && m2.leadId === lead2 && m2.projects.length === 1 && q.json.data.find((p: any) => p.id === member1).leadId === lead1, 'AI Studio: each member is under the right Team Lead and project', q);
+  q = await api('ail1', 'GET', '/ai-studio/people');
+  check(q.json.data.length === 2 && !q.json.data.some((p: any) => p.id === member2), 'AI Studio: a Team Lead sees only their own team', q);
+  q = await api('aim1', 'GET', '/ai-studio/people');
+  check(q.status === 403, 'AI Studio: a Team Member cannot list people', q);
+
+  // other departments: projects cannot be given, and the creation form is unchanged
+  q = await api('dh', 'POST', '/users', { email: 'ai.other@amuwa.com', fullName: 'Other', role: 'TEAM_MEMBER', teamId: sales.id, aiStudioProjectIds: [crm.id] });
+  check(q.status === 422, 'AI Studio: projects cannot be given to another department\'s member', q);
+  q = await api('dh', 'POST', '/users', { email: 'ai.other@amuwa.com', fullName: 'Other', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(q.status === 201, 'AI Studio: creating a member of another department works as before', q);
+  q = await api('a', 'GET', '/ai-studio/overview');
+  check(q.status === 403, 'AI Studio: another department has no AI Studio overview', q);
+  q = await api('dh', 'GET', '/ai-studio/reports?view=department');
+  check(q.status === 403, 'AI Studio: nor another Department Head the reports', q);
+  q = await api(null, 'GET', '/ai-studio/projects');
+  check(q.status === 401, 'AI Studio: not signed in: 401', q);
+
+  // tasks
+  q = await api('aih', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: lead1, title: 'Plan the sprint', priority: 'HIGH', dueDate: '2099-01-31' });
+  check(q.status === 201 && q.json.data.assigneeName === 'AI Lead One', 'AI Studio: the Head gives a task to a Team Lead', q);
+  q = await api('ail1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member1, title: 'Build the login screen', description: 'With validation', dueDate: '2099-02-01' });
+  check(q.status === 201 && q.json.data.status === 'ASSIGNED', 'AI Studio: the Team Lead gives a task to their member', q);
+  const task1 = q.json.data.id;
+  q = await api('ail1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member2, title: 'Not yours' });
+  check(q.status === 403 || q.status === 422, 'AI Studio: a Team Lead cannot give a task to another lead\'s member', q);
+  q = await api('aim1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member1, title: 'Self' });
+  check(q.status === 403, 'AI Studio: a Team Member cannot assign tasks', q);
+  q = await api('aim1', 'GET', '/ai-studio/tasks?scope=mine');
+  check(q.status === 200 && q.json.data.total === 1 && q.json.data.items[0].id === task1, 'AI Studio: the member sees their own task', q);
+  q = await api('aim2', 'GET', `/ai-studio/tasks/${task1}`);
+  check(q.status === 404, 'AI Studio: another member cannot open it', q);
+  q = await api('aim1', 'POST', `/ai-studio/tasks/${task1}/update`, { status: 'COMPLETED', progress: 100 });
+  check(q.status === 422, 'AI Studio: completing needs the completion details', q);
+  q = await api('aim1', 'POST', `/ai-studio/tasks/${task1}/update`, { status: 'IN_PROGRESS', progress: 40, note: 'Started' });
+  check(q.status === 200 && q.json.data.progress === 40, 'AI Studio: the member updates progress', q);
+  q = await api('aim1', 'GET', '/ai-studio/tasks?scope=ongoing');
+  check(q.json.data.total === 1, 'AI Studio: it is an ongoing task', q);
+  q = await api('ail1', 'GET', '/ai-studio/tasks?scope=team');
+  check(q.json.data.items.some((t: any) => t.id === task1 && t.progress === 40), 'AI Studio: the Team Lead sees the progress', q);
+  q = await api('ail2', 'GET', '/ai-studio/tasks?scope=team');
+  check(q.json.data.total === 0, 'AI Studio: another Team Lead sees none of it', q);
+  q = await api('aim1', 'POST', `/ai-studio/tasks/${task1}/update`, { status: 'COMPLETED', progress: 100, note: 'Merged', attachments: ['https://example.com/pr/1'] });
+  check(q.status === 200 && q.json.data.status === 'COMPLETED' && q.json.data.attachments.length === 1, 'AI Studio: the member completes it with details', q);
+  q = await api('aih', 'GET', '/ai-studio/overview');
+  check(q.status === 200 && q.json.data.department.tasks.completed === 1 && q.json.data.department.employees === 5 && q.json.data.department.activeProjects === 4, 'AI Studio: the Head\'s overview counts the real records', q);
+
+  // daily reports: member -> lead -> head
+  q = await api('aim1', 'GET', '/ai-studio/reports/context');
+  check(q.status === 200 && q.json.data.reviewer === 'AI Lead One' && q.json.data.projects.length === 1, 'AI Studio: the report form knows the reviewer and the projects', q);
+  const rep = { projectId: crm.id, taskId: task1, reportDate: new Date().toISOString().slice(0, 10), workCompleted: 'Login screen', workInProgress: 'API tests', pendingWork: 'Docs', blockers: 'None', remarks: 'ok', submit: true };
+  q = await api('aim1', 'POST', '/ai-studio/reports', { ...rep, status: 'APPROVED' });
+  check(q.status === 422, 'AI Studio: a status cannot be sent with a report', q);
+  q = await api('aim1', 'POST', '/ai-studio/reports', rep);
+  check(q.status === 201 && q.json.data.status === 'PENDING_TL_APPROVAL', 'AI Studio: the member submits the daily report to their Team Lead', q);
+  const report1 = q.json.data.id;
+  q = await api('aim1', 'POST', '/ai-studio/reports', rep);
+  check(q.status === 409, 'AI Studio: a double click does not make a second report', q);
+  q = await api('aim2', 'GET', `/ai-studio/reports/${report1}`);
+  check(q.status === 404, 'AI Studio: another member cannot read it', q);
+  q = await api('ail2', 'GET', `/ai-studio/reports/${report1}`);
+  check(q.status === 404, 'AI Studio: nor another Team Lead', q);
+  q = await api('ail2', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE' });
+  check(q.status === 404, 'AI Studio: nor decide it', q);
+  q = await api('aim1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE' });
+  check(q.status === 403, 'AI Studio: a member cannot approve their own report', q);
+  q = await api('aih', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE' });
+  check(q.status === 409, 'AI Studio: the Head cannot skip the Team Lead', q);
+  q = await api('ail1', 'GET', '/ai-studio/reports?view=team&status=PENDING_TL_APPROVAL');
+  check(q.status === 200 && q.json.data.total === 1 && q.json.data.counts.PENDING_TL_APPROVAL === 1, 'AI Studio: it is in the Team Lead\'s team reports', q);
+  q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'RETURN' });
+  check(q.status === 422, 'AI Studio: returning needs remarks', q);
+  q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'RETURN', comment: 'Add the test results' });
+  check(q.status === 200 && q.json.data.status === 'RETURNED_BY_TL', 'AI Studio: the Team Lead returns it', q);
+  q = await api('aim1', 'PATCH', `/ai-studio/reports/${report1}`, { ...rep, workCompleted: 'Login screen and tests' });
+  check(q.status === 200 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.revision === 2, 'AI Studio: the member edits and resubmits', q);
+  q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Good' });
+  check(q.status === 200 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: the Team Lead approves: it moves to the Department Head', q);
+  q = await api('aih', 'GET', '/ai-studio/reports?view=department&status=PENDING_DH_APPROVAL');
+  check(q.status === 200 && q.json.data.total === 1 && q.json.data.items[0].authorName === 'AI Member One', 'AI Studio: the Head sees the forwarded report', q);
+  q = await api('aih', 'GET', `/ai-studio/reports?view=department&leadId=${lead2}`);
+  check(q.json.data.total === 0, 'AI Studio: and can filter by Team Lead', q);
+  q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE' });
+  check(q.status === 409, 'AI Studio: the Team Lead cannot approve it again', q);
+  q = await api('aih', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Approved' });
+  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Head gives the final approval', q);
+  q = await api('aim1', 'GET', `/ai-studio/reports/${report1}`);
+  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.length === 6 && q.json.data.history[0].action === 'CREATED' && q.json.data.history[1].action === 'SUBMITTED' && q.json.data.history[5].actorName === 'AI Head'
+    && q.json.data.history.some((h: any) => h.action === 'RETURNED' && h.comment === 'Add the test results'),
+    'AI Studio: the final status and the whole history are visible to the member', q);
+  q = await api('sa', 'GET', '/ai-studio/reports?view=department');
+  check(q.status === 200 && q.json.data.total === 1, 'AI Studio: the Super Admin can read the department\'s reports', q);
+  q = await api('sa', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'RETURN', comment: 'Not allowed to decide' });
+  check(q.status === 403, 'AI Studio: but takes no part in the approval', q);
+
+  // a Team Lead's own report goes to the Head
+  q = await api('ail1', 'POST', '/ai-studio/reports', { projectId: crm.id, reportDate: new Date().toISOString().slice(0, 10), workCompleted: 'Sprint planned', submit: true });
+  check(q.status === 201 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: a Team Lead\'s own report goes straight to the Department Head', q);
+  q = await api('ail2', 'GET', `/ai-studio/reports/${q.json.data.id}`);
+  check(q.status === 404, 'AI Studio: another Team Lead cannot read it', q);
+
+  // shared features keep working for AI Studio people: notifications, chat, leave
+  q = await api('aim1', 'GET', '/notifications?page=1&pageSize=50');
+  const types = (q.json.data.items ?? q.json.data).map((n: any) => n.type);
+  check(['AI_STUDIO_TASK_ASSIGNED', 'AI_STUDIO_REPORT_RETURNED', 'AI_STUDIO_REPORT_TL_APPROVED', 'AI_STUDIO_REPORT_APPROVED'].every(t => types.includes(t)), 'AI Studio: the member was notified of the task and of every report decision', types);
+  q = await api('aim1', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2099-03-01', reason: 'Family function' });
+  check([200, 201, 404].includes(q.status), 'AI Studio: the leave module is reachable for AI Studio people', q);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

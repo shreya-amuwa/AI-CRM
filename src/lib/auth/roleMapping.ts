@@ -16,6 +16,14 @@ export function toAuthUser(profile: Profile): AuthUser {
       departmentId: departmentSlug, position: profile.position || undefined, profile
     };
   }
+  // AI Studio: the Department Head, the Team Leads and the Team Members of the department open the AI Studio dashboard (which of the three is decided by the
+  // role in the profile, and every permission by the database)
+  if (isAiStudioStaff(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'ai-studio',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
   switch (profile.role) {
     case 'SUPER_ADMIN':
       role = 'superadmin';
@@ -83,6 +91,11 @@ export function toAuthUser(profile: Profile): AuthUser {
 export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivision' | 'defaultDashboard'>): boolean {
   if (p.role !== 'DEPARTMENT_HEAD' || p.department?.slug === 'hr' || p.department?.slug === 'accounts') return false;
   return p.defaultDashboard === 'sales-department-head' || p.headDivision === 'SALES';
+}
+
+/** The Department Head, Team Leads and Team Members of the AI Studio department. */
+export function isAiStudioStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
+  return p.department?.slug === 'ai-studio' && p.role !== 'SUPER_ADMIN';
 }
 
 /** Team members and leads of the Accounts department confirm payments sent by Sales. */
@@ -204,6 +217,10 @@ export function defaultDashboardLabel(
   hrSubRole?: Profile['hrSubRole']
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
+  // AI Studio people open the AI Studio dashboard of their role
+  if (departmentSlug === 'ai-studio' && role !== 'SUPER_ADMIN') {
+    return `AI Studio ${role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'} Dashboard${dept}`;
+  }
   // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
   if (role === 'DEPARTMENT_HEAD' && operationsHead) {
     return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;
