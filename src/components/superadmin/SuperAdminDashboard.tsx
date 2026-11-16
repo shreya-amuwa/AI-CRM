@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, RotateCcw, ShieldCheck, Trophy, UserPlus, Users } from 'lucide-react';
+import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, RotateCcw, ShieldCheck, Trophy, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -16,10 +16,11 @@ import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
+import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -59,6 +60,7 @@ export const SuperAdminDashboard: React.FC = () => {
         ]
       },
       { label: 'Governance', items: [{ id: 'security', label: 'Security & Audit Logs', icon: ShieldCheck }] },
+      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }] },
       {
         label: 'Communication',
         items: [
@@ -117,6 +119,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'report-performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><ReportPerformance /></Suspense>}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
+      {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>

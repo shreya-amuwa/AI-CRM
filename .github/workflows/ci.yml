@@ -1,12 +1,15 @@
 name: CI
 
+# A pull request is tested once (pull_request), and main after each merge (push). Branch pushes are not tested twice: running on both a
+# branch push and its pull request used the Actions minutes twice for the same commit.
 on:
   push:
-    branches: [main, 'claude/**']
+    branches: [main]
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # one run per pull request (or per branch for a push to main): a newer push cancels the older run
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
