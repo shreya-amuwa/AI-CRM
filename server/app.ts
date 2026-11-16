@@ -30,6 +30,7 @@ import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
+import { isPausedVercelCron } from './platform.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
 import { financeMailQuietly, runFinanceMailDispatch } from './automations/financeDispatcher.js';
@@ -213,6 +214,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     return want.length === given.length && timingSafeEqual(want, given);
   });
   if (!okSecret) throw new AppError('UNAUTHENTICATED');
+  // After the move to Cloudflare: Vercel's own cron stands down when VERCEL_CRON_PAUSED=true, so the automations run on one platform only.
+  if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
   // The same safety-net run moves overdue tickets up (RM -> Team Lead -> Department Head) when pg_cron is not set up.
   let ticketsEscalated = 0;
   if (hasServiceClient()) {

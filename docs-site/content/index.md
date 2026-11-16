@@ -19,7 +19,7 @@ Select the documentation portal that matches how you sign in to Amuwa AI CRM:
 
 | Audience | Portal & Sign-In URL | Primary Purpose | Quick Entry |
 | --- | --- | --- | --- |
-| **Internal Staff (Employee Manual)** | Internal CRM (`https://ai-crm-drab.vercel.app/`) | Role-specific procedures for Sales, Telecallers, Business Associates, Support, Technical Consultants, Accounts, Delivery Departments, HR, Department Heads, and Super Admins. | [Start with Welcome to Amuwa AI CRM](/getting-started/welcome-to-amuwa-crm) |
+| **Internal Staff (Employee Manual)** | Internal CRM (`https://crm.amuwacorporation.com/`) | Role-specific procedures for Sales, Telecallers, Business Associates, Support, Technical Consultants, Accounts, Delivery Departments, HR, Department Heads, and Super Admins. | [Start with Welcome to Amuwa AI CRM](/getting-started/welcome-to-amuwa-crm) |
 | **External Clients (Client Help Center)** | Client Dashboard (`/client/login`) | Self-service instructions for viewing active services, campaign usage, monthly plans, GST invoices, onboarding documents, support tickets, team chat, and the activity calendar. | [Open the Client Help Center](/client/welcome-client-portal) |
 
 :::tip Search the documentation instantly with `/`

@@ -44,7 +44,7 @@ be migrated for the app to work.
    ```json
    [
      {
-       "AllowedOrigins": ["https://ai-crm-drab.vercel.app"],
+       "AllowedOrigins": ["https://crm.amuwacorporation.com", "https://ai-crm-drab.vercel.app"],
        "AllowedMethods": ["PUT", "GET", "HEAD"],
        "AllowedHeaders": ["Content-Type"],
        "ExposeHeaders": ["ETag"],
@@ -53,8 +53,10 @@ be migrated for the app to work.
    ]
    ```
 
-   Use your real address (and add `http://localhost:3000` for local development). Without this, uploads fail with
-   "the browser could not reach file storage".
+   List **every address the CRM is opened from**, exactly as the browser shows it (scheme and host, no trailing `/`): the production address
+   (`https://crm.amuwacorporation.com`), the Cloudflare rehearsal address (`https://ai-crm.<your-subdomain>.workers.dev`) while you test on it,
+   the old Vercel address while it is still in use, and `http://localhost:3000` for local development. Without the address in use, uploads fail
+   with "the browser could not reach file storage". Remove the Vercel address once Vercel is retired.
 4. **Vercel -> Project -> Settings -> Environment Variables** (Production, and Preview if you use it):
 
    ```

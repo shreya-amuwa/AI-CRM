@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/copy-ocr-assets.mjs",
     "dev": "vite --host 0.0.0.0 --port 3000",
-    "prebuild": "node scripts/copy-ocr-assets.mjs",
+    "prebuild": "node scripts/copy-ocr-assets.mjs && node scripts/check-build-env.mjs",
     "build": "tsc && vite build && node docs-site/build.mjs --out=dist/documentation && node docs-site/build.mjs --audience=client --out=dist/client-docs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.worker.json --noEmit",
