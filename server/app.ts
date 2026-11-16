@@ -51,6 +51,7 @@ import { staffForgotPassword } from './services/StaffPasswordService.js';
 import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
 import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
+import { reportServerError } from './monitoring.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
 import { currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
 import { candidateGuardSchema } from '../shared/validation.js';
@@ -489,16 +490,35 @@ app.notFound(c => {
   return fail(c, known ? new AppError('METHOD_NOT_ALLOWED') : new AppError('NOT_FOUND', 'Unknown API route.'));
 });
 
+/** Tell the error reporter (server/monitoring.ts: Sentry on Vercel, nothing elsewhere) about a defect or outage, with the route pattern and request id only. */
+function reportError(c: Context, err: unknown, status?: number) {
+  const actor = (c as Context<Env>).get('actor');
+  reportServerError({
+    error: err,
+    requestId: (c as Context<Env>).get('requestId'),
+    route: relativePath(c).replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}(?=\/|$)/gi, '/:id'),
+    method: c.req.method,
+    status,
+    role: actor?.role
+  });
+}
+
 app.onError((err, c) => {
-  if (err instanceof AppError) return fail(c, err);
+  if (err instanceof AppError) {
+    // a 5xx the code raised itself (a busy database, a missing setting): an outage to know about, unlike a 4xx
+    if (err.status >= 500) reportError(c, err, err.status);
+    return fail(c, err);
+  }
   if (err instanceof ConfigurationError) {
     log('error', 'configuration error', c, { message: err.message });
+    reportError(c, err, 503);
     return fail(c, new AppError('SERVICE_UNAVAILABLE'));
   }
   if (err instanceof HTTPException) {
     return fail(c, new AppError(err.status === 413 ? 'VALIDATION_ERROR' : 'INTERNAL', err.status === 413 ? 'Request body is too large.' : undefined));
   }
   log('error', 'unhandled error', c, { message: (err as Error)?.message, stack: (err as Error)?.stack });
+  reportError(c, err);
   return fail(c, new AppError('INTERNAL'));
 });
 

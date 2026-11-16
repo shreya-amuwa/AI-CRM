@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { sentryVitePlugin } from '@sentry/bundler-plugins/vite';
 import http from 'http';
 import https from 'https';
 
@@ -507,19 +508,34 @@ export default defineConfig(({ mode }) => {
   for (const key of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'API_ALLOWED_ORIGINS']) {
     if (env[key] && !process.env[key]) process.env[key] = env[key];
   }
+  // Readable error reports: with SENTRY_AUTH_TOKEN set at build time (Vercel / Cloudflare build settings, never committed) the build
+  // uploads its source maps to Sentry and then deletes them, so they are never served to visitors. Without the token nothing changes.
+  const sentryAuthToken = env.SENTRY_AUTH_TOKEN || process.env.SENTRY_AUTH_TOKEN;
   return {
   plugins: [
     apiV1Plugin(),
     liveWebhookPlugin(),
     react({
       fastRefresh: false
-    })
+    }),
+    // must be the LAST plugin
+    ...(sentryAuthToken
+      ? [sentryVitePlugin({
+          org: env.SENTRY_ORG || 'amuwa-corporation',
+          project: env.SENTRY_PROJECT || 'ai-crm-frontend',
+          authToken: sentryAuthToken,
+          telemetry: false,
+          sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] }
+        })]
+      : [])
   ],
   server: {
     port: 3000,
     host: true
   },
   build: {
+    // generated (hidden: no link to them in the files) only when they are uploaded to Sentry
+    sourcemap: sentryAuthToken ? 'hidden' : false,
     rollupOptions: {
       output: {
         // Libraries change rarely: separate files stay cached across deploys.
