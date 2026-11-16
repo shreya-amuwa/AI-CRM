@@ -31,6 +31,7 @@ const SuperAdminDashboard = lazy(() => import('./components/superadmin/SuperAdmi
 const TrainingWorkspace = lazy(() => import('./components/hr/TrainingWorkspace').then(m => ({ default: m.TrainingWorkspace })));
 const RecruitmentManagement = lazy(() => import('./components/hr/RecruitmentManagement').then(m => ({ default: m.RecruitmentManagement })));
 const ProbationConfirmations = lazy(() => import('./components/hr/ProbationConfirmations').then(m => ({ default: m.ProbationConfirmations })));
+const RechargeReminderCalls = lazy(() => import('./components/hr/RechargeReminderCalls').then(m => ({ default: m.RechargeReminderCalls })));
 const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
 const EmployeeIssuesManagement = lazy(() => import('./components/hr/EmployeeIssuesManagement').then(m => ({ default: m.EmployeeIssuesManagement })));
 const HrEmployeeRequestsPage = lazy(() => import('./components/employees/HrEmployeeRequestsPage').then(m => ({ default: m.HrEmployeeRequestsPage })));
@@ -543,6 +544,8 @@ const MainAppContent: React.FC = () => {
               <Suspense fallback={<ScreenLoader />}><MeetingRequestsManagement /></Suspense>
             ) : (currentActiveTab === 'hr_letter_nda' || currentActiveTab === 'hr_letter_offer' || currentActiveTab === 'hr_letter_experience') && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><HrLettersPage initialType={currentActiveTab === 'hr_letter_nda' ? 'NDA' : currentActiveTab === 'hr_letter_offer' ? 'OFFER' : 'EXPERIENCE'} /></Suspense>
+            ) : currentActiveTab === 'hr_recharge_calls' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><RechargeReminderCalls /></Suspense>
             ) : currentActiveTab === 'hr_field_tracking' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><ActiveFieldVisits audience="hr" /></Suspense>
             ) : currentActiveTab === 'hr_reviews' && currentDeptId === 'hr' ? (

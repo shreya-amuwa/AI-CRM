@@ -5806,11 +5806,15 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(bolifyHits.length === 0 && r.json.data.subscriptionReminders.dryRun >= 1, 'bolify: dry run never calls the webhook', r.json);
   process.env.AUTOMATION_MODE_AI_CALL = 'live';
   delete process.env.BOLIFY_WEBHOOK_URL;
+  // a key alone would now select the BolifyAI calling API (20270103000100): take it away too, so nothing can leave for the real service
+  const bolifyKeyBefore = process.env.BOLIFY_API_KEY;
+  delete process.env.BOLIFY_API_KEY;
   r = await dispatch('dispatch-secret-0123456789');
   check(r.json.data.subscriptionReminders.mode === 'off' && /BOLIFY_WEBHOOK_URL/.test(r.json.data.subscriptionReminders.note) && bolifyHits.length === 0, 'bolify: live with no webhook set is refused and names the missing setting', r.json);
 
   // the Technical Consultant's on-demand AI Calling goes straight to BolifyAI too
   process.env.BOLIFY_WEBHOOK_URL = bolifyUrl;
+  process.env.BOLIFY_API_KEY = bolifyKeyBefore;
   bolifyReply = { status: 200, body: '{"id":"BOL-2002"}' };
   const odc = await autoCustomer({ name: 'Onboard Caller', company: 'Caller Co', phone: '9820011122', email: 'caller@example.com', city: 'Nashik' }, null);
   r = await api('mv', 'GET', `/pipeline/customers/${odc}/automations`);
@@ -10495,6 +10499,132 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await db.query(`select owner_id from customers where phone = '9666000004'`)).rows[0]?.owner_id === salesTeamLeadId, 'sheet upload API: owned by the Team Lead');
   r = await api('sh', 'POST', `/sales-head/sheets/${tlSheet}/source`, { data: xlsBytes.toString('base64') });
   check(r.status === 201 && (await db.query(`select source_path from sales_lead_sheets where id = $1`, [tlSheet])).rows[0].source_path.endsWith('.xls'), 'sheet upload API: the original .xls is stored as an .xls', r);
+}
+
+// ---------------------------------------------------------------------------
+// BolifyAI panel recharge reminder calls (20270103000100): the calling API with x-api-key (a local mock; never the real service), the 5-day stage,
+// no duplicate call, timeouts not retried, safe test mode, the HR / Admin list, and the call-result callback.
+// ---------------------------------------------------------------------------
+{
+  Object.assign(process.env, { AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789' });
+  const cust = (await db.query(`select id from public.customers where phone = '9000000201'`)).rows[0].id as string;
+  const svc = (await db.query(`select service_code from public.customer_services where customer_id = $1 limit 1`, [cust])).rows[0].service_code as string;
+  await db.query(`insert into public.customer_reminder_consent (customer_id, status, note) values ($1, 'ALLOWED', 'test consent') on conflict (customer_id) do update set status = 'ALLOWED'`, [cust]);
+  const hits: { body: any; headers: http.IncomingHttpHeaders; path: string | undefined }[] = [];
+  let reply: { status: number; body: string; delayMs?: number } = { status: 200, body: '{"success":true,"message":"Call queued for 919000000201","data":{"call_id":"BF-501"}}' };
+  const mock = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', d => (raw += d));
+    req.on('end', () => {
+      hits.push({ body: JSON.parse(raw), headers: req.headers, path: req.url });
+      setTimeout(() => { res.writeHead(reply.status, { 'content-type': 'application/json' }); res.end(reply.body); }, reply.delayMs ?? 0);
+    });
+  });
+  await new Promise<void>(res => mock.listen(0, '127.0.0.1', res));
+  const mockUrl = `http://127.0.0.1:${(mock.address() as net.AddressInfo).port}/api/v1/playground/call`;
+  const reset = async () => {
+    await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+    await db.query(`update public.customer_services set renews_on = ((now() at time zone 'Asia/Kolkata')::date + 5), service_status = 'LIVE' where customer_id = $1 and service_code = $2`, [cust, svc]);
+  };
+  const inWindow = () => db.query(`update public.subscription_reminders set status = 'SCHEDULED', attempts = 0, reason = null, send_after = now() - interval '1 hour', send_until = now() + interval '1 hour', next_attempt_at = now()
+                                    where customer_id = $1 and channel = 'CALL'`, [cust]);
+  const rem = async () => (await db.query(`select id, stage, status, reason, attempts, response_code, external_call_id, provider_response, call_outcome, call_duration_seconds, completed_at, phone_masked
+                                             from public.subscription_reminders where customer_id = $1 and channel = 'CALL'`, [cust])).rows;
+  const KEY = 'bf-live-key-never-stored-0001';
+  delete process.env.BOLIFY_WEBHOOK_URL;
+  Object.assign(process.env, { AUTOMATION_MODE_AI_CALL: 'live', BOLIFY_API_KEY: KEY, BOLIFY_API_URL: mockUrl, BOLIFY_TIMEOUT_MS: '1000', AUTOMATION_TEST_RECIPIENTS: '9000000201' });
+
+  await reset();
+  let r = await dispatch('dispatch-secret-0123456789');
+  let x = await rem();
+  check(r.status === 200 && x.length === 1 && x[0].stage === 5, 'bolify api: 5 days before expiry the 5-day reminder is scheduled', { r: r.json, x });
+  await inWindow();
+  hits.length = 0;
+  r = await dispatch('dispatch-secret-0123456789');
+  x = await rem();
+  check(r.json.data.subscriptionReminders.mode === 'live' && r.json.data.subscriptionReminders.accepted === 1 && hits.length === 1, 'bolify api: live mode places one call through the calling API', r.json);
+  const h = hits[0];
+  check(h.path === '/api/v1/playground/call' && h.headers['x-api-key'] === KEY && h.headers['content-type'] === 'application/json' && !h.headers.authorization && h.headers['idempotency-key'] === x[0].id,
+    'bolify api: POST with the x-api-key header and the reminder id as the idempotency key', h.headers);
+  check(h.body.phone_number?.[0] === '+919000000201' && h.body.assistant_id === '567eaefd-bc8f-42c2-8bff-c1d1ac2f97ba' && h.body.dialer_id === 'c19c9cff-d96d-48b7-b163-1c62be020e6d'
+        && typeof h.body.first_name === 'string' && h.body.first_name.length > 0 && /\(5 days left\)/.test(h.body.description), 'bolify api: the body has the number, the assistant, the dialer, the name and what it is about', h.body);
+  check(x[0].status === 'ACCEPTED' && x[0].external_call_id === 'BF-501' && x[0].response_code === 200 && x[0].provider_response.message === 'Call queued for [number]'
+        && !JSON.stringify(x[0]).includes(KEY) && !JSON.stringify(x[0]).includes('9000000201'), 'bolify api: SUBMITTED with the call id and the reply; no key and no full number stored', x[0]);
+  r = await dispatch('dispatch-secret-0123456789');
+  check(hits.length === 1 && r.json.data.subscriptionReminders.claimed === 0, 'bolify api: the job run again on the same day never calls twice', r.json);
+
+  // the HR / Admin list
+  r = await api('hr', 'GET', '/reminder-calls?filter=STAGE_5');
+  const mine = r.json.data?.rows?.find((y: any) => y.customerId === cust);
+  check(r.status === 200 && mine && mine.status === 'ACCEPTED' && mine.stage === 5 && mine.daysLeft === 5 && /^\+91XXXXXX\d{4}$/.test(mine.phone) && mine.callId === 'BF-501' && mine.submittedAt,
+    'bolify api: HR sees the call in the 5-day filter: masked phone, days left, submitted time and call id', r.json);
+  check(!JSON.stringify(r.json).includes(KEY), 'bolify api: the key is never returned by the API');
+  r = await api('sa', 'GET', '/reminder-calls');
+  check(r.status === 200 && r.json.data.counts.submitted >= 1, 'bolify api: the Super Admin sees the list and its counts', r.json);
+  r = await api('a', 'GET', '/reminder-calls');
+  check(r.status === 403, 'bolify api: a Sales member is refused (403)', r);
+  r = await api(null, 'GET', '/reminder-calls');
+  check(r.status === 401, 'bolify api: not signed in: 401', r);
+  r = await api('hr', 'GET', '/reminder-calls?filter=EVERYTHING');
+  check(r.status === 422, 'bolify api: an unknown filter is refused', r);
+
+  // the call result callback
+  const callback = (body: unknown, secret?: string) => fetch(`${base}/internal/bolify/call-status`, {
+    method: 'POST', headers: { 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: JSON.stringify(body)
+  }).then(async y => ({ status: y.status, json: (await y.json()) as any }));
+  delete process.env.BOLIFY_CALLBACK_SECRET;
+  let cb = await callback({ call_id: 'BF-501', status: 'completed' }, 'whatever-secret-0000');
+  check(cb.status === 503, 'bolify api: call results are refused until BOLIFY_CALLBACK_SECRET is set', cb);
+  process.env.BOLIFY_CALLBACK_SECRET = 'callback-secret-0123456789';
+  cb = await callback({ call_id: 'BF-501', status: 'completed' }, 'wrong-secret-0123456789xx');
+  check(cb.status === 401, 'bolify api: a wrong callback secret is refused', cb);
+  cb = await callback({ call_id: 'BF-501', status: 'ringing' }, 'callback-secret-0123456789');
+  check(cb.status === 200 && cb.json.data.ignored === true && (await rem())[0].status === 'ACCEPTED', 'bolify api: a ringing status changes nothing', cb.json);
+  cb = await callback({ call_id: 'BF-501', status: 'completed', duration: 42 }, 'callback-secret-0123456789');
+  x = await rem();
+  check(cb.status === 200 && cb.json.data.matched === true && x[0].status === 'COMPLETED' && x[0].call_outcome === 'COMPLETED' && x[0].call_duration_seconds === 42 && x[0].completed_at,
+    'bolify api: a completed call result makes the reminder COMPLETED, with the duration', { cb: cb.json, x });
+  cb = await callback({ call_id: 'BF-unknown', status: 'completed' }, 'callback-secret-0123456789');
+  check(cb.status === 200 && cb.json.data.matched === false, 'bolify api: an unknown call id is answered, not an error', cb.json);
+  r = await api('hr', 'GET', '/reminder-calls?filter=COMPLETED');
+  check(r.status === 200 && r.json.data.rows.some((y: any) => y.customerId === cust && y.callOutcome === 'COMPLETED' && y.callDurationSeconds === 42), 'bolify api: the completed filter shows it', r.json);
+
+  // a timeout: unknown result, FAILED, not retried
+  await reset();
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  hits.length = 0;
+  reply = { status: 200, body: '{"success":true}', delayMs: 2500 };
+  r = await dispatch('dispatch-secret-0123456789');
+  x = await rem();
+  check(hits.length === 1 && x[0].status === 'FAILED' && /did not answer/.test(x[0].reason) && /not retried/.test(x[0].reason), 'bolify api: a timeout is FAILED with the reason (the call may have been placed)', x[0]);
+  await db.query(`update public.subscription_reminders set next_attempt_at = now() - interval '1 minute' where customer_id = $1`, [cust]);
+  r = await dispatch('dispatch-secret-0123456789');
+  check(hits.length === 1, 'bolify api: and it is never retried blindly (no duplicate call)', r.json);
+
+  // an API error (401): FAILED with the code
+  await reset();
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  reply = { status: 401, body: `{"message":"invalid key ${KEY}"}` };
+  r = await dispatch('dispatch-secret-0123456789');
+  x = await rem();
+  check(x[0].status === 'FAILED' && x[0].response_code === 401 && /BOLIFY_API_KEY/.test(x[0].reason) && !JSON.stringify(x[0]).includes(KEY), 'bolify api: an API error is FAILED with its code; the echoed key is not stored', x[0]);
+
+  // safe test mode: a number outside AUTOMATION_TEST_RECIPIENTS is never called
+  await reset();
+  await dispatch('dispatch-secret-0123456789');
+  await inWindow();
+  hits.length = 0;
+  reply = { status: 200, body: '{"success":true}' };
+  process.env.AUTOMATION_TEST_RECIPIENTS = '9811122233';
+  r = await dispatch('dispatch-secret-0123456789');
+  x = await rem();
+  check(hits.length === 0 && x[0].status === 'SKIPPED' && /AUTOMATION_TEST_RECIPIENTS/.test(x[0].reason), 'bolify api: safe test mode never calls a real customer', x[0]);
+
+  mock.close();
+  for (const k of ['BOLIFY_API_KEY', 'BOLIFY_API_URL', 'BOLIFY_TIMEOUT_MS', 'AUTOMATION_TEST_RECIPIENTS', 'BOLIFY_CALLBACK_SECRET', 'AUTOMATION_MODE_AI_CALL']) delete process.env[k];
+  await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

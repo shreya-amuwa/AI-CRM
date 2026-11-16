@@ -27,6 +27,7 @@ import {
   hrReviewsController as hrReviews,
   reportAnalyticsController as reportAnalytics,
   welcomeEmailsController as welcomeEmails,
+  reminderCallsController as reminderCalls,
   customersController as customers,
   documentsController as documents,
   hrController as hr,
@@ -57,6 +58,7 @@ export const routes: RouteDef[] = [
   // welcome e-mail status (HR, Super Admin, the employee's Department Head) and the secure resend
   { method: 'GET', path: '/welcome-emails', handler: welcomeEmails.list },
   { method: 'POST', path: '/welcome-emails/:id/resend', handler: welcomeEmails.resend, options: S },
+  { method: 'GET', path: '/reminder-calls', handler: reminderCalls.list },
   { method: 'GET', path: '/me/department-scopes', handler: me.departmentScopes },
 
   { method: 'GET', path: '/users', handler: users.list },
