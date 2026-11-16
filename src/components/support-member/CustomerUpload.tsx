@@ -4,16 +4,25 @@ import { useAuth } from '../../context/AuthContext';
 import { IMPORT_COLUMNS, IMPORT_MAX_ROWS, importTemplate, parseCustomerSheet, type ImportParse } from '../../lib/customerImport';
 import { customerApi, useServices } from '../../lib/support';
 import { ErrorBanner } from './SupportParts';
+import { parseExistingCustomers } from '../../lib/existingCustomerImport';
+import { readXlsx } from '../../lib/xlsxReader';
+import { importApi, Preview, Saved, type Step } from '../support/ExistingCustomerImport';
 
 const MAX_FILE_BYTES = 1_000_000;
+const MAX_XLSX_BYTES = 5 * 1024 * 1024;
+/** One row per customer: the Relationship Manager, the client dashboard login and up to 5 services (read by parseExistingCustomers). */
+const XLSX_TEMPLATE = '/templates/Customer_Upload_Template.xlsx';
 
 type Skipped = { line: number; name: string; reason: string };
 
 /**
- * Upload many customers at once (a CSV sheet) instead of adding them one by one. Every row is checked
- * with the same rules as the Add Customer form, then saved with the same database function, so
- * duplicates (same phone or e-mail) are refused and reported. The customers then appear in the list
- * and wherever the customer data is used (for example the client dashboard).
+ * Upload many customers at once instead of adding them one by one.
+ *  - The Excel template (.xlsx, "Download template"): one row per customer with its Relationship Manager, the client dashboard login and up to
+ *    5 services. It goes through the existing-customer import (POST /customers/import-existing): checked first, then saved. The database decides
+ *    who may import for whom, puts each customer with the RM named on its row, saves the services with their dates, and the API creates the
+ *    client logins (a password typed in the sheet is hashed by Supabase Auth and e-mailed to the client once; it is never stored as text).
+ *  - The older CSV (Name, Company, Phone ...): every row is checked like the Add Customer form and saved with the same database function;
+ *    duplicates (same phone or e-mail) are refused and reported.
  */
 export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) => {
   const { profile } = useAuth();
@@ -25,6 +34,8 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<{ imported: number; skipped: Skipped[] } | null>(null);
+  const [excel, setExcel] = useState<Step>({ kind: 'idle' });
+  const [checked, setChecked] = useState<Extract<Step, { kind: 'checked' }> | null>(null);
 
   const ready = parsed?.rows.filter(r => r.input) ?? [];
   const problems = parsed?.rows.filter(r => !r.input) ?? [];
@@ -33,14 +44,58 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
     setResult(null);
     setError(null);
     setParsed(null);
+    setExcel({ kind: 'idle' });
+    setChecked(null);
     if (!file) return;
-    if (!/\.(csv|txt)$/i.test(file.name)) return setError('Upload a .csv file. In Excel or Google Sheets choose File > Save as / Download > CSV.');
+    if (/\.xlsx$/i.test(file.name)) {
+      if (fileRef.current) fileRef.current.value = '';
+      if (file.size > MAX_XLSX_BYTES) return setError('The file is larger than 5 MB. Split it into two files.');
+      setExcel({ kind: 'checking' });
+      try {
+        const sheet = parseExistingCustomers(await readXlsx(file));
+        if (!Object.keys(sheet.data).length && !sheet.problems.length) throw new Error('No customers are filled in. Start on the row below the grey example.');
+        const res = await importApi(sheet.data, false);
+        const step: Extract<Step, { kind: 'checked' }> = { kind: 'checked', file: file.name, parsed: sheet, result: res };
+        setChecked(step);
+        setExcel(step);
+      } catch (e) {
+        setExcel({ kind: 'idle' });
+        setError(e instanceof Error ? e.message : 'The file could not be read.');
+      }
+      return;
+    }
+    if (!/\.(csv|txt)$/i.test(file.name)) return setError('Upload the Excel template (.xlsx) or a .csv file. In Google Sheets choose File > Download > Microsoft Excel (.xlsx).');
     if (file.size > MAX_FILE_BYTES) return setError('The file is too large (up to 1 MB).');
     setFileName(file.name);
     setParsed(parseCustomerSheet(await file.text(), services, profile?.id));
   };
 
-  const downloadTemplate = () => {
+  const saveExcel = async () => {
+    if (!checked) return;
+    setError(null);
+    setExcel({ kind: 'saving' });
+    try {
+      const res = await importApi(checked.parsed.data, true);
+      if (!res.committed) {
+        // something changed since the check (for example a colleague added the same customer): show what to fix
+        const step = { ...checked, result: res };
+        setChecked(step);
+        setExcel(step);
+        return;
+      }
+      setExcel({ kind: 'saved', result: res });
+    } catch (e) {
+      setExcel(checked);
+      setError(e instanceof Error ? e.message : 'The customers could not be saved.');
+    }
+  };
+  const resetExcel = () => {
+    setExcel({ kind: 'idle' });
+    setChecked(null);
+    setError(null);
+  };
+
+  const downloadCsvTemplate = () => {
     const blob = new Blob(['﻿' + importTemplate(services)], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -83,32 +138,37 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
             <UploadCloud className="w-4 h-4 text-blue-600" aria-hidden="true" /> Upload customer details
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 max-w-xl">
-            Add many customers at once instead of one by one. Fill the template (one customer per row, up to {IMPORT_MAX_ROWS}), save it as CSV and upload it. Each row is checked like the form above;
-            a customer whose phone or e-mail already exists is skipped.
+            Add many customers at once. Fill the Excel template: one row per customer (up to 500) with their Relationship Manager, the client dashboard login and
+            up to 5 services. Everything is checked before anything is saved.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={downloadTemplate}
+        <a
+          href={XLSX_TEMPLATE}
+          download="Customer_Upload_Template.xlsx"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50"
         >
           <Download className="w-3.5 h-3.5" aria-hidden="true" /> Download template
-        </button>
+        </a>
       </div>
 
-      <p className="text-[11px] text-slate-500">
-        Columns: <span className="font-semibold text-slate-700">{IMPORT_COLUMNS.join(', ')}</span>. Only Name and a phone or e-mail are required. Type: Retail, Wholesale, Corporate or Other. Status: Active, Inactive or
-        Prospect. Service: a service name (several separated by ;).
-      </p>
+      <ul className="text-[11px] text-slate-500 list-disc pl-4 space-y-0.5">
+        <li><span className="font-semibold text-slate-700">Required:</span> Relationship Manager (their name as in the CRM), Customer Name, Business Name and Mobile (10 digits). For each service: Service, Start Date and Status.</li>
+        <li><span className="font-semibold text-slate-700">Client dashboard login:</span> Client Login E-mail (a different one for every client). Client Password is optional (10+ characters): with it the client is e-mailed their login and that password; without it they get a link to choose their own. The CRM never stores the password as text: delete the column from your sheet after the upload.</li>
+        <li>Filled in Google Sheets: File &gt; Download &gt; Microsoft Excel (.xlsx). The older CSV ({IMPORT_COLUMNS.join(', ')}; up to {IMPORT_MAX_ROWS} rows, assigned to you) is still accepted: <button type="button" onClick={downloadCsvTemplate} className="underline font-semibold text-slate-600">CSV template</button>.</li>
+      </ul>
 
       <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center cursor-pointer hover:border-blue-400">
         <FileSpreadsheet className="w-6 h-6 text-slate-400" aria-hidden="true" />
-        <span className="text-sm font-semibold text-slate-700">{fileName || 'Choose a CSV file'}</span>
-        <span className="text-[11px] text-slate-500">.csv, up to 1 MB</span>
-        <input ref={fileRef} type="file" accept=".csv,text/csv,.txt" className="sr-only" aria-label="Customer sheet (CSV)" onChange={e => void choose(e.target.files?.[0])} disabled={busy} />
+        <span className="text-sm font-semibold text-slate-700">{excel.kind === 'checking' ? 'Checking…' : fileName || 'Choose the filled template (.xlsx)'}</span>
+        <span className="text-[11px] text-slate-500">.xlsx up to 5 MB, or .csv up to 1 MB</span>
+        <input ref={fileRef} type="file" accept=".xlsx,.csv,text/csv,.txt" className="sr-only" aria-label="Customer sheet (Excel or CSV)" onChange={e => void choose(e.target.files?.[0])} disabled={busy || excel.kind === 'checking' || excel.kind === 'saving'} />
       </label>
 
       {error && <ErrorBanner message={error} />}
+      {(excel.kind === 'checked' || (excel.kind === 'saving' && checked)) && (
+        <Preview step={excel.kind === 'checked' ? excel : checked!} saving={excel.kind === 'saving'} onSave={() => void saveExcel()} onReset={resetExcel} />
+      )}
+      {excel.kind === 'saved' && <Saved result={excel.result} onReset={resetExcel} onDone={onDone} />}
       {parsed?.fileError && <ErrorBanner message={parsed.fileError} />}
 
       {parsed && !parsed.fileError && (

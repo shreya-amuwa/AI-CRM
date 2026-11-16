@@ -144,8 +144,9 @@ export interface ParsedImport {
   missing: string[];
   /** Columns with a heading the import does not know (they are ignored). */
   ignored: string[];
-  /** "tabs": the template with one tab per kind of data; "one-sheet": the single "Import" tab with a Record type on every row. */
-  format: 'tabs' | 'one-sheet';
+  /** "tabs": the template with one tab per kind of data; "one-sheet": the single "Import" tab with a Record type on every row;
+   *  "customer-rows": the Add Customer upload template, one row per customer with its Relationship Manager, client login and services side by side. */
+  format: 'tabs' | 'one-sheet' | 'customer-rows';
   /** Rows that cannot be read at all (an unknown Record type, data without one). They stop the save, like a problem the server finds. */
   problems: { row: number; message: string }[];
   /** Things typed in a column that does not apply to that row's Record type (they are ignored): worth a look, they do not stop the save. */
@@ -298,7 +299,90 @@ function parseOneSheet(sheet: { name: string; rows: Cell[][] }, hdr: number): Pa
   return { data, counts, missing: [], ignored, format: 'one-sheet', problems, warnings };
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The Add Customer upload template (public/templates/Customer_Upload_Template.xlsx): ONE row per customer. The customer, the Relationship
+// Manager (the Support Team Member who looks after them), the client dashboard login and up to 5 services side by side ("Service 1",
+// "Plan 1", ...). Each row becomes the same customer + service records as the one-sheet template, so the server checks and saves it in the
+// same way (import_customer_data): who may import for whom, the services, and the client logins (created by the API, password never stored).
+// ---------------------------------------------------------------------------------------------------------------------------------
+export const CUSTOMER_ROW_SLOTS = 5;
+const CUSTOMER_ROW_COLUMNS: Record<string, [field: string, kind: Kind]> = {
+  'relationship manager': ['member', 'text'], 'customer name': ['name', 'text'], 'business name': ['businessName', 'text'], mobile: ['mobile', 'mobile'],
+  'mobile number': ['mobile', 'mobile'], 'e-mail': ['email', 'text'], email: ['email', 'text'], city: ['city', 'text'],
+  'client login e-mail': ['loginEmail', 'text'], 'client password': ['loginPassword', 'text'], notes: ['notes', 'text'], 'customer notes': ['notes', 'text']
+};
+/** Per service slot: "service 1", "plan 1", "price 1 (₹)", "billing cycle 1", "start date 1", "expiry date 1", "status 1". */
+const slotField = (key: string): [field: string, kind: Kind, slot: number] | null => {
+  const m = /^(service|plan|price|billing cycle|start date|expiry date|status) (\d)(?: \(₹\))?$/.exec(key);
+  if (!m || +m[2] < 1 || +m[2] > CUSTOMER_ROW_SLOTS) return null;
+  const f: Record<string, [string, Kind]> = {
+    service: ['service', 'text'], plan: ['plan', 'text'], price: ['price', 'num'], 'billing cycle': ['billingCycle', 'text'],
+    'start date': ['startDate', 'date'], 'expiry date': ['renewsOn', 'date'], status: ['status', 'text']
+  };
+  return [...f[m[1]], +m[2]];
+};
+const CUSTOMER_ROW_MARKERS = ['relationship manager', 'service 1'];
+
+function parseCustomerRows(sheet: { name: string; rows: Cell[][] }, hdr: number): ParsedImport {
+  const data: ImportData = {};
+  const counts = Object.fromEntries(IMPORT_SHEETS.map(s => [s.key, 0])) as Record<SheetKey, number>;
+  const ignored: string[] = [];
+  const problems: ParsedImport['problems'] = [];
+  const head = (sheet.rows[hdr] ?? []).map(h => header(h));
+  head.forEach((key, j) => {
+    if (key && !CUSTOMER_ROW_COLUMNS[key] && !slotField(key) && !key.endsWith('(helper)')) ignored.push(`${sheet.name}: ${String(sheet.rows[hdr]?.[j])}`);
+  });
+  for (let i = hdr + 1; i < sheet.rows.length; i++) {
+    const cells = sheet.rows[i] ?? [];
+    if (cells.some(x => typeof x === 'string' && /\bEXAMPLE\b/.test(x))) continue;
+    const customer: Row = { row: i + 1 };
+    const slots: Row[] = Array.from({ length: CUSTOMER_ROW_SLOTS }, () => ({ row: i + 1 }));
+    const slotFilled = new Array(CUSTOMER_ROW_SLOTS).fill(false);
+    let any = false;
+    head.forEach((key, j) => {
+      const v = convert(cells[j] ?? null, CUSTOMER_ROW_COLUMNS[key]?.[1] ?? slotField(key)?.[1] ?? 'text');
+      if (v === null) return;
+      const c = CUSTOMER_ROW_COLUMNS[key];
+      if (c) {
+        customer[c[0]] = v;
+        any = true;
+        return;
+      }
+      const s = slotField(key);
+      if (s) {
+        slots[s[2] - 1][s[0]] = v;
+        slotFilled[s[2] - 1] = true;
+        any = true;
+      }
+    });
+    if (!any) continue;
+    const mobile = String(customer.mobile ?? '').replace(/\D/g, '');
+    if (mobile === EXAMPLE_MOBILE) continue;
+    if (!mobile) {
+      problems.push({ row: i + 1, message: 'The Mobile number is missing.' });
+      continue;
+    }
+    (data.customers ??= []).push(customer);
+    counts.customers++;
+    slots.forEach((s, k) => {
+      if (!slotFilled[k]) return;
+      if (s.service === null || s.service === undefined) {
+        problems.push({ row: i + 1, message: `Service ${k + 1}: the other columns of this service are filled, but the Service is empty.` });
+        return;
+      }
+      (data.services ??= []).push({ ...s, mobile: customer.mobile });
+      counts.services++;
+    });
+  }
+  return { data, counts, missing: [], ignored, format: 'customer-rows', problems, warnings: [] };
+}
+
 export function parseExistingCustomers(wb: Workbook): ParsedImport {
+  for (const sheet of wb.sheets) {
+    if (/guide|how to|lists|team/i.test(sheet.name)) continue;
+    const at = sheet.rows.slice(0, 6).findIndex(r => CUSTOMER_ROW_MARKERS.every(m => (r ?? []).some(c => header(c) === m)));
+    if (at >= 0) return parseCustomerRows(sheet, at);
+  }
   for (const sheet of wb.sheets) {
     if (/guide|how to|lists|team/i.test(sheet.name)) continue;
     const hdr = sheet.rows.slice(0, 6).findIndex(r => ONE_SHEET_MARKERS.every(m => (r ?? []).some(c => header(c) === m)));
