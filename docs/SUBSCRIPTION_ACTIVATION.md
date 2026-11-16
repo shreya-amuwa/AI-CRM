@@ -59,7 +59,7 @@ retried as the same job, a delivered one is repeated at most every 10 minutes). 
 ## Reminders and usage alerts
 
 * **Expiry reminders** (e-mail and WhatsApp): 15, 7, 3 and 1 day before and on the expiry date (stages 15, 7, 3, 1, 0), one row per customer, service, expiry date, stage and channel,
-  so each is sent once per cycle. The AI-call reminders keep 7, 3 and 1. The wording of stages 15 and 0 is seeded as an unapproved draft: a live send waits for the Super Admin's approval
+  so each is sent once per cycle. The AI-call reminders are 7, 5 and 1 (`20270103000100`, see `BOLIFY_AI.md`). The wording of stages 15 and 0 is seeded as an unapproved draft: a live send waits for the Super Admin's approval
   (Super Admin > reminder wording), like the other stages.
 * **Message usage alerts** at 70 / 80 / 90 / 100 % of the package, from the usage data the service holds (`service_usage`, the figures the team imports or the provider reports):
   one alert per cycle and threshold (a jump over several thresholds is one alert, for the highest). Thresholds: `GET/POST /workflow/usage-alerts` (Super Admin changes them).

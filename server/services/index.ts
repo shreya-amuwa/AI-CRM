@@ -34,6 +34,8 @@ import { PipelineService } from './PipelineService.js';
 import { WorkflowService } from './WorkflowService.js';
 import { WelcomeEmailRepository } from '../repositories/WelcomeEmailRepository.js';
 import { WelcomeEmailService } from './WelcomeEmailService.js';
+import { ReminderCallRepository } from '../repositories/ReminderCallRepository.js';
+import { ReminderCallService } from './ReminderCallService.js';
 import { WorkflowRepository } from '../repositories/WorkflowRepository.js';
 import { AutomationService } from './AutomationService.js';
 import { UserService } from './UserService.js';
@@ -113,6 +115,7 @@ export function createServices(db: SupabaseClient) {
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),
     welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),
+    reminderCalls: new ReminderCallService(new ReminderCallRepository(db)),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
     hrEmployeeFiles: new HrEmployeeFileService(new HrEmployeeFileRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())

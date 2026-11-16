@@ -2983,3 +2983,14 @@ export const candidateGuardSchema = z
   })
   .strict();
 export type CandidateGuardInput = z.infer<typeof candidateGuardSchema>;
+
+// ---- BolifyAI panel recharge reminder calls (monitoring list for the Super Admin and HR staff) -------------------------------------------
+export const REMINDER_CALL_FILTERS = ['ALL', 'STAGE_7', 'STAGE_5', 'STAGE_1', 'PENDING', 'SUBMITTED', 'FAILED', 'COMPLETED', 'SKIPPED'] as const;
+export const reminderCallListQuerySchema = z
+  .object({
+    filter: z.enum(REMINDER_CALL_FILTERS).default('ALL'),
+    page: z.coerce.number().int().min(1).max(5000).default(1),
+    pageSize: z.coerce.number().int().min(10).max(100).default(50)
+  })
+  .strict();
+export type ReminderCallListQuery = z.infer<typeof reminderCallListQuerySchema>;

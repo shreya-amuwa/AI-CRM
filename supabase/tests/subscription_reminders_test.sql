@@ -58,7 +58,7 @@ select test.check((select (sub_reminder_schedule('2026-12-10') ->> 'created')::i
 select test.check((select send_after = timestamptz '2026-12-10 10:00+05:30' and send_until = timestamptz '2026-12-10 19:00+05:30'
                      from subscription_reminders where customer_id = pg_temp.g('a')::uuid and stage = 7),
   'the call window is 10:00 to 19:00 Indian time on that day, never midnight');
-select test.check((select (sub_reminder_schedule('2026-12-11') ->> 'created')::int = 0), 'six days before: nothing (stages are exactly 7, 3 and 1)');
+select test.check((select (sub_reminder_schedule('2026-12-11') ->> 'created')::int = 0), 'six days before: nothing (call stages are exactly 7, 5 and 1)');
 select test.check((select count(*) = 6 from subscription_reminder_events e join subscription_reminders r on r.id = e.reminder_id
                     where e.event = 'CREATED' and r.stage = 7 and r.customer_id::text in (select v from sr)), 'every reminder has a creation record');
 -- customers that are not customers (a lead) are never scheduled
@@ -133,10 +133,12 @@ select test.check((select count(*) = 1 from audit_logs where action = 'SUBSCRIPT
 select test.check((select count(*) = 3 from subscription_reminder_events where reminder_id = (select id from ids where customer_id = pg_temp.g('f')::uuid) and event = 'ATTEMPT'), 'every attempt is recorded');
 
 -- ---------------------------------------------------------------- the window closes
-select sub_reminder_schedule('2026-12-14');   -- three days before: a new stage
-select test.check((select count(*) = 6 from subscription_reminders where stage = 3 and customer_id::text in (select v from sr)), 'three days before: the 3-day reminders');
-select test.check((select jsonb_array_length(sub_reminder_claim(50, 'dry_run', 300, timestamptz '2026-12-14 19:30+05:30')) = 0), 'after 19:00 nothing is claimed');
-select test.check((select count(*) = 6 and bool_and(reason like 'The call window%') from subscription_reminders where stage = 3 and status = 'SKIPPED' and customer_id::text in (select v from sr)),
+select sub_reminder_schedule('2026-12-12');   -- five days before: a new stage (20270103000100: calls at 7, 5 and 1 day)
+select test.check((select count(*) = 6 from subscription_reminders where stage = 5 and customer_id::text in (select v from sr)), 'five days before: the 5-day reminders');
+select sub_reminder_schedule('2026-12-14');
+select test.check((select count(*) = 0 from subscription_reminders where stage = 3 and channel = 'CALL' and customer_id::text in (select v from sr)), 'three days before: no call any more');
+select test.check((select jsonb_array_length(sub_reminder_claim(50, 'dry_run', 300, timestamptz '2026-12-12 19:30+05:30')) = 0), 'after 19:00 nothing is claimed');
+select test.check((select count(*) = 6 and bool_and(reason like 'The call window%') from subscription_reminders where stage = 5 and status = 'SKIPPED' and customer_id::text in (select v from sr)),
   'a reminder is not sent late: it is skipped, never made up the next day');
 
 -- ---------------------------------------------------------------- renewal, date change, cancellation
@@ -158,7 +160,9 @@ update customer_services set renews_on = '2027-12-17' where customer_id = pg_tem
 update customer_services set service_status = 'CANCELLED' where customer_id = pg_temp.g('d')::uuid and service_code = 'AI_CALLING';        -- D cancelled
 update customer_services set service_status = 'PAUSED' where customer_id = pg_temp.g('f')::uuid and service_code = 'AI_CALLING';           -- F paused
 update customers set lifecycle_stage = 'LOST' where id = pg_temp.g('b')::uuid;                                                            -- B is no longer a customer
-select test.check((select (sub_reminder_schedule('2026-12-16') ->> 'cancelled')::int >= 4), 'the scheduler withdraws reminders that are no longer valid');
+select test.check((select count(*) = 3 and bool_and(status = 'CANCELLED') from subscription_reminders where stage = 1 and customer_id in (pg_temp.g('a')::uuid, pg_temp.g('d')::uuid, pg_temp.g('f')::uuid)),
+  'a renewal, a cancellation or a pause withdraws the pending reminder at once (before any run)');
+select test.check((select (sub_reminder_schedule('2026-12-16') ->> 'cancelled')::int >= 1), 'the scheduler withdraws the rest that are no longer valid');
 select test.check((select status = 'CANCELLED' and reason like 'The expiry date changed%' from subscription_reminders where customer_id = pg_temp.g('a')::uuid and stage = 1), 'a renewed service: the reminder for the old date is cancelled');
 select test.check((select status = 'CANCELLED' and reason like 'The service is not live (CANCELLED)%' from subscription_reminders where customer_id = pg_temp.g('d')::uuid and stage = 1), 'a cancelled service is not called');
 select test.check((select status = 'CANCELLED' and reason like 'The service is not live (PAUSED)%' from subscription_reminders where customer_id = pg_temp.g('f')::uuid and stage = 1), 'nor a paused one');

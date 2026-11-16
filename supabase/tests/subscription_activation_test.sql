@@ -7,7 +7,10 @@
 \set QUIET 1
 
 reset role;
--- earlier suites re-apply older migrations (to prove they are re-runnable): put this one back on top, which also proves it re-runs
+-- earlier suites re-apply older migrations (to prove they are re-runnable): put this one back on top, which also proves it re-runs.
+-- Its stage check predates the 5-day call stage of 20270103000100 (calls 7, 5 and 1 day before expiry), so the 5-day
+-- rows left by subscription_reminders_test.sql are set aside first; bolify_recharge_reminders_test.sql puts 20270103000100 back on top later.
+delete from subscription_reminders where stage = 5;
 \i supabase/migrations/20261210000200_subscription_activation.sql
 
 \echo '--- 90. Subscription: the date arithmetic'
@@ -224,7 +227,7 @@ select test.check((select count(*) = 0 from subscription_reminders where custome
   'no reminder uses any other date (account, payment, invoice or document date)');
 select public.sub_reminder_schedule((select d - 15 from sbr), array['CALL']);
 select public.sub_reminder_schedule((select d - 7 from sbr), array['CALL']);
-select test.check((select count(*) = 1 and bool_and(stage = 7) from subscription_reminders where customer_id = (select id from sb where name = 'S') and channel = 'CALL'), 'the AI calls keep 7, 3 and 1 days');
+select test.check((select count(*) = 1 and bool_and(stage = 7) from subscription_reminders where customer_id = (select id from sb where name = 'S') and channel = 'CALL'), 'the AI calls keep 7, 5 and 1 days');
 
 \echo '--- 98. Subscription: a renewal keeps the history and starts a new cycle'
 create temp table sbp (id uuid, other uuid);
