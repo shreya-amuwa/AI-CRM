@@ -7,6 +7,7 @@ import { ApiError, errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { fmtDate, PaymentHistory, rupees, WorkflowBadge } from '../../payments/PaymentBits';
 import { ConversationSection } from './LeadConversations';
+import { LeadWhatsAppStatus } from '../../leads/LeadWhatsApp';
 import {
   blockDecimals,
   Avatar,
@@ -987,6 +988,9 @@ export const EditLeadView: React.FC<{
 
       {/* 4 + 5 · Last conversation and the conversation history */}
       <ConversationSection customerId={id} conversations={conversations} onChange={setConversations} onSaved={refreshActivities} />
+
+      {/* the welcome WhatsApp about our services (sent once when the lead got its sales person) */}
+      <LeadWhatsAppStatus customerId={id} />
 
       {/* 6 · Last activities - full width, at the bottom */}
       <ActivityCard activities={lead.activities} title="Last activities" />

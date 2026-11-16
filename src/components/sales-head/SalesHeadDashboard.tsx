@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, Briefcase, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Building2, Briefcase, MessageCircle, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -15,6 +15,7 @@ import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { SalesOverview } from './SalesOverview';
+import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
 import { LeadList } from './LeadList';
 import { LeadAssign } from './LeadAssign';
 import { SalesDailyTasks } from './SalesDailyTasks';
@@ -98,6 +99,7 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
           { id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet },
           { id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee },
+          ...(operationsHead ? [] : [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }]),
           { id: 'notices', label: 'Client Notices', icon: Megaphone },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
           { ...ISSUES_NAV },
@@ -155,6 +157,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'work-reports' && <ReportsRoute />}
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
+      {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}

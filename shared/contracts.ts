@@ -1640,6 +1640,37 @@ export interface InvoiceWhatsAppSettings {
   /** What the SERVER does with a message right now (set by the server's configuration, not by these switches). */
   delivery?: { mode: 'off' | 'dry_run' | 'live'; provider: 'WABASTORE' | 'BUILDER' | null; ready: boolean; note: string };
 }
+/** The lead welcome WhatsApp of one lead (sent once, when the lead first reaches a sales person). */
+export interface LeadWhatsAppMessage {
+  id: string;
+  customerId: string;
+  leadName: string | null;
+  salesPerson: string | null;
+  recipient: string | null;
+  status: 'PENDING' | 'PROCESSING' | 'DRY_RUN' | 'ACCEPTED' | 'DELIVERED' | 'READ' | 'RETRY' | 'FAILED' | 'SKIPPED';
+  attempts: number;
+  nextAttemptAt: string | null;
+  detail: string | null;
+  acceptedAt: string | null;
+  deliveredAt: string | null;
+  failedAt: string | null;
+  createdAt: string;
+  events: { kind: string; attempt: number | null; code: number | null; detail: string | null; at: string }[];
+}
+export type LeadWhatsAppVariable = 'LEAD_NAME' | 'LEAD_COMPANY' | 'SALES_PERSON_NAME' | 'SALES_PERSON_PHONE';
+export interface LeadWhatsAppSettings {
+  enabled: boolean;
+  templateName: string | null;
+  templateLanguage: string;
+  templateApproved: boolean;
+  variables: LeadWhatsAppVariable[];
+  updatedAt: string;
+  updatedBy: string | null;
+  counts: { queued: number; sent: number; failed: number; skipped: number; dryRun: number };
+  recent: LeadWhatsAppMessage[];
+  /** What the SERVER does with a message right now (its configuration, not these switches). */
+  delivery?: { mode: 'off' | 'dry_run' | 'live'; ready: boolean; note: string };
+}
 export interface InvoiceWhatsAppResult {
   /** false: nothing was requested (automatic request that cannot be made); `reason` says why. */
   requested: boolean;

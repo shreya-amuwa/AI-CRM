@@ -42,6 +42,7 @@ import { runSubscriptionReminders } from './automations/subscriptionReminders.js
 import { bolifySender } from './automations/bolify.js';
 import { runAllSubscriptionMessages } from './automations/subscriptionMessages.js';
 import { applyDeliveryReport, normalizeProviderStatus, runInvoiceWhatsApp } from './invoices/whatsapp.js';
+import { applyLeadDeliveryReport, assignsLeads, leadWhatsAppQuietly, runLeadWhatsApp } from './leads/whatsapp.js';
 import { StorageRepository } from './repositories/StorageRepository.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
@@ -175,7 +176,9 @@ app.post('/internal/whatsapp/status', async c => {
   if (!body || !ref || ref.length > 200) throw new AppError('VALIDATION_ERROR', 'Send the message reference and its status.');
   if (!status) return c.json(ok({ matched: false, ignored: true }));
   const detail = typeof body.detail === 'string' ? body.detail.slice(0, 300) : null;
-  return c.json(ok(await applyDeliveryReport(ref, status, detail)));
+  // the same endpoint serves the paid-invoice and the lead welcome messages: the reference belongs to one of them
+  const invoice = await applyDeliveryReport(ref, status, detail);
+  return c.json(ok(invoice.matched ? invoice : await applyLeadDeliveryReport(ref, status, detail)));
 });
 
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
@@ -221,6 +224,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const subscriptionMessages = await runAllSubscriptionMessages();
   // Paid invoices by WhatsApp: the retries (and anything left waiting). A click sends its own message at once; this is the safety net.
   const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
+  // Lead welcome WhatsApp ("our services", once when a lead is first given to a sales person): the retries and anything left waiting.
+  const leadWhatsApp = await runLeadWhatsApp().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const careers = await runCareerAutomation().catch(() => ({ error: 'Candidate maintenance failed.' }));
@@ -234,7 +239,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
@@ -503,6 +508,8 @@ function adapt(route: RouteDef) {
       body: c.req.method === 'GET' ? undefined : await readJson(c)
     };
     const result = await route.handler({ req: request, params: c.req.param() as Record<string, string>, actor: c.get('actor')!, db: c.get('db')! });
+    // a lead may have just got its first sales person: send its welcome WhatsApp now (the scheduled dispatch is the safety net)
+    if (assignsLeads(request.method, request.path)) await afterResponse(c, leadWhatsAppQuietly());
     return c.json(ok(result.data), (result.status ?? 200) as 200);
   };
 }
@@ -510,6 +517,17 @@ function adapt(route: RouteDef) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+/** Background work after a request: on Cloudflare Workers it runs after the response (waitUntil); elsewhere it is awaited, so it is never cut off. */
+async function afterResponse(c: Context, work: Promise<unknown>): Promise<void> {
+  let ctx: { waitUntil(p: Promise<unknown>): void } | null = null;
+  try {
+    ctx = c.executionCtx;
+  } catch {
+    ctx = null; // Node.js (Vercel, local, tests): no execution context
+  }
+  if (ctx) ctx.waitUntil(work.catch(() => undefined));
+  else await work.catch(() => undefined);
+}
 const ok = <T>(data: T): ApiResponse<T> => ({ success: true, data });
 
 function fail(c: Context, err: AppError) {

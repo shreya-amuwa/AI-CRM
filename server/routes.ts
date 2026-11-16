@@ -23,6 +23,7 @@ import {
   ticketFilesController as ticketFiles,
   employeeCasesController as employeeCases,
   meetingsController as meetings,
+  leadWhatsAppController as leadWhatsApp,
   workReportsController as workReports,
   hrReviewsController as hrReviews,
   reportAnalyticsController as reportAnalytics,
@@ -377,6 +378,12 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/report-performance/analysis', handler: reportAnalytics.generate, options: S },
   // Employee issues and meeting requests: the employee's own, then HR's two sections (the database decides who may call each)
   // Meetings: one calendar for appointments, demos, interviews, meetings and CEO meetings, synced to each person's own Google Calendar
+  // Lead welcome WhatsApp ("our services", once when a lead first reaches a sales person): settings for the Super Admin / Sales Department Head,
+  // a lead's message and "Send again" for anyone who can open the lead (the database checks both)
+  { method: 'GET', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.settings },
+  { method: 'POST', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.setSettings, options: S },
+  { method: 'GET', path: '/leads/:id/whatsapp', handler: leadWhatsApp.history },
+  { method: 'POST', path: '/leads/:id/whatsapp/retry', handler: leadWhatsApp.resend, options: S },
   { method: 'GET', path: '/meetings', handler: meetings.list },
   { method: 'POST', path: '/meetings', handler: meetings.create, options: S },
   { method: 'GET', path: '/meetings/approvals', handler: meetings.approvals },

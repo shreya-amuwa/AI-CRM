@@ -1195,6 +1195,17 @@ export const invoiceWhatsAppSettingsSchema = z
     templateApproved: z.boolean()
   })
   .strict();
+/** The lead welcome WhatsApp (docs/LEAD_WHATSAPP.md): which CRM value fills each of the template's variables, in order. */
+export const LEAD_WHATSAPP_VARIABLES = ['LEAD_NAME', 'LEAD_COMPANY', 'SALES_PERSON_NAME', 'SALES_PERSON_PHONE'] as const;
+export const leadWhatsAppSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    templateName: z.string().trim().max(255).nullable().optional(),
+    templateLanguage: z.string().trim().max(10).optional(),
+    templateApproved: z.boolean(),
+    variables: z.array(z.enum(LEAD_WHATSAPP_VARIABLES)).max(10, 'At most 10 template variables.')
+  })
+  .strict();
 export const invoiceFileQuerySchema = z.object({ stage: z.enum(INVOICE_STAGES), action: z.enum(['view', 'download']).default('view') });
 
 const pageQuery = {
