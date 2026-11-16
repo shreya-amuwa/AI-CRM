@@ -4,7 +4,7 @@ import { WabastoreClient, wabastoreConfig, type MessageOutcome, type WabastoreFe
 
 /**
  * The lead welcome WhatsApp ("the services of Amuwa Corporation"), sent once when a lead is first given to a sales person
- * (docs/LEAD_WHATSAPP.md). The database decides and records (migration 20270103000100: the trigger on customers queues one dispatch per lead,
+ * (docs/LEAD_WHATSAPP.md). The database decides and records (migration 20270103000200: the trigger on customers queues one dispatch per lead,
  * lead_whatsapp_claim / _finish / _status_update run it); this module only sends what the database hands over, through Wabastore.
  *
  * AUTOMATION_MODE_LEAD_WHATSAPP (when it is not set, AUTOMATION_MODE - the one switch the other messages use - decides):

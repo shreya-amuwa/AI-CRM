@@ -36,7 +36,7 @@ Open *Lead Welcome WhatsApp* in either menu: the Super Admin's Automations group
 On a lead's page, *Welcome WhatsApp* shows the message's state. It offers **Send again** when the message failed, was skipped or was only a test run.
 
 ## How it works
-- **Migration:** `supabase/migrations/20270103000100_lead_assignment_whatsapp.sql`. It only adds things and is safe to run twice.
+- **Migration:** `supabase/migrations/20270103000200_lead_assignment_whatsapp.sql`. It only adds things and is safe to run twice.
   - It adds `lead_whatsapp_settings`, `lead_whatsapp_dispatches` (one per lead, unique key `LEADWA|<lead>`) and `lead_whatsapp_events`. These tables are server-only.
   - An `AFTER INSERT OR UPDATE OF owner_id` trigger on `customers` queues the message.
   - The trigger never blocks saving a lead. A problem becomes a warning, never an error.

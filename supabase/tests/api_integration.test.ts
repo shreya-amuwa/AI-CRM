@@ -10497,7 +10497,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 201 && (await db.query(`select source_path from sales_lead_sheets where id = $1`, [tlSheet])).rows[0].source_path.endsWith('.xls'), 'sheet upload API: the original .xls is stored as an .xls', r);
 }
 
-// 20270103000100: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
+// 20270103000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
 {
   const modeBefore = process.env.AUTOMATION_MODE_LEAD_WHATSAPP;
   process.env.AUTOMATION_MODE_LEAD_WHATSAPP = 'dry_run';
