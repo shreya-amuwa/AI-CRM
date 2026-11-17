@@ -100,3 +100,102 @@ select test.login('wkr_tmp');
 select push_subscription_remove_by_id((select (my_push_devices() -> 0 ->> 'id')::uuid));
 select test.check(jsonb_array_length(my_push_devices()) = 0, 'a person removes their own device');
 reset role;
+
+\echo '   what is due: once only, never late, never for something already done, on leave, on a day off or when switched off'
+-- Office days in January 2027: Monday 11 ... Sunday 17, Monday 18. Each call is made at a fixed office time (p_now).
+create or replace function test.due(p_who text, p_at text) returns jsonb language sql as $$
+  select coalesce(jsonb_agg(x order by x ->> 'kind', x ->> 'step'), '[]'::jsonb)
+    from jsonb_array_elements(attendance_reminders_due((p_at::timestamp) at time zone 'Asia/Kolkata')) x
+   where x ->> 'profileId' = test.id(p_who)::text $$;
+create or replace function test.kinds(p_who text, p_at text) returns text language sql as $$
+  select coalesce(string_agg((x ->> 'kind') || (x ->> 'step'), ',' order by x ->> 'kind', x ->> 'step'), '')
+    from jsonb_array_elements(test.due(p_who, p_at)) x $$;
+create or replace function test.at(p_at text) returns timestamptz language sql as $$ select (p_at::timestamp) at time zone 'Asia/Kolkata' $$;
+create or replace function test.punch(p_who text, p_day date, p_in text, p_out text default null) returns void language sql as $$
+  insert into public.attendance_records (profile_id, attendance_date, punch_in_at, punch_out_at)
+  values (test.id(p_who), p_day, test.at(p_in), test.at(p_out))
+  on conflict (profile_id, attendance_date) do update set punch_in_at = excluded.punch_in_at, punch_out_at = excluded.punch_out_at $$;
+grant execute on all functions in schema test to anon, authenticated, service_role;
+-- the scheduled run is the API's service role: nobody is signed in
+select set_config('request.jwt.claims', '{"role":"service_role"}', false);
+update attendance_settings set lunch_allowance_minutes = 45 where id;
+delete from attendance_reminder_log where profile_id in (select id from profiles where email like 'wkr.%@example.com');
+delete from notifications where type = 'ATTENDANCE_REMINDER' and recipient_id in (select id from profiles where email like 'wkr.%@example.com');
+delete from attendance_lunches where profile_id in (select id from profiles where email like 'wkr.%@example.com');
+delete from attendance_records where profile_id in (select id from profiles where email like 'wkr.%@example.com') and attendance_date between '2027-01-11' and '2027-01-18';
+delete from leave_requests where employee_id in (select id from profiles where email like 'wkr.%@example.com') and start_date between '2027-01-11' and '2027-01-18';
+delete from attendance_reminder_prefs where profile_id in (select id from profiles where email like 'wkr.%@example.com');
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';
+insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label, active) values
+  (test.id('wkr_tmp'), 'https://push.example.com/tmp-phone', 'BPk-phone', 'auth-phone', 'Chrome on Android', true),
+  (test.id('wkr_tmp'), 'https://push.example.com/tmp-old', 'BPk-old', 'auth-old', 'Old laptop', false);
+
+select test.check(test.kinds('wkr_tmp', '2027-01-11 10:00') = 'PUNCH_IN0', '10:00 Monday, not punched in: one PUNCH_IN step 0');
+select test.check((select count(*) = 1 from notifications where recipient_id = test.id('wkr_tmp') and type = 'ATTENDANCE_REMINDER' and entity_type = 'attendance'
+                     and title = 'Time to Punch In' and body = 'Your day starts at 10:00. Open Attendance to punch in.' and data ->> 'kind' = 'PUNCH_IN'), 'and one bell notification with the exact text');
+select test.check(test.kinds('wkr_tmp', '2027-01-11 10:00') = '' and test.kinds('wkr_tmp', '2027-01-11 10:05') = '', 'the same call again returns nothing (once only)');
+select test.check((select x ->> 'title' = 'Time to Punch In (reminder)' and x ->> 'step' = '1' and x ->> 'tag' = 'att-punch_in-2027-01-11' and x ->> 'url' = '/?open=attendance'
+                     from jsonb_array_elements(test.due('wkr_tmp', '2027-01-11 10:15')) x), '10:15 still not punched in: step 1 follow-up with "(reminder)" title');
+select test.punch('wkr_tmp', '2027-01-11', '2027-01-11 10:20');
+select test.check(test.kinds('wkr_tmp', '2027-01-11 13:55') = '', 'punched in: nothing more until lunch');
+select test.check((select x -> 'targets' -> 0 ->> 'endpoint' = 'https://push.example.com/tmp-phone' and jsonb_array_length(x -> 'targets') = 1
+                          and x ->> 'title' = 'Lunch time' and x ->> 'body' = 'Start your lunch break in Attendance when you go.'
+                     from jsonb_array_elements(test.due('wkr_tmp', '2027-01-11 14:00')) x),
+  'Start Lunch at 14:00; the result carries targets for the person''s active devices only');
+insert into attendance_lunches (profile_id, attendance_date, started_at) values (test.id('wkr_tmp'), '2027-01-11', test.at('2027-01-11 14:05'));
+select test.check(test.kinds('wkr_tmp', '2027-01-11 14:15') = '', 'lunch already started: no lunch follow-up');
+select test.check(test.kinds('wkr_tmp', '2027-01-11 14:40') = '', 'lunch started 14:05: the warning is not due before 14:45');
+select test.check((select x ->> 'title' = 'Lunch ends in 5 minutes' and x ->> 'body' = 'End your lunch break in Attendance when you are back.'
+                     from jsonb_array_elements(test.due('wkr_tmp', '2027-01-11 14:45')) x),
+  'lunch started 14:05, allowance 45, warning 5: LUNCH_END due 14:45');
+select test.check(test.kinds('wkr_tmp', '2027-01-11 14:50') = '', 'the lunch warning goes out once');
+update attendance_lunches set ended_at = test.at('2027-01-11 14:46'), ended_by = 'EMPLOYEE' where profile_id = test.id('wkr_tmp') and ended_at is null;
+insert into attendance_lunches (profile_id, attendance_date, started_at) values (test.id('wkr_tmp'), '2027-01-11', test.at('2027-01-11 15:00'));
+select test.check(test.kinds('wkr_tmp', '2027-01-11 15:01') = '' and test.kinds('wkr_tmp', '2027-01-11 15:20') = '', 'second break with 4 minutes left: no LUNCH_END');
+update attendance_lunches set ended_at = test.at('2027-01-11 15:10'), ended_by = 'EMPLOYEE' where profile_id = test.id('wkr_tmp') and ended_at is null;
+select test.check((select x ->> 'body' = 'Your day ends at 19:00. Punch out before you leave.' from jsonb_array_elements(test.due('wkr_tmp', '2027-01-11 19:00')) x),
+  'Punch Out at 19:00');
+select test.punch('wkr_tmp', '2027-01-11', '2027-01-11 10:20', '2027-01-11 19:05');
+select test.check(test.kinds('wkr_tmp', '2027-01-11 19:15') = '', 'already punched out: no PUNCH_OUT follow-up');
+select test.check(not exists (select 1 from jsonb_array_elements(attendance_reminders_due(test.at('2027-01-11 10:00'))) x where x ->> 'profileId' = test.id('sa')::text)
+  , 'the Super Admin is never reminded');
+
+-- Tuesday: punched in early, personal time later; the first run of the day is late
+insert into attendance_reminder_prefs (profile_id, punch_in) values (test.id('wkr_tms'), '10:30') on conflict (profile_id) do update set punch_in = '10:30';
+select test.punch('wkr_tms', '2027-01-12', '2027-01-12 09:55');
+-- (each run reminds everyone: wkr_tmp's first run of the day comes first)
+select test.check(test.kinds('wkr_tmp', '2027-01-12 10:40') = 'PUNCH_IN1',
+  'first run at 10:40 after a missed 10:00 and 10:15: step 0 is dropped (40 minutes late), step 1 due 10:15 is sent (25 minutes late)');
+select test.check(test.kinds('wkr_tms', '2027-01-12 10:30') = '' and test.kinds('wkr_tms', '2027-01-12 10:45') = '',
+  'punched in at 09:55 with personal Punch In 10:30: nothing at 10:30');
+select test.check(test.kinds('wkr_tmp', '2027-01-13 10:20') = 'PUNCH_IN1', 'a run when the follow-up is already due sends only the follow-up, not both');
+select test.check(test.kinds('wkr_tmp', '2027-01-14 11:00') = '', 'first run at 11:00: nothing at all (both steps more than 30 minutes late)');
+select test.check(test.kinds('wkr_tmp', '2027-01-17 10:00') = '', 'Sunday 10:00: nothing');
+
+-- leave, the HR pause and the personal switch
+insert into leave_requests (employee_id, leave_type, start_date, end_date, half_day_shift, reason, status) values
+  (test.id('wkr_tmp'), 'FULL_DAY', '2027-01-15', '2027-01-15', null, 'synthetic test leave', 'APPROVED'),
+  (test.id('wkr_tms'), 'HALF_DAY', '2027-01-15', '2027-01-15', 'AFTERNOON', 'synthetic test leave', 'APPROVED'),
+  (test.id('wkr_tmp'), 'HALF_DAY', '2027-01-16', '2027-01-16', 'MORNING', 'synthetic test leave', 'APPROVED'),
+  (test.id('wkr_tms'), 'FULL_DAY', '2027-01-16', '2027-01-16', null, 'synthetic test leave', 'PENDING_HR');
+select test.punch('wkr_tms', '2027-01-15', '2027-01-15 09:50');
+select test.check(test.kinds('wkr_tmp', '2027-01-15 10:00') = '' and test.kinds('wkr_tmp', '2027-01-15 14:00') = '' and test.kinds('wkr_tmp', '2027-01-15 19:00') = '',
+  'approved full-day leave: nothing all day');
+select test.check(test.kinds('wkr_tms', '2027-01-15 14:00') = '' and test.kinds('wkr_tms', '2027-01-15 19:00') = '', 'afternoon half-day: no LUNCH, no PUNCH_OUT');
+select test.check(test.kinds('wkr_tmp', '2027-01-16 10:00') = '', 'morning half-day: no PUNCH_IN');
+select test.check(test.kinds('wkr_tms', '2027-01-16 10:30') = 'PUNCH_IN0', 'leave that is not approved yet does not stop reminders');
+update attendance_settings set reminders_paused_on = '2027-01-18' where id;
+select test.check(test.kinds('wkr_tmp', '2027-01-18 10:00') = '', 'HR paused today: nothing');
+update attendance_settings set reminders_paused_on = null where id;
+insert into attendance_reminder_prefs (profile_id, enabled) values (test.id('wkr_tmp'), false) on conflict (profile_id) do update set enabled = false;
+select test.check(test.kinds('wkr_tmp', '2027-01-18 10:05') = '', 'personal switch off: nothing');
+update attendance_reminder_prefs set enabled = true where profile_id = test.id('wkr_tmp');
+update attendance_settings set reminders_enabled = false where id;
+select test.check(test.kinds('wkr_tmp', '2027-01-18 10:10') = '', 'company switch off: nothing');
+update attendance_settings set reminders_enabled = true where id;
+select test.check(test.kinds('wkr_tmp', '2027-01-18 10:15') = 'PUNCH_IN1', 'switched back on: the reminder that is due now goes out');
+set role authenticated;
+select test.login('wkr_tmp');
+select test.must_fail($$select attendance_reminders_due(now())$$, 'staff cannot run the reminders', 'permission denied');
+reset role;
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';

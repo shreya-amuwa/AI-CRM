@@ -296,3 +296,120 @@ begin
 end $$;
 revoke all on function public.push_subscriptions_report(uuid[], uuid[], uuid[]) from public, anon, authenticated;
 grant execute on function public.push_subscriptions_report(uuid[], uuid[], uuid[]) to service_role;
+
+-- ---------------------------------------------------------------------------
+-- 3. What is due
+-- ---------------------------------------------------------------------------
+create table if not exists public.attendance_reminder_log (
+  id bigint generated always as identity primary key,
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  attendance_date date not null,
+  kind text not null check (kind in ('PUNCH_IN', 'LUNCH', 'LUNCH_END', 'PUNCH_OUT')),
+  step smallint not null check (step in (0, 1)),      -- 0 = the reminder, 1 = the one follow-up
+  lunch_id uuid,                                       -- LUNCH_END: once per break
+  sent_at timestamptz not null default now()
+);
+create unique index if not exists attendance_reminder_log_once_uidx on public.attendance_reminder_log
+  (profile_id, attendance_date, kind, step, coalesce(lunch_id, '00000000-0000-0000-0000-000000000000'::uuid));
+create index if not exists attendance_reminder_log_date_idx on public.attendance_reminder_log (attendance_date);
+alter table public.attendance_reminder_log enable row level security;
+revoke all on public.attendance_reminder_log from public, anon, authenticated;
+
+-- Which reminders are due at p_now (writes nothing). For each person and kind only the latest step that is due is offered (a run that
+-- comes when the follow-up is already due sends the follow-up alone, not both), and only if it is at most 30 minutes late.
+create or replace function private.attendance_reminders_compute(p_now timestamptz)
+returns table (profile_id uuid, attendance_date date, kind text, step smallint, lunch_id uuid, due_at timestamptz, title text, body text)
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  s public.attendance_settings;
+  v_day date := (p_now at time zone 'Asia/Kolkata')::date;
+  v_allow_s numeric := private.lunch_allowance() * 60;
+begin
+  select * into s from public.attendance_settings where id;
+  if s.id is null or not s.reminders_enabled or s.reminders_paused_on = v_day
+     or not (extract(isodow from v_day)::integer = any(s.reminder_days)) then
+    return;
+  end if;
+  return query
+  with staff as (
+    select p.id, t.punch_in, t.lunch, t.punch_out, r.punch_in_at, r.punch_out_at,
+           exists (select 1 from public.leave_requests l where l.employee_id = p.id and l.status = 'APPROVED'
+                     and v_day between l.start_date and l.end_date and l.leave_type = 'FULL_DAY') as leave_full,
+           exists (select 1 from public.leave_requests l where l.employee_id = p.id and l.status = 'APPROVED'
+                     and v_day between l.start_date and l.end_date and l.half_day_shift = 'MORNING') as leave_morning,
+           exists (select 1 from public.leave_requests l where l.employee_id = p.id and l.status = 'APPROVED'
+                     and v_day between l.start_date and l.end_date and l.half_day_shift = 'AFTERNOON') as leave_afternoon,
+           exists (select 1 from public.attendance_lunches l where l.profile_id = p.id and l.attendance_date = v_day) as had_lunch
+      from public.profiles p
+      cross join lateral private.reminder_times(p.id) t
+      left join public.attendance_records r on r.profile_id = p.id and r.attendance_date = v_day
+     where p.status = 'ACTIVE' and p.role <> 'SUPER_ADMIN' and t.enabled
+  ),
+  -- the three timed reminders: when they are wanted, at what time
+  timed as (
+    select st.id, 'PUNCH_IN'::text as kind, st.punch_in as at_time,
+           'Time to Punch In'::text as title, format('Your day starts at %s. Open Attendance to punch in.', private.hhmm(st.punch_in)) as body
+      from staff st where st.punch_in_at is null and not st.leave_full and not st.leave_morning
+    union all
+    select st.id, 'LUNCH', st.lunch, 'Lunch time', 'Start your lunch break in Attendance when you go.'
+      from staff st where st.punch_in_at is not null and st.punch_out_at is null and not st.had_lunch and not st.leave_full and not st.leave_afternoon
+    union all
+    select st.id, 'PUNCH_OUT', st.punch_out, 'Time to Punch Out', format('Your day ends at %s. Punch out before you leave.', private.hhmm(st.punch_out))
+      from staff st where st.punch_in_at is not null and st.punch_out_at is null and not st.leave_full and not st.leave_afternoon
+  ),
+  steps as (
+    select tm.*, g.step::smallint as step,
+           ((v_day + tm.at_time) at time zone 'Asia/Kolkata') + make_interval(mins => g.step * s.reminder_follow_up_minutes) as due
+      from timed tm cross join generate_series(0, 1) g(step)
+  ),
+  latest as (
+    select distinct on (st.id, st.kind) st.* from steps st where st.due <= p_now order by st.id, st.kind, st.step desc
+  ),
+  -- lunch ends soon: the open break, warned once, a few minutes before the day's allowance runs out
+  lunch_end as (
+    select st.id, l.id as lunch_id,
+           l.started_at + make_interval(secs => (v_allow_s - c.closed_s - s.reminder_lunch_warning_minutes * 60)::double precision) as due,
+           (v_allow_s - c.closed_s) as left_s
+      from staff st
+      join public.attendance_lunches l on l.profile_id = st.id and l.attendance_date = v_day and l.ended_at is null
+      cross join lateral (select coalesce(sum(extract(epoch from (x.ended_at - x.started_at))), 0) as closed_s
+                            from public.attendance_lunches x where x.profile_id = st.id and x.attendance_date = v_day and x.ended_at is not null) c
+     where not st.leave_full
+  )
+  select lt.id, v_day, lt.kind, lt.step, null::uuid, lt.due,
+         lt.title || case when lt.step = 1 then ' (reminder)' else '' end, lt.body
+    from latest lt where lt.due > p_now - interval '30 minutes'
+  union all
+  select le.id, v_day, 'LUNCH_END', 0::smallint, le.lunch_id, le.due,
+         format('Lunch ends in %s minutes', s.reminder_lunch_warning_minutes), 'End your lunch break in Attendance when you are back.'
+    from lunch_end le
+   where le.left_s > s.reminder_lunch_warning_minutes * 60 and le.due <= p_now and le.due > p_now - interval '30 minutes';
+end $$;
+revoke all on function private.attendance_reminders_compute(timestamptz) from public, anon, authenticated;
+
+-- The API's scheduled run (service role only, every 5 minutes): record each due reminder once, put it in the bell, and return it with the
+-- person's devices so the API can push it. Running twice, or two runs at once, never sends a reminder twice (the unique log entry).
+create or replace function public.attendance_reminders_due(p_now timestamptz default now())
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  r record;
+  v_out jsonb := '[]'::jsonb;
+  v_tag text;
+  v_kind text;
+begin
+  for r in select * from private.attendance_reminders_compute(p_now) order by due_at loop
+    insert into public.attendance_reminder_log (profile_id, attendance_date, kind, step, lunch_id)
+    values (r.profile_id, r.attendance_date, r.kind, r.step, r.lunch_id)
+    on conflict do nothing;
+    continue when not found;
+    v_kind := lower(r.kind);
+    v_tag := 'att-' || v_kind || '-' || r.attendance_date;
+    perform private.notify(r.profile_id, 'ATTENDANCE_REMINDER', r.title, r.body, 'attendance', null,
+                           jsonb_build_object('kind', r.kind, 'step', r.step, 'date', r.attendance_date), 'normal');
+    v_out := v_out || jsonb_build_object('profileId', r.profile_id, 'kind', r.kind, 'step', r.step, 'title', r.title, 'body', r.body,
+                                         'tag', v_tag, 'url', '/?open=attendance', 'targets', public.push_targets_for(r.profile_id));
+  end loop;
+  return v_out;
+end $$;
+revoke all on function public.attendance_reminders_due(timestamptz) from public, anon, authenticated;
+grant execute on function public.attendance_reminders_due(timestamptz) to service_role;
