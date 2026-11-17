@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { IMPORT_COLUMNS, IMPORT_MAX_ROWS, importTemplate, parseCustomerSheet, type ImportParse } from '../../lib/customerImport';
 import { customerApi, useServices } from '../../lib/support';
 import { ErrorBanner } from './SupportParts';
-import { parseExistingCustomers } from '../../lib/existingCustomerImport';
+import { isCustomerRowsSheet, parseExistingCustomers } from '../../lib/existingCustomerImport';
+import { parseCsv } from '../../lib/csv';
 import { readXlsx } from '../../lib/xlsxReader';
 import { importApi, Preview, Saved, type Step } from '../support/ExistingCustomerImport';
 
@@ -47,12 +48,15 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
     setExcel({ kind: 'idle' });
     setChecked(null);
     if (!file) return;
-    if (/\.xlsx$/i.test(file.name)) {
+    const isXlsx = /\.xlsx$/i.test(file.name);
+    // the Excel template saved as CSV (Google Sheets: File > Download > CSV) is the same sheet: read it the same way
+    const csvRows = !isXlsx && /\.(csv|txt)$/i.test(file.name) && file.size <= MAX_FILE_BYTES ? parseCsv(await file.text()) : null;
+    if (isXlsx || (csvRows && isCustomerRowsSheet(csvRows))) {
       if (fileRef.current) fileRef.current.value = '';
       if (file.size > MAX_XLSX_BYTES) return setError('The file is larger than 5 MB. Split it into two files.');
       setExcel({ kind: 'checking' });
       try {
-        const sheet = parseExistingCustomers(await readXlsx(file));
+        const sheet = parseExistingCustomers(csvRows ? { sheets: [{ name: 'Customers', rows: csvRows }] } : await readXlsx(file));
         if (!Object.keys(sheet.data).length && !sheet.problems.length) throw new Error('No customers are filled in. Start on the row below the grey example.');
         const res = await importApi(sheet.data, false);
         const step: Extract<Step, { kind: 'checked' }> = { kind: 'checked', file: file.name, parsed: sheet, result: res };
@@ -154,7 +158,7 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
       <ul className="text-[11px] text-slate-500 list-disc pl-4 space-y-0.5">
         <li><span className="font-semibold text-slate-700">Required:</span> Relationship Manager (their name as in the CRM), Customer Name, Business Name and Mobile (10 digits). For each service: Service, Start Date and Status.</li>
         <li><span className="font-semibold text-slate-700">Client dashboard login:</span> Client Login E-mail (a different one for every client). Client Password is optional (10+ characters): with it the client is e-mailed their login and that password; without it they get a link to choose their own. The CRM never stores the password as text: delete the column from your sheet after the upload.</li>
-        <li>Filled in Google Sheets: File &gt; Download &gt; Microsoft Excel (.xlsx). The older CSV ({IMPORT_COLUMNS.join(', ')}; up to {IMPORT_MAX_ROWS} rows, assigned to you) is still accepted: <button type="button" onClick={downloadCsvTemplate} className="underline font-semibold text-slate-600">CSV template</button>.</li>
+        <li>Filled in Google Sheets: File &gt; Download &gt; Microsoft Excel (.xlsx) or Comma-separated values (.csv): both are read the same way. The older CSV ({IMPORT_COLUMNS.join(', ')}; up to {IMPORT_MAX_ROWS} rows, assigned to you) is still accepted: <button type="button" onClick={downloadCsvTemplate} className="underline font-semibold text-slate-600">CSV template</button>.</li>
       </ul>
 
       <label className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center cursor-pointer hover:border-blue-400">
