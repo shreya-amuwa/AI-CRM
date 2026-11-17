@@ -1,3 +1,4 @@
+import './instrument'; // error reporting: first, so that start-up errors are caught (does nothing without VITE_SENTRY_DSN)
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 const StaffApp = React.lazy(() => import('./App'));

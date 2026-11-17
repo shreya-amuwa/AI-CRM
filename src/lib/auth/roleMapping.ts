@@ -16,6 +16,14 @@ export function toAuthUser(profile: Profile): AuthUser {
       departmentId: departmentSlug, position: profile.position || undefined, profile
     };
   }
+  // AI Studio: the Department Head, the Team Leads and the Team Members of the department open the AI Studio dashboard (which of the three is decided by the
+  // role in the profile, and every permission by the database)
+  if (isAiStudioStaff(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'ai-studio',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
   // AI Design Studio is its own department with its own dashboard for its Department Head, Team Leads and Team Members. The department
   // AND the role decide (never the role name alone), so AI Studio, Sales and Support staff keep their own dashboards.
   if (isAiDesignStudio(profile)) {
@@ -99,6 +107,21 @@ export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivisi
  */
 export function isAiDesignStudio(p: Pick<Profile, 'role' | 'department'>): boolean {
   return p.department?.slug === AI_DESIGN_STUDIO_SLUG && (p.role === 'DEPARTMENT_HEAD' || p.role === 'TEAM_HEAD' || p.role === 'TEAM_MEMBER');
+}
+
+const AI_STUDIO_DASHBOARDS = ['ai-studio-head', 'ai-studio-lead', 'ai-studio-member'];
+
+/**
+ * The Department Head, Team Leads and Team Members of the AI Studio department. The DEPARTMENT decides, never the role name (a Sales Team Lead and an AI Studio
+ * Team Lead are both "Team Lead") and never the team's division: the department's slug, else its name; only when the profile arrives without a department at all, the
+ * dashboard value the database computed from that same department (ai-studio-head / -lead / -member).
+ */
+export function isAiStudioStaff(p: Pick<Profile, 'role' | 'department'> & { defaultDashboard?: Profile['defaultDashboard'] }): boolean {
+  if (p.role === 'SUPER_ADMIN') return false;
+  if (p.department?.slug || p.department?.name) {
+    return p.department.slug === 'ai-studio' || (p.department.name ?? '').trim().toLowerCase() === 'ai studio';
+  }
+  return !!p.defaultDashboard && AI_STUDIO_DASHBOARDS.includes(p.defaultDashboard);
 }
 
 /** Team members and leads of the Accounts department confirm payments sent by Sales. */
@@ -220,6 +243,10 @@ export function defaultDashboardLabel(
   hrSubRole?: Profile['hrSubRole']
 ): string {
   const dept = departmentName ? ` · ${departmentName}` : '';
+  // AI Studio people open the AI Studio dashboard of their role
+  if (departmentSlug === 'ai-studio' && role !== 'SUPER_ADMIN') {
+    return `AI Studio ${role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'} Dashboard${dept}`;
+  }
   // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
   if (role === 'DEPARTMENT_HEAD' && operationsHead) {
     return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;

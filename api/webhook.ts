@@ -1,5 +1,7 @@
+import '../server/sentry.js'; // error reporting: first (does nothing without SENTRY_DSN on the server)
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ingestLead } from '../server/webhooks/leadIngest.js';
+import { captureAndFlush } from '../server/sentry.js';
 
 /** /api/webhook[?department=&source=] and /api/webhooks/:department/:source (rewritten here by vercel.json). */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -15,5 +17,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (segs.length > i + 2) source = segs[i + 2] || source;
     }
   }
-  return ingestLead(req, res, { department, source });
+  try {
+    return await ingestLead(req, res, { department, source });
+  } catch (err) {
+    // an unexpected failure of the lead webhook: reported (masked), then Vercel still sees the error
+    await captureAndFlush(err);
+    throw err;
+  }
 }

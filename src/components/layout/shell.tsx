@@ -336,7 +336,9 @@ interface DashboardShellProps {
   topActions?: React.ReactNode;
   /** Extra sidebar footer rows. */
   footerExtra?: React.ReactNode;
-  /** The menu name of the shared Meetings page (default "Meetings"). */
+  /** Replaces the page the shell shows for its Attendance entry (a department workspace shows the attendance of its own people). */
+  attendanceView?: React.ReactNode;
+  /** The label of the Meetings entry the shell adds to every menu (default 'Meetings'). */
   meetingsLabel?: string;
   /** Let the page use the full width (wide tables); default keeps the calm 1240px column. */
   wide?: boolean;
@@ -358,6 +360,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   topActions,
   footerExtra,
   meetingsLabel = 'Meetings',
+  attendanceView,
   wide = false,
   flush = false,
   children
@@ -446,7 +449,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

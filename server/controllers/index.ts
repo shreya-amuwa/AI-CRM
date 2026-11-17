@@ -848,3 +848,27 @@ export const aiDesignStudioController = {
   issueUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueUpdate(ctx.params.id, ctx.req.body))) as Handler,
   issueEscalate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueEscalate(ctx.params.id, ctx.req.body))) as Handler
 };
+
+// ---- AI Studio ----
+export const aiStudioController = {
+  overview: (async ctx => ok(await svc(ctx).aiStudio.overview())) as Handler,
+  people: (async ctx => ok(await svc(ctx).aiStudio.people())) as Handler,
+  assignLead: (async ctx => ok(await svc(ctx).aiStudio.assignLead(ctx.req.body))) as Handler,
+  setLead: (async ctx => ok(await svc(ctx).aiStudio.setLead(ctx.params.id, ctx.req.body))) as Handler,
+  projects: (async ctx => ok(await svc(ctx).aiStudio.projects())) as Handler,
+  createProject: (async ctx => ok(await svc(ctx).aiStudio.createProject(ctx.req.body), 201)) as Handler,
+  updateProject: (async ctx => ok(await svc(ctx).aiStudio.updateProject(ctx.params.id, ctx.req.body))) as Handler,
+  assignProject: (async ctx => ok(await svc(ctx).aiStudio.assignProject(ctx.params.id, ctx.req.body))) as Handler,
+  tasks: (async ctx => ok(await svc(ctx).aiStudio.tasks(ctx.req.query))) as Handler,
+  task: (async ctx => ok(await svc(ctx).aiStudio.task(ctx.params.id))) as Handler,
+  assignTask: (async ctx => ok(await svc(ctx).aiStudio.assignTask(ctx.req.body), 201)) as Handler,
+  editTask: (async ctx => ok(await svc(ctx).aiStudio.editTask(ctx.params.id, ctx.req.body))) as Handler,
+  updateTask: (async ctx => ok(await svc(ctx).aiStudio.updateTask(ctx.params.id, ctx.req.body))) as Handler,
+  reportContext: (async ctx => ok(await svc(ctx).aiStudio.reportContext())) as Handler,
+  reports: (async ctx => ok(await svc(ctx).aiStudio.reports(ctx.req.query))) as Handler,
+  report: (async ctx => ok(await svc(ctx).aiStudio.report(ctx.params.id))) as Handler,
+  createReport: (async ctx => ok(await svc(ctx).aiStudio.createReport(ctx.req.body), 201)) as Handler,
+  updateReport: (async ctx => ok(await svc(ctx).aiStudio.updateReport(ctx.params.id, ctx.req.body))) as Handler,
+  deleteDraft: (async ctx => { await svc(ctx).aiStudio.deleteDraft(ctx.params.id); return ok(null); }) as Handler,
+  reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler
+};

@@ -21,9 +21,9 @@ const ONE_SHEET_TEMPLATE = '/templates/Existing_Customers_One_Sheet.xlsx';
 const TABS_TEMPLATE = '/templates/Existing_Customers_Services_Usage.xlsx';
 const MAX_BYTES = 5 * 1024 * 1024;
 
-type Step = { kind: 'idle' } | { kind: 'checking' } | { kind: 'checked'; file: string; parsed: ParsedImport; result: CustomerDataImportResult } | { kind: 'saving' } | { kind: 'saved'; result: CustomerDataImportResult };
+export type Step = { kind: 'idle' } | { kind: 'checking' } | { kind: 'checked'; file: string; parsed: ParsedImport; result: CustomerDataImportResult } | { kind: 'saving' } | { kind: 'saved'; result: CustomerDataImportResult };
 
-const importApi = (data: ParsedImport['data'], commit: boolean) => api.post<CustomerDataImportResult>('/customers/import-existing', { commit, data });
+export const importApi = (data: ParsedImport['data'], commit: boolean) => api.post<CustomerDataImportResult>('/customers/import-existing', { commit, data });
 
 export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDone }) => {
   const { profile } = useAuth();
@@ -163,9 +163,10 @@ const Summary: React.FC<{ s: CustomerDataImportResult['summary'] }> = ({ s }) =>
   </dl>
 );
 
-const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: boolean; onSave: () => void; onReset: () => void }> = ({ step, saving, onSave, onReset }) => {
+export const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: boolean; onSave: () => void; onReset: () => void }> = ({ step, saving, onSave, onReset }) => {
   const { result, parsed } = step;
-  const oneSheet = parsed.format === 'one-sheet';
+  // the one-sheet and the one-row-per-customer templates: the server's tab names are shown as the part of the row (Customer, Service)
+  const oneSheet = parsed.format !== 'tabs';
   // the sheet's own problems first (a row that cannot be read), then what the server found; in the one-sheet template the server's tab names are shown as Record types
   const errors = [
     ...parsed.problems.map(p => ({ sheet: 'Import', row: p.row, message: p.message })),
@@ -249,7 +250,7 @@ const Preview: React.FC<{ step: Extract<Step, { kind: 'checked' }>; saving: bool
   );
 };
 
-const Saved: React.FC<{ result: CustomerDataImportResult; onReset: () => void; onDone?: () => void }> = ({ result, onReset, onDone }) => {
+export const Saved: React.FC<{ result: CustomerDataImportResult; onReset: () => void; onDone?: () => void }> = ({ result, onReset, onDone }) => {
   const [logins, setLogins] = useState<CustomerDataImportLogin[]>(result.logins);
   const [busy, setBusy] = useState<string | null>(null);
   const resend = async (l: CustomerDataImportLogin) => {

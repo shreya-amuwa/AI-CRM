@@ -103,6 +103,8 @@ const sesUrl = `http://127.0.0.1:${(sesServer.address() as { port: number }).por
 // ---- the Worker's settings (what the owner sets as Worker secrets / variables in production) ------------------------------------
 const HOOK_KEY = Buffer.from('0123456789abcdef0123456789abcdef');
 const settings: Record<string, string> = {
+  // set in production (the Sentry project of the API on Vercel): the Worker must start with it and must NOT start the Sentry client (a timer at start-up is refused by Workers, error 10021)
+  SENTRY_DSN: 'https://0123456789abcdef0123456789abcdef@o1.ingest.sentry.io/1',
   SUPABASE_URL: process.env.GATEWAY_URL!,
   SUPABASE_ANON_KEY: sign({ role: 'anon' }),
   SUPABASE_SERVICE_ROLE_KEY: sign({ role: 'service_role' }),

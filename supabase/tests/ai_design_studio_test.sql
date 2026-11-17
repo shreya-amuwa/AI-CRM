@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI Design Studio (migration 20270105000100): the separate department, its clients, notices, assignments, daily reports and issues.
+-- AI Design Studio (migration 20270109000100): the separate department, its clients, notices, assignments, daily reports and issues.
 -- Own synthetic people (prefix ads_) in the real 'ai-design-studio' department; other departments' people (Sales, Support, Accounts,
 -- a second department) are used only to prove that they are locked out. Runs after the other suites on the same database.
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 130. AI Design Studio'
 reset role;
-\i supabase/migrations/20270105000100_ai_design_studio.sql
-\i supabase/migrations/20270105000100_ai_design_studio.sql
+\i supabase/migrations/20270109000100_ai_design_studio.sql
+\i supabase/migrations/20270109000100_ai_design_studio.sql
 
 truncate public.ads_events;
 delete from public.ads_issues;

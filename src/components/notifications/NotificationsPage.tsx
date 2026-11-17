@@ -14,7 +14,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'nume
  * Notification Center for every dashboard: the signed-in user's own notifications,
  * newest first, ten per page (the server pages them, so page 2 is really the next ten).
  */
-export const NotificationsPage: React.FC = () => {
+export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => void }> = ({ onOpenItem }) => {
   const { unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [page, setPage] = useState(1);
@@ -40,6 +40,8 @@ export const NotificationsPage: React.FC = () => {
   useEffect(() => setPage(1), [filter]);
 
   const open = (n: Notification) => {
+    // a dashboard that links its notifications to the item they are about (AI Studio: the task or the report) opens it
+    onOpenItem?.(n);
     if (n.readAt) return;
     markAsRead(n.id);
     setData(d => (d ? { ...d, items: d.items.map(i => (i.id === n.id ? { ...i, readAt: new Date().toISOString() } : i)) } : d));

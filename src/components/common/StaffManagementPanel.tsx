@@ -13,6 +13,7 @@ import { errorMessage } from '../../lib/api/client';
 import { DepartmentAccessDialog } from '../scope/DepartmentAccessDialog';
 import { HeadDepartmentsField } from '../scope/HeadDepartmentsField';
 import { OperationsDepartmentsField } from './OperationsDepartmentsField';
+import { ProjectPicker } from '../ai-studio/ProjectPicker';
 import { VerifierDepartmentsDialog } from '../scope/VerifierDepartmentsDialog';
 import { OffboardingDialog } from '../scope/OffboardingDialog';
 import { ReassignmentQueuePanel } from '../scope/ReassignmentQueuePanel';
@@ -61,6 +62,8 @@ interface StaffManagementPanelProps {
   onDepartmentChange?: (slug: string) => void;
   /** Changes when access was saved elsewhere: the lists reload. */
   refreshToken?: number;
+  /** The role is fixed (the AI Studio workspace has separate Add Team Lead / Add Team Member forms): the Role field is shown but not editable. */
+  lockedRole?: 'TEAM_HEAD' | 'TEAM_MEMBER';
 }
 
 type StaffRole = Exclude<Role, 'SUPER_ADMIN'>;
@@ -91,7 +94,7 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: 'bg-slate-100 text-slate-600 border-slate-200'
 };
 
-export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated, departmentOptions, onDepartmentChange }) => {
+export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ departmentSlug, subDept, view = 'all', onEditAccess, refreshToken = 0, onCreated, departmentOptions, onDepartmentChange, lockedRole }) => {
   const { profile } = useAuth();
   const { departments, allDepartments } = useDepartments();
   const department = departments.find(d => d.id === departmentSlug);
@@ -123,6 +126,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // The HR department has its own three designations instead of the generic roles (see hrMode below).
   const [hrChoice, setHrChoice] = useState<HrDesignation>('HR Assistant');
   const [teamId, setTeamId] = useState('');
+  // AI Studio: the project(s) of a new Team Lead / Team Member, and the Team Lead of a new Team Member
+  const [aiProjects, setAiProjects] = useState<string[]>([]);
+  const [aiLead, setAiLead] = useState('');
   const [salesSubRole, setSalesSubRole] = useState<SalesSubRole | ''>('');
   const [formOpen, setFormOpen] = useState(false);
   const manage = view !== 'members';
@@ -190,7 +196,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // AI Design Studio has one General team and no Sales / Support side: its Department Head is simply the head of the department (one per department)
   const adsMode = departmentSlug === AI_DESIGN_STUDIO_SLUG;
   const hrOptions = useMemo(() => HR_DESIGNATIONS.filter(d => allowedRoles.includes(HR_DESIGNATION_ROLE[d])), [allowedRoles]);
-  const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : choice;
+  const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : lockedRole && allowedRoles.includes(lockedRole) ? lockedRole : choice;
   const consultant = effectiveChoice === 'TECHNICAL_CONSULTANT';
   const metaVerifier = effectiveChoice === 'META_VERIFIER';
   const operationsHead = effectiveChoice === 'OPERATIONS_HEAD';
@@ -350,6 +356,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     setEmergencyContact('');
     setContactNumber('');
     setSalesSubRole('');
+    setAiProjects([]);
+    setAiLead('');
     setHeadFn('');
     setHeadDepts(departmentId ? [departmentId] : []);
     setOpsDepts([]);
@@ -446,6 +454,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       setFormError(mismatch);
       return;
     }
+    const aiStudio = departmentSlug === 'ai-studio' && (role === 'TEAM_HEAD' || role === 'TEAM_MEMBER');
+    if (aiStudio) {
+      if (aiProjects.length === 0) { setFormError(`Select a project for the AI Studio ${role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'}.`); return; }
+    }
     const parsed = userCreateSchema.safeParse({
       email,
       fullName,
@@ -461,6 +473,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       headDivision: headPlan?.headDivision,
       operationsHead: operationsHead || undefined,
       additionalAccess: headPlan && headPlan.additionalAccess.length ? headPlan.additionalAccess : undefined,
+      aiStudioProjectIds: aiStudio ? aiProjects : undefined,
+      // the Team Lead is optional: a Team Member can be created before any Team Lead exists and assigned later
+      aiStudioLeadId: aiStudio && role === 'TEAM_MEMBER' && profile?.role !== 'TEAM_HEAD' && aiLead ? aiLead : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
     });
     if (!parsed.success) {
@@ -717,6 +732,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               >
                 {hrOptions.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
+            ) : lockedRole ? (
+              <input id="staff-role" className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={ROLE_LABELS[lockedRole]} readOnly aria-readonly="true" />
             ) : (
               <select
                 id="staff-role"
@@ -753,6 +770,19 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 ))}
               </select>
             </label>
+          )}
+
+          {departmentSlug === 'ai-studio' && (role === 'TEAM_HEAD' || role === 'TEAM_MEMBER') && !operationsHead && (
+            <ProjectPicker
+              role={role}
+              actorRole={profile.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : profile.role === 'TEAM_HEAD' ? 'TEAM_HEAD' : 'DEPARTMENT_HEAD'}
+              projectIds={aiProjects}
+              onProjects={setAiProjects}
+              leadId={aiLead}
+              onLead={setAiLead}
+              teamId={teamId}
+              inputClass={inputClass}
+            />
           )}
 
           {operationsHead && <OperationsDepartmentsField departments={operationsChoices} selected={opsDepts} onSelected={setOpsDepts} />}
@@ -1165,7 +1195,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           }}
         />
       )}
-      {(profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD') && view !== 'members' && <ReassignmentQueuePanel />}
+      {(profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD') && view !== 'members' && !lockedRole && <ReassignmentQueuePanel />}
       {offboardFor && <OffboardingDialog member={offboardFor} onClose={() => { setOffboardFor(null); void loadMembers(); }} />}
       {verifierFor && <VerifierDepartmentsDialog member={verifierFor} departments={operationsChoices} onClose={() => { setVerifierFor(null); void loadMembers(); }} />}
       {confirmBox && <ConfirmDialog request={confirmBox} onClose={() => setConfirmBox(null)} />}

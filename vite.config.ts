@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { sentryVitePlugin } from '@sentry/bundler-plugins/vite';
 import http from 'http';
 import https from 'https';
 
@@ -270,32 +271,34 @@ function liveWebhookPlugin(): Plugin {
                   receivedAt: broadcastEvent.receivedAt
                 }));
 
-                // Forward to user's remote n8n webhook in the background
+                // Forward to a remote n8n webhook in the background. Only when this dev environment names the target (.env.local, see
+                // .env.example): DEV_WEBHOOK_FORWARD_URL (every source), DEV_WEBHOOK_FORWARD_URL_AICALL (AI Calling) and DEV_WEBHOOK_FORWARD_KEY
+                // (sent with the AI Calling forward). No address or key is kept in this file.
                 try {
                   const isAiCall = (source === 'aicalling' || source === 'ai_calling' || source === 'lead_src_5');
-                  const targetForwardUrl = isAiCall
-                    ? 'https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e'
-                    : 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
+                  const targetForwardUrl = (isAiCall ? process.env.DEV_WEBHOOK_FORWARD_URL_AICALL : process.env.DEV_WEBHOOK_FORWARD_URL)?.trim();
+                  if (targetForwardUrl) {
+                    const forwardHeaders: Record<string, string> = {
+                      'Content-Type': 'application/json',
+                      'Content-Length': String(Buffer.byteLength(body))
+                    };
 
-                  const forwardHeaders: Record<string, string> = {
-                    'Content-Type': 'application/json',
-                    'Content-Length': String(Buffer.byteLength(body))
-                  };
+                    const forwardKey = process.env.DEV_WEBHOOK_FORWARD_KEY?.trim();
+                    if (isAiCall && forwardKey) {
+                      forwardHeaders['Authorization'] = `Bearer ${forwardKey}`;
+                      forwardHeaders['x-api-key'] = forwardKey;
+                      forwardHeaders['apikey'] = forwardKey;
+                      forwardHeaders['X-Webhook-Secret'] = forwardKey;
+                    }
 
-                  if (isAiCall) {
-                    forwardHeaders['Authorization'] = 'Bearer da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['x-api-key'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['apikey'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['X-Webhook-Secret'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
+                    const forwardReq = https.request(targetForwardUrl, {
+                      method: 'POST',
+                      headers: forwardHeaders
+                    });
+                    forwardReq.on('error', () => {});
+                    forwardReq.write(body);
+                    forwardReq.end();
                   }
-
-                  const forwardReq = https.request(targetForwardUrl, {
-                    method: 'POST',
-                    headers: forwardHeaders
-                  });
-                  forwardReq.on('error', () => {});
-                  forwardReq.write(body);
-                  forwardReq.end();
                 } catch {
                   // Non-blocking
                 }
@@ -453,7 +456,8 @@ function liveWebhookPlugin(): Plugin {
           };
 
           if (req.method === 'GET') {
-            const targetUrlStr = parsedUrl.searchParams.get('url') || 'https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec';
+            const targetUrlStr = parsedUrl.searchParams.get('url') || process.env.DEV_REMOTE_FETCH_DEFAULT_URL?.trim() || '';
+            if (!targetUrlStr) { res.statusCode = 400; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, error: 'Missing url parameter (and DEV_REMOTE_FETCH_DEFAULT_URL is not set).' })); return; }
             const token = parsedUrl.searchParams.get('token') || undefined;
             handleProxyFetch(targetUrlStr, token, 'GET');
             return;
@@ -464,7 +468,8 @@ function liveWebhookPlugin(): Plugin {
           req.on('end', () => {
             try {
               const reqData = body ? JSON.parse(body) : {};
-              const targetUrlStr = reqData.url || 'https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec';
+              const targetUrlStr = reqData.url || process.env.DEV_REMOTE_FETCH_DEFAULT_URL?.trim() || '';
+              if (!targetUrlStr) { res.statusCode = 400; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ success: false, error: 'Missing url (and DEV_REMOTE_FETCH_DEFAULT_URL is not set).' })); return; }
               handleProxyFetch(targetUrlStr, reqData.token, reqData.method || 'GET', reqData.body);
             } catch (err: any) {
               res.statusCode = 400;
@@ -504,22 +509,38 @@ export default defineConfig(({ mode }) => {
   // Expose server-only variables (SUPABASE_SERVICE_ROLE_KEY, …) to the dev API
   // middleware. Only VITE_-prefixed variables ever reach the browser bundle.
   const env = loadEnv(mode, process.cwd(), '');
-  for (const key of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'API_ALLOWED_ORIGINS']) {
+  for (const key of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'API_ALLOWED_ORIGINS',
+    'DEV_WEBHOOK_FORWARD_URL', 'DEV_WEBHOOK_FORWARD_URL_AICALL', 'DEV_WEBHOOK_FORWARD_KEY', 'DEV_REMOTE_FETCH_DEFAULT_URL']) {
     if (env[key] && !process.env[key]) process.env[key] = env[key];
   }
+  // Readable error reports: with SENTRY_AUTH_TOKEN set at build time (Vercel / Cloudflare build settings, never committed) the build
+  // uploads its source maps to Sentry and then deletes them, so they are never served to visitors. Without the token nothing changes.
+  const sentryAuthToken = env.SENTRY_AUTH_TOKEN || process.env.SENTRY_AUTH_TOKEN;
   return {
   plugins: [
     apiV1Plugin(),
     liveWebhookPlugin(),
     react({
       fastRefresh: false
-    })
+    }),
+    // must be the LAST plugin
+    ...(sentryAuthToken
+      ? [sentryVitePlugin({
+          org: env.SENTRY_ORG || 'amuwa-corporation',
+          project: env.SENTRY_PROJECT || 'ai-crm-frontend',
+          authToken: sentryAuthToken,
+          telemetry: false,
+          sourcemaps: { filesToDeleteAfterUpload: ['./dist/**/*.map'] }
+        })]
+      : [])
   ],
   server: {
     port: 3000,
     host: true
   },
   build: {
+    // generated (hidden: no link to them in the files) only when they are uploaded to Sentry
+    sourcemap: sentryAuthToken ? 'hidden' : false,
     rollupOptions: {
       output: {
         // Libraries change rarely: separate files stay cached across deploys.

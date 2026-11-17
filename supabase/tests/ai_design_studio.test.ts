@@ -29,7 +29,7 @@ check(getRedirectForRole(member) === '/ai-design-studio/dashboard/u1', 'and sign
 // AI Studio (a different department) keeps the original dashboards, whatever its role names
 const aiMember = toAuthUser(profile({ department: AI_STUDIO }));
 const aiLead = toAuthUser(profile({ department: AI_STUDIO, role: 'TEAM_HEAD' }));
-check(aiMember.role === 'team-member' && aiLead.role === 'team-lead', 'AI Studio Team Member / Team Lead keep their original dashboards (not routed by role name alone)');
+check(aiMember.role === 'ai-studio' && aiLead.role === 'ai-studio' && aiMember.role !== member.role, 'AI Studio Team Member / Team Lead keep the AI Studio dashboard, never the AI Design Studio one (routed by department, not role name)');
 check(toAuthUser(profile({ department: { id: 'x', name: 'Amuwa Design Studio', slug: 'designstudio' } })).role === 'team-member', 'Amuwa Design Studio is not AI Design Studio');
 check(toAuthUser(profile({ department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: { id: 't', name: 'Sales', division: 'SALES' } })).role === 'business-associate', 'Sales is unchanged');
 check(toAuthUser(profile({ department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: { id: 't', name: 'Support', division: 'SUPPORT' } })).role === 'support-member', 'Support is unchanged');

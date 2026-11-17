@@ -67,6 +67,8 @@ import { HrEmployeeFileService } from './HrEmployeeFileService.js';
 import { HrEmployeeFileRepository } from '../repositories/HrEmployeeFileRepository.js';
 import { TrainingService } from './TrainingService.js';
 import { TelecallerService } from './TelecallerService.js';
+import { AiStudioService } from './AiStudioService.js';
+import { AiStudioRepository } from '../repositories/AiStudioRepository.js';
 import { LeadUploadService } from './LeadUploadService.js';
 import { LeadUploadRepository } from '../repositories/LeadUploadRepository.js';
 import { FieldVisitService } from './FieldVisitService.js';
@@ -84,7 +86,7 @@ import { PerformersRepository } from '../repositories/PerformersRepository.js';
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
   return {
-    users: new UserService(new ProfileRepository(db), undefined, new HrRepository(db)),
+    users: new UserService(new ProfileRepository(db), undefined, new HrRepository(db), new AiStudioRepository(db)),
     employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
     hrDocuments: new HrDocumentService(new HrDocumentRepository(db), new StorageRepository()),
@@ -93,6 +95,7 @@ export function createServices(db: SupabaseClient) {
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
     training: new TrainingService(new TrainingRepository(db)),
     fieldVisit: new FieldVisitService(new FieldVisitRepository(db)),
+    aiStudio: new AiStudioService(new AiStudioRepository(db)),
     telecaller: new TelecallerService(new TelecallerRepository(db), new StorageRepository()),
     leadUploads: new LeadUploadService(new LeadUploadRepository(db)),
     salesHead: new SalesHeadService(new SalesHeadRepository(db), new StorageRepository()),

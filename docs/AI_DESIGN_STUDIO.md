@@ -1,7 +1,7 @@
 # AI Design Studio
 
 A separate, client-oriented department with its own Team Member, Team Lead and Department Head dashboard. Migration:
-`supabase/migrations/20270105000100_ai_design_studio.sql` (additive, safe to run twice).
+`supabase/migrations/20270109000100_ai_design_studio.sql` (additive, safe to run twice).
 
 It is **not** AI Studio and **not** Amuwa Design Studio (slug `designstudio`). Nothing of those departments is changed. The Super Admin has **no**
 AI Design Studio workspace: it is not in the Super Admin's *Departments* page or company overview, and the database functions refuse the Super Admin.
@@ -80,5 +80,5 @@ Department `generates_revenue` is `false`, so it does not appear in Accounts' in
 
 ## Rollout
 
-Run `20270105000100_ai_design_studio.sql` in the Supabase SQL editor. Before it runs, the department does not exist and nothing else changes; after it,
+Run `20270109000100_ai_design_studio.sql` in the Supabase SQL editor. Before it runs, the department does not exist and nothing else changes; after it,
 create the Department Head with *Add Team Member* (Department: AI Design Studio, Role: Department Head), then Team Members and Team Leads.

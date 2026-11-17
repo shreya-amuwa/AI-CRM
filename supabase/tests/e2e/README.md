@@ -134,3 +134,13 @@ other screens by itself with no duplicate cards (24 checks).
 `run-welcome-email.sh` drives the new-employee welcome e-mail end to end: HR submits (no password field), the Department Head approves, the backend queues exactly one welcome e-mail
 (nothing before approval), HR sees "Account: Active / Welcome email: <status>" and can resend, the employee opens the one-time link, chooses their own password, lands on the dashboard
 of their role, signs in again with it, the used link no longer works, and no link or password is left in any table (16 checks).
+
+## AI Studio
+
+`run-ai-studio.sh` (same throw-away stack, `ai-studio.e2e.mjs`) signs in as the Super Admin (the Department Head of AI Studio), two Team Leads and two Team Members. It checks that the Super Admin dashboard keeps every entry and gains only AI Studio, the workspace menu, creating a Team Lead and a Team Member through the forms, the Team Lead / Team Member menus, that Select Project lists the projects from the database with Add Project (and saves a new one), a task given by a
+Team Lead and updated to completion by the Team Member, the daily report through Team Lead and Department Head approval with its history, that another Team Lead sees nothing of it,
+that the Super Admin gives the final approval (no stage after it), a notification opening the item it is about, and phone-sized windows without sideways scrolling.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest E2E_CHROMIUM=/path/to/chrome supabase/tests/e2e/run-ai-studio.sh ./ai-studio-screenshots
+```
