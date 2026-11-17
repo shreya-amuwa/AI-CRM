@@ -96,7 +96,7 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
     try { accept(await attendanceApi.lunch(action)); } catch (e) { setNotice({ ok: false, text: e instanceof Error ? e.message : 'Could not update lunch.' }); } finally { setBusy(''); }
   };
 
-  const allowance = day?.lunch.allowanceMinutes ?? 50;
+  const allowance = day?.lunch.allowanceMinutes ?? 45;
   const over = Math.max(0, lunchMinutes - allowance);
   const remaining = Math.max(0, allowance - lunchMinutes);
   const status: AttendanceStatus = day?.status ?? (!day?.punchIn ? 'NOT_PUNCHED_IN' : day.punchOut ? 'PUNCHED_OUT' : day.lunch.open ? 'ON_LUNCH' : 'PUNCHED_IN');
@@ -275,7 +275,7 @@ export const HrAttendanceRegister: React.FC<{ defaultDepartment?: { id: string; 
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <div className="mr-auto min-w-0">
           <h2 className="text-base font-extrabold text-slate-900">Attendance register – {istLongDate(date)}</h2>
-          <p className="text-[11px] text-slate-500">All employees · India Standard Time (Asia/Kolkata) · lunch allowance {data?.allowanceMinutes ?? 50} min · locations kept {data?.retentionDays ?? 90} days. Opening this register is recorded in the audit log.</p>
+          <p className="text-[11px] text-slate-500">All employees · India Standard Time (Asia/Kolkata) · lunch allowance {data?.allowanceMinutes ?? 45} min · locations kept {data?.retentionDays ?? 90} days. Opening this register is recorded in the audit log.</p>
         </div>
         <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Date<input type="date" data-testid="register-date" className={field} value={date} max={istToday()} onChange={e => e.target.value && setDate(e.target.value)} /></label>
         <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Department<select className={field} value={dept} onChange={e => { setDept(e.target.value); setEmp(''); }}><option value="">All</option>{departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
