@@ -322,6 +322,9 @@ const slotField = (key: string): [field: string, kind: Kind, slot: number] | nul
   return [...f[m[1]], +m[2]];
 };
 const CUSTOMER_ROW_MARKERS = ['relationship manager', 'service 1'];
+/** True when these rows are the Add Customer upload template (also when it was saved as CSV): its headings are in one of the first 6 rows. */
+export const isCustomerRowsSheet = (rows: Cell[][]) =>
+  rows.slice(0, 6).some(r => CUSTOMER_ROW_MARKERS.every(m => (r ?? []).some(c => header(c) === m)));
 
 function parseCustomerRows(sheet: { name: string; rows: Cell[][] }, hdr: number): ParsedImport {
   const data: ImportData = {};

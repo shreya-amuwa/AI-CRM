@@ -2,7 +2,8 @@
  * Existing-customer import, the parts that need no database: the column headings of the Excel templates, the rows a template fills in
  * by itself (they are skipped until someone types a number), the optional Client Password and the rules a password must meet.
  */
-import { IMPORT_SHEETS, ONE_SHEET_BLOCKS, SHEET_LABEL, parseExistingCustomers } from '../../src/lib/existingCustomerImport.js';
+import { IMPORT_SHEETS, ONE_SHEET_BLOCKS, SHEET_LABEL, isCustomerRowsSheet, parseExistingCustomers } from '../../src/lib/existingCustomerImport.js';
+import { parseCsv } from '../../src/lib/csv.js';
 import { takeClientPasswords } from '../../server/services/CustomerImportService.js';
 
 let passed = 0;
@@ -191,6 +192,29 @@ check(takeClientPasswords(undefined).rows === undefined, 'a file without the cus
   const taken = takeClientPasswords(up.data.customers as never);
   check(taken.errors.length === 0 && taken.passwords.get('meera@example.com') === 'Sweets@2026!x', 'upload template: the client password is taken out of the rows for the login (lower-case login e-mail)', taken.errors);
   check(!(taken.rows as any[]).some(r => 'loginPassword' in r), 'upload template: no password is left in the rows sent to the database');
+}
+
+// ---- the same template saved as CSV (Google Sheets: File > Download > CSV) is read the same way ------------------------------------------
+{
+  const head = ['Relationship Manager *', 'Customer Name *', 'Business Name *', 'Mobile *', 'E-mail', 'City', 'Client Login E-mail', 'Client Password'];
+  for (let n = 1; n <= 5; n++) head.push(`Service ${n}`, `Plan ${n}`, `Price ${n} (₹)`, `Billing Cycle ${n}`, `Start Date ${n}`, `Expiry Date ${n}`, `Status ${n}`);
+  head.push('Notes');
+  const line = (cells: Record<string, string>) => head.map(h => { const v = cells[h] ?? ''; return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }).join(',');
+  const csv = [
+    '"One row = one customer. Required: RM, Customer Name, Business Name, Mobile (10 digits).",,,,',
+    head.join(','),
+    line({ 'Relationship Manager *': 'Priya Sharma', 'Customer Name *': 'Siddhesh Patil', 'Business Name *': 'Galaxy Jewellers', 'Mobile *': '9820011111', Notes: 'EXAMPLE - start on row 4' }),
+    line({ 'Relationship Manager *': 'Asha RM', 'Customer Name *': 'Meera Joshi', 'Business Name *': 'Joshi Sweets, Pune', 'Mobile *': '9876500001', 'Client Login E-mail': 'meera@example.com',
+           'Service 1': 'AI Calling', 'Price 1 (₹)': '25,000', 'Start Date 1': '01-01-2026', 'Expiry Date 1': '01-01-2027', 'Status 1': 'Live' }),
+    head.map(() => '').join(',')
+  ].join('\r\n');
+  const rows = parseCsv(csv);
+  check(isCustomerRowsSheet(rows) && !isCustomerRowsSheet(parseCsv('Name,Company,Phone\r\nAsha,Verma Traders,9820012345')), 'csv: the new template is recognised, the older CSV is not');
+  const up = parseExistingCustomers({ sheets: [{ name: 'Customers', rows }] });
+  check(up.format === 'customer-rows' && up.counts.customers === 1 && up.counts.services === 1 && up.problems.length === 0, 'csv: one customer and one service, the example skipped', { counts: up.counts, problems: up.problems });
+  const c = up.data.customers![0], sv = up.data.services![0];
+  check(c.businessName === 'Joshi Sweets, Pune' && c.member === 'Asha RM' && c.loginEmail === 'meera@example.com' && sv.price === 25000 && sv.startDate === '2026-01-01' && sv.renewsOn === '2027-01-01',
+    'csv: a comma inside a cell, a price with a comma and DD-MM-YYYY dates are read', { c, sv });
 }
 
 console.log(`${passed} import-template checks passed`);
