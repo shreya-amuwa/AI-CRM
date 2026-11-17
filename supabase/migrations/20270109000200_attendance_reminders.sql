@@ -200,3 +200,99 @@ begin
 end $$;
 revoke all on function public.hr_attendance_reminders_pause_today(boolean) from public, anon;
 grant execute on function public.hr_attendance_reminders_pause_today(boolean) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. Devices (Web Push subscriptions)
+-- ---------------------------------------------------------------------------
+create table if not exists public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  endpoint text not null unique check (endpoint ~ '^https://' and length(endpoint) <= 1000),
+  p256dh text not null check (length(p256dh) between 1 and 200),
+  auth text not null check (length(auth) between 1 and 100),
+  label text check (length(label) <= 120),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  last_success_at timestamptz,
+  last_failure_at timestamptz
+);
+create index if not exists push_subscriptions_person_idx on public.push_subscriptions (profile_id) where active;
+alter table public.push_subscriptions enable row level security;
+revoke all on public.push_subscriptions from public, anon, authenticated;
+
+-- "Turn on reminders" on this device. The last person to sign in on a browser owns its subscription (a shared phone never keeps sending
+-- the previous person's reminders), and turning reminders on again re-activates a device the push service had reported as gone.
+create or replace function public.push_subscription_save(p_endpoint text, p_p256dh text, p_auth text, p_label text)
+returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  me public.profiles;
+  v_id uuid;
+begin
+  select * into me from public.profiles where id = auth.uid() and status = 'ACTIVE';
+  if me.id is null then
+    raise exception 'FORBIDDEN: Sign in with an active account.' using errcode = '42501';
+  end if;
+  if p_endpoint is null or p_endpoint !~ '^https://' or length(p_endpoint) > 1000
+     or coalesce(length(p_p256dh), 0) not between 1 and 200 or coalesce(length(p_auth), 0) not between 1 and 100 then
+    raise exception 'VALIDATION_ERROR: This browser sent a reminder subscription that is not valid.' using errcode = 'P0001';
+  end if;
+  insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label)
+  values (me.id, p_endpoint, p_p256dh, p_auth, left(nullif(trim(p_label), ''), 120))
+  on conflict (endpoint) do update
+    set profile_id = excluded.profile_id, p256dh = excluded.p256dh, auth = excluded.auth, label = excluded.label, active = true,
+        created_at = case when public.push_subscriptions.profile_id = excluded.profile_id then public.push_subscriptions.created_at else now() end
+  returning id into v_id;
+  return v_id;
+end $$;
+revoke all on function public.push_subscription_save(text, text, text, text) from public, anon;
+grant execute on function public.push_subscription_save(text, text, text, text) to authenticated;
+
+-- Signing out: this browser stops getting the person's reminders. Never fails (someone else's or an unknown device: nothing happens).
+create or replace function public.push_subscription_remove(p_endpoint text)
+returns void language sql security definer set search_path = '' as $$
+  delete from public.push_subscriptions where endpoint = p_endpoint and profile_id = auth.uid()
+$$;
+revoke all on function public.push_subscription_remove(text) from public, anon;
+grant execute on function public.push_subscription_remove(text) to authenticated;
+
+-- "Remove" in the person's device list.
+create or replace function public.push_subscription_remove_by_id(p_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.push_subscriptions where id = p_id and profile_id = auth.uid();
+  if not found then
+    raise exception 'NOT_FOUND: This device is not in your list.' using errcode = 'P0001';
+  end if;
+end $$;
+revoke all on function public.push_subscription_remove_by_id(uuid) from public, anon;
+grant execute on function public.push_subscription_remove_by_id(uuid) to authenticated;
+
+-- The person's own devices, without the keys.
+create or replace function public.my_push_devices()
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'label', label, 'createdAt', created_at, 'lastSuccessAt', last_success_at, 'active', active)
+                            order by created_at desc), '[]'::jsonb)
+    from public.push_subscriptions where profile_id = auth.uid()
+$$;
+revoke all on function public.my_push_devices() from public, anon;
+grant execute on function public.my_push_devices() to authenticated;
+
+-- The API (service role only): where to push a person's reminders.
+create or replace function public.push_targets_for(p_profile uuid)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', id, 'endpoint', endpoint, 'p256dh', p256dh, 'auth', auth) order by created_at), '[]'::jsonb)
+    from public.push_subscriptions where profile_id = p_profile and active
+$$;
+revoke all on function public.push_targets_for(uuid) from public, anon, authenticated;
+grant execute on function public.push_targets_for(uuid) to service_role;
+
+-- The API (service role only): what happened to each push. "Gone" (404 / 410 from the push service) switches the device off.
+create or replace function public.push_subscriptions_report(p_ok uuid[], p_gone uuid[], p_failed uuid[])
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  update public.push_subscriptions set last_success_at = now() where id = any(coalesce(p_ok, '{}'));
+  update public.push_subscriptions set active = false, last_failure_at = now() where id = any(coalesce(p_gone, '{}'));
+  update public.push_subscriptions set last_failure_at = now() where id = any(coalesce(p_failed, '{}'));
+end $$;
+revoke all on function public.push_subscriptions_report(uuid[], uuid[], uuid[]) from public, anon, authenticated;
+grant execute on function public.push_subscriptions_report(uuid[], uuid[], uuid[]) to service_role;

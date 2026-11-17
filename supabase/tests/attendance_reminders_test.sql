@@ -54,3 +54,49 @@ select test.check((select count(*) >= 1 from audit_logs where action = 'ATTENDAN
 select test.check((select count(*) >= 2 from audit_logs where action = 'ATTENDANCE_REMINDERS_PAUSED' and actor_id = test.id('hr_head')),
   'pausing reminders for today is on the audit trail');
 update attendance_settings set reminder_punch_out = '19:00' where id;
+
+\echo '   devices: one owner per browser, keys never shown, gone devices switched off'
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';
+set role authenticated;
+select test.login('wkr_tmp');
+select push_subscription_save('https://push.example.com/dev-1', 'BPk-p256dh-key-1', 'auth-1', 'Chrome on Android');
+select push_subscription_save('https://push.example.com/dev-2', 'BPk-p256dh-key-2', 'auth-2', 'Edge on Windows');
+select test.check((select jsonb_array_length(d) = 2 and not (d::text ~ 'p256dh|auth-1|endpoint') and bool_and(x ? 'label' and x ? 'id')
+                     from (select my_push_devices() d) y, jsonb_array_elements(y.d) x group by d), 'a device is saved and listed without its keys');
+select test.must_fail($$select push_subscription_save('http://push.example.com/dev-3', 'k', 'a', null)$$, 'an http:// endpoint is refused', 'VALIDATION_ERROR');
+select test.must_fail($$select push_targets_for(test.id('wkr_tmp'))$$, 'staff cannot call push_targets_for', 'permission denied');
+select test.must_fail($$select push_subscriptions_report('{}', '{}', '{}')$$, 'staff cannot report deliveries', 'permission denied');
+select test.login('wkr_tms');
+select push_subscription_save('https://push.example.com/dev-1', 'BPk-p256dh-key-1b', 'auth-1b', 'Chrome on Android');
+select test.check((select jsonb_array_length(my_push_devices()) = 1), 'the second person now owns the shared device');
+select push_subscription_remove('https://push.example.com/dev-2');
+reset role;
+select id as dev2 from push_subscriptions where endpoint = 'https://push.example.com/dev-2' \gset
+set role authenticated;
+select test.login('wkr_tms');
+select test.must_fail(format($$select push_subscription_remove_by_id(%L)$$, :'dev2'), 'remove_by_id of someone else''s device is NOT_FOUND', 'NOT_FOUND');
+select test.login('wkr_tmp');
+select test.check((select jsonb_array_length(my_push_devices()) = 1),
+  'the same endpoint saved by a second person moves to them; the first person no longer lists it');
+reset role;
+select test.check((select count(*) = 1 from push_subscriptions where endpoint = 'https://push.example.com/dev-2'), 'removing someone else''s endpoint changes nothing');
+select test.check((select jsonb_array_length(push_targets_for(test.id('wkr_tmp'))) = 1
+                          and push_targets_for(test.id('wkr_tmp')) -> 0 ->> 'endpoint' = 'https://push.example.com/dev-2'
+                          and push_targets_for(test.id('wkr_tmp')) -> 0 ->> 'p256dh' = 'BPk-p256dh-key-2'), 'the server gets the keys of a person''s active devices');
+select push_subscriptions_report(array[(select id from push_subscriptions where endpoint = 'https://push.example.com/dev-1')], '{}',
+                                 '{}');
+select push_subscriptions_report('{}', array[(select id from push_subscriptions where endpoint = 'https://push.example.com/dev-2')], '{}');
+select test.check((select not active and last_failure_at is not null from push_subscriptions where endpoint = 'https://push.example.com/dev-2')
+                  and jsonb_array_length(push_targets_for(test.id('wkr_tmp'))) = 0, 'a gone report deactivates the device');
+select test.check((select last_success_at is not null from push_subscriptions where endpoint = 'https://push.example.com/dev-1'), 'a delivery is stamped');
+set role authenticated;
+select test.login('wkr_tmp');
+select test.check((select (my_push_devices() -> 0 ->> 'active')::boolean = false), 'the person sees the device is no longer active');
+select push_subscription_save('https://push.example.com/dev-2', 'BPk-p256dh-key-2', 'auth-2', 'Edge on Windows');
+reset role;
+select test.check(jsonb_array_length(push_targets_for(test.id('wkr_tmp'))) = 1, 'turning reminders on again re-activates the device');
+set role authenticated;
+select test.login('wkr_tmp');
+select push_subscription_remove_by_id((select (my_push_devices() -> 0 ->> 'id')::uuid));
+select test.check(jsonb_array_length(my_push_devices()) = 0, 'a person removes their own device');
+reset role;
