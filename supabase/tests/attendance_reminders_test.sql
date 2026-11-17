@@ -5,7 +5,7 @@
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
-\echo '--- 139. Attendance reminders: times, devices, what is due'
+\echo '--- 145. Attendance reminders: times, devices, what is due'
 reset role;
 \i supabase/migrations/20270109000200_attendance_reminders.sql
 \i supabase/migrations/20270109000200_attendance_reminders.sql
