@@ -154,8 +154,9 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'aicalling',
     port: 'Webhook Port #1084',
     endpoint: 'https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e',
-    secret: 'da5fe28f-9924-4d10-bac3-1b2446f1fe56',
-    apiKey: 'da5fe28f-9924-4d10-bac3-1b2446f1fe56',
+    // no key in the code (it would ship in the public bundle): the key is typed into the panel's token field and kept in memory only
+    secret: '',
+    apiKey: '',
     desc: 'Conversational AI voice bot for abandoned cart recovery & COD order verification.',
     icon: RobotIcon,
     color: 'text-cyan-600',
@@ -248,7 +249,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
   // Remote Database API & Google Apps Script WebApp State
   const [remoteApiUrl, setRemoteApiUrl] = useState('https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec');
-  const [remoteApiToken, setRemoteApiToken] = useState('da5fe28f-9924-4d10-bac3-1b2446f1fe56');
+  const [remoteApiToken, setRemoteApiToken] = useState('');
   const [isFetchingRemoteApi, setIsFetchingRemoteApi] = useState(false);
   const [isDevDocsExpanded, setIsDevDocsExpanded] = useState(false);
   const [subDeptSearchQuery, setSubDeptSearchQuery] = useState('');
@@ -290,7 +291,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     const targetUrl = activeCfg?.endpoint || customWebhookUrl || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
     const channelName = activeCfg?.name || 'WhatsApp API';
     const channelSourceId = (activeCfg?.sourceId || 'whatsapp') as LeadSourceId;
-    const token = activeCfg?.apiKey || activeCfg?.secret || (channelSourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : (remoteApiToken || undefined));
+    const token = activeCfg?.apiKey || activeCfg?.secret || (remoteApiToken || undefined);
 
     try {
       const result = await fetchFromAnyWebhookUrl(targetUrl, {
@@ -840,7 +841,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
     try {
       const sample = JSON.parse(cfg.sampleJson);
-      const token = cfg.apiKey || cfg.secret || (cfg.sourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : undefined);
+      const token = cfg.apiKey || cfg.secret || (remoteApiToken || undefined);
       
       // 1. Post to the live remote webhook URL via our proxy
       try {
@@ -892,7 +893,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     const cfg = WABASTORE_LEAD_SOURCES_CONFIG[activeTab];
     const channelName = cfg?.name || 'WhatsApp API';
     const targetEndpoint = cfg?.endpoint || customWebhookUrl || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
-    const token = cfg?.apiKey || cfg?.secret || (cfg?.sourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : undefined);
+    const token = cfg?.apiKey || cfg?.secret || (remoteApiToken || undefined);
 
     try {
       // Connect directly to user's Wabastore Webhook endpoint
