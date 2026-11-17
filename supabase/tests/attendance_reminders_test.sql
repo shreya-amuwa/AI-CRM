@@ -53,6 +53,8 @@ select test.check((select count(*) >= 1 from audit_logs where action = 'ATTENDAN
   'changing the company defaults is on the audit trail');
 select test.check((select count(*) >= 2 from audit_logs where action = 'ATTENDANCE_REMINDERS_PAUSED' and actor_id = test.id('hr_head')),
   'pausing reminders for today is on the audit trail');
+select test.check((select count(*) >= 2 and bool_or(metadata ->> 'enabled' = 'true') from audit_logs where action = 'ATTENDANCE_REMINDERS_MINE_UPDATED' and actor_id = test.id('wkr_tmp')),
+  'a person changing their own reminders is on the audit trail');
 update attendance_settings set reminder_punch_out = '19:00' where id;
 
 \echo '   devices: one owner per browser, keys never shown, gone devices switched off'
@@ -80,6 +82,11 @@ select test.check((select jsonb_array_length(my_push_devices()) = 1),
   'the same endpoint saved by a second person moves to them; the first person no longer lists it');
 reset role;
 select test.check((select count(*) = 1 from push_subscriptions where endpoint = 'https://push.example.com/dev-2'), 'removing someone else''s endpoint changes nothing');
+select test.check((select count(*) = 2 from audit_logs a join push_subscriptions p on p.id = a.entity_id
+                     where a.action = 'PUSH_DEVICE_ADDED' and a.actor_id = test.id('wkr_tmp') and p.endpoint in ('https://push.example.com/dev-1', 'https://push.example.com/dev-2'))
+                  and (select count(*) = 1 from audit_logs a join push_subscriptions p on p.id = a.entity_id
+                        where a.action = 'PUSH_DEVICE_ADDED' and a.actor_id = test.id('wkr_tms') and (a.metadata ->> 'movedFromAnotherPerson')::boolean),
+  'turning reminders on for a device is on the audit trail (and a device moving to someone else)');
 select test.check((select jsonb_array_length(push_targets_for(test.id('wkr_tmp'))) = 1
                           and push_targets_for(test.id('wkr_tmp')) -> 0 ->> 'endpoint' = 'https://push.example.com/dev-2'
                           and push_targets_for(test.id('wkr_tmp')) -> 0 ->> 'p256dh' = 'BPk-p256dh-key-2'), 'the server gets the keys of a person''s active devices');
@@ -100,6 +107,16 @@ select test.login('wkr_tmp');
 select push_subscription_remove_by_id((select (my_push_devices() -> 0 ->> 'id')::uuid));
 select test.check(jsonb_array_length(my_push_devices()) = 0, 'a person removes their own device');
 reset role;
+select test.check((select count(*) = 1 from audit_logs where action = 'PUSH_DEVICE_REMOVED' and actor_id = test.id('wkr_tmp') and entity_id = :'dev2'),
+  'removing a device is on the audit trail');
+set role authenticated;
+select test.login('wkr_tmp');
+select push_subscription_save('https://push.example.com/cap-' || g, 'BPk-cap', 'auth-cap', 'Device ' || g) from generate_series(1, 12) g;
+reset role;
+select test.check((select count(*) = 10 from push_subscriptions where profile_id = test.id('wkr_tmp') and active)
+                  and (select bool_and(not active) from push_subscriptions where endpoint in ('https://push.example.com/cap-1', 'https://push.example.com/cap-2')),
+  'at most 10 active devices per person: the oldest are switched off');
+delete from push_subscriptions where endpoint like 'https://push.example.com/cap-%';
 
 \echo '   what is due: once only, never late, never for something already done, on leave, on a day off or when switched off'
 -- Office days in January 2027: Monday 11 ... Sunday 17, Monday 18. Each call is made at a fixed office time (p_now).
@@ -170,6 +187,16 @@ select test.check(test.kinds('wkr_tms', '2027-01-12 10:30') = '' and test.kinds(
   'punched in at 09:55 with personal Punch In 10:30: nothing at 10:30');
 select test.check(test.kinds('wkr_tmp', '2027-01-13 10:20') = 'PUNCH_IN1', 'a run when the follow-up is already due sends only the follow-up, not both');
 select test.check(test.kinds('wkr_tmp', '2027-01-14 11:00') = '', 'first run at 11:00: nothing at all (both steps more than 30 minutes late)');
+-- the lunch warning off the 5-minute grid: a break from 14:03 ends at 14:48; the run at 14:45 says how long is really left
+select test.punch('wkr_tmp', '2027-01-13', '2027-01-13 09:50');
+insert into attendance_lunches (profile_id, attendance_date, started_at) values (test.id('wkr_tmp'), '2027-01-13', test.at('2027-01-13 14:03'));
+select test.check((select x ->> 'title' = 'Lunch ends in 3 minutes' from jsonb_array_elements(test.due('wkr_tmp', '2027-01-13 14:45')) x where x ->> 'kind' = 'LUNCH_END'),
+  'a break from 14:03: the 14:45 run says "Lunch ends in 3 minutes" (the time really left)');
+update attendance_lunches set ended_at = test.at('2027-01-13 14:50'), ended_by = 'EMPLOYEE' where profile_id = test.id('wkr_tmp') and ended_at is null;
+select test.punch('wkr_tmp', '2027-01-14', '2027-01-14 09:50');
+insert into attendance_lunches (profile_id, attendance_date, started_at) values (test.id('wkr_tmp'), '2027-01-14', test.at('2027-01-14 14:03'));
+select test.check(test.kinds('wkr_tmp', '2027-01-14 14:50') = '', 'the 14:45 run was missed: at 14:50 the allowance is already over, so no "ends soon" warning');
+update attendance_lunches set ended_at = test.at('2027-01-14 14:55'), ended_by = 'EMPLOYEE' where profile_id = test.id('wkr_tmp') and ended_at is null;
 select test.check(test.kinds('wkr_tmp', '2027-01-17 10:00') = '', 'Sunday 10:00: nothing');
 
 -- leave, the HR pause and the personal switch

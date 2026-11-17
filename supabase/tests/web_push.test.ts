@@ -29,6 +29,11 @@ setEnv(publicRaw, JSON.stringify(privateJWK), undefined);
 check(vapidConfig() === null, 'vapidConfig is null when a setting is missing (no subject)');
 setEnv(publicRaw, 'not json', 'mailto:hr@example.com');
 check(vapidConfig() === null, 'vapidConfig is null when the private key is not a JWK');
+const otherKeys = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+setEnv(b64url(await crypto.subtle.exportKey('raw', otherKeys.publicKey)), JSON.stringify(privateJWK), 'mailto:hr@example.com');
+check(vapidConfig() === null, 'vapidConfig is null when the public key does not belong to the private key (every push would be refused)');
+setEnv(undefined, JSON.stringify(privateJWK), 'mailto:hr@example.com');
+check(vapidConfig()?.publicKey === publicRaw, 'the public key is taken from the private key when VAPID_PUBLIC_KEY is not set');
 setEnv(publicRaw, JSON.stringify(privateJWK), 'mailto:hr@example.com');
 const vapid = vapidConfig();
 check(vapid !== null && vapid.publicKey === publicRaw && vapid.subject === 'mailto:hr@example.com', 'vapidConfig reads the three settings');
@@ -83,5 +88,10 @@ check(await sendWebPush(target, message, vapid!, answer(404)) === 'gone', 'sendW
 check(await sendWebPush(target, message, vapid!, answer(500)) === 'failed', 'sendWebPush maps 500 to failed');
 check(await sendWebPush(target, message, vapid!, async () => { throw new Error('network down'); }) === 'failed', 'sendWebPush maps a thrown fetch to failed');
 check(await sendWebPush({ ...target, p256dh: 'broken' }, message, vapid!, answer(201)) === 'failed', 'a broken device key is a failure, not a crash');
+const hanging = (_u: string | URL | Request, init?: RequestInit) => new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('aborted'))));
+const started = Date.now();
+const keepAlive = setInterval(() => {}, 1000); // Node's AbortSignal.timeout does not keep the process alive on its own
+check(await sendWebPush(target, message, vapid!, hanging, 100) === 'failed' && Date.now() - started < 2000, 'a push service that never answers is given up after the timeout');
+clearInterval(keepAlive);
 
 console.log(`=== WEB PUSH TESTS PASSED (${passed}) ===`);

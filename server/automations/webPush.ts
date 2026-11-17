@@ -13,15 +13,23 @@ export interface VapidPrivateJwk { kty?: string; crv?: string; x?: string; y?: s
 export interface VapidConfig { publicKey: string; privateJWK: VapidPrivateJwk; subject: string }
 export type PushOutcome = 'ok' | 'gone' | 'failed';
 
-/** The VAPID settings, or null when push is not set up (reminders then reach the CRM bell only). */
+/**
+ * The VAPID settings, or null when push is not set up (reminders then reach the CRM bell only). The public key is the private key's own
+ * (0x04 || x || y): a VAPID_PUBLIC_KEY from another pair would make every push service refuse every message, so it switches push off.
+ */
 export function vapidConfig(): VapidConfig | null {
-  const publicKey = process.env.VAPID_PUBLIC_KEY?.trim();
+  const givenPublic = process.env.VAPID_PUBLIC_KEY?.trim();
   const privateKey = process.env.VAPID_PRIVATE_KEY?.trim();
   const subject = process.env.VAPID_SUBJECT?.trim();
-  if (!publicKey || !privateKey || !subject || !/^(mailto:|https:\/\/)/.test(subject)) return null;
+  if (!privateKey || !subject || !/^(mailto:|https:\/\/)/.test(subject)) return null;
   try {
     const privateJWK = JSON.parse(privateKey) as VapidPrivateJwk;
     if (privateJWK?.kty !== 'EC' || privateJWK.crv !== 'P-256' || !privateJWK.d || !privateJWK.x || !privateJWK.y) return null;
+    const publicKey = b64url(concat(new Uint8Array([4]), fromB64url(privateJWK.x), fromB64url(privateJWK.y)));
+    if (givenPublic && givenPublic !== publicKey) {
+      console.error('[push] VAPID_PUBLIC_KEY does not belong to VAPID_PRIVATE_KEY: push notifications are off until the pair matches.');
+      return null;
+    }
     return { publicKey, privateJWK, subject };
   } catch {
     return null;
@@ -85,8 +93,12 @@ async function vapidToken(endpoint: string, vapid: VapidConfig): Promise<string>
 /** A push "topic" (base64url characters, at most 32): a newer message with the same topic replaces one still waiting at the push service. */
 const topicOf = (tag: string) => tag.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'amuwa-crm';
 
-/** Send one message to one device. 404 / 410 mean the device unsubscribed or expired: it is "gone" and should not be tried again. */
-export async function sendWebPush(target: PushTarget, message: PushMessage, vapid: VapidConfig, fetchImpl: typeof fetch = fetch): Promise<PushOutcome> {
+/**
+ * Send one message to one device. 404 / 410 mean the device unsubscribed or expired: it is "gone" and should not be tried again.
+ * A push service that does not answer within the timeout is a failure, so one slow service never holds up everyone else's reminders.
+ */
+export async function sendWebPush(target: PushTarget, message: PushMessage, vapid: VapidConfig,
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response> = fetch, timeoutMs = 10_000): Promise<PushOutcome> {
   try {
     if (!/^https:\/\//.test(target.endpoint)) return 'failed';
     const body = await encrypt(enc(JSON.stringify(message)), target.p256dh, target.auth);
@@ -100,7 +112,8 @@ export async function sendWebPush(target: PushTarget, message: PushMessage, vapi
         Topic: topicOf(message.tag),
         Authorization: `vapid t=${await vapidToken(target.endpoint, vapid)}, k=${vapid.publicKey}`
       },
-      body
+      body,
+      signal: AbortSignal.timeout(timeoutMs)
     });
     if (res.status === 404 || res.status === 410) return 'gone';
     return res.ok ? 'ok' : 'failed';

@@ -131,6 +131,8 @@ begin
   values (me.id, coalesce(p_enabled, true), p_punch_in, p_lunch, p_punch_out, now())
   on conflict (profile_id) do update
     set enabled = excluded.enabled, punch_in = excluded.punch_in, lunch = excluded.lunch, punch_out = excluded.punch_out, updated_at = now();
+  perform private.write_audit('ATTENDANCE_REMINDERS_MINE_UPDATED', 'attendance_reminder_prefs', null, me.department_id, me.team_id,
+    jsonb_build_object('enabled', coalesce(p_enabled, true), 'punchIn', private.hhmm(p_punch_in), 'lunch', private.hhmm(p_lunch), 'punchOut', private.hhmm(p_punch_out)));
   return private.attendance_reminder_settings_json(me.id, true);
 end $$;
 revoke all on function public.attendance_reminder_save_mine(boolean, time, time, time) from public, anon;
@@ -217,16 +219,21 @@ create table if not exists public.push_subscriptions (
   last_failure_at timestamptz
 );
 create index if not exists push_subscriptions_person_idx on public.push_subscriptions (profile_id) where active;
+-- the moment of the save itself (not of the transaction), so "the oldest devices" is well defined
+alter table public.push_subscriptions alter column created_at set default clock_timestamp();
 alter table public.push_subscriptions enable row level security;
 revoke all on public.push_subscriptions from public, anon, authenticated;
 
 -- "Turn on reminders" on this device. The last person to sign in on a browser owns its subscription (a shared phone never keeps sending
 -- the previous person's reminders), and turning reminders on again re-activates a device the push service had reported as gone.
+-- At most 10 active devices per person (the oldest are switched off), so one account cannot make the scheduled run push to thousands.
+-- A new device, or one moving to another person, is written to the audit log.
 create or replace function public.push_subscription_save(p_endpoint text, p_p256dh text, p_auth text, p_label text)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   me public.profiles;
   v_id uuid;
+  v_before uuid;
 begin
   select * into me from public.profiles where id = auth.uid() and status = 'ACTIVE';
   if me.id is null then
@@ -236,12 +243,20 @@ begin
      or coalesce(length(p_p256dh), 0) not between 1 and 200 or coalesce(length(p_auth), 0) not between 1 and 100 then
     raise exception 'VALIDATION_ERROR: This browser sent a reminder subscription that is not valid.' using errcode = 'P0001';
   end if;
+  select profile_id into v_before from public.push_subscriptions where endpoint = p_endpoint;
   insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label)
   values (me.id, p_endpoint, p_p256dh, p_auth, left(nullif(trim(p_label), ''), 120))
   on conflict (endpoint) do update
     set profile_id = excluded.profile_id, p256dh = excluded.p256dh, auth = excluded.auth, label = excluded.label, active = true,
-        created_at = case when public.push_subscriptions.profile_id = excluded.profile_id then public.push_subscriptions.created_at else now() end
+        created_at = case when public.push_subscriptions.profile_id = excluded.profile_id then public.push_subscriptions.created_at else clock_timestamp() end
   returning id into v_id;
+  update public.push_subscriptions set active = false
+   where profile_id = me.id and active and id in (
+     select id from public.push_subscriptions where profile_id = me.id and active order by created_at desc, id offset 10);
+  if v_before is distinct from me.id then
+    perform private.write_audit('PUSH_DEVICE_ADDED', 'push_subscription', v_id, me.department_id, me.team_id,
+      jsonb_build_object('label', left(nullif(trim(p_label), ''), 120), 'movedFromAnotherPerson', v_before is not null));
+  end if;
   return v_id;
 end $$;
 revoke all on function public.push_subscription_save(text, text, text, text) from public, anon;
@@ -249,9 +264,15 @@ grant execute on function public.push_subscription_save(text, text, text, text) 
 
 -- Signing out: this browser stops getting the person's reminders. Never fails (someone else's or an unknown device: nothing happens).
 create or replace function public.push_subscription_remove(p_endpoint text)
-returns void language sql security definer set search_path = '' as $$
-  delete from public.push_subscriptions where endpoint = p_endpoint and profile_id = auth.uid()
-$$;
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  v_id uuid;
+begin
+  delete from public.push_subscriptions where endpoint = p_endpoint and profile_id = auth.uid() returning id into v_id;
+  if v_id is not null then
+    perform private.write_audit('PUSH_DEVICE_REMOVED', 'push_subscription', v_id, null, null, jsonb_build_object('reason', 'SIGNED_OUT'));
+  end if;
+end $$;
 revoke all on function public.push_subscription_remove(text) from public, anon;
 grant execute on function public.push_subscription_remove(text) to authenticated;
 
@@ -263,6 +284,7 @@ begin
   if not found then
     raise exception 'NOT_FOUND: This device is not in your list.' using errcode = 'P0001';
   end if;
+  perform private.write_audit('PUSH_DEVICE_REMOVED', 'push_subscription', p_id, null, null, jsonb_build_object('reason', 'REMOVED'));
 end $$;
 revoke all on function public.push_subscription_remove_by_id(uuid) from public, anon;
 grant execute on function public.push_subscription_remove_by_id(uuid) to authenticated;
@@ -365,10 +387,12 @@ begin
   latest as (
     select distinct on (st.id, st.kind) st.* from steps st where st.due <= p_now order by st.id, st.kind, st.step desc
   ),
-  -- lunch ends soon: the open break, warned once, a few minutes before the day's allowance runs out
+  -- lunch ends soon: the open break, warned once, a few minutes before the day's allowance runs out (ends_at). Runs come every 5 minutes,
+  -- so the text says how long is really left, and once the allowance is over there is nothing left to warn about.
   lunch_end as (
     select st.id, l.id as lunch_id,
            l.started_at + make_interval(secs => (v_allow_s - c.closed_s - s.reminder_lunch_warning_minutes * 60)::double precision) as due,
+           l.started_at + make_interval(secs => (v_allow_s - c.closed_s)::double precision) as ends_at,
            (v_allow_s - c.closed_s) as left_s
       from staff st
       join public.attendance_lunches l on l.profile_id = st.id and l.attendance_date = v_day and l.ended_at is null
@@ -381,9 +405,10 @@ begin
     from latest lt where lt.due > p_now - interval '30 minutes'
   union all
   select le.id, v_day, 'LUNCH_END', 0::smallint, le.lunch_id, le.due,
-         format('Lunch ends in %s minutes', s.reminder_lunch_warning_minutes), 'End your lunch break in Attendance when you are back.'
+         format('Lunch ends in %s minute%s', m.left_min, case when m.left_min = 1 then '' else 's' end), 'End your lunch break in Attendance when you are back.'
     from lunch_end le
-   where le.left_s > s.reminder_lunch_warning_minutes * 60 and le.due <= p_now and le.due > p_now - interval '30 minutes';
+    cross join lateral (select ceil(extract(epoch from (le.ends_at - p_now)) / 60)::integer as left_min) m
+   where le.left_s > s.reminder_lunch_warning_minutes * 60 and le.due <= p_now and p_now < le.ends_at;
 end $$;
 revoke all on function private.attendance_reminders_compute(timestamptz) from public, anon, authenticated;
 
