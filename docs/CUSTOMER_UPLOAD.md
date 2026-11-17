@@ -26,7 +26,7 @@ customer data is used (for example the client dashboard).
 | Service 1 to Service 5: Service, Plan, Price (₹), Billing Cycle, Start Date, Expiry Date, Status | One block per service bought. Service, Start Date and Status are required for a filled block. Dates DD-MM-YYYY. |
 | Notes | |
 
-Filled in Google Sheets: **File > Download > Microsoft Excel (.xlsx)**, then choose it in **Upload customer details**. The `.xlsx` goes through the same
+Filled in Google Sheets: **File > Download > Microsoft Excel (.xlsx)** (or **Comma-separated values (.csv)**: the same sheet saved as CSV is recognised by its headings and read the same way), then choose it in **Upload customer details**. The `.xlsx` goes through the same
 check and save as **Import Customers** (`POST /customers/import-existing`, `import_customer_data`; see `EXISTING_CUSTOMERS_IMPORT.md`), so nothing new runs on the server:
 
 * Everything is **checked first** and nothing is saved while any row has a problem (the row number and what to fix are listed).
