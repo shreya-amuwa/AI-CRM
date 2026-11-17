@@ -4,15 +4,20 @@ import { setErrorReporter } from './monitoring.js';
 
 /**
  * Error reporting for the API on Vercel (Sentry project "ai-crm-server"). api/crm.ts and api/webhook.ts import this file FIRST.
- * It does nothing unless SENTRY_DSN is set on the server, so tests, `npm run dev` and the Cloudflare Worker (which never imports it)
- * are unaffected.
+ * It does nothing unless SENTRY_DSN is set on the server, so tests and `npm run dev` are unaffected.
+ *
+ * The Cloudflare Worker DOES load this file (worker/index.ts imports api/webhook.ts, which imports it first) and has SENTRY_DSN among its
+ * variables, so it must not start the client there: Sentry.init starts a timer, and a Worker may not start timers (or any I/O) while its
+ * code is loading ("Disallowed operation called within global scope", error 10021: the deploy is refused). CRM_PLATFORM is "cloudflare"
+ * on the Worker (wrangler.jsonc), so nothing is started there; the Worker's errors are in Cloudflare's Observability logs.
  *
  * Privacy (strict): no user, cookies, headers, request bodies or query strings; every text is masked (shared/sentryScrub.ts); a report
  * carries the error, its stack, the route pattern, the request id and the caller's role.
  * Tracing is OFF unless SENTRY_TRACES_SAMPLE_RATE is set: Vercel starts the function without Sentry's loader, so automatic spans are
  * limited, and the extra work at cold start is not worth it while the API is under load. See docs/ERROR_MONITORING.md.
  */
-const dsn = process.env.SENTRY_DSN?.trim();
+const onCloudflareWorker = process.env.CRM_PLATFORM === 'cloudflare';
+const dsn = onCloudflareWorker ? undefined : process.env.SENTRY_DSN?.trim();
 let pending = false;
 let tracing = false;
 
