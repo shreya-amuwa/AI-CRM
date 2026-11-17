@@ -8,7 +8,7 @@ trace and the release that caused it, without anyone having to read the Vercel l
 | Website (React, runs in the browser) | `ai-crm-frontend` | uncaught errors, unhandled promise rejections, a screen that crashed (the error boundary), 10% of page loads and API calls as performance data | `VITE_SENTRY_DSN` at **build** time |
 | API (Hono on Vercel: `api/crm.ts`, `api/webhook.ts`) | `ai-crm-server` | every 500 / 503 the API answers (a defect, a busy database, a missing setting) and unexpected exceptions | `SENTRY_DSN` at **run** time |
 
-With no DSN set nothing is sent: local development, tests and the Cloudflare Worker are not affected (the Worker never loads the Sentry code).
+With no DSN set nothing is sent: local development and tests are not affected. The Cloudflare Worker does load `server/sentry.ts` (through `api/webhook.ts`) but never starts the client, even when `SENTRY_DSN` is among its variables (`CRM_PLATFORM=cloudflare`): Sentry's start-up timer is refused by Workers (error 10021) and fails the deploy. `supabase/tests/worker_e2e.test.ts` starts the Worker in the real Workers runtime with a DSN set, so this cannot return unnoticed.
 
 ## What is NOT reported
 * The caller's own mistakes: a wrong password (401), a missing field (422), a refused permission (403), a rate limit (429), a 404. They are the
