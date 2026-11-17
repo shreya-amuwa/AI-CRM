@@ -93,9 +93,19 @@ export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivisi
   return p.defaultDashboard === 'sales-department-head' || p.headDivision === 'SALES';
 }
 
-/** The Department Head, Team Leads and Team Members of the AI Studio department. */
-export function isAiStudioStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
-  return p.department?.slug === 'ai-studio' && p.role !== 'SUPER_ADMIN';
+const AI_STUDIO_DASHBOARDS = ['ai-studio-head', 'ai-studio-lead', 'ai-studio-member'];
+
+/**
+ * The Department Head, Team Leads and Team Members of the AI Studio department. The DEPARTMENT decides, never the role name (a Sales Team Lead and an AI Studio
+ * Team Lead are both "Team Lead") and never the team's division: the department's slug, else its name; only when the profile arrives without a department at all, the
+ * dashboard value the database computed from that same department (ai-studio-head / -lead / -member).
+ */
+export function isAiStudioStaff(p: Pick<Profile, 'role' | 'department'> & { defaultDashboard?: Profile['defaultDashboard'] }): boolean {
+  if (p.role === 'SUPER_ADMIN') return false;
+  if (p.department?.slug || p.department?.name) {
+    return p.department.slug === 'ai-studio' || (p.department.name ?? '').trim().toLowerCase() === 'ai studio';
+  }
+  return !!p.defaultDashboard && AI_STUDIO_DASHBOARDS.includes(p.defaultDashboard);
 }
 
 /** Team members and leads of the Accounts department confirm payments sent by Sales. */

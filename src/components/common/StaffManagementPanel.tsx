@@ -447,7 +447,6 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     }
     const aiStudio = departmentSlug === 'ai-studio' && (role === 'TEAM_HEAD' || role === 'TEAM_MEMBER');
     if (aiStudio) {
-      if (role === 'TEAM_MEMBER' && profile?.role !== 'TEAM_HEAD' && !aiLead) { setFormError('Choose the Team Lead of the new Team Member.'); return; }
       if (aiProjects.length === 0) { setFormError(`Select a project for the AI Studio ${role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'}.`); return; }
     }
     const parsed = userCreateSchema.safeParse({
@@ -466,7 +465,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       operationsHead: operationsHead || undefined,
       additionalAccess: headPlan && headPlan.additionalAccess.length ? headPlan.additionalAccess : undefined,
       aiStudioProjectIds: aiStudio ? aiProjects : undefined,
-      aiStudioLeadId: aiStudio && role === 'TEAM_MEMBER' && profile?.role !== 'TEAM_HEAD' ? aiLead : undefined,
+      // the Team Lead is optional: a Team Member can be created before any Team Lead exists and assigned later
+      aiStudioLeadId: aiStudio && role === 'TEAM_MEMBER' && profile?.role !== 'TEAM_HEAD' && aiLead ? aiLead : undefined,
       details: { designation, joiningDate, dateOfBirth, bloodGroup, contactNumber, emergencyContact }
     });
     if (!parsed.success) {

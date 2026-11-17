@@ -9,6 +9,8 @@
 reset role;
 \i supabase/migrations/20270105000100_ai_studio.sql
 \i supabase/migrations/20270106000100_ai_studio_superadmin_head.sql
+\i supabase/migrations/20270107000100_ai_studio_members_without_team_lead.sql
+\i supabase/migrations/20270108000100_ai_studio_dashboard_routing.sql
 
 -- count checks on tables the app roles cannot read (notifications are visible to their recipient only): run as the table owner
 create or replace function test.sq(p_sql text) returns text language plpgsql security definer as $$
@@ -26,6 +28,119 @@ create or replace function test.aid() returns uuid language sql stable security 
 create or replace function test.aiteam() returns uuid language sql stable security definer as $$ select id from teams where department_id = test.aid() order by created_at limit 1 $$;
 create or replace function test.proj(p text) returns uuid language sql stable security definer as $$ select id from ai_studio_projects where name = p $$;
 grant execute on all functions in schema test to anon, authenticated;
+
+create temp table ai_t (name text primary key, id uuid);
+grant all on ai_t to authenticated;
+-- ---------------------------------------------------------------------------------------------------------------------------------------------
+\echo '   the dashboard follows the DEPARTMENT, not the role name or the team division'
+-- a Team Lead of AI Studio in a team whose division is SALES (a hand-made department can have one) still opens the AI Studio Team Lead dashboard
+insert into teams (department_id, name, division) values (test.aid(), 'AI Studio Sales Pod', 'SALES');
+select test.create_auth_user('ai_pod_tl', 'ai.podtl@example.com', '{"full_name":"AI Pod Lead"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', (select id from teams where name = 'AI Studio Sales Pod')));
+select test.check((select default_dashboard = 'ai-studio-lead' and department_id = test.aid() from profiles where id = test.id('ai_pod_tl')), 'an AI Studio Team Lead is never a Sales Team Lead, even in a Sales-division team');
+select test.check((select default_dashboard = 'sales-lead' from profiles where id = test.id('th_wab')), 'a Sales Team Lead keeps the Sales Team Lead dashboard');
+select test.create_auth_user('ai_sup_tl', 'ai.suptl@example.com', '{"full_name":"AI Support Lead"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.team('wabastore', 'Support')));
+select test.check((select default_dashboard = 'support-lead' from profiles where id = test.id('ai_sup_tl')), 'a Support Team Lead keeps the Support Team Lead dashboard');
+-- a department made by hand with another slug is still AI Studio
+update departments set slug = 'ai-studio-by-hand' where slug = 'ai-studio';
+select test.check(private.ai_studio_department() = (select id from departments where slug = 'ai-studio-by-hand'), 'the department is found by its name when the slug differs');
+select test.create_auth_user('ai_slug_tm', 'ai.slugtm@example.com', '{"full_name":"AI Slug Member"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select id from teams where name = 'AI Studio Team')));
+select test.check((select default_dashboard = 'ai-studio-member' from profiles where id = test.id('ai_slug_tm')), 'and its people still open the AI Studio dashboards');
+update departments set slug = 'ai-studio' where slug = 'ai-studio-by-hand';
+delete from auth.users where email in ('ai.podtl@example.com', 'ai.suptl@example.com', 'ai.slugtm@example.com');
+delete from test.users where name in ('ai_pod_tl', 'ai_sup_tl', 'ai_slug_tm');
+delete from teams where name = 'AI Studio Sales Pod';
+
+-- ---------------------------------------------------------------------------------------------------------------------------------------------
+\echo '   Team Members before any Team Lead exists (the Super Admin is the Department Head)'
+select test.check((select count(*) = 0 from profiles where department_id = test.aid() and role = 'TEAM_HEAD'), 'no Team Lead exists yet');
+select test.create_auth_user('ai_e1', 'ai.e1@example.com', '{"full_name":"AI Early One"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.aiteam()));
+select test.create_auth_user('ai_e2', 'ai.e2@example.com', '{"full_name":"AI Early Two"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.aiteam()));
+select test.check((select count(*) = 2 and bool_and(manager_id is null) and bool_and(default_dashboard = 'ai-studio-member') and bool_and(status = 'ACTIVE') from profiles where id in (test.id('ai_e1'), test.id('ai_e2'))),
+  'a Team Member can be created with no Team Lead, and opens the Team Member dashboard');
+set role authenticated;
+select test.login('sa');
+select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AI CRM')]);
+select test.must_fail($$select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AI CRM')], test.id('ai_e1'))$$, 'a Team Lead that is not a Team Lead is refused when one is named', 'Team Lead');
+select test.must_fail($$select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), '{}'::uuid[])$$, 'a project is still needed', 'Select a project');
+select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_e1'), true);
+select ai_studio_project_assign(test.proj('AIQR'), test.id('ai_e1'), true);
+select ai_studio_project_assign(test.proj('AI Website'), test.id('ai_e2'), true);
+select test.check(test.sq($q$select count(*) = 2 from ai_studio_project_members where profile_id = test.id('ai_e1')$q$)::boolean, 'the project is assigned although the member has no Team Lead');
+select test.check(jsonb_array_length(ai_studio_people()) = 2 and not exists (select 1 from jsonb_array_elements(ai_studio_people()) e where e ->> 'leadId' is not null) and (ai_studio_people() -> 0 ->> 'createdAt') is not null, 'the Super Admin sees both, unassigned, with their creation date');
+select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_e1'), 'First task from the Super Admin', null, 'LOW', null);
+select test.check((select count(*) = 1 from jsonb_array_elements(ai_studio_tasks_list('team') -> 'items')), 'the Super Admin gives a task straight to an unassigned member');
+select test.login('ai_e1');
+select test.check(jsonb_array_length(ai_studio_projects_list()) = 2, 'the unassigned member sees their projects');
+select test.check((ai_studio_tasks_list('mine') ->> 'total')::int = 1, 'and the task given to them');
+select test.check(ai_studio_report_context() ->> 'route' = 'DIRECT' and (ai_studio_report_context() ->> 'hasReviewer')::boolean and ai_studio_report_context() ->> 'reviewer' = 'Root', 'the form says the report goes straight to the Super Admin');
+insert into ai_t select 'e_r1', (ai_studio_report_save(null, test.proj('AI CRM'), null, current_date, 'Set up the repo', null, null, null, null, true) ->> 'id')::uuid;
+select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' and lead_id is null from ai_studio_daily_reports where id = (select id from ai_t where name = 'e_r1')$q$)::boolean, 'a report without a Team Lead goes straight to the Super Admin');
+select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history' -> 1 ->> 'comment') like 'No Team Lead is assigned%', 'and the history says why');
+select test.login('ai_e2');
+select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'e_r1'))$$, 'another member cannot read it', 'NOT_FOUND');
+select test.must_fail($$select ai_studio_assign_lead(array[test.id('ai_e1')], test.id('sa'))$$, 'a member cannot assign Team Leads', 'FORBIDDEN');
+select test.login('sa');
+select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('sa') and type = 'AI_STUDIO_REPORT_PENDING_HEAD' and entity_id = (select id from ai_t where name = 'e_r1')$q$)::boolean, 'the Super Admin is notified');
+select test.check((ai_studio_reports_list('department', null, 'PENDING_DH_APPROVAL') ->> 'total')::int = 1, 'and sees it among the reports awaiting the final decision');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'e_r1'), 'APPROVE', 'Thanks') ->> 'status') = 'APPROVED', 'the Super Admin approves it directly (no Team Lead stage)');
+select test.login('ai_e1');
+insert into ai_t select 'e_r2', (ai_studio_report_save(null, test.proj('AIQR'), null, current_date, 'Reviewed AIQR', null, null, null, null, true) ->> 'id')::uuid;
+select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' from ai_studio_daily_reports where id = (select id from ai_t where name = 'e_r2')$q$)::boolean, 'a second report (left pending on purpose) is waiting for the Super Admin');
+
+-- a Team Lead is created later: the earlier members are NOT taken over
+reset role;
+select test.create_auth_user('ai_el1', 'ai.el1@example.com', '{"full_name":"AI Early Lead"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_HEAD', 'provisioned_team_id', test.aiteam()));
+select test.check(test.sq($q$select private.direct_lead_of(test.id('ai_e1')) is null and private.direct_lead_of(test.id('ai_e2')) is null$q$)::boolean, 'the first Team Lead does not silently take the earlier members');
+select test.check((select manager_id is null from profiles where id = test.id('ai_e1')), 'they stay Not Assigned');
+set role authenticated;
+select test.login('ai_el1');
+select test.check(jsonb_array_length(ai_studio_people()) = 1, 'the new Team Lead sees only themselves');
+select test.must_fail($$select ai_studio_assign_lead(array[test.id('ai_e1')], test.id('ai_el1'))$$, 'a Team Lead cannot assign members to themselves', 'FORBIDDEN');
+select test.login('sa');
+select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_el1'), true);
+select test.must_fail($$select ai_studio_assign_lead('{}'::uuid[], test.id('ai_el1'))$$, 'select at least one member', 'at least one');
+select test.must_fail($$select ai_studio_assign_lead(array[test.id('ai_e1')], test.id('ai_e2'))$$, 'the Team Lead must be a Team Lead', 'Team Lead of AI Studio');
+select test.must_fail($$select ai_studio_assign_lead(array[test.id('ai_e1'), test.id('tm_a')], test.id('ai_el1'))$$, 'a member of another department is refused, and nobody is assigned', 'NOT_FOUND');
+select test.check((select manager_id is null from profiles where id = test.id('ai_e1')), 'a refused bulk assignment changes nobody (all or nothing)');
+select test.check((ai_studio_assign_lead(array[test.id('ai_e1'), test.id('ai_e2')], test.id('ai_el1')) ->> 'assigned')::int = 2, 'the Super Admin assigns both members to the new Team Lead at once');
+select test.check((ai_studio_assign_lead(array[test.id('ai_e1')], test.id('ai_el1')) ->> 'alreadyAssigned')::int = 1, 'assigning again changes nothing');
+select test.check(test.sq($q$select count(*) = 2 from notifications where type = 'AI_STUDIO_LEAD_ASSIGNED' and recipient_id in (test.id('ai_e1'), test.id('ai_e2'))$q$)::boolean
+               and test.sq($q$select count(*) >= 1 from notifications where recipient_id = test.id('ai_el1') and type = 'TEAM_MEMBER_ASSIGNED'$q$)::boolean, 'the members and the Team Lead are told');
+select test.login('ai_el1');
+select test.check(jsonb_array_length(ai_studio_people()) = 3, 'the members appear in the Team Lead''s team');
+select test.check(jsonb_array_length(ai_studio_tasks_list('team') -> 'items') = 1, 'and their tasks');
+select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'e_r1'))$$, 'but reports already submitted keep their route: the new Team Lead does not see them', 'NOT_FOUND');
+select test.check((ai_studio_reports_list('team') ->> 'total')::int = 0, 'the team report list is empty for now');
+select test.login('sa');
+select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1')) ->> 'status') = 'APPROVED' and jsonb_array_length(ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history') = 3, 'an approved report keeps its status and history');
+select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'status') = 'PENDING_DH_APPROVAL' and (ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'canReview')::boolean, 'a pending report still waits for the Super Admin');
+select test.login('ai_e1');
+select test.check(ai_studio_report_context() ->> 'route' = 'TEAM_LEAD' and ai_studio_report_context() ->> 'reviewer' = 'AI Early Lead', 'the form now says the report goes to the Team Lead first');
+insert into ai_t select 'e_r3', (ai_studio_report_save(null, test.proj('AI CRM'), null, current_date - 1, 'Added the CI', null, null, null, null, true) ->> 'id')::uuid;
+select test.check(test.sq($q$select status = 'PENDING_TL_APPROVAL' and lead_id = test.id('ai_el1') from ai_studio_daily_reports where id = (select id from ai_t where name = 'e_r3')$q$)::boolean, 'a new report now follows Team Member -> Team Lead');
+select test.login('ai_el1');
+select test.check((ai_studio_reports_list('team') ->> 'total')::int = 1, 'it is in the Team Lead''s team reports');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'e_r3'), 'APPROVE', null) ->> 'status') = 'PENDING_DH_APPROVAL', 'the Team Lead approves it');
+select test.login('sa');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'e_r3'), 'APPROVE', null) ->> 'status') = 'APPROVED', 'and the Super Admin gives the final approval');
+select test.check((ai_studio_report_review((select id from ai_t where name = 'e_r2'), 'RETURN', 'Add details') ->> 'status') = 'RETURNED_BY_DH', 'the earlier pending report is still the Super Admin''s to decide');
+select test.login('tm_a');
+select test.must_fail($$select ai_studio_assign_lead(array[test.id('ai_e1')], test.id('ai_el1'))$$, 'another department cannot assign', 'FORBIDDEN');
+select test.must_fail($$select ai_studio_people()$$, 'nor list the people', 'FORBIDDEN');
+-- an existing department keeps the "only Team Lead" rule
+reset role;
+select test.check((select count(*) >= 1 from profiles m where m.role = 'TEAM_MEMBER' and m.department_id = test.dept('wabastore') and m.manager_id is not null), 'other departments still give a member their only Team Lead automatically');
+-- back to an empty AI Studio for the rest of this file
+delete from auth.users where email in ('ai.e1@example.com', 'ai.e2@example.com', 'ai.el1@example.com');
+delete from test.users where name in ('ai_e1', 'ai_e2', 'ai_el1');
+delete from ai_studio_tasks;
+select test.check((select count(*) = 0 from profiles where department_id = test.aid()) and (select count(*) = 0 from ai_studio_daily_reports), 'the scratch people and their records are gone');
 
 -- people: the Super Admin makes the Department Head; the Head makes the Team Leads; each Team Lead adds their own Team Members
 select test.create_auth_user('ai_dh', 'ai.dh@example.com', '{"full_name":"AI Head"}',
@@ -87,13 +202,15 @@ select test.check(test.sq($q$select count(*) = 2 from ai_studio_project_members 
 select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tl2') and type = 'AI_STUDIO_PROJECT_ASSIGNED'$q$)::boolean, 'the Team Lead is told about the project');
 select test.must_fail($$select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_dh'), true)$$, 'the Head is not assigned as a worker', 'VALIDATION_ERROR');
 select test.must_fail($$select ai_studio_project_assign(test.proj('AI CRM'), test.id('tm_a'), true)$$, 'nobody from another department can be put on a project', 'VALIDATION_ERROR');
-select test.must_fail($$select ai_studio_project_assign(test.proj('AIQR'), test.id('ai_tm1a'), true)$$, 'a Team Member needs their own Team Lead on the project first', 'Put the Team Lead');
+select ai_studio_project_assign(test.proj('AIQR'), test.id('ai_tm1a'), true);
+select test.check(test.sq($q$select count(*) = 1 from ai_studio_project_members where project_id = test.proj('AIQR') and profile_id = test.id('ai_tm1a')$q$)::boolean, 'a Team Member can be put on a project their Team Lead is not on (project and Team Lead are independent)');
+select ai_studio_project_assign(test.proj('AIQR'), test.id('ai_tm1a'), false);
 
 -- the creation-form check (before any account exists)
 select test.must_fail($$select ai_studio_project_check(test.aid(), 'TEAM_HEAD', test.aiteam(), '{}'::uuid[])$$, 'a new AI Studio Team Lead needs a project', 'Select a project');
 select ai_studio_project_check(test.aid(), 'TEAM_HEAD', test.aiteam(), array[test.proj('AI CRM')]);
-select test.must_fail($$select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AI CRM')])$$, 'a Department Head must name the Team Lead of a new member', 'Choose the Team Lead');
-select test.must_fail($$select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AIQR')], test.id('ai_tl1'))$$, 'the member cannot be put on a project their Team Lead is not on', 'not on the selected project');
+select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AI CRM')]);  -- the Team Lead is optional
+select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AIQR')], test.id('ai_tl1'));  -- and independent of the Team Lead's projects
 select ai_studio_project_check(test.aid(), 'TEAM_MEMBER', test.aiteam(), array[test.proj('AI CRM')], test.id('ai_tl1'));
 select test.must_fail($$select ai_studio_project_check(test.dept('wabastore'), 'TEAM_HEAD', test.team('wabastore', 'Sales'), array[test.proj('AI CRM')])$$, 'projects cannot be given in another department', 'AI Studio department only');
 select ai_studio_project_check(test.dept('wabastore'), 'TEAM_HEAD', test.team('wabastore', 'Sales'), '{}'::uuid[]);
@@ -123,8 +240,6 @@ select test.must_fail($$select ai_studio_people()$$, 'a Team Member cannot list 
 
 \echo '   tasks'
 select test.login('ai_dh');
-create temp table ai_t (name text primary key, id uuid);
-grant all on ai_t to authenticated;
 insert into ai_t select 'lead', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'Plan the CRM sprint', 'Break the work down', 'HIGH', (current_date + 10)) ->> 'id')::uuid;
 select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tl1') and type = 'AI_STUDIO_TASK_ASSIGNED' and entity_id = (select id from ai_t where name = 'lead')$q$)::boolean, 'the Team Lead is notified of a new task');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl2'), 'x', null, 'LOW', null)$$, 'a task cannot go to someone who is not on the project', 'not on');
@@ -285,24 +400,27 @@ select test.must_fail($$select ai_studio_report_get((select id from ai_t where n
 select test.login('tm_a');
 select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, current_date, 'x', null, null, null, null, false)$$, 'another department cannot write an AI Studio report', 'FORBIDDEN');
 
-\echo '   a Team Member with no Team Lead cannot submit'
+\echo '   a Team Member added by the Super Admin to a team with two leads has no lead yet'
 reset role;
 select test.create_auth_user('ai_tm_orphan', 'ai.orphan@example.com', '{"full_name":"AI Orphan"}',
   jsonb_build_object('provisioned_by', test.id('ai_dh'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.aiteam()));
 select test.check(private.direct_lead_of(test.id('ai_tm_orphan')) is null, 'a member added by the Head to a team with two leads has no lead yet');
 set role authenticated;
 select test.login('ai_dh');
-select test.must_fail($$select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_tm_orphan'), true)$$, 'they cannot be put on a project', 'no Team Lead yet');
+select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_tm_orphan'), true);
+select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_tm_orphan'), false);
 select assign_direct_lead(test.id('ai_tm_orphan'), test.id('ai_tl2'));
 select ai_studio_project_assign(test.proj('AIQR'), test.id('ai_tm_orphan'), true);
 select test.check(test.sq($q$select private.direct_lead_of(test.id('ai_tm_orphan')) = test.id('ai_tl2')$q$)::boolean, 'the Head names the Team Lead with the existing assign-lead function');
-select test.must_fail($$select ai_studio_project_assign(test.proj('AIQR'), test.id('ai_tl2'), false)$$, 'a Team Lead cannot be taken off a project while their members are on it', 'Take the Team Members');
+select test.check(true, 'a Team Lead can be taken off a project independently of their members (checked in the removal section)');
 select test.login('ai_tm1a');
 select test.must_fail($$select ai_studio_project_assign(test.proj('AI CRM'), test.id('ai_tm1a'), false)$$, 'a member cannot take themselves off', 'FORBIDDEN');
 
 \echo '   changing the Team Lead of a Team Member'
 select test.login('ai_dh');
-select test.must_fail($$select ai_studio_set_lead(test.id('ai_tm1a'), test.id('ai_tl2'))$$, 'the new Team Lead must be on the member''s projects', 'Put them on it first');
+select ai_studio_set_lead(test.id('ai_tm1a'), test.id('ai_tl2'));
+select test.check(test.sq($q$select private.direct_lead_of(test.id('ai_tm1a')) = test.id('ai_tl2')$q$)::boolean, 'the Super Admin can change a Team Member''s Team Lead whatever their projects');
+select ai_studio_set_lead(test.id('ai_tm1a'), test.id('ai_tl1'));
 select test.must_fail($$select ai_studio_set_lead(test.id('ai_tl1'), test.id('ai_tl2'))$$, 'only a Team Member has a Team Lead to change', 'NOT_FOUND');
 select test.must_fail($$select ai_studio_set_lead(test.id('ai_tm_orphan'), test.id('ai_tm1a'))$$, 'the lead must be a Team Lead', 'Team Lead');
 select ai_studio_set_lead(test.id('ai_tm_orphan'), test.id('ai_tl2'));

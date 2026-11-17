@@ -2,7 +2,7 @@
 // notification deep links. Every other department's routing is unchanged.
 import { AI_STUDIO_REPORT_STATUSES, AI_STUDIO_REPORT_STATUS_LABELS } from '../../shared/contracts.js';
 import {
-  aiStudioProjectSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioTaskCreateSchema, aiStudioTaskUpdateSchema, userCreateSchema
+  aiStudioAssignLeadSchema, aiStudioProjectSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioTaskCreateSchema, aiStudioTaskUpdateSchema, userCreateSchema
 } from '../../shared/validation.js';
 import { defaultDashboardLabel, toAuthUser } from '../../src/lib/auth/roleMapping.js';
 import { getRedirectForRole, parseCurrentRoute, validateRouteAccess, type ParsedRoute } from '../../src/utils/router.js';
@@ -41,6 +41,22 @@ check(sales.role === 'business-associate' && validateRouteAccess(sales, route('a
 check(toAuthUser(profile({ role: 'DEPARTMENT_HEAD', department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: null })).role === 'admin', 'another Department Head keeps the Department Head dashboard');
 check(validateRouteAccess(toAuthUser(profile({ role: 'DEPARTMENT_HEAD', department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: null })), route('ai-studio', 'u1')).allowed === false, 'and cannot open AI Studio');
 check(toAuthUser(profile({ department: { id: 'h', name: 'HR', slug: 'hr' }, team: null })).role === 'hr', 'HR keeps theirs');
+
+// ---- the dashboard follows the DEPARTMENT (never the role name alone)
+const salesTl = toAuthUser(profile({ role: 'TEAM_HEAD', department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: { id: 't', name: 'Sales', division: 'SALES' }, defaultDashboard: 'sales-lead' }));
+const supportTl = toAuthUser(profile({ role: 'TEAM_HEAD', department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: { id: 't2', name: 'Support', division: 'SUPPORT' }, defaultDashboard: 'support-lead' }));
+const aiTl = toAuthUser(profile({ role: 'TEAM_HEAD', defaultDashboard: 'ai-studio-lead' }));
+check(salesTl.role === 'team-lead' && supportTl.role === 'support-lead' && aiTl.role === 'ai-studio', 'Sales, Support and AI Studio Team Leads (all "Team Lead") open three different dashboards');
+check(toAuthUser(profile({ role: 'TEAM_HEAD', team: { id: 't3', name: 'Pod', division: 'SALES' } })).role === 'ai-studio', 'an AI Studio Team Lead is not a Sales Team Lead even when their team\'s division is Sales');
+check(toAuthUser(profile({ role: 'TEAM_HEAD', team: { id: 't3', name: 'Pod', division: 'SUPPORT' } })).role === 'ai-studio', 'nor a Support Team Lead when it is Support');
+check(toAuthUser(profile({ role: 'TEAM_HEAD', department: { id: 'd1', name: 'AI Studio', slug: 'made-by-hand' } })).role === 'ai-studio', 'a department made by hand under the name AI Studio is AI Studio');
+check(toAuthUser(profile({ role: 'TEAM_HEAD', department: null, defaultDashboard: 'ai-studio-lead' })).role === 'ai-studio', 'a profile that arrives without its department still follows the dashboard the database computed from it');
+check(toAuthUser(profile({ role: 'TEAM_MEMBER', department: null, defaultDashboard: 'ai-studio-member' })).role === 'ai-studio', 'the same for a Team Member');
+check(toAuthUser(profile({ role: 'TEAM_HEAD', department: { id: 'w', name: 'Wabastore', slug: 'wabastore' }, team: { id: 't', name: 'Sales', division: 'SALES' }, defaultDashboard: 'ai-studio-lead' })).role === 'team-lead', 'a stale AI Studio dashboard value never overrides the department the person really is in');
+check(toAuthUser(profile({ role: 'TEAM_HEAD', department: null, team: null, defaultDashboard: 'sales-lead' })).role === 'team-lead', 'and a person with no department and no AI Studio value keeps the old routing');
+check(validateRouteAccess(aiTl, route('team-lead', 'u1')).redirectTo === '/ai-studio/dashboard/u1' && validateRouteAccess(aiTl, route('support-lead', 'u1')).allowed === false, 'an AI Studio Team Lead who opens a Sales or Support address is sent back to AI Studio');
+check(validateRouteAccess(salesTl, route('ai-studio', 'u1')).allowed === false && validateRouteAccess(supportTl, route('ai-studio', 'u1')).allowed === false, 'and a Sales or Support Team Lead cannot open the AI Studio address');
+check(getRedirectForRole(aiTl) === '/ai-studio/dashboard/u1' && getRedirectForRole(salesTl) === '/team-lead/dashboard/u1' && getRedirectForRole(supportTl) === '/support-lead/dashboard/u1', 'each signs in at their own address');
 
 // ---- the report statuses the department uses
 check(AI_STUDIO_REPORT_STATUSES.length === 7 && Object.values(AI_STUDIO_REPORT_STATUS_LABELS).join('|') ===
@@ -81,5 +97,13 @@ check(!userCreateSchema.safeParse({ ...account, role: 'TEAM_HEAD', aiStudioLeadI
 check(!userCreateSchema.safeParse({ ...account, role: 'DEPARTMENT_HEAD', teamId: undefined, departmentId: uuid(7) }).success, 'a Department Head gets no projects');
 check(userCreateSchema.safeParse({ email: 'x@example.com', fullName: 'X', role: 'TEAM_MEMBER', teamId: uuid(5) }).success, 'creating anybody else is unchanged (no AI Studio fields)');
 check(!userCreateSchema.safeParse({ ...account, aiStudioProjectIds: ['not-a-uuid'] }).success, 'a project must be an identifier from the list');
+
+// ---- Team Members without a Team Lead, assigned later
+check(userCreateSchema.safeParse({ email: 'nolead@example.com', fullName: 'No Lead', role: 'TEAM_MEMBER', teamId: uuid(5), aiStudioProjectIds: [uuid(1)] }).success, 'a Team Member can be created with a project and no Team Lead');
+check(aiStudioAssignLeadSchema.safeParse({ memberIds: [uuid(1), uuid(2)], leadId: uuid(3) }).success, 'one or many Team Members can be assigned to a Team Lead');
+check(!aiStudioAssignLeadSchema.safeParse({ memberIds: [], leadId: uuid(3) }).success, 'at least one Team Member must be selected');
+check(!aiStudioAssignLeadSchema.safeParse({ memberIds: ['x'], leadId: uuid(3) }).success && !aiStudioAssignLeadSchema.safeParse({ memberIds: [uuid(1)] }).success, 'identifiers and a Team Lead are required');
+check(!aiStudioAssignLeadSchema.safeParse({ memberIds: Array.from({ length: 201 }, (_, i) => uuid(i + 1)), leadId: uuid(3) }).success, 'at most 200 at a time');
+check(!aiStudioAssignLeadSchema.safeParse({ memberIds: [uuid(1)], leadId: uuid(3), role: 'TEAM_HEAD' }).success, 'nothing else can be sent with it');
 
 console.log(`=== AI STUDIO TESTS PASSED (${passed}) ===`);

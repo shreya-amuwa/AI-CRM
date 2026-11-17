@@ -2,7 +2,7 @@ import type {
   AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
 } from '../../shared/contracts.js';
 import {
-  aiStudioProjectAssignSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
+  aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
   aiStudioTaskEditSchema, aiStudioTasksQuerySchema, aiStudioTaskUpdateSchema, uuidSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
@@ -26,6 +26,7 @@ export class AiStudioService {
     return this.repo.assignProject(parse(uuidSchema, projectId), profileId, assign);
   }
 
+  assignLead(body: unknown) { const { memberIds, leadId } = parse(aiStudioAssignLeadSchema, body); return this.repo.assignLead(memberIds, leadId); }
   setLead(memberId: string, body: unknown) { return this.repo.setLead(parse(uuidSchema, memberId), parse(aiStudioSetLeadSchema, body).leadId); }
 
   tasks(query: unknown): Promise<AiStudioTaskPage> { return this.repo.tasks(parse(aiStudioTasksQuerySchema, query)); }

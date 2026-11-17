@@ -10794,10 +10794,6 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const member1 = q.json.data.id;
   q = await api('ail1', 'POST', '/users', { email: 'ai.m1x@amuwa.com', fullName: 'Wrong Project', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id] });
   check(q.status === 422, 'AI Studio: a Team Lead cannot give a member a project they are not on', q);
-  q = await api('sa', 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'AI Member Two', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id] });
-  check(q.status === 422 && /Team Lead/.test(q.json.error.message), 'AI Studio: the Super Admin must name the Team Lead of a new member', q);
-  q = await api('sa', 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'AI Member Two', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [crm.id], aiStudioLeadId: lead2 });
-  check(q.status === 422, 'AI Studio: the member cannot get a project the named Team Lead is not on', q);
   q = await api('sa', 'POST', '/users', { email: 'ai.m2@amuwa.com', fullName: 'AI Member Two', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [aiqr.id], aiStudioLeadId: lead2 });
   check(q.status === 201, 'AI Studio: the Super Admin adds a member under the second Team Lead', q);
   tokens.set('aim2', tokenFor(q.json.data.id));
@@ -10906,6 +10902,59 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 201 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: a Team Lead\'s own report goes straight to the Super Admin (the Department Head of AI Studio)', q);
   q = await api('ail2', 'GET', `/ai-studio/reports/${q.json.data.id}`);
   check(q.status === 404, 'AI Studio: another Team Lead cannot read it', q);
+
+  // a Team Member without a Team Lead (the Team Lead is optional and independent of the project), assigned later
+  q = await api('sa', 'POST', '/users', { email: 'ai.m5@amuwa.com', fullName: 'AI Member Five', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [crm.id, aiqr.id] });
+  check(q.status === 201 && q.json.data.defaultDashboard === 'ai-studio-member', 'AI Studio: a Team Member is created with projects and no Team Lead', q);
+  tokens.set('aim5', tokenFor(q.json.data.id));
+  const member5 = q.json.data.id;
+  q = await api('sa', 'GET', '/ai-studio/people');
+  const m5 = q.json.data.find((p: any) => p.id === member5);
+  check(m5 && m5.leadId === null && m5.projects.length === 2 && m5.createdAt, 'AI Studio: the Super Admin sees them as not assigned, with their projects and creation date', m5);
+  q = await api('ail1', 'GET', '/ai-studio/people');
+  check(!q.json.data.some((p: any) => p.id === member5), 'AI Studio: no Team Lead sees them yet', q);
+  q = await api('aim5', 'GET', '/ai-studio/projects');
+  check(q.status === 200 && q.json.data.length === 2, 'AI Studio: they log in and see their projects', q);
+  q = await api('sa', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member5, title: 'A task straight from the Super Admin' });
+  check(q.status === 201, 'AI Studio: the Super Admin gives them a task directly', q);
+  q = await api('aim5', 'GET', '/ai-studio/reports/context');
+  check(q.json.data.route === 'DIRECT' && q.json.data.hasReviewer === true, 'AI Studio: their report form says it goes straight to the Super Admin', q);
+  const today = new Date().toISOString().slice(0, 10);
+  q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: crm.id, reportDate: today, workCompleted: 'Set up the repo', submit: true });
+  check(q.status === 201 && q.json.data.status === 'PENDING_DH_APPROVAL' && q.json.data.leadId === null, 'AI Studio: without a Team Lead the report goes directly to the Super Admin', q);
+  const directReport = q.json.data.id;
+  q = await api('sa', 'GET', '/ai-studio/reports?view=department&status=PENDING_DH_APPROVAL');
+  check(q.json.data.items.some((r: any) => r.id === directReport), 'AI Studio: it is in the Super Admin\'s reports awaiting the final decision', q);
+  q = await api('ail1', 'GET', `/ai-studio/reports/${directReport}`);
+  check(q.status === 404, 'AI Studio: no Team Lead can open it', q);
+  // assigning: validation, authorisation, then the real thing
+  q = await api('aim5', 'POST', '/ai-studio/people/assign-lead', { memberIds: [member5], leadId: lead1 });
+  check(q.status === 403, 'AI Studio: a Team Member cannot assign Team Leads', q);
+  q = await api('ail1', 'POST', '/ai-studio/people/assign-lead', { memberIds: [member5], leadId: lead1 });
+  check(q.status === 403, 'AI Studio: nor a Team Lead', q);
+  q = await api('a', 'POST', '/ai-studio/people/assign-lead', { memberIds: [member5], leadId: lead1 });
+  check(q.status === 403, 'AI Studio: nor another department', q);
+  q = await api('sa', 'POST', '/ai-studio/people/assign-lead', { memberIds: [], leadId: lead1 });
+  check(q.status === 422, 'AI Studio: at least one Team Member must be selected', q);
+  q = await api('sa', 'POST', '/ai-studio/people/assign-lead', { memberIds: [member5], leadId: member1 });
+  check(q.status === 422, 'AI Studio: the Team Lead must be an active AI Studio Team Lead', q);
+  q = await api('sa', 'POST', '/ai-studio/people/assign-lead', { memberIds: [member5, memberA], leadId: lead1 });
+  check(q.status === 404, 'AI Studio: a person from another department is refused', q);
+  check((await db.query(`select manager_id from public.profiles where id = $1`, [member5])).rows[0].manager_id === null, 'AI Studio: and nobody was assigned (all or nothing)');
+  q = await api('sa', 'POST', '/ai-studio/people/assign-lead', { memberIds: [member5], leadId: lead1 });
+  check(q.status === 200 && q.json.data.assigned === 1, 'AI Studio: the Super Admin assigns the Team Member to the Team Lead', q);
+  q = await api('ail1', 'GET', '/ai-studio/people');
+  check(q.json.data.some((p: any) => p.id === member5 && p.leadId === lead1), 'AI Studio: the Team Member appears in the Team Lead\'s dashboard', q);
+  q = await api('ail1', 'GET', `/ai-studio/reports/${directReport}`);
+  check(q.status === 404, 'AI Studio: the report already submitted keeps its route (the new Team Lead does not take it over)', q);
+  q = await api('sa', 'GET', `/ai-studio/reports/${directReport}`);
+  check(q.json.data.status === 'PENDING_DH_APPROVAL' && q.json.data.canReview === true, 'AI Studio: and it still waits for the Super Admin', q);
+  q = await api('aim5', 'GET', '/ai-studio/reports/context');
+  check(q.json.data.route === 'TEAM_LEAD' && q.json.data.reviewer === 'AI Lead One', 'AI Studio: the form now says reports go to the Team Lead first', q);
+  q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: aiqr.id, reportDate: today, workCompleted: 'AIQR review', submit: true });
+  check(q.status === 201 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.leadId === lead1, 'AI Studio: a new report follows Team Member -> Team Lead', q);
+  q = await api('ail1', 'POST', `/ai-studio/reports/${q.json.data.id}/review`, { decision: 'APPROVE' });
+  check(q.status === 200 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: the Team Lead approves it and it goes on to the Super Admin', q);
 
   // shared features keep working for AI Studio people: notifications, chat, leave
   q = await api('aim1', 'GET', '/notifications?page=1&pageSize=50');
