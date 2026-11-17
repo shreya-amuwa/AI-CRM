@@ -1,0 +1,13 @@
+Copyright (c) 2026 Amuwa Corporation. All rights reserved.
+
+This repository and everything in it (source code, database migrations, documentation, templates, images and other files) is the proprietary
+property of Amuwa Corporation.
+
+The repository may be publicly visible. Being able to see it gives no licence: no permission is granted to copy, modify, merge, publish,
+distribute, sublicense, sell, host or run this software or any part of it, or to create works based on it, without prior written permission from
+Amuwa Corporation.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE
+FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+Security issues: please do not open a public issue. Report them privately to the repository owner (see SECURITY.md).
