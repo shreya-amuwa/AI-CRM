@@ -26,6 +26,26 @@ Checked and found sound (no change): every public table has Row Level Security; 
 4. **Supabase Auth settings** (dashboard > Authentication): minimum password length 10 or more, enable *leaked password protection*, keep e-mail confirmation on, set a short JWT expiry (1 hour) and enable CAPTCHA (Auth > Attack Protection) if sign-up is public.
 5. **Keys.** `SUPABASE_SERVICE_ROLE_KEY` only in server environment variables (never `VITE_`). If it was ever pasted into a chat, ticket or commit, rotate it in Supabase and in Vercel.
 
+## Provider credentials stay on the server (Wabastore lead webhooks)
+
+Until this change the Wabastore panel (and the Whatsbox / Mpillar / Digitree / Dtalk panels) carried webhook secrets, an API key and a default token as string literals in `src/`, so they were shipped to every browser and are in git history. They were removed; nothing under `src/` holds a credential any more.
+
+How it works now:
+
+* The browser calls `POST /api/v1/leads/webhook-fetch` (signed-in, active users only; the default per-user rate limit, which covers the 30-second poll) with `{ sourceId, url, method?, body? }`. The request schema is strict: a token sent by the browser is refused.
+* `server/services/LeadWebhookService.ts` adds `Authorization: Bearer <token>` and `x-api-key` from the environment variable of that source and fetches through `server/net/safeFetch.ts` (public addresses only). The credential is attached **only** when the address is `https://webhooks.wabastore.com/...`, so a user cannot make the server send it elsewhere; a request that carries it never follows a redirect; it is never returned to the browser.
+* A token a person types into the "API Key / Bearer Token" box of the panel is still sent as typed (default empty).
+* `WabastoreWebhookLiveBar` auto-sync stays **off** by default.
+* `npm run dev`: the dev middleware in `vite.config.ts` reads the same variables from `.env.local`.
+
+| Variable (server only, never `VITE_`) | Used for |
+| --- | --- |
+| `WABASTORE_SOURCE_TOKEN_WHATSAPP`, `_META`, `_TELECALLER`, `_BIZDEV`, `_AICALLING`, `_RCS` | the credential of that lead source's webhook. Without it the webhook is called without a credential (and answers 401/403 if it needs one). |
+
+**Rotate the exposed credentials.** Removing them from the code does not make them safe: they remain in git history and in every bundle ever deployed. In the Wabastore (webhook provider) portal create new credentials for every source and revoke the old ones, then set the variables above in Vercel (Project > Settings > Environment Variables, Production and Preview) and redeploy. The inbound `WEBHOOK_SECRET` (see above) is separate and unaffected.
+
+`supabase/tests/no_hardcoded_secrets.test.ts` (part of `npm run test:unit`) fails when a long literal is assigned to a `secret` / `apiKey` / `token` / `authorization` key, used as the starting value of a token state, or used as a token fallback anywhere in `src/`, `server/`, `api/`, `worker/` or `vite.config.ts`. `supabase/tests/lead_webhook_fetch.test.ts` covers the server route.
+
 ## Security and audit logging (what is recorded, where, and how to read it)
 
 There are four different kinds of record. They are not interchangeable:

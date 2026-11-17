@@ -29,7 +29,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
   name: string; 
   port: string; 
   endpoint: string;
-  secret: string;
   desc: string; 
   icon: any; 
   color: string; 
@@ -45,7 +44,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'WhatsApp API', 
     port: 'Webhook Port #1080', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/whatsapp_api',
-    secret: 'whsec_wa_api_9901827461',
     desc: 'Direct lead submissions via official WhatsApp Business API endpoints.', 
     icon: MessageSquare, 
     color: 'text-emerald-600', 
@@ -61,7 +59,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'Meta Ads', 
     port: 'Webhook Port #1081', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/meta_ads',
-    secret: 'whsec_meta_ads_8817263510',
     desc: 'Leads captured directly from Facebook & Instagram sponsored lead form ads.', 
     icon: Target, 
     color: 'text-blue-600', 
@@ -77,7 +74,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'Telecaller', 
     port: 'Webhook Port #1082', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/telecaller',
-    secret: 'whsec_telecaller_7726154091',
     desc: 'Inbound & outbound telecalling representative lead entries.', 
     icon: PhoneCall, 
     color: 'text-amber-600', 
@@ -93,7 +89,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'Business Developer', 
     port: 'Webhook Port #1083', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/business_developer',
-    secret: 'whsec_bdm_6615243981',
     desc: 'Direct corporate field leads submitted by BDM staff.', 
     icon: UserPlus, 
     color: 'text-purple-600', 
@@ -109,7 +104,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'AI Calling', 
     port: 'Webhook Port #1084', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/ai_calling',
-    secret: 'whsec_aicall_5504132871',
     desc: 'Automated AI voice agent outbound calling qualification.', 
     icon: RobotIcon, 
     color: 'text-cyan-600', 
@@ -125,7 +119,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'RCS Messages', 
     port: 'Webhook Port #1085', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/rcs_messages',
-    secret: 'whsec_rcs_4493021761',
     desc: 'Rich Communication Services interactive messaging leads.', 
     icon: Send, 
     color: 'text-pink-600', 
@@ -141,7 +134,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'Website', 
     port: 'Webhook Port #1086', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/website',
-    secret: 'whsec_web_3382910651',
     desc: 'Organic lead forms from amuwa.com & whatsbox.in portals.', 
     icon: Globe, 
     color: 'text-indigo-600', 
@@ -157,7 +149,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'References', 
     port: 'Webhook Port #1087', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/references',
-    secret: 'whsec_ref_2271809541',
     desc: 'Client referral program & partner word-of-mouth leads.', 
     icon: Share2, 
     color: 'text-teal-600', 
@@ -173,7 +164,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'Cold Calling', 
     port: 'Webhook Port #1088', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/cold_calling',
-    secret: 'whsec_cold_1160798431',
     desc: 'Targeted cold call outreach prospecting entries.', 
     icon: Phone, 
     color: 'text-orange-600', 
@@ -189,7 +179,6 @@ const LEAD_SOURCES_CONFIG: Record<string, {
     name: 'Third Party Sources', 
     port: 'Webhook Port #1089', 
     endpoint: 'https://api.amuwa.com/v1/webhooks/whatsbox/third_party_sources',
-    secret: 'whsec_3rdparty_0059687321',
     desc: 'External aggregator webhooks and partner API feeds.', 
     icon: Building2, 
     color: 'text-rose-600', 
@@ -682,15 +671,8 @@ export const WhatsboxPanel: React.FC<WhatsboxPanelProps> = ({
                       <label className="text-[10px] font-mono text-slate-400 uppercase font-bold block mb-1">
                         Webhook Secret Signature Token
                       </label>
-                      <div className="flex items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-800">
-                        <span className="truncate flex-1 font-semibold">{activeSourceConfig.secret}</span>
-                        <button
-                          onClick={() => handleCopyText(activeSourceConfig.secret, 'token')}
-                          className="p-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors"
-                          title="Copy Secret Token"
-                        >
-                          {copiedKey === 'token' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                        </button>
+                      <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-600">
+                        Kept on the server (WEBHOOK_SECRET) and never shown here. Ask your administrator for the value to put in the sender.
                       </div>
                     </div>
 

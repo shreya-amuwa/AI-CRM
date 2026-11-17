@@ -26,6 +26,7 @@ import {
   employeeCasesController as employeeCases,
   meetingsController as meetings,
   leadWhatsAppController as leadWhatsApp,
+  leadWebhookController as leadWebhook,
   workReportsController as workReports,
   hrReviewsController as hrReviews,
   reportAnalyticsController as reportAnalytics,
@@ -414,6 +415,8 @@ export const routes: RouteDef[] = [
   // a lead's message and "Send again" for anyone who can open the lead (the database checks both)
   { method: 'GET', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.settings },
   { method: 'POST', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.setSettings, options: S },
+  // Wabastore lead webhooks: the server adds the provider credential (docs/SECURITY.md); default per-user quota covers the 30 s poll.
+  { method: 'POST', path: '/leads/webhook-fetch', handler: leadWebhook.fetch },
   { method: 'GET', path: '/leads/:id/whatsapp', handler: leadWhatsApp.history },
   { method: 'POST', path: '/leads/:id/whatsapp/retry', handler: leadWhatsApp.resend, options: S },
   { method: 'GET', path: '/meetings', handler: meetings.list },

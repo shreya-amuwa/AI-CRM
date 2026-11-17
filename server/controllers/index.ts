@@ -159,6 +159,10 @@ export const chatController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+export const leadWebhookController = {
+  fetch: (async ctx => ok(await svc(ctx).leadWebhook.fetchSource(ctx.req.body))) as Handler
+};
+
 export const leadWhatsAppController = {
   settings: (async ctx => ok(await svc(ctx).leadWhatsApp.settings())) as Handler,
   setSettings: (async ctx => ok(await svc(ctx).leadWhatsApp.setSettings(ctx.req.body))) as Handler,

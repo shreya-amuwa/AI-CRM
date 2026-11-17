@@ -3158,3 +3158,19 @@ export const aiStudioReportsQuerySchema = z
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// Lead webhook pull (server adds the provider credential; the browser never holds it)
+// ---------------------------------------------------------------------------
+export const LEAD_WEBHOOK_SOURCES = ['whatsapp', 'meta', 'telecaller', 'bizdev', 'aicalling', 'rcs'] as const;
+
+export const leadWebhookFetchSchema = z
+  .object({
+    sourceId: z.enum(LEAD_WEBHOOK_SOURCES),
+    url: z.string().trim().url('Enter a valid webhook address.').max(2048),
+    method: z.enum(['GET', 'POST']).default('GET'),
+    /** Only for a POST (the "send a test lead" action); a small JSON object. */
+    body: z.record(z.unknown()).optional()
+  })
+  .strict()
+  .refine(v => v.method === 'POST' || v.body === undefined, { message: 'A GET request has no body.', path: ['body'] });

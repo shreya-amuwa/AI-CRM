@@ -4,6 +4,7 @@
  */
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
+import type { LeadWebhookFetchResult } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
@@ -1056,4 +1057,10 @@ export const leadWhatsAppApi = {
     api.post<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings', body),
   history: (customerId: string) => api.get<LeadWhatsAppMessage[]>(`/leads/${customerId}/whatsapp`),
   resend: (customerId: string) => api.post<LeadWhatsAppMessage>(`/leads/${customerId}/whatsapp/retry`, {})
+};
+
+/** Wabastore lead webhooks: the server adds the provider credential, so the browser never holds it. */
+export const leadWebhookApi = {
+  fetch: (body: { sourceId: string; url: string; method?: 'GET' | 'POST'; body?: Record<string, unknown> }) =>
+    api.post<LeadWebhookFetchResult>('/leads/webhook-fetch', body)
 };

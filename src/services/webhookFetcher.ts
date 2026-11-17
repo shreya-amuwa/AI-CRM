@@ -2,6 +2,12 @@ import { getSupabase } from './supabaseClient';
 import { extractCustomerDetailsFromWebhook } from '../context/LeadStoreContext';
 import { LeadSourceId, DepartmentId } from '../types/crm';
 import { proxyFetch } from '../lib/api/proxyFetch';
+import { leadWebhookApi } from '../lib/api/endpoints';
+
+/** The provider's own webhook host: the only place the server adds a source credential (server/leads/webhookSources.ts). */
+const isProviderWebhook = (url: string) => {
+  try { return new URL(url).hostname.toLowerCase() === 'webhooks.wabastore.com'; } catch { return false; }
+};
 
 export interface InboundedLead {
   name: string;
@@ -180,7 +186,10 @@ export async function fetchFromAnyWebhookUrl(
   urlInput: string,
   options?: {
     defaultSourceId?: LeadSourceId;
+    /** A token the person typed in (never a built-in one). */
     token?: string;
+    /** Read the provider's own webhook through the CRM server, which adds that source's credential (src/lib/api: leadWebhookApi). */
+    credentialSource?: LeadSourceId;
   }
 ): Promise<WebhookFetchResult> {
   const targetUrl = urlInput.trim();
@@ -292,6 +301,13 @@ export async function fetchFromAnyWebhookUrl(
   let parsedJson: any = null;
 
   try {
+    if (options?.credentialSource && isProviderWebhook(targetUrl)) {
+      // The server holds the credential; the answer is read exactly as a direct answer would be.
+      const r = await leadWebhookApi.fetch({ sourceId: options.credentialSource, url: targetUrl });
+      rawBodyText = r.body;
+      directRes = new Response([204, 205, 304].includes(r.status) ? null : r.body, { status: Math.min(Math.max(r.status, 200), 599) });
+      try { parsedJson = JSON.parse(rawBodyText); } catch { parsedJson = null; }
+    } else {
     const headers: Record<string, string> = {
       'Accept': 'application/json, text/plain, */*'
     };
@@ -322,6 +338,7 @@ export async function fetchFromAnyWebhookUrl(
       parsedJson = JSON.parse(rawBodyText);
     } catch {
       parsedJson = null;
+    }
     }
   } catch (directFetchErr: any) {
     // If direct fetch is blocked by CORS (or failed on browser)

@@ -107,7 +107,8 @@ export const WabastoreWebhookLiveBar: React.FC<WabastoreWebhookLiveBarProps> = (
     try {
       const result = await fetchFromAnyWebhookUrl(inputUrl, {
         defaultSourceId: activeSourceId,
-        token: authToken || undefined
+        token: authToken || undefined,
+        credentialSource: activeSourceId
       });
 
       if (!silent) setFetchResult(result);

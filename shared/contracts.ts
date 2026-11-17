@@ -6098,3 +6098,15 @@ export interface AiStudioOverview {
     projects: { id: string; name: string; status: AiStudioProjectStatus; total: number; completed: number; ongoing: number; progress: number; leads: string[] }[];
   };
 }
+
+// ---------------------------------------------------------------------------
+// Lead webhook pull
+// ---------------------------------------------------------------------------
+/** What the provider's webhook answered, passed on unchanged for the browser to read. */
+export interface LeadWebhookFetchResult {
+  status: number;
+  contentType: string;
+  body: string;
+  /** true when the server added this source's credential (it is set on the server and sent only to the provider's own host). */
+  credentialApplied: boolean;
+}

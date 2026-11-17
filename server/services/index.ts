@@ -16,6 +16,7 @@ import { StorageRepository } from '../repositories/StorageRepository.js';
 import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { MeetingService } from './MeetingService.js';
 import { LeadWhatsAppService } from './LeadWhatsAppService.js';
+import { LeadWebhookService } from './LeadWebhookService.js';
 import { LeadWhatsAppRepository } from '../repositories/LeadWhatsAppRepository.js';
 import { MeetingRepository } from '../repositories/MeetingRepository.js';
 import { BusinessReportService } from './BusinessReportService.js';
@@ -117,6 +118,7 @@ export function createServices(db: SupabaseClient) {
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     meetings: new MeetingService(new MeetingRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
+    leadWebhook: new LeadWebhookService(),
     workReports: new WorkReportService(new WorkReportRepository(db)),
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),

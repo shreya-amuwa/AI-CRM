@@ -33,8 +33,6 @@ interface WebhookSourceConfig {
   sourceId: LeadSourceId;
   port: string;
   endpoint: string;
-  secret: string;
-  apiKey?: string;
   desc: string;
   icon: React.ElementType;
   color: string;
@@ -54,7 +52,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'whatsapp',
     port: 'Webhook Port #1080',
     endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_wa_992817264',
     desc: 'Wabastore e-commerce catalog inquiries, WhatsApp cart checkouts & customer support bots.',
     icon: MessageSquare,
     color: 'text-emerald-600',
@@ -80,7 +77,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'meta',
     port: 'Webhook Port #1081',
     endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_meta_881726351',
     desc: 'Instagram & Facebook sponsored Click-to-WhatsApp store ads & lead forms.',
     icon: Target,
     color: 'text-blue-600',
@@ -105,7 +101,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'telecaller',
     port: 'Webhook Port #1082',
     endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_tele_772615409',
     desc: 'Inbound customer care calling logs, order tracking & merchant support desk.',
     icon: PhoneCall,
     color: 'text-amber-600',
@@ -130,7 +125,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'bizdev',
     port: 'Webhook Port #1083',
     endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_bdm_661524398',
     desc: 'B2B enterprise merchant onboarding & brand partnerships logged by field BDMs.',
     icon: UserPlus,
     color: 'text-purple-600',
@@ -154,8 +148,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'aicalling',
     port: 'Webhook Port #1084',
     endpoint: 'https://webhooks.wabastore.com/webhook/6a7d9f4e13d7ab0d552aaa9e',
-    secret: 'da5fe28f-9924-4d10-bac3-1b2446f1fe56',
-    apiKey: 'da5fe28f-9924-4d10-bac3-1b2446f1fe56',
     desc: 'Conversational AI voice bot for abandoned cart recovery & COD order verification.',
     icon: RobotIcon,
     color: 'text-cyan-600',
@@ -185,7 +177,6 @@ const WABASTORE_LEAD_SOURCES_CONFIG: Record<string, WebhookSourceConfig> = {
     sourceId: 'rcs',
     port: 'Webhook Port #1085',
     endpoint: 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57',
-    secret: 'whsec_waba_rcs_449302176',
     desc: 'Google RCS verified merchant catalogs, rich action cards & instant buy buttons.',
     icon: RobotIcon,
     color: 'text-pink-600',
@@ -248,7 +239,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
   // Remote Database API & Google Apps Script WebApp State
   const [remoteApiUrl, setRemoteApiUrl] = useState('https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec');
-  const [remoteApiToken, setRemoteApiToken] = useState('da5fe28f-9924-4d10-bac3-1b2446f1fe56');
+  const [remoteApiToken, setRemoteApiToken] = useState('');
   const [isFetchingRemoteApi, setIsFetchingRemoteApi] = useState(false);
   const [isDevDocsExpanded, setIsDevDocsExpanded] = useState(false);
   const [subDeptSearchQuery, setSubDeptSearchQuery] = useState('');
@@ -290,12 +281,14 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     const targetUrl = activeCfg?.endpoint || customWebhookUrl || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
     const channelName = activeCfg?.name || 'WhatsApp API';
     const channelSourceId = (activeCfg?.sourceId || 'whatsapp') as LeadSourceId;
-    const token = activeCfg?.apiKey || activeCfg?.secret || (channelSourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : (remoteApiToken || undefined));
+    // A token typed into the form is sent as typed; the provider's own credential is added by the server (see server/leads/webhookSources.ts).
+    const token = remoteApiToken || undefined;
 
     try {
       const result = await fetchFromAnyWebhookUrl(targetUrl, {
         defaultSourceId: channelSourceId,
-        token
+        token,
+        credentialSource: channelSourceId
       });
 
       if (result.mode === 'leads_array' && Array.isArray(result.leads) && result.leads.length > 0) {
@@ -475,7 +468,8 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     try {
       const result = await fetchFromAnyWebhookUrl(targetUrl, {
         defaultSourceId: channelSourceId,
-        token: token || undefined
+        token: token || undefined,
+        credentialSource: channelSourceId
       });
 
       if (result.mode === 'leads_array' && Array.isArray(result.leads) && result.leads.length > 0) {
@@ -840,8 +834,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
     try {
       const sample = JSON.parse(cfg.sampleJson);
-      const token = cfg.apiKey || cfg.secret || (cfg.sourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : undefined);
-      
+
       // 1. Post to the live remote webhook URL via our proxy
       try {
         await fetch('/api/wabastore-remote/fetch', {
@@ -850,8 +843,8 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
           body: JSON.stringify({
             url: targetEndpoint,
             method: 'POST',
-            token,
-            bodyData: sample
+            sourceId: cfg.sourceId,
+            body: sample
           })
         });
       } catch (e) {}
@@ -892,7 +885,6 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
     const cfg = WABASTORE_LEAD_SOURCES_CONFIG[activeTab];
     const channelName = cfg?.name || 'WhatsApp API';
     const targetEndpoint = cfg?.endpoint || customWebhookUrl || 'https://webhooks.wabastore.com/webhook/6aba0b2fc277c1989c61cd57';
-    const token = cfg?.apiKey || cfg?.secret || (cfg?.sourceId === 'aicalling' ? 'da5fe28f-9924-4d10-bac3-1b2446f1fe56' : undefined);
 
     try {
       // Connect directly to user's Wabastore Webhook endpoint
@@ -901,7 +893,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: targetEndpoint,
-          token
+          sourceId: cfg?.sourceId
         })
       });
 

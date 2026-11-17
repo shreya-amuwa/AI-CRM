@@ -283,11 +283,13 @@ function liveWebhookPlugin(): Plugin {
                     'Content-Length': String(Buffer.byteLength(body))
                   };
 
-                  if (isAiCall) {
-                    forwardHeaders['Authorization'] = 'Bearer da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['x-api-key'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['apikey'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
-                    forwardHeaders['X-Webhook-Secret'] = 'da5fe28f-9924-4d10-bac3-1b2446f1fe56';
+                  // Dev only: the credential comes from this machine's env (WABASTORE_SOURCE_TOKEN_AICALLING), never from the source code.
+                  const aiCallToken = process.env.WABASTORE_SOURCE_TOKEN_AICALLING;
+                  if (isAiCall && aiCallToken) {
+                    forwardHeaders['Authorization'] = `Bearer ${aiCallToken}`;
+                    forwardHeaders['x-api-key'] = aiCallToken;
+                    forwardHeaders['apikey'] = aiCallToken;
+                    forwardHeaders['X-Webhook-Secret'] = aiCallToken;
                   }
 
                   const forwardReq = https.request(targetForwardUrl, {
@@ -466,7 +468,10 @@ function liveWebhookPlugin(): Plugin {
             try {
               const reqData = body ? JSON.parse(body) : {};
               const targetUrlStr = reqData.url || 'https://script.google.com/macros/s/AKfycbyeCTmyncacqe88DEx83oGOqq3ltFfKuR_gTT_9viKr9FxrmpeU0Jw3gjLsJuKCnODSDQ/exec';
-              handleProxyFetch(targetUrlStr, reqData.token, reqData.method || 'GET', reqData.body);
+              // Dev only: the provider credential comes from this machine's env (WABASTORE_SOURCE_TOKEN_<SOURCE>), never from the browser.
+              const sourceKey = typeof reqData.sourceId === 'string' && /^[a-z]{2,20}$/.test(reqData.sourceId) ? reqData.sourceId.toUpperCase() : '';
+              const devToken = reqData.token || (sourceKey && new URL(targetUrlStr).hostname === 'webhooks.wabastore.com' ? process.env[`WABASTORE_SOURCE_TOKEN_${sourceKey}`] : undefined);
+              handleProxyFetch(targetUrlStr, devToken, reqData.method || 'GET', reqData.body);
             } catch (err: any) {
               res.statusCode = 400;
               res.setHeader('Content-Type', 'application/json');
@@ -505,7 +510,7 @@ export default defineConfig(({ mode }) => {
   // Expose server-only variables (SUPABASE_SERVICE_ROLE_KEY, …) to the dev API
   // middleware. Only VITE_-prefixed variables ever reach the browser bundle.
   const env = loadEnv(mode, process.cwd(), '');
-  for (const key of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'API_ALLOWED_ORIGINS']) {
+  for (const key of [...Object.keys(env).filter(k => k.startsWith('WABASTORE_SOURCE_TOKEN_')), 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'API_ALLOWED_ORIGINS']) {
     if (env[key] && !process.env[key]) process.env[key] = env[key];
   }
   // Readable error reports: with SENTRY_AUTH_TOKEN set at build time (Vercel / Cloudflare build settings, never committed) the build

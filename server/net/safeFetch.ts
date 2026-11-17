@@ -100,6 +100,17 @@ export interface SafeFetchOptions {
   timeoutMs?: number;
   maxBytes?: number;
   maxRedirects?: number;
+  /** POST with a JSON body, or GET (default). */
+  method?: 'GET' | 'POST';
+  /** Extra request headers (credentials). A request that carries them never follows a redirect, so they cannot reach another host. */
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+interface RequestInit_ {
+  method: 'GET' | 'POST';
+  headers: Record<string, string>;
+  body?: string;
 }
 
 /**
@@ -112,9 +123,15 @@ const onWorkers = typeof navigator !== 'undefined' && navigator.userAgent === 'C
 export async function safeGet(raw: string, opts: SafeFetchOptions = {}): Promise<SafeResponse> {
   const timeoutMs = opts.timeoutMs ?? 10_000;
   const maxBytes = opts.maxBytes ?? 2_000_000;
+  const init: RequestInit_ = {
+    method: opts.method ?? 'GET',
+    headers: { Accept: 'application/json, text/plain, text/csv, */*', 'User-Agent': 'AI-CRM Fetcher', ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...opts.headers },
+    body: opts.body
+  };
+  const carriesCredentials = !!opts.headers && Object.keys(opts.headers).length > 0;
   let url = assertPublicUrl(raw);
-  for (let hop = 0; hop <= (opts.maxRedirects ?? 3); hop++) {
-    const res = await (onWorkers ? onceWithFetch : once)(url, timeoutMs, maxBytes);
+  for (let hop = 0; hop <= (carriesCredentials ? 0 : opts.maxRedirects ?? 3); hop++) {
+    const res = await (onWorkers ? onceWithFetch : once)(url, timeoutMs, maxBytes, init);
     if (res.status >= 300 && res.status < 400 && res.location) {
       url = assertPublicUrl(new URL(res.location, url).toString());
       continue;
@@ -124,16 +141,16 @@ export async function safeGet(raw: string, opts: SafeFetchOptions = {}): Promise
   throw new BlockedTargetError('Too many redirects.');
 }
 
-function once(url: URL, timeoutMs: number, maxBytes: number): Promise<{ status: number; contentType: string; body: Buffer; location?: string }> {
+function once(url: URL, timeoutMs: number, maxBytes: number, init: RequestInit_): Promise<{ status: number; contentType: string; body: Buffer; location?: string }> {
   return new Promise((resolve, reject) => {
     const lib = url.protocol === 'https:' ? https : http;
     const req = lib.request(
       url,
       {
-        method: 'GET',
+        method: init.method,
         lookup: safeLookup,
         timeout: timeoutMs,
-        headers: { Accept: 'application/json, text/plain, text/csv, */*', 'User-Agent': 'AI-CRM Fetcher' }
+        headers: init.headers
       },
       res => {
         const chunks: Buffer[] = [];
@@ -159,17 +176,18 @@ function once(url: URL, timeoutMs: number, maxBytes: number): Promise<{ status: 
     );
     req.on('timeout', () => req.destroy(new Error('The address took too long to answer.')));
     req.on('error', reject);
-    req.end();
+    req.end(init.body);
   });
 }
 
-async function onceWithFetch(url: URL, timeoutMs: number, maxBytes: number): Promise<{ status: number; contentType: string; body: Buffer; location?: string }> {
+async function onceWithFetch(url: URL, timeoutMs: number, maxBytes: number, init: RequestInit_): Promise<{ status: number; contentType: string; body: Buffer; location?: string }> {
   let res: Response;
   try {
     res = await fetch(url, {
-      method: 'GET',
+      method: init.method,
       redirect: 'manual',
-      headers: { Accept: 'application/json, text/plain, text/csv, */*', 'User-Agent': 'AI-CRM Fetcher' },
+      headers: init.headers,
+      body: init.body,
       signal: AbortSignal.timeout(timeoutMs)
     });
   } catch (err) {
