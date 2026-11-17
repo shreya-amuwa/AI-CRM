@@ -84,13 +84,17 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
           </Field>
         ))}
         <p className="text-xs text-slate-500">
-          {ctx.data?.hasReviewer
-            ? `When you submit, this report goes to ${ctx.data.reviewer} for approval${ctx.data.role === 'MEMBER' ? ', then to the Department Head' : ''}.`
-            : ctx.data?.role === 'MEMBER' ? 'You are not assigned to a Team Lead yet, so you cannot submit. Ask your Department Head. You can still save a draft.' : 'There is no Department Head to review this report yet.'}
+          {!ctx.data?.hasReviewer
+            ? 'There is nobody to review this report yet. You can save a draft.'
+            : ctx.data.route === 'DIRECT' && ctx.data.role === 'MEMBER'
+            ? `You have no Team Lead assigned yet, so this report goes straight to ${ctx.data.reviewer} for review and approval. Once a Team Lead is assigned, new reports go to them first.`
+            : ctx.data.route === 'DIRECT'
+            ? `When you submit, this report goes to ${ctx.data.reviewer} for review and approval.`
+            : `When you submit, this report goes to ${ctx.data.reviewer} for approval, then for the final approval.`}
         </p>
         {error && <ErrorBanner message={error} />}
         <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primaryBtn} disabled={!!saving || (ctx.data?.role === 'MEMBER' && !ctx.data.hasReviewer)}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
+          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
           <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
           {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
         </div>

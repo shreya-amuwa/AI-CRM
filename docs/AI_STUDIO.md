@@ -1,7 +1,7 @@
 # AI Studio department
 
 A project-based department inside the existing CRM: **AI CRM, AI Website, AIQR** and any project the Department Head adds. Migrations
-`supabase/migrations/20270105000100_ai_studio.sql` and `20270106000100_ai_studio_superadmin_head.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
+`supabase/migrations/20270105000100_ai_studio.sql`, `20270106000100_ai_studio_superadmin_head.sql` and `20270107000100_ai_studio_members_without_team_lead.sql` and `20270108000100_ai_studio_dashboard_routing.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
 Tests: `supabase/tests/ai_studio_test.sql` (database, permission-denied cases included), the *AI Studio* block of `api_integration.test.ts`,
 `supabase/tests/ai_studio.test.ts` (routing, form rules) and the browser test `supabase/tests/e2e/run-ai-studio.sh` (the Super Admin, two Team Leads and two Team Members in real browsers: the unchanged Super Admin dashboard, the workspace, creating a Team Lead and a Team Member through the forms, tasks, the Team Member -> Team Lead -> Super Admin approval, phone and tablet widths).
 
@@ -24,6 +24,36 @@ Team Leads, Team Members, Tasks, Daily Reports, Chat, Notification Center. *Add 
 
 Employees are created through the existing flow (`POST /users`); a Team Lead adds their own Team Members. A Team Member belongs to **one** Team Lead through the existing
 `profiles.manager_id` (`private.direct_lead_of`); the Super Admin names or changes it with `ai_studio_set_lead` (wrapping the existing `assign_direct_lead`; the new lead must be on the member's projects).
+
+## Which dashboard an employee opens (routing)
+
+The dashboard follows the employee's **department** (and then the role), never the role name alone: a Sales, a Support and an AI Studio Team Lead are all "Team Lead" and open three different dashboards.
+
+* **Client** (`toAuthUser` / `isAiStudioStaff` in `src/lib/auth/roleMapping.ts`, navigation only): AI Studio is checked first, before the Sales / Support Team Lead rules. A person is AI Studio staff when their department is AI Studio (slug
+  `ai-studio`, else the name "AI Studio"); only when a profile arrives without any department does the dashboard value the database computed from that same department decide. The team's division (Sales / Support) never matters.
+  AI Studio Team Leads and Team Members share ONE component (`AiStudioDashboard`) and ONE menu: Attendance, Meeting Request, Overview, Projects (Assigned Tasks / Ongoing Tasks), Daily Report, then Raise an Issue, Chat, Notification Center
+  (Leave and the bell are in the top bar). The Team Lead only gets more inside Daily Report (*My Daily Reports* and *Team Member Reports* tabs) and the team's tasks inside Projects. Route guard: each Team Lead is sent back to their own
+  address (`/team-lead/...`, `/support-lead/...`, `/ai-studio/...`).
+* **Database** (`profiles.default_dashboard`, migration 20270108000100): `private.ai_studio_department()` finds the department by slug, else by name; the trigger gives `ai-studio-head` / `-lead` / `-member` from that department before any Sales /
+  Support rule, and the migration recomputes the value for everybody already in AI Studio.
+* Tests: `ai_studio.test.ts` (profile shapes, route guard), the department checks at the top of `ai_studio_test.sql`, and the browser test (real Sales, Support and AI Studio Team Lead accounts; desktop and phone sidebars).
+
+## Team Members without a Team Lead (migration 20270107000100)
+
+A Team Member can be created, and given a project, **before any Team Lead exists**; the Team Lead is assigned later by the Super Admin.
+
+* **Optional and independent.** *Reporting Team Lead (optional)* on the Add Team Member form; the project and the Team Lead do not depend on each other (every non-archived project is offered; a member can be on a project their
+  Team Lead is not on). A project is still chosen for a new member. A Team Lead adding their own member can give only the projects they are on themselves.
+* **No hidden assignment.** The CRM's shared rule "a member of a team with exactly one Team Lead belongs to that lead" is switched off for AI Studio only (`private.direct_lead_of` and the `profiles_manager_guard` trigger),
+  so the first Team Lead created does not silently take every earlier member. Members that relied on that shortcut keep their lead (written into `manager_id` first). Other departments are unchanged.
+* **Team Members page (Super Admin workspace).** All Team Members with *Employee, Project, Created, Status (Not Assigned / Assigned), Assigned Team Lead*; filter *All / Not Assigned to Team Lead / Assigned to Team Lead*; select one
+  or many (or all listed) and **Assign Team Lead** (a list of active AI Studio Team Leads). `POST /ai-studio/people/assign-lead` -> `ai_studio_assign_lead(members[], lead)`: Super Admin / Department Head only, all or nothing, audited,
+  the Team Lead and the members are notified; assigned members appear in the Team Lead's dashboard (people, team tasks, team reports). Unassigned members stay visible with a banner counting them.
+* **Reports without a Team Lead.** The member logs in, sees their projects and tasks (the Super Admin can give one directly) and submits daily reports; the form says "straight to <Super Admin>". The report goes
+  `PENDING_DH_APPROVAL` (the history says why) and only the Super Admin sees and decides it.
+* **Assigned later.** New reports follow Team Member -> Team Lead -> Super Admin. A report already submitted keeps its route, status and history: the new Team Lead does not see it and it still waits for the Super Admin;
+  approved reports are untouched. A returned or draft report follows the route in force when it is submitted again.
+* **Leave and other shared features:** an unassigned member's leave uses the existing rule "the Super Admin decides a step nobody else can".
 
 ## Data (all new tables are `ai_studio_*`; RLS on, no grants to `anon` / `authenticated`, all access through `security definer` functions)
 
@@ -52,6 +82,7 @@ Team Member task functions of the other departments.
   (`SUBMITTED` is recorded as the first history step; the report is then immediately *Pending ... Approval*).
 
   ```
+  Team Member (no Team Lead yet) submits -> Pending Department Head Approval -> (Super Admin approves) -> Approved
   Team Member submits -> Pending Team Lead Approval -> (Team Lead approves) -> Pending Department Head Approval -> (Super Admin approves) -> Approved
   Team Lead submits   -> Pending Department Head Approval -> (Super Admin approves) -> Approved   (no stage after the Super Admin)
   A return (remarks required) goes back to the author; resubmitting repeats the chain from the start and keeps every earlier step in the history.

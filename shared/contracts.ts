@@ -5977,6 +5977,9 @@ export interface AiStudioPerson {
   status: AccountStatus;
   leadId: string | null;
   leadName: string | null;
+  /** When the account was created, and the joining date from the employee details (when recorded). */
+  createdAt: string;
+  joiningDate: string | null;
   projects: { id: string; name: string }[];
   openTasks: number;
   completedTasks: number;
@@ -6062,6 +6065,8 @@ export interface AiStudioReportContext {
   /** The Team Lead (a Team Member's report) or the Department Head(s) (a Team Lead's report) who review the report. */
   reviewer: string | null;
   hasReviewer: boolean;
+  /** TEAM_LEAD: Team Member -> Team Lead -> Department Head. DIRECT: straight to the Department Head (a Team Lead's own report, or a Team Member with no Team Lead yet). */
+  route: 'TEAM_LEAD' | 'DIRECT';
   projects: { id: string; name: string }[];
   tasks: { id: string; projectId: string; title: string; status: AiStudioTaskStatus }[];
 }

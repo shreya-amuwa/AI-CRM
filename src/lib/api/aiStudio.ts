@@ -22,6 +22,7 @@ export interface AiStudioTasksFilter { scope: 'mine' | 'ongoing' | 'team'; proje
 export const aiStudioApi = {
   overview: () => api.get<AiStudioOverview>('/ai-studio/overview'),
   people: () => api.get<AiStudioPerson[]>('/ai-studio/people'),
+  assignLead: (memberIds: string[], leadId: string) => api.post<{ leadId: string; assigned: number; alreadyAssigned: number }>('/ai-studio/people/assign-lead', { memberIds, leadId }),
   setLead: (memberId: string, leadId: string) => api.post<{ memberId: string; leadId: string }>(`/ai-studio/people/${memberId}/lead`, { leadId }),
   projects: () => api.get<AiStudioProject[]>('/ai-studio/projects'),
   createProject: (p: { name: string; description?: string }) => api.post<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt'>>('/ai-studio/projects', p),

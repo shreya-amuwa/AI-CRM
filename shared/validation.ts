@@ -3074,6 +3074,8 @@ export const aiStudioProjectSchema = z
   .strict();
 export type AiStudioProjectInput = z.infer<typeof aiStudioProjectSchema>;
 
+/** One or many Team Members to one Team Lead (the Super Admin / Department Head). */
+export const aiStudioAssignLeadSchema = z.object({ memberIds: z.array(uuidSchema).min(1, 'Select at least one Team Member.').max(200, 'Select at most 200 Team Members at a time.'), leadId: uuidSchema }).strict();
 export const aiStudioSetLeadSchema = z.object({ leadId: uuidSchema }).strict();
 export const aiStudioProjectAssignSchema = z.object({ profileId: uuidSchema, assign: z.boolean().default(true) }).strict();
 

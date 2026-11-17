@@ -41,6 +41,8 @@ export class AiStudioRepository {
     }
     unwrap({ data: null, error });
   }
+  /** Assigns Team Members (one or many) to an active AI Studio Team Lead: all or nothing. */
+  assignLead(memberIds: string[], leadId: string) { return this.rpc<{ leadId: string; assigned: number; alreadyAssigned: number }>('ai_studio_assign_lead', { p_members: memberIds, p_lead: leadId }); }
   /** Changes the Team Lead of a Team Member (Department Head / Super Admin); the new lead must be on the member's projects. */
   setLead(memberId: string, leadId: string) { return this.rpc<{ memberId: string; leadId: string }>('ai_studio_set_lead', { p_member: memberId, p_lead: leadId }); }
   /** Names the Team Lead of a Team Member (Department Head / Super Admin): the existing function every department uses. */

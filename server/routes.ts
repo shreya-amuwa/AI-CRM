@@ -345,6 +345,7 @@ export const routes: RouteDef[] = [
   // AI Studio: projects, tasks and daily reports (Team Member -> Team Lead -> Department Head); the database decides who may do what
   { method: 'GET', path: '/ai-studio/overview', handler: aiStudio.overview },
   { method: 'GET', path: '/ai-studio/people', handler: aiStudio.people },
+  { method: 'POST', path: '/ai-studio/people/assign-lead', handler: aiStudio.assignLead, options: S },
   { method: 'POST', path: '/ai-studio/people/:id/lead', handler: aiStudio.setLead, options: S },
   { method: 'GET', path: '/ai-studio/projects', handler: aiStudio.projects },
   { method: 'POST', path: '/ai-studio/projects', handler: aiStudio.createProject, options: S },

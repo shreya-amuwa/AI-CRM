@@ -824,6 +824,7 @@ export const reportAnalyticsController = {
 export const aiStudioController = {
   overview: (async ctx => ok(await svc(ctx).aiStudio.overview())) as Handler,
   people: (async ctx => ok(await svc(ctx).aiStudio.people())) as Handler,
+  assignLead: (async ctx => ok(await svc(ctx).aiStudio.assignLead(ctx.req.body))) as Handler,
   setLead: (async ctx => ok(await svc(ctx).aiStudio.setLead(ctx.params.id, ctx.req.body))) as Handler,
   projects: (async ctx => ok(await svc(ctx).aiStudio.projects())) as Handler,
   createProject: (async ctx => ok(await svc(ctx).aiStudio.createProject(ctx.req.body), 201)) as Handler,

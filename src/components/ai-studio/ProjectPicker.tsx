@@ -13,7 +13,8 @@ const field = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text
  * The AI Studio part of the Add Team Member form (Team Lead and Team Member of the AI Studio department only).
  *   - Select Project: the projects come from the database (never a fixed list). Pick one or more; each is kept as a removable chip.
  *   - Add Project (Department Head and Super Admin): opens a small form (name, optional description); the project is saved, then it appears in the list and is selected.
- *   - A new Team Member also gets a Team Lead (when the Department Head or the Super Admin adds them); only that lead's projects are offered.
+ *   - A new Team Member can also be given a Reporting Team Lead (when the Department Head or the Super Admin adds them). It is optional and independent of the project:
+ *     a Team Member can be created before any Team Lead exists, and the Team Lead is assigned later from the Team Members page.
  * The database checks every choice again before the account is made.
  */
 export const ProjectPicker: React.FC<{
@@ -49,17 +50,11 @@ export const ProjectPicker: React.FC<{
   }, [needsLead]);
   useEffect(() => { void load(); }, [load]);
 
-  // a Team Member can only join projects their Team Lead is on; a Team Lead sees only their own projects already
+  // every project that is not archived (a Team Lead sees only their own already); the Team Lead does not limit the choice
   const offered = useMemo(
-    () => projects.filter(p => p.status !== 'ARCHIVED' && !projectIds.includes(p.id) && (!needsLead || (leadId && p.leads.some(l => l.id === leadId)))),
-    [projects, projectIds, needsLead, leadId]
+    () => projects.filter(p => p.status !== 'ARCHIVED' && !projectIds.includes(p.id)),
+    [projects, projectIds]
   );
-  // choosing another Team Lead drops the projects that lead is not on
-  useEffect(() => {
-    if (!needsLead || projects.length === 0) return;
-    const keep = projectIds.filter(id => projects.find(p => p.id === id)?.leads.some(l => l.id === leadId));
-    if (keep.length !== projectIds.length) onProjects(keep);
-  }, [leadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (value: string) => {
     if (value === ADD) { setAdding(true); return; }
@@ -75,7 +70,7 @@ export const ProjectPicker: React.FC<{
       notifyAiStudioChanged();
       await load();
       // the new project is part of the list now and is selected for this person
-      if (role === 'TEAM_HEAD' || !needsLead) onProjects([...projectIds, created.id]);
+      onProjects([...projectIds, created.id]);
       setAdding(false);
       setName('');
       setDescription('');
@@ -89,18 +84,20 @@ export const ProjectPicker: React.FC<{
       {error && <p role="alert" className="text-xs text-rose-700">{error} <button type="button" className="underline font-semibold" onClick={() => void load()}>Retry</button></p>}
       {needsLead && (
         <label className="block text-xs font-semibold text-slate-700">
-          Team Lead *
+          Reporting Team Lead (optional)
           <select className={`${inputClass} mt-1 cursor-pointer`} value={leadId} onChange={e => onLead(e.target.value)} disabled={loading}>
-            <option value="">Select Team Lead…</option>
+            <option value="">No Team Lead yet</option>
             {leads.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
           </select>
-          {!loading && leads.length === 0 && <span className="block mt-1 text-[11px] text-amber-700 font-normal">There is no Team Lead yet. Add a Team Lead first.</span>}
+          <span className="block mt-1 text-[11px] text-slate-500 font-normal">
+            {!loading && leads.length === 0 ? 'There is no Team Lead yet. You can create the Team Member now and assign a Team Lead later from Team Members.' : 'Leave it empty to assign a Team Lead later. Until then the Team Member\'s daily reports go straight to the Super Admin.'}
+          </span>
         </label>
       )}
       <label className="block text-xs font-semibold text-slate-700">
         Select Project *
-        <select className={`${inputClass} mt-1 cursor-pointer`} value="" onChange={e => choose(e.target.value)} disabled={loading || (needsLead && !leadId)}>
-          <option value="">{loading ? 'Loading projects…' : needsLead && !leadId ? 'Choose the Team Lead first' : offered.length || canAdd ? 'Select a project…' : 'No more projects to add'}</option>
+        <select className={`${inputClass} mt-1 cursor-pointer`} value="" onChange={e => choose(e.target.value)} disabled={loading}>
+          <option value="">{loading ? 'Loading projects…' : offered.length || canAdd ? 'Select a project…' : 'No more projects to add'}</option>
           {offered.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           {canAdd && <option value={ADD}>Add Project</option>}
         </select>
@@ -133,7 +130,7 @@ export const ProjectPicker: React.FC<{
         </div>
       )}
       <p className="text-[11px] text-slate-500">
-        {role === 'TEAM_HEAD' ? 'A Team Lead can work on one or more projects.' : 'A Team Member works on projects their Team Lead is on, and sees only their own projects and tasks.'}
+        {role === 'TEAM_HEAD' ? 'A Team Lead can work on one or more projects.' : 'A Team Member can work on one or more projects, with or without a Team Lead, and sees only their own projects and tasks.'}
       </p>
     </fieldset>
   );
