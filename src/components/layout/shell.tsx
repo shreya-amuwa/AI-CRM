@@ -336,6 +336,8 @@ interface DashboardShellProps {
   topActions?: React.ReactNode;
   /** Extra sidebar footer rows. */
   footerExtra?: React.ReactNode;
+  /** The menu name of the shared Meetings page (default "Meetings"). */
+  meetingsLabel?: string;
   /** Let the page use the full width (wide tables); default keeps the calm 1240px column. */
   wide?: boolean;
   /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
@@ -355,6 +357,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   topLeft,
   topActions,
   footerExtra,
+  meetingsLabel = 'Meetings',
   wide = false,
   flush = false,
   children
@@ -379,7 +382,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // Attendance is the first entry of every dashboard's menu (marking the day is the first thing an employee does): it joins the
   // unlabelled top section (the dashboard entry), or sits in its own section above a menu that starts with a labelled one
   const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
-  const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: 'Meetings', icon: CalendarDays };
+  const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
     ? [{ ...groups[0], items: [attendanceItem, meetingsItem, ...groups[0].items] }, ...groups.slice(1)]
     : [{ items: [attendanceItem, meetingsItem] }, ...groups];

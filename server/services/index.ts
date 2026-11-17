@@ -48,6 +48,8 @@ import { EmployeeCaseService } from './EmployeeCaseService.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
 import { WorkReportService } from './WorkReportService.js';
+import { AiDesignStudioRepository } from '../repositories/AiDesignStudioRepository.js';
+import { AiDesignStudioService } from './AiDesignStudioService.js';
 import { HrReviewRepository } from '../repositories/HrReviewRepository.js';
 import { HrReviewService } from './HrReviewService.js';
 import { ReportAnalyticsRepository } from '../repositories/ReportAnalyticsRepository.js';
@@ -115,6 +117,7 @@ export function createServices(db: SupabaseClient) {
     meetings: new MeetingService(new MeetingRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),
+    aiDesignStudio: new AiDesignStudioService(new AiDesignStudioRepository(db)),
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),
     welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),

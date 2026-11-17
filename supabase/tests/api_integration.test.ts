@@ -10704,6 +10704,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   mock.close();
   for (const k of ['BOLIFY_API_KEY', 'BOLIFY_API_URL', 'BOLIFY_TIMEOUT_MS', 'AUTOMATION_TEST_RECIPIENTS', 'BOLIFY_CALLBACK_SECRET', 'AUTOMATION_MODE_AI_CALL']) delete process.env[k];
   await db.query(`delete from public.subscription_reminders where customer_id = $1`, [cust]);
+}
+
 // 20270104000200: the lead welcome WhatsApp ("our services", once when a lead first reaches a sales person)
 {
   const modeBefore = process.env.AUTOMATION_MODE_LEAD_WHATSAPP;
@@ -10733,6 +10735,129 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(w.status === 200 && w.json.data.recent.some((m: any) => m.customerId === welcomeLead), 'lead WhatsApp: the settings list the latest messages', w);
   await api('sa', 'POST', '/sales/lead-whatsapp/settings', { enabled: false, templateName: null, templateLanguage: 'en', templateApproved: false, variables: ['LEAD_NAME'] });
   if (modeBefore === undefined) delete process.env.AUTOMATION_MODE_LEAD_WHATSAPP; else process.env.AUTOMATION_MODE_LEAD_WHATSAPP = modeBefore;
+}
+
+// --- AI Design Studio: its own department; Department Head -> Team Lead -> Team Member through the real routes ---
+{
+  const adsDept = (await db.query(`select id from public.departments where slug = 'ai-design-studio'`)).rows[0].id as string;
+  const adsTeam = (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [adsDept])).rows[0].id as string;
+  const other = (await db.query(`insert into public.departments (slug, name) values ('ads-api-other', 'ADS API Other') returning id`)).rows[0].id as string;
+  const otherTeam = (await db.query(`insert into public.teams (department_id, name, division) values ($1, 'General', 'GENERAL') returning id`, [other])).rows[0].id as string;
+  const mk = async (name: string, body: Record<string, unknown>) => {
+    const res = await api('sa', 'POST', '/users', { email: `ads.${name}@amuwa.com`, fullName: `ADS ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `AI Design Studio: ${name} account created`, res);
+    tokens.set(`ads_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  await mk('dh', { role: 'DEPARTMENT_HEAD', departmentId: adsDept });
+  // a Team Member is created BEFORE any Team Lead exists
+  const m0Id = await mk('m0', { role: 'TEAM_MEMBER', teamId: adsTeam });
+  const tl1Id = await mk('tl1', { role: 'TEAM_HEAD', teamId: adsTeam });
+  await mk('tl2', { role: 'TEAM_HEAD', teamId: adsTeam });
+  const m1Id = await mk('m1', { role: 'TEAM_MEMBER', teamId: adsTeam });
+  const m2Id = await mk('m2', { role: 'TEAM_MEMBER', teamId: adsTeam });
+  await mk('x', { role: 'TEAM_MEMBER', teamId: otherTeam });
+  // name each member's Team Lead (the Department Head does this in the Team Members screen)
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [tl1Id, m1Id]);
+  await db.query(`update public.profiles set manager_id = (select id from public.profiles where email = 'ads.tl2@amuwa.com') where id = $1`, [m2Id]);
+
+  r = await api(null, 'GET', '/ai-design-studio/context');
+  check(r.status === 401, 'AI Design Studio: sign-in is needed', r);
+  r = await api('sa', 'GET', '/ai-design-studio/context');
+  check(r.status === 403, 'AI Design Studio: the Super Admin has no workspace in it', r);
+  r = await api('ads_x', 'GET', '/ai-design-studio/clients');
+  check(r.status === 403, 'AI Design Studio: another department\'s employee is refused', r);
+  r = await api('ads_m0', 'GET', '/ai-design-studio/context');
+  check(r.status === 200 && r.json.data.unassigned === true && r.json.data.role === 'TEAM_MEMBER', 'AI Design Studio: a member created before any Team Lead works without one', r.json);
+  r = await api('ads_m1', 'GET', '/ai-design-studio/context');
+  check(r.status === 200 && r.json.data.unassigned === false && r.json.data.leadId === tl1Id, 'AI Design Studio: a member with a Team Lead sees them', r.json);
+
+  // ---- clients
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', {});
+  check(r.status === 422, 'AI Design Studio: a client needs a name', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', { clientName: 'Acme', createdBy: m2Id });
+  check(r.status === 422, 'AI Design Studio: a request that names the creator is refused', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', { clientName: 'Acme Foods', companyName: 'Acme Pvt Ltd', email: 'ravi@acme.com', designService: 'Packaging' });
+  check(r.status === 201 && r.json.data.createdBy === m1Id, 'AI Design Studio: a member adds a client', r);
+  const clientId = r.json.data.id as string;
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', { clientName: 'acme foods', companyName: 'ACME PVT LTD', email: 'ravi@acme.com' });
+  check(r.status === 409, 'AI Design Studio: the same client is not saved twice', r);
+  r = await api('ads_m2', 'GET', `/ai-design-studio/clients/${clientId}`);
+  check(r.status === 404, 'AI Design Studio: another Team Lead\'s member cannot open the client by id', r);
+  r = await api('ads_tl2', 'GET', '/ai-design-studio/clients');
+  check(r.status === 200 && r.json.data.length === 0, 'AI Design Studio: another Team Lead does not see it', r);
+  r = await api('ads_dh', 'GET', '/ai-design-studio/clients');
+  check(r.status === 200 && r.json.data.length === 1, 'AI Design Studio: the Department Head sees every client', r);
+
+  // ---- assignments: Department Head -> Team Lead -> Team Member
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Brand kit', assigneeId: m1Id });
+  check(r.status === 422, 'AI Design Studio: work for a member who has a Team Lead goes to the lead', r);
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Brand kit', assigneeId: tl1Id, assignedBy: m1Id });
+  check(r.status === 422, 'AI Design Studio: an assignment cannot name who assigns it', r);
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Brand kit', priority: 'HIGH', assigneeId: tl1Id });
+  check(r.status === 201 && r.json.data.assigneeId === tl1Id, 'AI Design Studio: the Department Head assigns work to a Team Lead', r);
+  const asgId = r.json.data.id as string;
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Poster', assigneeId: m0Id });
+  check(r.status === 201, 'AI Design Studio: and directly to a member who has no Team Lead', r);
+  r = await api('ads_tl2', 'GET', `/ai-design-studio/assignments/${asgId}`);
+  check(r.status === 404, 'AI Design Studio: another Team Lead cannot open it', r);
+  r = await api('ads_tl1', 'POST', '/ai-design-studio/assignments', { parentId: asgId, assigneeId: m2Id });
+  check(r.status === 422, 'AI Design Studio: a Team Lead cannot give work to another lead\'s member', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/assignments', { clientId, title: 'x', assigneeId: m2Id });
+  check(r.status === 403, 'AI Design Studio: a Team Member cannot assign work', r);
+  r = await api('ads_tl1', 'POST', '/ai-design-studio/assignments', { parentId: asgId, assigneeId: m1Id, instructions: 'Three logos' });
+  check(r.status === 201 && r.json.data.assigneeId === m1Id, 'AI Design Studio: the Team Lead assigns it to their own member', r);
+  const partId = r.json.data.id as string;
+  r = await api('ads_tl1', 'POST', '/ai-design-studio/assignments', { parentId: asgId, assigneeId: m1Id });
+  check(r.status === 409, 'AI Design Studio: a retry does not make a second copy', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'IN_PROGRESS', progress: 40, note: 'started' });
+  check(r.status === 200 && r.json.data.status === 'IN_PROGRESS' && r.json.data.progress === 40, 'AI Design Studio: the member updates their progress', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'COMPLETED' });
+  check(r.status === 403, 'AI Design Studio: a member does not complete their own work', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'DONE' });
+  check(r.status === 422, 'AI Design Studio: an unknown status is refused', r);
+  r = await api('ads_m2', 'GET', `/ai-design-studio/assignments/${partId}`);
+  check(r.status === 404, 'AI Design Studio: another member cannot open it', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'COMPLETED' });
+  check(r.status === 200 && r.json.data.status === 'COMPLETED', 'AI Design Studio: the Team Lead completes the member\'s part', r);
+
+  // ---- daily reports
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, status: 'APPROVED' });
+  check(r.status === 422, 'AI Design Studio: a report cannot set its own status', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_TL', 'AI Design Studio: a member\'s report waits for their Team Lead', r);
+  const repId = r.json.data.id as string;
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
+  check(r.status === 201 && r.json.data.id === repId, 'AI Design Studio: a double click returns the first report', r);
+  r = await api('ads_m0', 'POST', '/ai-design-studio/reports', { workCompleted: 'Poster draft' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_DH', 'AI Design Studio: an unassigned member\'s report goes straight to the Department Head', r);
+  r = await api('ads_tl2', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
+  check(r.status === 403 || r.status === 404, 'AI Design Studio: another Team Lead cannot approve it', r);
+  r = await api('ads_dh', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
+  check(r.status === 403, 'AI Design Studio: the Department Head cannot skip the Team Lead', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'RETURN' });
+  check(r.status === 422, 'AI Design Studio: returning a report needs remarks', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_DH', 'AI Design Studio: the Team Lead approves; it moves to the Department Head', r);
+  r = await api('ads_dh', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE', remarks: 'Good' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'AI Design Studio: the Department Head gives the final approval', r);
+  r = await api('ads_m2', 'GET', `/ai-design-studio/reports/${repId}`);
+  check(r.status === 404, 'AI Design Studio: another member cannot read the report', r);
+
+  // ---- issues
+  r = await api('ads_m1', 'POST', '/ai-design-studio/issues', { title: 'Font licence', category: 'DESIGN_BLOCKER', description: 'Need a licensed font' });
+  check(r.status === 201 && r.json.data.handlerLevel === 'TEAM_LEAD' && /^ADS-/.test(r.json.data.reference), 'AI Design Studio: an issue goes to the member\'s Team Lead', r);
+  const issueId = r.json.data.id as string;
+  r = await api('ads_tl2', 'GET', `/ai-design-studio/issues/${issueId}`);
+  check(r.status === 404, 'AI Design Studio: another Team Lead cannot open it', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/issues/${issueId}/update`, { status: 'RESOLVED' });
+  check(r.status === 403, 'AI Design Studio: the raiser cannot work their own issue', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/issues/${issueId}/escalate`, { note: 'Needs a budget' });
+  check(r.status === 200 && r.json.data.handlerLevel === 'DEPARTMENT_HEAD', 'AI Design Studio: the Team Lead escalates it', r);
+  r = await api('ads_dh', 'POST', `/ai-design-studio/issues/${issueId}/update`, { status: 'RESOLVED', note: 'Approved' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED', 'AI Design Studio: the Department Head resolves it', r);
+  r = await api('ads_dh', 'GET', '/ai-design-studio/overview');
+  check(r.status === 200 && r.json.data.assignments.total >= 2, 'AI Design Studio: the overview is built from the records', r);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AI_DESIGN_STUDIO_SLUG } from '../../../shared/contracts';
 import { AlertTriangle, ChevronRight, RefreshCw } from 'lucide-react';
 import type { CompanyDepartmentRow, CompanyOverview as CompanyOverviewData, DashboardAlert } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -131,7 +132,7 @@ export const CompanyOverview: React.FC<{ onOpenDepartment: (id: string) => void 
         <>
           <KpiStrip d={data} />
           <TrendCard d={data} />
-          <DepartmentPerformance rows={data.departments} onOpen={onOpenDepartment} />
+          <DepartmentPerformance rows={data.departments.filter(r => r.slug !== AI_DESIGN_STUDIO_SLUG)} onOpen={onOpenDepartment} />
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-6 items-start">
             <Attention alerts={data.alerts.filter(a => a.key !== 'locked_departments')} />
             <Recent d={data} />

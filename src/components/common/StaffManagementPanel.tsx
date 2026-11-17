@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AI_DESIGN_STUDIO_SLUG } from '../../../shared/contracts';
 import {
   UserPlus, Users, CheckCircle2, AlertTriangle, ShieldCheck, Copy,
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
@@ -186,6 +187,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // HR department: the Role dropdown shows exactly HR Assistant / HR Recruiter / HR Admin Head (the ones the person creating may make) and nothing generic.
   // The choice IS the designation; it maps to the existing role (Team Member, or Department Head for HR Admin Head), so no new role system exists.
   const hrMode = departmentSlug === 'hr';
+  // AI Design Studio has one General team and no Sales / Support side: its Department Head is simply the head of the department (one per department)
+  const adsMode = departmentSlug === AI_DESIGN_STUDIO_SLUG;
   const hrOptions = useMemo(() => HR_DESIGNATIONS.filter(d => allowedRoles.includes(HR_DESIGNATION_ROLE[d])), [allowedRoles]);
   const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : choice;
   const consultant = effectiveChoice === 'TECHNICAL_CONSULTANT';
@@ -417,6 +420,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
         setFormError('Choose at least one department for the Operations Head.');
         return;
       }
+    } else if (role === 'DEPARTMENT_HEAD' && adsMode) {
+      if (!departmentId) {
+        setFormError('The AI Design Studio department could not be found.');
+        return;
+      }
+      headPlan = { departmentId, additionalAccess: [] };
     } else if (role === 'DEPARTMENT_HEAD' && hrMode) {
       // HR Admin Head: the Department Head of the HR department itself (HR has no Sales / Support side to choose)
       if (!departmentId) {
@@ -759,7 +768,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             />
           )}
 
-          {role === 'DEPARTMENT_HEAD' && !operationsHead && !hrMode && (
+          {role === 'DEPARTMENT_HEAD' && !operationsHead && !hrMode && !adsMode && (
             <>
               <HeadDepartmentsField
                 fn={headFn}
@@ -849,6 +858,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </div>
           )}
 
+          {adsMode && role === 'DEPARTMENT_HEAD' && !operationsHead && existingHeads.length > 0 && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>AI Design Studio already has a Department Head (<strong>{existingHeads[0].fullName}</strong>). A department can have only one Department Head.</span>
+            </div>
+          )}
+
           {hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0 && (
             <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -864,7 +880,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <button
             type="submit"
-            disabled={saving || !departmentId || (hrMode && hrOptions.length === 0) || (hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0) || (!hrMode && (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && (!headFn || headDepts.length === 0 || !!existingHead)))}
+            disabled={saving || !departmentId || (hrMode && hrOptions.length === 0) || (hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0) || (adsMode && role === 'DEPARTMENT_HEAD' && !operationsHead && existingHeads.length > 0) || (!hrMode && (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && !adsMode && (!headFn || headDepts.length === 0 || !!existingHead)))}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}
