@@ -28,7 +28,7 @@ card at the top of their Operations Dashboard. Nothing is recorded automatically
 * One Punch In a day (a second click, a refresh or another tab returns the first). Punch Out is append-only: each later Punch Out is a new
   event and the **latest** one is the effective Punch Out; earlier ones stay. The same request again (network retry) or a second click within
   60 seconds is not a new punch.
-* **Lunch**: Start Lunch / Resume Work; one open break at a time; several breaks add up against the **50-minute** allowance
+* **Lunch**: Start Lunch / Resume Work; one open break at a time; several breaks add up against the **45-minute** allowance
   (`attendance_settings.lunch_allowance_minutes`). The running timer is computed from the server's start time and clock, so it survives a
   refresh and does not drift. Over the allowance is **flagged only** (no payroll or score effect). A lunch still open at Punch Out ends with it.
   No lunch before Punch In or after Punch Out. Remaining = 50 − total taken (never below 0); extra = total taken − 50. Lunch is shown

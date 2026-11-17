@@ -1,5 +1,5 @@
 -- =============================================================================
--- Attendance: Punch In / Punch Out with location, lunch (50 minutes), who sees what, 90-day location retention (migration 20261230000400).
+-- Attendance: Punch In / Punch Out with location, lunch (45 minutes, migration 20270109000100), who sees what, 90-day location retention (migration 20261230000400).
 -- Reuses weekly_report_routing_test.sql: wkr-a with a Support member wkr_tmp and a Sales member wkr_tms, the Support Operations Head wkr_ohp,
 -- the Sales Operations Head wkr_ohs, the Support Department Head wkr_dhp; and hr_test.sql's HR head (hr_head).
 -- =============================================================================
@@ -9,6 +9,8 @@
 reset role;
 \i supabase/migrations/20261230000400_attendance_punch_lunch.sql
 \i supabase/migrations/20261230000400_attendance_punch_lunch.sql
+\i supabase/migrations/20270109000100_attendance_lunch_45.sql
+\i supabase/migrations/20270109000100_attendance_lunch_45.sql
 delete from attendance_events where profile_id in (select id from profiles where email like 'wkr.%@example.com');
 delete from attendance_lunches where profile_id in (select id from profiles where email like 'wkr.%@example.com');
 update attendance_records set punch_in_at = null, punch_out_at = null where profile_id in (select id from profiles where email like 'wkr.%@example.com');
@@ -35,27 +37,27 @@ select test.check((select (d -> 'punchIn' ->> 'locationStatus') = 'DENIED' and d
                      from (select attendance_punch_in('DENIED', 18.5, 73.8, 10, gen_random_uuid()) d) x),
   'location denied: the punch is recorded as "location unavailable" and coordinates are never kept (even if sent)');
 
-\echo '   Lunch: one open break, the 50-minute allowance, flags only'
+\echo '   Lunch: one open break, the 45-minute allowance, flags only'
 select test.login('wkr_tmp');
 select attendance_lunch('START');
 select attendance_lunch('START');
 reset role;
 select test.check((select count(*) = 1 from attendance_lunches where profile_id = test.id('wkr_tmp')), 'Start Lunch twice: one break');
--- the break started 50 minutes ago: within the allowance
-update attendance_lunches set started_at = now() - interval '50 minutes' where profile_id = test.id('wkr_tmp') and ended_at is null;
+-- the break started 45 minutes ago: within the allowance
+update attendance_lunches set started_at = now() - interval '45 minutes' where profile_id = test.id('wkr_tmp') and ended_at is null;
 set role authenticated;
 select test.login('wkr_tmp');
-select test.check((select (d -> 'lunch' ->> 'minutes')::int = 50 and (d -> 'lunch' ->> 'exceededMinutes')::int = 0 and d -> 'lunch' -> 'open' is not null
+select test.check((select (d -> 'lunch' ->> 'minutes')::int = 45 and (d -> 'lunch' ->> 'exceededMinutes')::int = 0 and d -> 'lunch' -> 'open' is not null
                           and (d ->> 'serverTime')::timestamptz is not null from (select attendance_today() d) x),
-  'the running timer comes from the server: 50 minutes, not exceeded (and survives a refresh)');
-select test.check((select (d -> 'lunch' ->> 'minutes')::int = 50 and d -> 'lunch' -> 'open' = 'null'::jsonb from (select attendance_lunch('END') d) x), 'End Lunch at 50 minutes');
+  'the running timer comes from the server: 45 minutes, not exceeded (and survives a refresh)');
+select test.check((select (d -> 'lunch' ->> 'minutes')::int = 45 and d -> 'lunch' -> 'open' = 'null'::jsonb from (select attendance_lunch('END') d) x), 'End Lunch at 45 minutes');
 select test.must_fail($$select attendance_lunch('END')$$, 'End Lunch without a running break is refused', 'has not been started');
 reset role;
--- a second, one-minute break the same day: 51 minutes in total
+-- a second, one-minute break the same day: 46 minutes in total
 insert into attendance_lunches (profile_id, attendance_date, started_at, ended_at, ended_by)
 values (test.id('wkr_tmp'), private.office_today(), now() - interval '61 seconds', now(), 'EMPLOYEE');
 select test.check((select (private.attendance_day_json(test.id('wkr_tmp'), private.office_today()) -> 'lunch' ->> 'exceededMinutes')::int = 1),
-  'two breaks add up: 51 minutes is 1 minute over');
+  'two breaks add up: 46 minutes is 1 minute over');
 
 \echo '   Punch Out: append-only, the latest valid one counts, retries and double clicks are not new punches'
 set role authenticated;
