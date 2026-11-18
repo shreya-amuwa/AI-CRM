@@ -48,6 +48,22 @@ workplace boundary.
 
 ---
 
+## Attendance reminders: the company times
+
+Open **Attendance → Reminders**. Under **Company reminder times** you set the times everyone gets unless they chose their own:
+
+| Setting | Default |
+|---|---|
+| Punch In / Lunch / Punch Out reminder | 10:00 / 14:00 / 19:00 (India time) |
+| Follow-up if it is still not done | after 15 minutes (once) |
+| Lunch warning | 5 minutes before the 45-minute allowance runs out |
+| Reminder days | Monday to Saturday |
+
+* **Reminders are on for the company** switches every reminder on or off.
+* **Turn off reminders for today** stops the rest of today's reminders (a holiday, an office closure). It is back to normal tomorrow.
+* Nobody is reminded of something already done, on approved leave (full day, or the half that is off), or on a day that is not a reminder day.
+* Every change is recorded in the audit log.
+
 ## The 15-Minute Discrepancy Rule
 
 The system computes the difference in minutes between the CRM login and the biometric scan:

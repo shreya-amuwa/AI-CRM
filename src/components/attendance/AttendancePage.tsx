@@ -7,6 +7,7 @@ import {
   attendanceApi, captureLocation, coords, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
   STATUS_LABEL, STATUS_TONE, type AttendanceDayData, type AttendanceRegister, type AttendanceStatus, type LunchRow, type PunchInfo, type RegisterRow
 } from '../../lib/attendance';
+const RemindersPanel = React.lazy(() => import('./RemindersPanel'));
 
 const card = 'bg-white rounded-2xl border border-slate-200 p-5';
 const btnBase = 'inline-flex items-center justify-center gap-2 px-4 h-11 rounded-xl text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed';
@@ -361,7 +362,9 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
   const tabs = [
     ...(isHr ? [{ id: 'register', label: 'Attendance register (all staff)' }] : []),
     ...(isSa ? [] : [{ id: 'mine', label: 'My attendance' }]),
-    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : [])
+    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : []),
+    // everyone: their own reminder times and devices; HR and the Super Admin also the company defaults
+    { id: 'reminders', label: 'Reminders' }
   ];
   // opened from a reminder (the bell or a notification): the person's own day
   const [tab, setTab] = useState(() => (takePendingAttendance() && tabs.some(t => t.id === 'mine') ? 'mine' : tabs[0]?.id ?? 'mine'));
@@ -377,7 +380,9 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
             className={`px-3.5 h-9 rounded-xl text-sm font-bold border ${tab === t.id ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>{t.label}</button>)}
         </div>
       ) : null}
-      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : <HrAttendanceRegister defaultDepartment={defaultDepartment} />}
+      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : tab === 'reminders'
+        ? <React.Suspense fallback={<p role="status" className="text-sm text-slate-500">Loading reminders…</p>}><RemindersPanel /></React.Suspense>
+        : <HrAttendanceRegister defaultDepartment={defaultDepartment} />}
     </div>
   );
 };

@@ -31,8 +31,36 @@ card at the top of their Operations Dashboard. Nothing is recorded automatically
 * **Lunch**: Start Lunch / Resume Work; one open break at a time; several breaks add up against the **45-minute** allowance
   (`attendance_settings.lunch_allowance_minutes`). The running timer is computed from the server's start time and clock, so it survives a
   refresh and does not drift. Over the allowance is **flagged only** (no payroll or score effect). A lunch still open at Punch Out ends with it.
-  No lunch before Punch In or after Punch Out. Remaining = 50 − total taken (never below 0); extra = total taken − 50. Lunch is shown
+  No lunch before Punch In or after Punch Out. Remaining = allowance − total taken (never below 0); extra = total taken − allowance. Lunch is shown
   separately and is **not** deducted from the worked time (Punch In to Punch Out).
+
+## Reminders and the app (migrations 20270109000200, 20270110000100)
+
+Staff get **Punch In**, **Lunch time**, **Lunch ends in N minutes** and **Punch Out** reminders in the CRM bell and, on each device where
+they turned them on, as phone / laptop notifications (Web Push).
+
+* **Times.** Company defaults (HR and the Super Admin, Attendance → Reminders): Punch In 10:00, Lunch 14:00, Punch Out 19:00, one follow-up
+  15 minutes later, the lunch warning 5 minutes before the allowance runs out, Monday to Saturday, a master switch and "Turn off reminders for
+  today". Each person may choose their own times (Punch In 06:00–13:00, Lunch 11:00–17:00, Punch Out 14:00–23:30) or switch reminders off.
+  Every change is in the audit log.
+* **Who gets what.** A reminder is skipped when it is already done (punched in, lunch started, punched out), on approved full-day leave, on
+  a morning half-day (no Punch In) or an afternoon half-day (no lunch, no Punch Out), on days that are not reminder days, and for the Super
+  Admin. Each reminder goes out **once** (per person, day, kind and first/follow-up); a reminder more than 30 minutes late is dropped; when a
+  run comes after the follow-up is due, only the follow-up goes. The lunch warning is once per break and says the minutes really left.
+* **Sending.** The Worker's `*/5 * * * *` cron calls `POST /api/v1/internal/attendance/reminders` (the dispatch secret; off until
+  `SCHEDULED_ENABLED=true`). The database (`attendance_reminders_due`) records each reminder and puts it in the bell; the API pushes it to the
+  person's devices (`server/automations/webPush.ts`: RFC 8291 `aes128gcm` + RFC 8292 VAPID with Web Crypto, 10-second timeout). A device the
+  push service reports as gone (404 / 410) is switched off. Without `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` the reminders reach the bell only.
+* **Devices.** "Turn on reminders" (the banner on every staff dashboard, or Attendance → Reminders) saves the browser's subscription for the
+  signed-in person; the last person to sign in on a device owns it, and signing out removes it. At most 10 active devices per person.
+  Attendance → Reminders lists them (Remove) and sends a test notification.
+* **The app.** `public/manifest.webmanifest` makes the CRM installable ("Amuwa CRM", standalone, icons in `public/icons/`). `public/sw.js`
+  only shows the reminders and opens Attendance when one is tapped: **no fetch handler and no cache**, so it never serves an old CRM. It is
+  served with `Cache-Control: no-cache` (`public/_headers`) and registered only by the staff dashboard shell. When a browser renews its
+  subscription, the service worker sends the old and new one to `POST /api/v1/attendance/push-resubscribe` (no sign-in; only an existing,
+  active device is moved, `push_subscription_replace`, service role only).
+* **iPhone / iPad:** web notifications work only for the app added to the Home Screen (iOS 16.4 or later): Safari → Share → Add to Home
+  Screen, then open Amuwa CRM from the Home Screen and turn reminders on there. The banner shows these steps in a Safari tab.
 
 ## CRM sign-in and sign-out (separate from attendance)
 * Sign-in: the API records `SESSION_STARTED` once per session (now with the browser and system, e.g. "Chrome on Windows"), and the first

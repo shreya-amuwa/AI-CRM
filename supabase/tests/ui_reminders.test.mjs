@@ -141,6 +141,70 @@ try {
   pushKey = KEY;
   await ctx.close();
 
+  // 7. the Reminders tab: my times, my devices, the company defaults (HR)
+  const panel = async (role, options = { permission: 'granted', subscribed: true }) => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await ctx.addInitScript(fakePush, options);
+    const page = await ctx.newPage();
+    page.on('pageerror', e => errors.push(String(e)));
+    await page.goto(base);
+    await page.evaluate(r => window.mountPanel(r), role);
+    await page.getByTestId('reminders-panel').waitFor();
+    return { ctx, page };
+  };
+  ({ ctx, page } = await panel('staff'));
+  await page.getByLabel('Punch In reminder').waitFor();
+  const hints = await page.getByTestId('my-reminders').textContent();
+  check(/Company time 10:00/.test(hints) && /Company time 14:00/.test(hints) && /Company time 19:00/.test(hints), 'staff see 10:00 / 14:00 / 19:00 as the company times', hints);
+  await page.getByLabel('Punch In reminder').fill('09:30');
+  await page.getByRole('button', { name: 'Save my times' }).click();
+  await page.getByText('Saved.').waitFor();
+  const mine = await calls(page, 'attendance_reminder_save_mine');
+  check(mine.length === 1 && mine[0].p_punch_in === '09:30' && mine[0].p_lunch === null && mine[0].p_punch_out === null && mine[0].p_enabled === true,
+    'staff save a personal 09:30 (the other times stay on the company time)', mine);
+  await page.getByLabel('Punch In reminder').fill('05:30');
+  await page.getByRole('button', { name: 'Save my times' }).click();
+  await page.getByText('Punch In reminder must be between 06:00 and 13:00').waitFor();
+  check(true, 'an out-of-range time shows the server message inline');
+  check(await page.getByTestId('company-reminders').count() === 0, 'team member does not see Company defaults');
+  const devices = page.getByTestId('device-row');
+  await devices.first().waitFor();
+  check(await devices.count() === 2 && /Chrome on Android/.test(await devices.first().textContent()), 'devices list shows two devices');
+  await devices.first().getByRole('button', { name: 'Remove' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="device-row"]').length === 1);
+  check((await calls(page, 'push_subscription_remove_by_id'))[0]?.p_id === 'd1', 'Remove deletes one');
+  await page.getByRole('button', { name: 'Send test notification' }).click();
+  await page.getByText('Sent to 2 devices').waitFor();
+  check(true, 'Send test notification shows "Sent to 2 devices"');
+  check(/Reminders are on for this device/.test(await page.getByTestId('this-device').textContent()), 'the panel says this device gets reminders');
+  await ctx.close();
+
+  ({ ctx, page } = await panel('hr'));
+  await page.getByTestId('company-reminders').waitFor();
+  await page.getByLabel('Company Punch Out').fill('18:30');
+  await page.getByLabel('Sunday').check();
+  await page.getByRole('button', { name: 'Save company times' }).click();
+  await page.getByText('Company times saved.').waitFor();
+  const co = await calls(page, 'hr_attendance_reminder_defaults_save');
+  check(co.length === 1 && co[0].p_punch_out === '18:30' && co[0].p_punch_in === '10:00' && JSON.stringify(co[0].p_days) === '[1,2,3,4,5,6,7]'
+    && co[0].p_follow_up === 15 && co[0].p_warning === 5 && co[0].p_enabled === true, 'HR sees Company defaults and can save', co);
+  await page.getByRole('button', { name: 'Turn off reminders for today' }).click();
+  await page.getByRole('button', { name: 'Turn reminders back on for today' }).waitFor();
+  check((await calls(page, 'hr_attendance_reminders_pause_today'))[0]?.p_paused === true, 'HR can turn reminders off for today');
+  check(await page.getByTestId('my-reminders').count() === 1, 'HR also has their own times');
+  await ctx.close();
+
+  ({ ctx, page } = await panel('sa'));
+  await page.getByTestId('company-reminders').waitFor();
+  check(await page.getByTestId('my-reminders').count() === 0 && await page.getByTestId('this-device').count() === 0, 'Super Admin sees only Company defaults');
+  await ctx.close();
+
+  // phone width: nothing wider than the screen
+  ({ ctx, page } = await panel('hr'));
+  await page.setViewportSize({ width: 375, height: 800 });
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= 375), 'the Reminders tab fits a phone screen');
+  await ctx.close();
+
   check(errors.length === 0, 'no script errors', errors);
 } finally {
   await browser.close();
