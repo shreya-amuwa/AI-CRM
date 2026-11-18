@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { openReports } from '../reports/reportEvents';
 import { openAiStudio } from '../ai-studio/aiStudioEvents';
+import { openAttendance } from '../attendance/attendanceEvents';
 import { openAds } from '../ai-design-studio/adsEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
@@ -67,6 +68,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.entityType === 'work_report_package' && n.type === 'REPORT_WEEKLY_SENT_TO_HR') { openHrCase({ section: 'reviews' }); return true; }
   if (n.entityType === 'hr_consolidated_report') { openReports({}); return true; }
   // AI Studio: a task or a daily report opens its page of the AI Studio dashboard, on that item
+  // an attendance reminder (Punch In, lunch, Punch Out) opens the person's own attendance
+  if (n.entityType === 'attendance') { openAttendance(); return true; }
   if (n.entityType === 'ai_studio_task') { openAiStudio({ kind: 'task', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'ai_studio_report') { openAiStudio({ kind: 'report', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'ai_studio_project') { openAiStudio({ kind: 'task' }); return true; }

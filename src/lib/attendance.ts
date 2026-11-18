@@ -130,8 +130,41 @@ export const attendanceApi = {
     rpc<{ allowanceMinutes: number; retentionDays: number; rows: HrPunchRow[] }>('hr_attendance_punches', { p_from: from, p_to: to, p_department: departmentId || null, p_profile: null }),
   /** Ask the server to look up the place names still missing (a few at a time); harmless to call often. */
   resolvePlaces: () => api.post<{ looked: number; named: number; failed: number }>('/attendance/resolve-places', {}),
-  lunchOverview: (from: string, to: string) => rpc<{ allowanceMinutes: number; rows: LunchRow[] }>('attendance_lunch_overview', { p_from: from, p_to: to })
+  lunchOverview: (from: string, to: string) => rpc<{ allowanceMinutes: number; rows: LunchRow[] }>('attendance_lunch_overview', { p_from: from, p_to: to }),
+
+  // --- reminders (20270109000200): times, devices, the push key and a test notification
+  /** The public key a browser needs to subscribe; null while push is not set up on the server. */
+  pushKey: async () => (await api.get<{ publicKey: string | null }>('/attendance/push-key')).publicKey,
+  saveDevice: (endpoint: string, p256dh: string, auth: string, label: string) =>
+    rpc<string>('push_subscription_save', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
+  removeDevice: (endpoint: string) => rpc<null>('push_subscription_remove', { p_endpoint: endpoint }),
+  /** An already-subscribed browser, for whoever is signed in now; false = the device was removed from the list (never re-created). */
+  claimDevice: (endpoint: string, p256dh: string, auth: string, label: string) =>
+    rpc<boolean>('push_subscription_claim', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
+  removeDeviceById: (id: string) => rpc<null>('push_subscription_remove_by_id', { p_id: id }),
+  devices: () => rpc<PushDevice[]>('my_push_devices'),
+  testPush: () => api.post<{ sent: number; gone: number; failed: number }>('/attendance/push-test', {}),
+  reminderSettings: () => rpc<ReminderSettings>('attendance_reminder_settings'),
+  saveMyReminders: (enabled: boolean, punchIn: string | null, lunch: string | null, punchOut: string | null) =>
+    rpc<ReminderSettings>('attendance_reminder_save_mine', { p_enabled: enabled, p_punch_in: punchIn, p_lunch: lunch, p_punch_out: punchOut }),
+  saveCompanyReminders: (c: ReminderCompany) =>
+    rpc<ReminderSettings>('hr_attendance_reminder_defaults_save', { p_enabled: c.enabled, p_punch_in: c.punchIn, p_lunch: c.lunch, p_punch_out: c.punchOut,
+      p_follow_up: c.followUpMinutes, p_warning: c.lunchWarningMinutes, p_days: c.days }),
+  pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused })
 };
+
+export interface PushDevice { id: string; label: string | null; createdAt: string; lastSuccessAt: string | null; active: boolean }
+/** Reminder times are "HH:MM" (India time). Days are ISO weekdays: 1 = Monday ... 7 = Sunday. */
+export interface ReminderCompany { enabled: boolean; punchIn: string; lunch: string; punchOut: string; followUpMinutes: number; lunchWarningMinutes: number; days: number[] }
+export interface ReminderTimes { enabled: boolean; punchIn: string | null; lunch: string | null; punchOut: string | null }
+export interface ReminderSettings {
+  company: ReminderCompany;
+  /** null for the Super Admin, who does not punch */
+  mine: ReminderTimes | null;
+  effective: ReminderTimes | null;
+  pausedToday: boolean;
+  canManage: boolean;
+}
 
 const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });
 const IST_LONG_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' });

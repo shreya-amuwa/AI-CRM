@@ -4,6 +4,8 @@ import { BookOpen, CalendarDays, ChevronDown, Clock3, LogOut, Menu, X } from 'lu
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
+import { attendanceRequested } from '../attendance/attendanceEvents';
+import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -344,6 +346,8 @@ interface DashboardShellProps {
   wide?: boolean;
   /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
   flush?: boolean;
+  /** The "Turn on reminders" banner (attendance reminders on this device); off for the Super Admin, who does not punch. */
+  reminders?: boolean;
   children: React.ReactNode;
 }
 
@@ -363,13 +367,15 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   attendanceView,
   wide = false,
   flush = false,
+  reminders = true,
   children
 }) => {
   // only sections marked collapsible use this; the others are always open as before
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set());
   // Attendance (Punch In / Out, lunch) is added to every dashboard here; choosing any other page hands the content back to the dashboard
   // (Meetings works the same way)
-  const [overlay, setOverlay] = useState<null | typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID>(() => (meetingsRequested() ? MEETINGS_NAV_ID : null));
+  // a tapped reminder opens the CRM on /?open=attendance
+  const [overlay, setOverlay] = useState<null | typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID>(() => (meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null));
   const shownActive = overlay ?? active;
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);
@@ -377,6 +383,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
     if (firstActive.current) { firstActive.current = false; return; }
     setOverlay(null);
   }, [active]);
+  // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
+  useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []));
   const select = (id: string) => {
     if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
@@ -449,7 +457,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

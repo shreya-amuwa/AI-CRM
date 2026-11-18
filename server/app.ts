@@ -407,6 +407,27 @@ app.post('/auth/forgot-password', async c => {
   return c.json(ok(await staffForgotPassword(body)));
 });
 
+// Attendance reminders: a browser renewed its push subscription on its own (public/sw.js, "pushsubscriptionchange"). The service worker
+// runs with nobody signed in, so the old subscription address (known only to that browser and the CRM) is the proof: the database moves
+// an existing, active device to the new address for the same person, and changes nothing otherwise (20270110000200).
+app.post('/attendance/push-resubscribe', async c => {
+  await enforce([{ key: `push-resubscribe:ip:${clientIp(c)}`, limit: 30, window: 3600 }], 'memory');
+  const body = (await readJson(c)) as { oldEndpoint?: unknown; endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | undefined;
+  const str = (v: unknown, max: number) => (typeof v === 'string' && v.length > 0 && v.length <= max ? v : null);
+  const oldEndpoint = str(body?.oldEndpoint, 1000), endpoint = str(body?.endpoint, 1000);
+  const p256dh = str(body?.keys?.p256dh, 200), auth = str(body?.keys?.auth, 100);
+  if (!oldEndpoint || !endpoint || !p256dh || !auth || !/^https:\/\//.test(endpoint)) {
+    throw new AppError('VALIDATION_ERROR', 'Send the old and the new subscription.');
+  }
+  if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'The server has no service key.');
+  const { data, error } = await getServiceClient().rpc('push_subscription_replace', { p_old_endpoint: oldEndpoint, p_new_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth });
+  if (error) {
+    if (/VALIDATION_ERROR/.test(error.message)) throw new AppError('VALIDATION_ERROR', 'The renewed subscription is not valid.');
+    throw new AppError('SERVICE_UNAVAILABLE', 'The subscription could not be updated.');
+  }
+  return c.json(ok({ replaced: data === true }));
+});
+
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
 app.post('/client-auth/forgot-password', async c => {
   const body = await readJson(c);
@@ -688,7 +709,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {
