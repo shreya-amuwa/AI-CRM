@@ -87,6 +87,7 @@ export const SuperAdminDashboard: React.FC = () => {
     <DashboardShell
       title="Amuwa"
       subtitle="Super Admin"
+      reminders={false}
       ariaLabel="Super Admin navigation"
       groups={groups}
       active={page}

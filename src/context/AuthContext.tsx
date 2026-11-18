@@ -1,3 +1,4 @@
+import { unsubscribeThisDevice } from '../lib/push/pushSupport';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { HeadDivision, MyDepartmentScopes, Profile } from '../../shared/contracts';
 import { AuthUser, DepartmentId, UserSession, Department } from '../types/crm';
@@ -287,6 +288,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (currentSession && activeDepartmentId) {
       sessionManager.leaveSession(currentSession.sessionId, activeDepartmentId);
     }
+    // this browser stops getting the person's attendance reminders (at most 2 seconds; never blocks signing out)
+    await unsubscribeThisDevice();
     // the CRM sign-out is recorded for HR's register (separate from attendance: it never punches out); never blocks signing out
     const db = getSupabase();
     if (db) {

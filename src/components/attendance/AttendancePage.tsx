@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Coffee, LogIn, LogOut, MapPin, Play } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { takePendingAttendance } from './attendanceEvents';
 import { isOperationsHead } from '../../lib/auth/roleMapping';
 import {
   attendanceApi, captureLocation, coords, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
@@ -362,7 +363,8 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
     ...(isSa ? [] : [{ id: 'mine', label: 'My attendance' }]),
     ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : [])
   ];
-  const [tab, setTab] = useState(tabs[0]?.id ?? 'mine');
+  // opened from a reminder (the bell or a notification): the person's own day
+  const [tab, setTab] = useState(() => (takePendingAttendance() && tabs.some(t => t.id === 'mine') ? 'mine' : tabs[0]?.id ?? 'mine'));
   return (
     <div className="space-y-4">
       <div>
