@@ -291,5 +291,6 @@ turned notifications on (the same devices and the same "Turn on notifications" a
   A file without text shows `sent a file`; an end-to-end encrypted message `New message`.
 * **On the phone:** one notification per conversation (tag `chat-<id>`): a newer message replaces the older one and still alerts. Tapping it
   opens that conversation (`/?open=chat&conversation=…` or `&client=…`; an open CRM window switches to it).
-* **Limits:** at most 40 devices per message (the Worker's request limit), 6 at a time, 10 seconds each. A failed push is not retried; the
+* **Limits:** at most 40 devices per message (the Worker's request limit) and 2 per person (their newest), the recipients in a random
+  order each time so in a big group the same people are never always left out; 6 at a time, 10 seconds each. A failed push is not retried; the
   message, the unread count and the bell are unaffected.

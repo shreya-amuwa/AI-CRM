@@ -11,8 +11,9 @@ window.addEventListener(OPEN_CHAT_EVENT, e => (window as any).__chatOpened.push(
 
 const OpenProbe = () => {
   const [opened, setOpened] = React.useState(0);
-  useStaffReminders(React.useCallback(() => setOpened(n => n + 1), []));
-  return <span data-testid="attendance-opened">{opened}</span>;
+  const [closed, setClosed] = React.useState(0);
+  useStaffReminders(React.useCallback(() => setOpened(n => n + 1), []), React.useCallback(() => setClosed(n => n + 1), []));
+  return <><span data-testid="attendance-opened">{opened}</span><span data-testid="overlay-closed">{closed}</span></>;
 };
 (window as any).mountBanner = () => createRoot(document.getElementById('root')!).render(<div className="p-4 max-w-4xl"><ReminderBanner /><OpenProbe /></div>);
 (window as any).unsubscribeThisDevice = unsubscribeThisDevice;

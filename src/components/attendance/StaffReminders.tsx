@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect } from 'react';
 import { registerServiceWorker } from '../../lib/push/registerServiceWorker';
 import { useOpenAttendanceRequest } from './attendanceEvents';
-import { openChat, type OpenChatDetail } from '../chat/chatEvents';
+import { OPEN_CHAT_EVENT, openChat, type OpenChatDetail } from '../chat/chatEvents';
 
 const ReminderBanner = React.lazy(() => import('./ReminderBanner'));
 
@@ -10,9 +10,15 @@ const ReminderBanner = React.lazy(() => import('./ReminderBanner'));
  * Attendance opening when a reminder asks for it (the bell, or a tapped notification while the CRM is open). Staff only: the client and
  * candidate portals never call this. supabase/tests/pwa_assets.test.ts checks every staff layout uses it with StaffReminderBanner.
  */
-export function useStaffReminders(showAttendance: () => void) {
+export function useStaffReminders(showAttendance: () => void, onOpenChat?: () => void) {
   useEffect(() => { void registerServiceWorker(); }, []);
   useOpenAttendanceRequest(showAttendance);
+  // a chat being opened (a notification, the bell): a layout that shows Attendance on top of its pages closes it
+  useEffect(() => {
+    if (!onOpenChat) return;
+    window.addEventListener(OPEN_CHAT_EVENT, onOpenChat);
+    return () => window.removeEventListener(OPEN_CHAT_EVENT, onOpenChat);
+  }, [onOpenChat]);
   useEffect(() => {
     // opened from a tapped notification: /?open=chat&conversation=… (colleague chat) or &client=… (client chat). The layouts read
     // ?open=attendance when they first render; here the address is cleaned so a reload does not open it again.

@@ -71,8 +71,11 @@ select test.check(jsonb_array_length(test.cp_push(:'m7')) = 0, 'a system line is
 select test.check(jsonb_array_length(test.cp_push(gen_random_uuid())) = 0, 'an unknown message id returns []');
 
 \echo '   client chats: the name only, never the text'
+delete from chat_conversations where id in (select conversation_id from chat_messages where body = 'my secret pricing question');
 select c.id as cust, coalesce(nullif(btrim(c.company), ''), c.name) as company, private.support_member_of(c.id) as rm
-  from customers c where private.support_member_of(c.id) is not null order by c.created_at limit 1 \gset
+  from customers c where private.support_member_of(c.id) is not null
+   and not exists (select 1 from chat_conversations x where x.customer_id = c.id and x.kind = 'CLIENT' and x.channel = 'RM')
+ order by c.created_at limit 1 \gset
 insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label) values (:'rm', 'https://push.example.com/cp-rm', 'BPk-rm', 'auth-rm', 'RM phone')
   on conflict (endpoint) do update set profile_id = excluded.profile_id, active = true;
 update profiles set status = 'ACTIVE' where id = :'rm';
@@ -89,6 +92,31 @@ insert into chat_messages (conversation_id, seq, sender_id, sender_kind, sender_
 select test.cp_push(:'m8b') as r8b \gset
 select test.check(position('999' in :'r8b') = 0 and not exists (select 1 from jsonb_array_elements(:'r8b'::jsonb) x where x ->> 'profileId' = :'rm'),
   'a staff message in a client chat never shows its text either, and the RM who wrote it is not notified');
+
+\echo '   a big group: at most 2 devices per person and 40 in all, so one person''s many devices never crowd others out'
+delete from auth.users where email like 'cp.big%@example.com';
+delete from test.users where name like 'cp_big%';
+select test.create_auth_user('cp_big' || g, 'cp.big' || g || '@example.com', json_build_object('full_name', 'Big ' || lpad(g::text, 2, '0'))::jsonb,
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', (select team_id from profiles where id = test.id('sup_plain'))))
+  from generate_series(1, 25) g;
+update profiles set status = 'ACTIVE' where email like 'cp.big%@example.com';
+insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label)
+  select test.id('cp_big' || g), 'https://push.example.com/cp-big-' || g || '-' || d, 'BPk', 'auth', 'device ' || d from generate_series(1, 25) g, generate_series(1, 3) d;
+with c as (insert into chat_conversations (kind, title, created_by) values ('GROUP', 'Manual CRM (push test)', test.id('cp_a')) returning id) select id as big from c \gset
+insert into chat_members (conversation_id, profile_id) select :'big', test.id('cp_big' || g) from generate_series(1, 25) g;
+insert into chat_members (conversation_id, profile_id) values (:'big', test.id('cp_a'));
+select test.cp_msg(:'big', 'cp_a', 'hello everyone', 1) as mb \gset
+select test.cp_push(:'mb') as rb \gset
+select test.check((select sum(jsonb_array_length(x -> 'targets')) from jsonb_array_elements(:'rb'::jsonb) x) = 40
+                  and (select bool_and(jsonb_array_length(x -> 'targets') <= 2) from jsonb_array_elements(:'rb'::jsonb) x)
+                  and jsonb_array_length(:'rb'::jsonb) = 20, 'a big group: 2 devices per person at most, 40 devices in all (20 people)');
+select test.check(exists (select 1 from jsonb_array_elements(:'rb'::jsonb) x where x ->> 'profileId' in (select test.id('cp_big' || g)::text from generate_series(21, 25) g))
+                  or exists (select 1 from jsonb_array_elements(test.cp_push(test.cp_msg(:'big', 'cp_a', 'again', 2))) x
+                              where x ->> 'profileId' in (select test.id('cp_big' || g)::text from generate_series(21, 25) g))
+                  or exists (select 1 from jsonb_array_elements(test.cp_push(test.cp_msg(:'big', 'cp_a', 'and again', 3))) x
+                              where x ->> 'profileId' in (select test.id('cp_big' || g)::text from generate_series(21, 25) g)),
+  'people late in the alphabet are not always the ones left out (the order changes from message to message)');
+delete from chat_conversations where id = :'big';
 
 \echo '   switches, accounts, devices'
 set role authenticated;
@@ -110,3 +138,7 @@ select test.must_fail(format($$select chat_push_for_message(%L)$$, :'m1'), 'staf
 reset role;
 delete from chat_conversations where id in (:'dm', :'grp', :'cc');
 delete from push_subscriptions where endpoint like 'https://push.example.com/cp-%';
+-- leave no synthetic people behind (later tests list the staff directory)
+delete from attendance_reminder_prefs where profile_id in (select id from profiles where email like 'cp.%@example.com');
+delete from auth.users where email like 'cp.%@example.com';
+delete from test.users where name like 'cp\_%';

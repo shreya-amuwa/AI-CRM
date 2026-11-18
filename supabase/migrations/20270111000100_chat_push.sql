@@ -8,7 +8,8 @@
 --   "New message from <sender>" - client conversations are business records and must not appear on a lock screen. A file without text
 --   says "sent a file"; an end-to-end encrypted message says "New message". System lines are never pushed.
 -- * Once: chat_push_log records each message, so a retried call pushes nothing twice.
--- * At most 40 devices per message (the Worker's request limit), recipients in name order, newest devices first.
+-- * At most 40 devices per message (the Worker's request limit) and 2 per person (their newest), the recipients in a random order each
+--   time, so in a big group the same people are never always the ones left out.
 --
 -- The API calls chat_push_for_message right after a message is sent (service role only). Safe to run twice; pasteable in the SQL editor.
 -- =============================================================================
@@ -112,17 +113,18 @@ begin
   end if;
 
   for r in
-    select distinct on (p.full_name, p.id) p.id
-      from private.chat_recipients(c.id) rc
-      join public.profiles p on p.id = rc.user_id and p.status = 'ACTIVE'
-      left join public.attendance_reminder_prefs pr on pr.profile_id = p.id
-     where p.id is distinct from m.sender_id and rc.from_seq < m.seq and coalesce(pr.chat_push, true)
-     order by p.full_name, p.id
+    select x.id from (
+      select distinct p.id
+        from private.chat_recipients(c.id) rc
+        join public.profiles p on p.id = rc.user_id and p.status = 'ACTIVE'
+        left join public.attendance_reminder_prefs pr on pr.profile_id = p.id
+       where p.id is distinct from m.sender_id and rc.from_seq < m.seq and coalesce(pr.chat_push, true)) x
+     order by random()
   loop
     exit when v_budget <= 0;
     select coalesce(jsonb_agg(x.t order by x.created desc), '[]'::jsonb) into v_targets
       from (select jsonb_build_object('id', s.id, 'endpoint', s.endpoint, 'p256dh', s.p256dh, 'auth', s.auth) as t, s.created_at as created
-              from public.push_subscriptions s where s.profile_id = r.id and s.active order by s.created_at desc limit v_budget) x (t, created);
+              from public.push_subscriptions s where s.profile_id = r.id and s.active order by s.created_at desc limit least(2, v_budget)) x (t, created);
     continue when jsonb_array_length(v_targets) = 0;
     v_budget := v_budget - jsonb_array_length(v_targets);
     v_out := v_out || jsonb_build_object('profileId', r.id, 'title', v_title, 'body', v_body, 'tag', 'chat-' || c.id, 'url', v_url, 'targets', v_targets);

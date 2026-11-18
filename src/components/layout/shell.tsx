@@ -384,7 +384,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
     setOverlay(null);
   }, [active]);
   // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
-  useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []));
+  useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []), React.useCallback(() => setOverlay(null), []));
   const select = (id: string) => {
     if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);

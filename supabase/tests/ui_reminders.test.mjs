@@ -232,6 +232,7 @@ try {
   await page.waitForFunction(() => window.__chatOpened.length === 2);
   check(JSON.stringify(await page.evaluate(() => window.__chatOpened[1])) === JSON.stringify({ clientConversationId: 'cc1' }),
     'a worker message open-chat with clientConversationId opens that client chat');
+  check(await page.getByTestId('overlay-closed').textContent() === '2', 'opening a chat closes Attendance if it was on screen (the layout is told each time)');
   await ctx.close();
   ({ ctx, page } = await open({}, {}, undefined, '/?open=attendance'));
   await page.waitForFunction(() => document.querySelector('[data-testid="attendance-opened"]').textContent !== '0' || !/open=/.test(location.search));
