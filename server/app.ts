@@ -28,6 +28,7 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
+import { runAttendanceReminders } from './automations/attendanceReminders.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
 import { isPausedVercelCron } from './platform.js';
@@ -207,17 +208,30 @@ app.post('/internal/bolify/call-status', async c => {
   return c.json(ok({ matched: true, ...(data as Record<string, unknown>) }));
 });
 
-// Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
-// (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
-app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
+/** The scheduled runs' check: "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>" (or Vercel Cron's CRON_SECRET), compared in constant time. */
+function requireDispatchSecret(header: string | undefined): void {
   const secrets = automationSettings().dispatchSecrets;
   if (!secrets.length) throw new AppError('SERVICE_UNAVAILABLE', 'Automation dispatch is not configured.');
-  const given = Buffer.from((c.req.header('authorization') || '').replace(/^Bearer\s+/i, ''));
+  const given = Buffer.from((header || '').replace(/^Bearer\s+/i, ''));
   const okSecret = secrets.some(sec => {
     const want = Buffer.from(sec);
     return want.length === given.length && timingSafeEqual(want, given);
   });
   if (!okSecret) throw new AppError('UNAUTHENTICATED');
+}
+
+// Attendance reminders, every 5 minutes from the Worker's scheduled run (migration 20270109000200): the database decides what is due and
+// puts it in the bell; this pushes it to the person's devices. Same secret and the same Vercel stand-down as the dispatch below.
+app.post('/internal/attendance/reminders', async c => {
+  requireDispatchSecret(c.req.header('authorization'));
+  if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
+  return c.json(ok(await runAttendanceReminders()));
+});
+
+// Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
+// (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
+app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
+  requireDispatchSecret(c.req.header('authorization'));
   // After the move to Cloudflare: Vercel's own cron stands down when VERCEL_CRON_PAUSED=true, so the automations run on one platform only.
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
   // The same safety-net run moves overdue tickets up (RM -> Team Lead -> Department Head) when pg_cron is not set up.
@@ -674,7 +688,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

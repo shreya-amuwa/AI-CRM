@@ -1608,6 +1608,21 @@ async function autoCustomer(fields: Record<string, unknown>, website: string | n
 check((await dispatch()).status === 401, 'dispatch needs the secret');
 check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secret is refused');
 
+// Attendance reminders: the scheduled run (same secret as the dispatch) and the staff's push settings
+{
+  const reminders = (secret?: string) =>
+    fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: secret ? { authorization: `Bearer ${secret}` } : {} }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  check((await reminders()).status === 401 && (await reminders('wrong-secret-0123456789')).status === 401, 'internal reminders: 401 without the secret');
+  const run = await reminders('dispatch-secret-0123456789');
+  check(run.status === 200 && typeof run.json.data.due === 'number' && run.json.data.push === 'off' && run.json.data.pushed === 0,
+    'internal reminders: 200 with the secret and returns counts (push off without VAPID keys: the bell only)', run);
+  check((await api(null, 'GET', '/attendance/push-key')).status === 401, 'push-key: 401 signed out');
+  const key = await api('a', 'GET', '/attendance/push-key');
+  check(key.status === 200 && key.json.data.publicKey === null, 'push-key: no key while push is not set up', key);
+  const test = await api('a', 'POST', '/attendance/push-test', {});
+  check(test.status === 200 && test.json.data.sent === 0, 'push-test: nothing to send without devices or keys', test);
+}
+
 // Dry run: prepared and logged, nothing sent
 const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9819900011', phone: '9819900022' }, 'https://dry-traders.example');
 let d = await dispatch('dispatch-secret-0123456789');
