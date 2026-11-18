@@ -5933,6 +5933,194 @@ export interface ReminderCallList {
   rows: ReminderCallRow[];
 }
 
+// =============================================================================
+// AI Design Studio (migration 20270110000100): a separate, client-oriented department.
+// Department Head -> Team Lead -> Team Member. Every shape below is what the ads_* database functions return.
+// =============================================================================
+/** The department slug. It is a different department from "AI Studio" and from "Amuwa Design Studio" (slug designstudio). */
+export const AI_DESIGN_STUDIO_SLUG = 'ai-design-studio';
+
+export const ADS_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type AdsPriority = (typeof ADS_PRIORITIES)[number];
+export const ADS_PRIORITY_LABELS: Record<AdsPriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
+
+export const ADS_NOTICE_CATEGORIES = ['NEW_INSTRUCTIONS', 'DESIGN_FEEDBACK', 'REQUIREMENT_CHANGE', 'REVISION_REQUEST', 'APPROVAL_UPDATE', 'DELIVERY_UPDATE', 'IMPORTANT'] as const;
+export type AdsNoticeCategory = (typeof ADS_NOTICE_CATEGORIES)[number];
+export const ADS_NOTICE_CATEGORY_LABELS: Record<AdsNoticeCategory, string> = {
+  NEW_INSTRUCTIONS: 'New client instructions', DESIGN_FEEDBACK: 'Design feedback', REQUIREMENT_CHANGE: 'Requirement change', REVISION_REQUEST: 'Revision request',
+  APPROVAL_UPDATE: 'Approval update', DELIVERY_UPDATE: 'Delivery update', IMPORTANT: 'Important client communication'
+};
+export const ADS_NOTICE_STATUSES = ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'] as const;
+export type AdsNoticeStatus = (typeof ADS_NOTICE_STATUSES)[number];
+export const ADS_NOTICE_STATUS_LABELS: Record<AdsNoticeStatus, string> = { OPEN: 'Open', ACKNOWLEDGED: 'Acknowledged', RESOLVED: 'Resolved' };
+
+export const ADS_ASSIGNMENT_STATUSES = ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PENDING_REVIEW', 'REVISION_REQUIRED', 'COMPLETED'] as const;
+export type AdsAssignmentStatus = (typeof ADS_ASSIGNMENT_STATUSES)[number];
+export const ADS_ASSIGNMENT_STATUS_LABELS: Record<AdsAssignmentStatus, string> = {
+  ASSIGNED: 'Assigned', ACCEPTED: 'Accepted', IN_PROGRESS: 'In Progress', PENDING_REVIEW: 'Pending Review', REVISION_REQUIRED: 'Revision Required', COMPLETED: 'Completed'
+};
+
+export const ADS_REPORT_STATUSES = ['PENDING_TL', 'PENDING_DH', 'APPROVED', 'RETURNED'] as const;
+export type AdsReportStatus = (typeof ADS_REPORT_STATUSES)[number];
+export const ADS_REPORT_STATUS_LABELS: Record<AdsReportStatus, string> = {
+  PENDING_TL: 'Pending Team Lead approval', PENDING_DH: 'Pending Department Head approval', APPROVED: 'Approved', RETURNED: 'Returned'
+};
+
+export const ADS_ISSUE_CATEGORIES = ['CLIENT_REQUIREMENTS', 'WORK_ASSIGNMENT', 'DESIGN_BLOCKER', 'TECHNICAL', 'TEAM_COORDINATION', 'OTHER'] as const;
+export type AdsIssueCategory = (typeof ADS_ISSUE_CATEGORIES)[number];
+export const ADS_ISSUE_CATEGORY_LABELS: Record<AdsIssueCategory, string> = {
+  CLIENT_REQUIREMENTS: 'Client requirements', WORK_ASSIGNMENT: 'Work assignment', DESIGN_BLOCKER: 'Design-related blocker', TECHNICAL: 'Technical difficulty',
+  TEAM_COORDINATION: 'Team coordination', OTHER: 'Other work-related concern'
+};
+export const ADS_ISSUE_STATUSES = ['OPEN', 'UNDER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const;
+export type AdsIssueStatus = (typeof ADS_ISSUE_STATUSES)[number];
+export const ADS_ISSUE_STATUS_LABELS: Record<AdsIssueStatus, string> = { OPEN: 'Open', UNDER_REVIEW: 'Under Review', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed' };
+
+export interface AdsLink { name: string; url: string }
+export type AdsRole = 'DEPARTMENT_HEAD' | 'TEAM_HEAD' | 'TEAM_MEMBER';
+
+export interface AdsContext {
+  userId: string;
+  name: string;
+  role: AdsRole;
+  departmentId: string;
+  teamId: string | null;
+  leadId: string | null;
+  leadName: string | null;
+  /** A Team Member who has no Team Lead yet: work, reports and issues go straight to the Department Head. */
+  unassigned: boolean;
+}
+export interface AdsPerson { id: string; name: string; role: 'TEAM_HEAD' | 'TEAM_MEMBER'; leadId: string | null; leadName: string | null; hasLead: boolean }
+
+export interface AdsClient {
+  id: string;
+  clientName: string;
+  companyName: string | null;
+  contactPerson: string | null;
+  contactNumber: string | null;
+  email: string | null;
+  businessAddress: string | null;
+  requirements: string | null;
+  designService: string | null;
+  workDescription: string | null;
+  remarks: string | null;
+  attachments: AdsLink[];
+  status: 'ACTIVE' | 'INACTIVE';
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  canEdit?: boolean;
+}
+export interface AdsNotice {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  title: string;
+  category: AdsNoticeCategory;
+  description: string;
+  priority: AdsPriority;
+  status: AdsNoticeStatus;
+  assignedTo: string | null;
+  assignedToName: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+}
+export interface AdsEvent { id: number; event: string; fromValue: string | null; toValue: string | null; note: string | null; actorId: string | null; actorName: string | null; createdAt: string }
+export interface AdsAssignment {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  parentId: string | null;
+  title: string;
+  description: string | null;
+  instructions: string | null;
+  priority: AdsPriority;
+  dueDate: string | null;
+  status: AdsAssignmentStatus;
+  progress: number;
+  attachments: AdsLink[];
+  assignedBy: string;
+  assignedByName: string | null;
+  assigneeId: string;
+  assigneeName: string | null;
+  assigneeRole: AdsRole | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  overdue: boolean;
+  memberCount: number;
+  memberCompleted: number;
+}
+export interface AdsAssignmentDetail extends AdsAssignment {
+  events: AdsEvent[];
+  /** What a Team Lead passed on to Team Members (the rows the caller may see). */
+  members: AdsAssignment[];
+  canReview: boolean;
+  canUpdateStatus: boolean;
+}
+export interface AdsReport {
+  id: string;
+  authorId: string;
+  authorName: string | null;
+  authorRole: AdsRole | null;
+  leadId: string | null;
+  leadName: string | null;
+  reportDate: string;
+  clientId: string | null;
+  clientName: string | null;
+  assignmentId: string | null;
+  assignmentTitle: string | null;
+  workCompleted: string;
+  workInProgress: string | null;
+  pendingWork: string | null;
+  challenges: string | null;
+  remarks: string | null;
+  attachments: AdsLink[];
+  status: AdsReportStatus;
+  returnStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
+  revision: number;
+  submittedAt: string;
+  updatedAt: string;
+  /** The caller is the one who must decide on it now (the database works this out). */
+  canReview: boolean;
+}
+export interface AdsReportDetail extends AdsReport { events: AdsEvent[] }
+export interface AdsIssue {
+  id: string;
+  reference: string;
+  title: string;
+  category: AdsIssueCategory;
+  description: string;
+  clientId: string | null;
+  clientName: string | null;
+  assignmentId: string | null;
+  assignmentTitle: string | null;
+  priority: AdsPriority;
+  attachments: AdsLink[];
+  status: AdsIssueStatus;
+  handlerLevel: 'TEAM_LEAD' | 'DEPARTMENT_HEAD';
+  raisedBy: string;
+  raisedByName: string | null;
+  leadName: string | null;
+  escalatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AdsIssueDetail extends AdsIssue { events: AdsEvent[]; canWork: boolean; canEscalate: boolean }
+export interface AdsActivity { id: number; entityType: 'assignment' | 'report' | 'issue' | 'notice' | 'client'; entityId: string; event: string; fromValue: string | null; toValue: string | null; actorName: string | null; createdAt: string; title: string | null }
+export interface AdsOverview {
+  clients: number;
+  assignments: { total: number; ongoing: number; completed: number; pending: number; overdue: number };
+  upcoming: AdsAssignment[];
+  pendingReports: number;
+  /** null for a Department Head (they do not write daily reports). */
+  reportToday: boolean | null;
+  openIssues: number;
+  notices: AdsNotice[];
+  activity: AdsActivity[];
+}
 
 // ---- AI Studio (migration 20270105000100): projects, tasks and daily reports -------------------------------------------------------------
 export const AI_STUDIO_SLUG = 'ai-studio';

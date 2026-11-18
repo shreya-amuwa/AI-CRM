@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'design-studio' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -41,6 +41,12 @@ export const parseCurrentRoute = (): ParsedRoute => {
       type: 'support-lead',
       paramId: slMatch[1]
     };
+  }
+
+  // 1a2-ads. /ai-design-studio/dashboard/:id[/:page] - AI Design Studio staff only (its Department Head, Team Leads and Team Members)
+  const adsMatch = path.match(/^\/ai-design-studio\/dashboard\/([^/]+)(?:\/[^/]+(?:\/[^/]+)?)?$/);
+  if (adsMatch) {
+    return { path, type: 'design-studio', paramId: adsMatch[1] };
   }
 
   // 1a2a. /hr-recruiter/dashboard/:id[/:page[/:recordId]] - HR Recruiters only
@@ -181,6 +187,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
       return `/support-lead/dashboard/${user.id}`;
     case 'hr-recruiter':
       return `/hr-recruiter/dashboard/${user.id}`;
+    case 'design-studio':
+      return `/ai-design-studio/dashboard/${user.id}`;
     case 'telecaller':
       return `/telecaller/dashboard/${user.id}`;
     case 'business-associate':
@@ -277,6 +285,14 @@ export const validateRouteAccess = (
     return { allowed: false, redirectTo: `/support-lead/dashboard/${user.id}` };
   }
 
+  // AI Design Studio staff open only their own AI Design Studio dashboard (never another department's, or another person's).
+  if (user.role === 'design-studio') {
+    if (route.type === 'design-studio' && route.paramId === user.id) {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: `/ai-design-studio/dashboard/${user.id}` };
+  }
+
   // An HR Recruiter opens only their own Recruiter dashboard (never the HR dashboard, another recruiter's, or any other role's).
   if (user.role === 'hr-recruiter') {
     if (route.type === 'hr-recruiter' && route.paramId === user.id) {
@@ -341,7 +357,7 @@ export const validateRouteAccess = (
 
   // If user is admin:
   if (user.role === 'admin') {
-    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head' || route.type === 'ai-studio') {
+    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head' || route.type === 'ai-studio' || route.type === 'design-studio') {
       return { allowed: false, redirectTo: `/admin/dashboard/${user.departmentId || 'wabastore'}` };
     }
     return { allowed: true };
@@ -349,6 +365,8 @@ export const validateRouteAccess = (
 
   // If user is superadmin:
   if (user.role === 'superadmin') {
+    // AI Design Studio has no Super Admin workspace (its people create and manage their own work); only AI Studio and the other departments open
+    if (route.type === 'admin' && route.paramId === 'ai-design-studio') return { allowed: false, redirectTo: '/department-hub' };
     return { allowed: true };
   }
 

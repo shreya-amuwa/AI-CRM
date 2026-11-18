@@ -820,6 +820,35 @@ export const reportAnalyticsController = {
   generate: (async ctx => ok(await svc(ctx).reportAnalytics.generate(ctx.req.body))) as Handler
 };
 
+// AI Design Studio: clients, client notices, assignments, daily reports, issues (the database decides who may do what)
+export const aiDesignStudioController = {
+  context: (async ctx => ok(await svc(ctx).aiDesignStudio.context())) as Handler,
+  people: (async ctx => ok(await svc(ctx).aiDesignStudio.people())) as Handler,
+  overview: (async ctx => ok(await svc(ctx).aiDesignStudio.overview())) as Handler,
+  clientCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.clientCreate(ctx.req.body), 201)) as Handler,
+  clientUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.clientUpdate(ctx.params.id, ctx.req.body))) as Handler,
+  clients: (async ctx => ok(await svc(ctx).aiDesignStudio.clients(ctx.req.query))) as Handler,
+  client: (async ctx => ok(await svc(ctx).aiDesignStudio.client(ctx.params.id))) as Handler,
+  noticeCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.noticeCreate(ctx.req.body), 201)) as Handler,
+  notices: (async ctx => ok(await svc(ctx).aiDesignStudio.notices(ctx.req.query))) as Handler,
+  noticeStatus: (async ctx => ok(await svc(ctx).aiDesignStudio.noticeStatus(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentCreate(ctx.req.body), 201)) as Handler,
+  assignments: (async ctx => ok(await svc(ctx).aiDesignStudio.assignments(ctx.req.query))) as Handler,
+  assignment: (async ctx => ok(await svc(ctx).aiDesignStudio.assignment(ctx.params.id))) as Handler,
+  assignmentStatus: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentStatus(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentUpdate(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentReassign: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentReassign(ctx.params.id, ctx.req.body))) as Handler,
+  reportSubmit: (async ctx => ok(await svc(ctx).aiDesignStudio.reportSubmit(ctx.req.body), 201)) as Handler,
+  reports: (async ctx => ok(await svc(ctx).aiDesignStudio.reports(ctx.req.query))) as Handler,
+  report: (async ctx => ok(await svc(ctx).aiDesignStudio.report(ctx.params.id))) as Handler,
+  reportReview: (async ctx => ok(await svc(ctx).aiDesignStudio.reportReview(ctx.params.id, ctx.req.body))) as Handler,
+  issueCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueCreate(ctx.req.body), 201)) as Handler,
+  issues: (async ctx => ok(await svc(ctx).aiDesignStudio.issues(ctx.req.query))) as Handler,
+  issue: (async ctx => ok(await svc(ctx).aiDesignStudio.issue(ctx.params.id))) as Handler,
+  issueUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueUpdate(ctx.params.id, ctx.req.body))) as Handler,
+  issueEscalate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueEscalate(ctx.params.id, ctx.req.body))) as Handler
+};
+
 // ---- AI Studio ----
 export const aiStudioController = {
   overview: (async ctx => ok(await svc(ctx).aiStudio.overview())) as Handler,

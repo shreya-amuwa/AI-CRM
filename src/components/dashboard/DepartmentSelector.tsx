@@ -9,6 +9,7 @@ import { useDepartments } from '../../context/DepartmentContext';
 import { useTabs } from '../../context/TabContext';
 import { Department } from '../../types/crm';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
+import { AI_DESIGN_STUDIO_SLUG } from '../../../shared/contracts';
 
 const getFallbackIcon = (iconName: string) => {
   switch (iconName) {
@@ -36,7 +37,9 @@ const CARD_BASE =
  */
 export const DepartmentGrid: React.FC = () => {
   const { selectDepartment, user } = useAuth();
-  const { departments, addDepartment, deleteDepartment } = useDepartments();
+  const { departments: allListed, addDepartment, deleteDepartment } = useDepartments();
+  // AI Design Studio has no Super Admin workspace: it is a department of its own people (and stays in the Add Team Member lists)
+  const departments = allListed.filter(dep => dep.id !== AI_DESIGN_STUDIO_SLUG);
   const { openDepartment, tabs } = useTabs();
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr';
