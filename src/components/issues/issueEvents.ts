@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { openReports } from '../reports/reportEvents';
 import { openAiStudio } from '../ai-studio/aiStudioEvents';
 import { openAttendance } from '../attendance/attendanceEvents';
+import { openAds } from '../ai-design-studio/adsEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -60,6 +61,8 @@ export function useOpenHrCaseRequest(show: (detail: OpenHrCaseDetail) => void) {
 const EMPLOYEE_SIDE = new Set(['EMPLOYEE_ISSUE_UPDATED', 'EMPLOYEE_MEETING_UPDATED']);
 /** A notification about an employee issue or meeting request: open the right page on it. Returns false for any other notification. */
 export function openFromNotification(n: { type: string; entityType: string | null; entityId: string | null }): boolean {
+  // AI Design Studio (clients, notices, assignments, reports, issues): open its dashboard on the record
+  if (n.entityType?.startsWith('ads_')) { openAds({ entityType: n.entityType, id: n.entityId ?? undefined }); return true; }
   // a work report notification (submitted, decided, sent back, package sent) opens the Reports page, on the report when it names one
   // a weekly report that reached HR opens HR's Performance Reviews; the consolidated report / analysis opens the Super Admin's Reports & Performance
   if (n.entityType === 'work_report_package' && n.type === 'REPORT_WEEKLY_SENT_TO_HR') { openHrCase({ section: 'reviews' }); return true; }

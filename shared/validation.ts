@@ -66,7 +66,14 @@ import {
   MEETING_MODES,
   MEETING_STATUSES,
   TC_WORKFLOW_STATUSES,
-  META_WORKFLOW_STATUSES
+  META_WORKFLOW_STATUSES,
+  ADS_PRIORITIES,
+  ADS_NOTICE_CATEGORIES,
+  ADS_NOTICE_STATUSES,
+  ADS_ASSIGNMENT_STATUSES,
+  ADS_REPORT_STATUSES,
+  ADS_ISSUE_CATEGORIES,
+  ADS_ISSUE_STATUSES
 } from './contracts.js';
 
 const trimmed = (max: number) => z.string().trim().max(max);
@@ -3062,6 +3069,123 @@ export const reminderCallListQuerySchema = z
   })
   .strict();
 export type ReminderCallListQuery = z.infer<typeof reminderCallListQuerySchema>;
+
+// ---- AI Design Studio (migration 20270110000100) -------------------------------------------------------------------------------------------
+// The browser sends no role, team or reviewer: the ads_* database functions read those from the login. The database checks every value again.
+const adsLinkSchema = z
+  .object({ name: trimmed(120).optional(), url: z.string().trim().max(500).regex(/^https?:\/\/\S+$/i, 'An attachment link must start with http:// or https://.') })
+  .strict();
+const adsLinks = z.array(adsLinkSchema).max(5, 'Add up to 5 attachment links.');
+const adsOptionalId = z.preprocess(v => (v === '' || v === null ? undefined : v), uuidSchema.optional());
+const adsPriority = z.enum(ADS_PRIORITIES);
+const adsRequiredText = (max: number, what: string) => z.string().trim().min(1, `Enter the ${what}.`).max(max);
+
+const adsClientFields = {
+  clientName: adsRequiredText(150, 'client name'),
+  companyName: optionalText(150),
+  contactPerson: optionalText(150),
+  contactNumber: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? null : v), phoneSchema.nullable().optional()),
+  email: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? null : v), emailSchema.nullable().optional()),
+  businessAddress: optionalText(500),
+  requirements: optionalText(4000),
+  designService: optionalText(200),
+  workDescription: optionalText(4000),
+  remarks: optionalText(2000),
+  attachments: adsLinks.optional()
+};
+export const adsClientCreateSchema = z.object(adsClientFields).strict();
+export type AdsClientCreateInput = z.infer<typeof adsClientCreateSchema>;
+export const adsClientUpdateSchema = z.object({ ...adsClientFields, status: z.enum(['ACTIVE', 'INACTIVE']) }).partial().strict();
+export type AdsClientUpdateInput = z.infer<typeof adsClientUpdateSchema>;
+export const adsClientListQuerySchema = z.object({ search: trimmed(100).optional(), status: z.enum(['ACTIVE', 'INACTIVE']).optional() }).strict();
+
+export const adsNoticeCreateSchema = z
+  .object({
+    clientId: uuidSchema,
+    title: adsRequiredText(200, 'notice title'),
+    category: z.enum(ADS_NOTICE_CATEGORIES),
+    description: adsRequiredText(4000, 'notice description'),
+    priority: adsPriority.default('MEDIUM'),
+    assignedTo: adsOptionalId
+  })
+  .strict();
+export type AdsNoticeCreateInput = z.infer<typeof adsNoticeCreateSchema>;
+export const adsNoticeStatusSchema = z.object({ status: z.enum(ADS_NOTICE_STATUSES) }).strict();
+export const adsNoticeListQuerySchema = z.object({ clientId: adsOptionalId, status: z.enum(ADS_NOTICE_STATUSES).optional() }).strict();
+
+export const adsAssignmentCreateSchema = z
+  .object({
+    clientId: adsOptionalId,
+    parentId: adsOptionalId,
+    assigneeId: uuidSchema,
+    title: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), trimmed(200).optional()),
+    description: optionalText(4000),
+    instructions: optionalText(2000),
+    priority: adsPriority.optional(),
+    dueDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    attachments: adsLinks.optional()
+  })
+  .strict();
+export type AdsAssignmentCreateInput = z.infer<typeof adsAssignmentCreateSchema>;
+export const adsAssignmentListQuerySchema = z
+  .object({ view: z.enum(['mine', 'team', 'all']).default('all'), status: z.enum(ADS_ASSIGNMENT_STATUSES).optional(), clientId: adsOptionalId })
+  .strict();
+export const adsAssignmentStatusSchema = z
+  .object({ status: z.enum(ADS_ASSIGNMENT_STATUSES), progress: z.coerce.number().int().min(0).max(100).optional(), note: optionalText(2000) })
+  .strict();
+export const adsAssignmentUpdateSchema = z
+  .object({ dueDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable()).optional(), priority: adsPriority.optional(), instructions: optionalText(2000) })
+  .strict();
+export const adsAssignmentReassignSchema = z.object({ assigneeId: uuidSchema, note: optionalText(500) }).strict();
+
+export const adsReportSchema = z
+  .object({
+    id: adsOptionalId,
+    reportDate: z.preprocess(v => (v === '' ? undefined : v), isoDate.optional()),
+    clientId: adsOptionalId,
+    assignmentId: adsOptionalId,
+    workCompleted: adsRequiredText(4000, 'work completed today'),
+    workInProgress: optionalText(4000),
+    pendingWork: optionalText(4000),
+    challenges: optionalText(4000),
+    remarks: optionalText(2000),
+    attachments: adsLinks.optional(),
+    clientRequestId: trimmed(80).optional()
+  })
+  .strict();
+export type AdsReportInput = z.infer<typeof adsReportSchema>;
+export const adsReportListQuerySchema = z
+  .object({
+    view: z.enum(['mine', 'team', 'all']).default('mine'),
+    status: z.enum(ADS_REPORT_STATUSES).optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    clientId: adsOptionalId,
+    authorId: adsOptionalId,
+    leadId: adsOptionalId
+  })
+  .strict();
+export const adsReportReviewSchema = z.object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: optionalText(2000) }).strict();
+
+export const adsIssueCreateSchema = z
+  .object({
+    title: adsRequiredText(200, 'issue title'),
+    category: z.enum(ADS_ISSUE_CATEGORIES),
+    description: adsRequiredText(4000, 'description'),
+    clientId: adsOptionalId,
+    assignmentId: adsOptionalId,
+    priority: adsPriority.default('MEDIUM'),
+    attachments: adsLinks.optional(),
+    clientRequestId: trimmed(80).optional()
+  })
+  .strict();
+export type AdsIssueCreateInput = z.infer<typeof adsIssueCreateSchema>;
+export const adsIssueListQuerySchema = z.object({ view: z.enum(['mine', 'team', 'all']).default('mine'), status: z.enum(ADS_ISSUE_STATUSES).optional() }).strict();
+export const adsIssueUpdateSchema = z
+  .object({ status: z.enum(ADS_ISSUE_STATUSES).optional(), note: optionalText(2000) })
+  .strict()
+  .refine(v => v.status !== undefined || (v.note !== undefined && v.note !== null), { message: 'Write a response or choose a status.' });
+export const adsIssueEscalateSchema = z.object({ note: optionalText(2000) }).strict();
 
 
 // ---- AI Studio (migration 20270105000100) -------------------------------------------------------------------------------------------------

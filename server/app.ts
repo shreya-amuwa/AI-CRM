@@ -409,7 +409,7 @@ app.post('/auth/forgot-password', async c => {
 
 // Attendance reminders: a browser renewed its push subscription on its own (public/sw.js, "pushsubscriptionchange"). The service worker
 // runs with nobody signed in, so the old subscription address (known only to that browser and the CRM) is the proof: the database moves
-// an existing, active device to the new address for the same person, and changes nothing otherwise (20270110000100).
+// an existing, active device to the new address for the same person, and changes nothing otherwise (20270110000200).
 app.post('/attendance/push-resubscribe', async c => {
   await enforce([{ key: `push-resubscribe:ip:${clientIp(c)}`, limit: 30, window: 3600 }], 'memory');
   const body = (await readJson(c)) as { oldEndpoint?: unknown; endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | undefined;

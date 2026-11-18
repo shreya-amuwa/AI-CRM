@@ -34,7 +34,7 @@ card at the top of their Operations Dashboard. Nothing is recorded automatically
   No lunch before Punch In or after Punch Out. Remaining = allowance − total taken (never below 0); extra = total taken − allowance. Lunch is shown
   separately and is **not** deducted from the worked time (Punch In to Punch Out).
 
-## Reminders and the app (migrations 20270109000200, 20270110000100)
+## Reminders and the app (migrations 20270109000200, 20270110000200)
 
 Staff get **Punch In**, **Lunch time**, **Lunch ends in N minutes** and **Punch Out** reminders in the CRM bell and, on each device where
 they turned them on, as phone / laptop notifications (Web Push).

@@ -228,8 +228,8 @@ reset role;
 delete from push_subscriptions where endpoint like 'https://push.example.com/%';
 
 \echo '   a browser that renews its subscription (pushsubscriptionchange) keeps getting the same person''s reminders'
-\i supabase/migrations/20270110000100_push_subscription_replace.sql
-\i supabase/migrations/20270110000100_push_subscription_replace.sql
+\i supabase/migrations/20270110000200_push_subscription_replace.sql
+\i supabase/migrations/20270110000200_push_subscription_replace.sql
 delete from push_subscriptions where endpoint like 'https://push.example.com/%';
 insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label, active) values
   (test.id('wkr_tmp'), 'https://push.example.com/old', 'BPk-old', 'auth-old', 'Chrome on Android', true),
