@@ -1621,6 +1621,20 @@ check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secre
   check(key.status === 200 && key.json.data.publicKey === null, 'push-key: no key while push is not set up', key);
   const test = await api('a', 'POST', '/attendance/push-test', {});
   check(test.status === 200 && test.json.data.sent === 0, 'push-test: nothing to send without devices or keys', test);
+  // a browser renewing its subscription (the service worker, nobody signed in): only an existing active device is moved to the new address
+  const bad = await api(null, 'POST', '/attendance/push-resubscribe', { oldEndpoint: 'https://push.example.com/a' });
+  check(bad.status === 422 && bad.json.error.code === 'VALIDATION_ERROR', 'push-resubscribe: an incomplete request is refused', bad);
+  const unknown = await api(null, 'POST', '/attendance/push-resubscribe',
+    { oldEndpoint: 'https://push.example.com/never-saved', endpoint: 'https://push.example.com/b', keys: { p256dh: 'BPk-b', auth: 'auth-b' } });
+  check(unknown.status === 200 && unknown.json.data.replaced === false, 'push-resubscribe: an unknown device changes nothing (and needs no sign-in)', unknown);
+  await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) select id, 'https://push.example.com/api-old', 'BPk-o', 'auth-o', 'Test'
+                    from public.profiles where status = 'ACTIVE' and role <> 'SUPER_ADMIN' limit 1 on conflict (endpoint) do nothing`);
+  const moved = await api(null, 'POST', '/attendance/push-resubscribe',
+    { oldEndpoint: 'https://push.example.com/api-old', endpoint: 'https://push.example.com/api-new', keys: { p256dh: 'BPk-n', auth: 'auth-n' } });
+  check(moved.status === 200 && moved.json.data.replaced === true
+        && (await db.query(`select 1 from public.push_subscriptions where endpoint = 'https://push.example.com/api-new' and p256dh = 'BPk-n'`)).rowCount === 1,
+    'push-resubscribe: a saved device moves to its new address', moved);
+  await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/api-%'`);
 }
 
 // Dry run: prepared and logged, nothing sent

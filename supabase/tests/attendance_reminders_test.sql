@@ -226,3 +226,32 @@ select test.login('wkr_tmp');
 select test.must_fail($$select attendance_reminders_due(now())$$, 'staff cannot run the reminders', 'permission denied');
 reset role;
 delete from push_subscriptions where endpoint like 'https://push.example.com/%';
+
+\echo '   a browser that renews its subscription (pushsubscriptionchange) keeps getting the same person''s reminders'
+\i supabase/migrations/20270110000100_push_subscription_replace.sql
+\i supabase/migrations/20270110000100_push_subscription_replace.sql
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';
+insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label, active) values
+  (test.id('wkr_tmp'), 'https://push.example.com/old', 'BPk-old', 'auth-old', 'Chrome on Android', true),
+  (test.id('wkr_tmp'), 'https://push.example.com/off', 'BPk-off', 'auth-off', 'Old laptop', false),
+  (test.id('wkr_tms'), 'https://push.example.com/taken', 'BPk-taken', 'auth-taken', 'Edge', true);
+select id as old_id from push_subscriptions where endpoint = 'https://push.example.com/old' \gset
+select test.check(push_subscription_replace('https://push.example.com/old', 'https://push.example.com/new', 'BPk-new', 'auth-new'), 'the renewed subscription is accepted');
+select test.check((select profile_id = test.id('wkr_tmp') and endpoint = 'https://push.example.com/new' and p256dh = 'BPk-new' and auth = 'auth-new' and active
+                     from push_subscriptions where id = :'old_id')
+                  and not exists (select 1 from push_subscriptions where endpoint = 'https://push.example.com/old'),
+  'the same device row now has the new address and keys, and the same owner');
+select test.check(not push_subscription_replace('https://push.example.com/unknown', 'https://push.example.com/x', 'k', 'a')
+                  and not exists (select 1 from push_subscriptions where endpoint = 'https://push.example.com/x'), 'an unknown old address changes nothing');
+select test.check(not push_subscription_replace('https://push.example.com/off', 'https://push.example.com/y', 'k', 'a')
+                  and not exists (select 1 from push_subscriptions where endpoint = 'https://push.example.com/y'), 'a switched-off device is not switched back on this way');
+select test.check(not push_subscription_replace('https://push.example.com/new', 'https://push.example.com/taken', 'k', 'a')
+                  and (select profile_id = test.id('wkr_tms') and p256dh = 'BPk-taken' from push_subscriptions where endpoint = 'https://push.example.com/taken'),
+  'an address that already belongs to another device is never taken over');
+select test.must_fail($$select push_subscription_replace('https://push.example.com/new', 'http://push.example.com/z', 'k', 'a')$$, 'the new address must be https', 'VALIDATION_ERROR');
+set role authenticated;
+select test.login('wkr_tmp');
+select test.must_fail($$select push_subscription_replace('https://push.example.com/new', 'https://push.example.com/z', 'k', 'a')$$,
+  'only the server (service role) replaces a subscription', 'permission denied');
+reset role;
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';

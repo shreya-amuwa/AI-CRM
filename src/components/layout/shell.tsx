@@ -4,6 +4,7 @@ import { BookOpen, CalendarDays, ChevronDown, Clock3, LogOut, Menu, X } from 'lu
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
+import { registerServiceWorker } from '../../lib/push/registerServiceWorker';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -377,6 +378,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
     if (firstActive.current) { firstActive.current = false; return; }
     setOverlay(null);
   }, [active]);
+  // the attendance reminders' service worker (public/sw.js): staff only, so it is registered here and not on the portals
+  useEffect(() => { void registerServiceWorker(); }, []);
   const select = (id: string) => {
     if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
