@@ -36,7 +36,7 @@ In the **HR Department Panel**, **Attendance → Attendance register (all staff)
 | CRM Login | First CRM sign-in of the day and the last sign-out ("No logout yet" / "Logout not recorded" when the session was not closed) |
 | Punch In / Punch Out | Time in India Standard Time; "Missing" when punched in but not out |
 | Punch In / Punch Out Location | Coordinates, accuracy in metres, a Google Maps link, and the nearest address when it has been looked up |
-| Lunch Duration | Total of all breaks; anything over the **50 minutes** allowed is shown as extra |
+| Lunch Duration | Total of all breaks; anything over the **45 minutes** allowed is shown as extra |
 | Worked | Punch In to Punch Out (lunch is shown separately, not deducted) |
 | Status | Not Punched In, Punched In, On Lunch, Resumed Work, Punched Out, Incomplete Attendance |
 

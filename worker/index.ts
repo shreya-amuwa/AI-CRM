@@ -114,10 +114,33 @@ export async function runScheduledDispatch(env: WorkerEnv): Promise<void> {
   console.log(`[cron] automations dispatched: HTTP ${res.status}`);
 }
 
+/** The cron of the attendance reminders (wrangler.jsonc). */
+export const REMINDERS_CRON = '*/5 * * * *';
+
+/** The attendance reminders, every 5 minutes: the same switch and the same secret as the automations. */
+export async function runScheduledReminders(env: WorkerEnv): Promise<void> {
+  if ((process.env.SCHEDULED_ENABLED || '').trim().toLowerCase() !== 'true') {
+    console.log('[cron] reminders skipped: SCHEDULED_ENABLED is not "true"');
+    return;
+  }
+  const secret = automationSettings().dispatchSecrets[0];
+  if (!secret) {
+    throw new Error('Attendance reminders are not configured: set the CRON_SECRET (or AUTOMATION_DISPATCH_SECRET) secret, 16+ characters.');
+  }
+  const res = await app.fetch(
+    new Request('https://worker.internal/api/v1/internal/attendance/reminders', { method: 'POST', headers: { authorization: `Bearer ${secret}` } }),
+    env
+  );
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Attendance reminders failed: HTTP ${res.status} ${text.slice(0, 300)}`);
+  console.log(`[cron] attendance reminders: HTTP ${res.status} ${text.slice(0, 200)}`);
+}
+
 export default {
   fetch: (request: Request, env: WorkerEnv, ctx: WorkerContext) => handleRequest(request, env, ctx),
   // Awaited (not waitUntil) so a failed run shows as failed in the Worker's cron history.
-  scheduled: async (_controller: unknown, env: WorkerEnv) => {
-    await runScheduledDispatch(env);
+  scheduled: async (controller: { cron?: string }, env: WorkerEnv) => {
+    if (controller?.cron === REMINDERS_CRON) await runScheduledReminders(env);
+    else await runScheduledDispatch(env);
   }
 };

@@ -42,7 +42,7 @@ function check(cond: unknown, label: string, extra?: unknown) {
 // ---- the caller's address and place: only Cloudflare's own values ------------------------------------------------------------
 // worker/index.ts imports the whole API; give it the configuration it reads when loaded.
 Object.assign(process.env, { SUPABASE_URL: 'https://project.supabase.example', SUPABASE_ANON_KEY: 'anon', API_ACCESS_LOG: 'off' });
-const { withPlatformHeaders, handleRequest, runScheduledDispatch } = await import('../../worker/index.js');
+const { withPlatformHeaders, handleRequest, runScheduledDispatch, default: worker } = await import('../../worker/index.js');
 {
   const forged = new Request('https://crm.example/api/v1/me', {
     headers: {
@@ -115,7 +115,7 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch } = await impor
 {
   const wrangler = readFileSync('wrangler.jsonc', 'utf8');
   const crons = JSON.parse(/"crons":\s*(\[[^\]]*\])/.exec(wrangler)![1]);
-  check(JSON.stringify(crons) === JSON.stringify(['30 3 * * *', '0 5 * * *']), 'the Worker runs the automations at the times Vercel Cron did (03:30 and 05:00 UTC)', crons);
+  check(JSON.stringify(crons) === JSON.stringify(['30 3 * * *', '0 5 * * *', '*/5 * * * *']), 'the Worker runs the automations at the times Vercel Cron did (03:30 and 05:00 UTC), and the attendance reminders every 5 minutes', crons);
   delete process.env.CRON_SECRET;
   delete process.env.AUTOMATION_DISPATCH_SECRET;
   delete process.env.SCHEDULED_ENABLED;
@@ -135,6 +135,32 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch } = await impor
     message = (e as Error).message;
   }
   check(/set the CRON_SECRET/.test(message), 'a scheduled run without a dispatch secret fails loudly (visible in the Cloudflare cron log)', message);
+
+  // the attendance reminders: the 5-minute cron calls the reminders endpoint, the two daily crons call the dispatch
+  const env = { ASSETS: { fetch: async () => new Response('') } };
+  const logs: string[] = [];
+  const realLog = console.log;
+  const run = async (cron: string) => {
+    logs.length = 0;
+    console.log = (...a: unknown[]) => { logs.push(a.join(' ')); };
+    let error = '';
+    try { await worker.scheduled({ cron }, env); } catch (e) { error = (e as Error).message; } finally { console.log = realLog; }
+    return { logs: logs.join('\n'), error };
+  };
+  delete process.env.SCHEDULED_ENABLED;
+  let r = await run('*/5 * * * *');
+  check(/\[cron\] reminders skipped/.test(r.logs) && !r.error, 'reminders cron is skipped unless SCHEDULED_ENABLED=true', r);
+  process.env.SCHEDULED_ENABLED = 'true';
+  r = await run('*/5 * * * *');
+  check(/set the CRON_SECRET/.test(r.error), 'the reminders run without a dispatch secret fails loudly too', r);
+  process.env.CRON_SECRET = 'cron-secret-for-the-test-0123';
+  r = await run('*/5 * * * *');
+  check(!r.error && /\[cron\] attendance reminders: HTTP 200/.test(r.logs) && !/automations dispatched/.test(r.logs),
+    'the 5-minute cron calls the reminders endpoint (with the secret), not the daily dispatch', r);
+  delete process.env.CRON_SECRET;
+  r = await run('30 3 * * *');
+  check(/set the CRON_SECRET/.test(r.error) && !/reminders/.test(r.logs), 'the daily crons still call the dispatch', r);
+  delete process.env.SCHEDULED_ENABLED;
 }
 
 // ---- e-mail: SMTP on Workers, Resend's rate limit ----------------------------------------------------------------------------

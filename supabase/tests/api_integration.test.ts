@@ -78,8 +78,8 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before
-check(r.status === 200 && r.json.data.length === 13 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio'), 'departments come from the database');
+// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100)
+check(r.status === 200 && r.json.data.length === 14 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -1607,6 +1607,21 @@ async function autoCustomer(fields: Record<string, unknown>, website: string | n
 // The dispatch endpoint is protected
 check((await dispatch()).status === 401, 'dispatch needs the secret');
 check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secret is refused');
+
+// Attendance reminders: the scheduled run (same secret as the dispatch) and the staff's push settings
+{
+  const reminders = (secret?: string) =>
+    fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: secret ? { authorization: `Bearer ${secret}` } : {} }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  check((await reminders()).status === 401 && (await reminders('wrong-secret-0123456789')).status === 401, 'internal reminders: 401 without the secret');
+  const run = await reminders('dispatch-secret-0123456789');
+  check(run.status === 200 && typeof run.json.data.due === 'number' && run.json.data.push === 'off' && run.json.data.pushed === 0,
+    'internal reminders: 200 with the secret and returns counts (push off without VAPID keys: the bell only)', run);
+  check((await api(null, 'GET', '/attendance/push-key')).status === 401, 'push-key: 401 signed out');
+  const key = await api('a', 'GET', '/attendance/push-key');
+  check(key.status === 200 && key.json.data.publicKey === null, 'push-key: no key while push is not set up', key);
+  const test = await api('a', 'POST', '/attendance/push-test', {});
+  check(test.status === 200 && test.json.data.sent === 0, 'push-test: nothing to send without devices or keys', test);
+}
 
 // Dry run: prepared and logged, nothing sent
 const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9819900011', phone: '9819900022' }, 'https://dry-traders.example');
@@ -10858,7 +10873,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'RESOLVED', 'AI Design Studio: the Department Head resolves it', r);
   r = await api('ads_dh', 'GET', '/ai-design-studio/overview');
   check(r.status === 200 && r.json.data.assignments.total >= 2, 'AI Design Studio: the overview is built from the records', r);
-
+}
 
 // 20270105000100: AI Studio (projects, tasks, daily reports: Team Member -> Team Lead -> Department Head)
 {

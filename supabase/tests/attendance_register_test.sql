@@ -10,6 +10,7 @@ reset role;
 \i supabase/migrations/20261230000600_attendance_place_names.sql
 \i supabase/migrations/20261230000700_attendance_location_required_register.sql
 \i supabase/migrations/20261230000700_attendance_location_required_register.sql
+\i supabase/migrations/20270109000100_attendance_lunch_45.sql
 delete from attendance_events where profile_id in (select id from profiles where email like 'wkr.%@example.com');
 delete from attendance_lunches where profile_id in (select id from profiles where email like 'wkr.%@example.com');
 update attendance_records set punch_in_at = null, punch_out_at = null, rm_login_at = null where profile_id in (select id from profiles where email like 'wkr.%@example.com');
@@ -66,7 +67,7 @@ select test.check(test.att_count('wkr_tmp', 'PUNCH_IN') = 1 and (select latitude
 select test.check((select metadata ->> 'accuracy' = '25' from audit_logs where action = 'ATTENDANCE_PUNCH_IN' and actor_id = test.id('wkr_tmp') order by id desc limit 1),
   'the Punch In is on the audit trail with its accuracy');
 
-\echo '   lunch: 50 minutes allowed, remaining and exceeded, no overlapping breaks'
+\echo '   lunch: 45 minutes allowed, remaining and exceeded, no overlapping breaks'
 set role authenticated;
 select test.login('wkr_tmp');
 select test.check((select d ->> 'status' = 'ON_LUNCH' from (select attendance_lunch('START') d) x), 'Start Lunch: state "On Lunch"');
@@ -76,16 +77,16 @@ select test.check((select count(*) = 1 from attendance_lunches where profile_id 
 update attendance_lunches set started_at = now() - interval '20 minutes' where profile_id = test.id('wkr_tmp') and ended_at is null;
 set role authenticated;
 select test.login('wkr_tmp');
-select test.check((select d ->> 'status' = 'RESUMED_WORK' and (d -> 'lunch' ->> 'minutes')::int = 20 and (d -> 'lunch' ->> 'remainingMinutes')::int = 30
+select test.check((select d ->> 'status' = 'RESUMED_WORK' and (d -> 'lunch' ->> 'minutes')::int = 20 and (d -> 'lunch' ->> 'remainingMinutes')::int = 25
                           and (d -> 'lunch' ->> 'exceededMinutes')::int = 0 from (select attendance_lunch('END') d) x),
-  'Resume Work after 20 minutes: 20 taken, 30 remaining, state "Resumed Work"');
+  'Resume Work after 20 minutes: 20 taken, 25 remaining, state "Resumed Work"');
 reset role;
 -- a second break of 35 minutes the same day: 55 in all
 insert into attendance_lunches (profile_id, attendance_date, started_at, ended_at, ended_by)
 values (test.id('wkr_tmp'), private.office_today(), now() - interval '35 minutes 10 seconds', now() - interval '10 seconds', 'EMPLOYEE');
-select test.check((select (j ->> 'minutes')::int = 55 and (j ->> 'remainingMinutes')::int = 0 and (j ->> 'exceededMinutes')::int = 5 and jsonb_array_length(j -> 'sessions') = 2
+select test.check((select (j ->> 'minutes')::int = 55 and (j ->> 'remainingMinutes')::int = 0 and (j ->> 'exceededMinutes')::int = 10 and jsonb_array_length(j -> 'sessions') = 2
                      from (select private.attendance_lunch_json(test.id('wkr_tmp'), private.office_today()) j) x),
-  'breaks add up: 55 minutes is 5 minutes over the 50 allowed (nothing is deducted from worked time)');
+  'breaks add up: 55 minutes is 10 minutes over the 45 allowed (nothing is deducted from worked time)');
 
 \echo '   Punch Out: a fresh location of its own'
 set role authenticated;
@@ -138,10 +139,10 @@ select test.check((select jsonb_array_length(d -> 'rows') >= (select v::int from
 select test.check((select bool_or(x ->> 'name' = 'WKR tmp' and x ->> 'status' = 'PUNCHED_OUT'
                                   and (x -> 'punchIn' ->> 'latitude')::numeric = 18.520431 and (x -> 'punchIn' ->> 'accuracy')::int = 25
                                   and (x -> 'punchOut' ->> 'latitude')::numeric = 18.559 and (x -> 'punchOut' ->> 'accuracy')::int = 12
-                                  and (x -> 'lunch' ->> 'minutes')::int = 55 and (x -> 'lunch' ->> 'exceededMinutes')::int = 5 and jsonb_array_length(x -> 'lunch' -> 'sessions') = 2
+                                  and (x -> 'lunch' ->> 'minutes')::int = 55 and (x -> 'lunch' ->> 'exceededMinutes')::int = 10 and jsonb_array_length(x -> 'lunch' -> 'sessions') = 2
                                   and (x ->> 'workedMinutes') is not null)
                      from reg, jsonb_array_elements(d -> 'rows') x),
-  'HR sees Punch In and Punch Out coordinates and accuracy, both lunch breaks, 5 minutes over, worked time, "Punched Out"');
+  'HR sees Punch In and Punch Out coordinates and accuracy, both lunch breaks, 10 minutes over, worked time, "Punched Out"');
 select test.check((select bool_or(x ->> 'name' = 'WKR tms' and (x -> 'crm' ->> 'systemLoginAt') is not null and (x -> 'crm' ->> 'lastLogoutAt') is not null
                                   and (x -> 'crm' -> 'sessions' -> 0 ->> 'device') = 'Chrome on Windows' and x -> 'punchOut' = 'null'::jsonb)
                      from reg, jsonb_array_elements(d -> 'rows') x),

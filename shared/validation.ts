@@ -3070,7 +3070,7 @@ export const reminderCallListQuerySchema = z
   .strict();
 export type ReminderCallListQuery = z.infer<typeof reminderCallListQuerySchema>;
 
-// ---- AI Design Studio (migration 20270109000100) -------------------------------------------------------------------------------------------
+// ---- AI Design Studio (migration 20270110000100) -------------------------------------------------------------------------------------------
 // The browser sends no role, team or reviewer: the ads_* database functions read those from the login. The database checks every value again.
 const adsLinkSchema = z
   .object({ name: trimmed(120).optional(), url: z.string().trim().max(500).regex(/^https?:\/\/\S+$/i, 'An attachment link must start with http:// or https://.') })

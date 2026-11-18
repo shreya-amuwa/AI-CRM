@@ -66,7 +66,7 @@ try {
   check((await page.getByTestId('attendance-status').textContent()) === 'On Lunch' && await page.getByTestId('punch-out').isDisabled(), 'On Lunch: only Resume Work');
   const lunchText = await page.getByTestId('lunch-minutes').textContent();
   check(/^52 min \(on lunch\)$/.test(lunchText), 'the running lunch is counted from the server clock (52 min, though the device clock is 3 minutes behind)', lunchText);
-  check((await page.getByTestId('lunch-extra').textContent()) === '2 min' && (await page.getByTestId('lunch-remaining').textContent()) === '0 min', 'over the 50 minutes: 0 remaining, 2 min extra');
+  check((await page.getByTestId('lunch-extra').textContent()) === '7 min' && (await page.getByTestId('lunch-remaining').textContent()) === '0 min', 'over the 45 minutes: 0 remaining, 7 min extra');
   await page.getByTestId('lunch-end').click();
   await page.getByTestId('lunch-start').waitFor();
   check((await page.getByTestId('attendance-status').textContent()) === 'Resumed Work', 'Resume Work: state "Resumed Work"');
@@ -124,8 +124,8 @@ try {
     'HR sees the Punch In and Punch Out coordinates and accuracy (and the nearest address when looked up)', { ashaIn, ashaOut });
   check((await asha.getByTestId('hr-location').getByRole('link', { name: 'Google Maps' }).getAttribute('href')) === 'https://www.google.com/maps?q=18.520431,73.856743', 'a Google Maps link for each punch');
   check((await asha.getByTestId('crm-login').textContent()) === '9:00 AM IST' && (await asha.getByTestId('crm-logout').textContent()) === 'Logout 6:15 PM IST'
-    && (await asha.getByTestId('register-in').textContent()) === '9:05 AM IST' && /55 min/.test(await asha.getByTestId('register-lunch').textContent()) && /\+5 min over/.test(await asha.getByTestId('register-lunch').textContent()),
-    'CRM login and logout, Punch In and lunch (55 min, 5 over) in IST on a device set to UTC');
+    && (await asha.getByTestId('register-in').textContent()) === '9:05 AM IST' && /55 min/.test(await asha.getByTestId('register-lunch').textContent()) && /\+10 min over/.test(await asha.getByTestId('register-lunch').textContent()),
+    'CRM login and logout, Punch In and lunch (55 min, 10 over) in IST on a device set to UTC');
   const ravi = p3.getByTestId('register-row').filter({ hasText: 'Ravi Staff' });
   check((await ravi.getByTestId('register-out').textContent()) === 'Missing' && (await ravi.getByTestId('register-status-badge').textContent()) === 'Incomplete Attendance'
     && (await ravi.getByTestId('crm-logout').textContent()) === 'Logout 1:00 PM IST', 'logged out of the CRM without punching out: Punch Out "Missing", "Incomplete Attendance"');
@@ -141,7 +141,7 @@ try {
   await detail.waitFor();
   const dtext = await detail.textContent();
   check(/9 November 2026 – 9:05 AM IST/.test(dtext) && /Latitude18\.520431/.test(dtext) && /Accuracy113 m/.test(dtext) && /9 November 2026 – 6:10 PM IST/.test(dtext)
-    && /Chrome on Windows/.test(dtext) && /1:00 PM IST → 1:20 PM IST · 20 min/.test(dtext) && /extra 5 min/.test(dtext), 'the detail: full IST stamps, coordinates, accuracy, CRM sessions with device, each lunch break', dtext);
+    && /Chrome on Windows/.test(dtext) && /1:00 PM IST → 1:20 PM IST · 20 min/.test(dtext) && /extra 10 min/.test(dtext), 'the detail: full IST stamps, coordinates, accuracy, CRM sessions with device, each lunch break', dtext);
   const maps = await detail.locator('iframe').evaluateAll(fs => fs.map(f => f.getAttribute('src')));
   check(maps.length === 2 && maps[0].includes('marker=18.520431,73.856743') && maps[1].includes('marker=18.559,73.7868'), 'the Punch In and Punch Out locations on a map', maps);
   await p3.getByTestId('register-date').fill('2026-11-08');

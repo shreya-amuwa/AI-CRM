@@ -5934,7 +5934,7 @@ export interface ReminderCallList {
 }
 
 // =============================================================================
-// AI Design Studio (migration 20270109000100): a separate, client-oriented department.
+// AI Design Studio (migration 20270110000100): a separate, client-oriented department.
 // Department Head -> Team Lead -> Team Member. Every shape below is what the ads_* database functions return.
 // =============================================================================
 /** The department slug. It is a different department from "AI Studio" and from "Amuwa Design Studio" (slug designstudio). */
