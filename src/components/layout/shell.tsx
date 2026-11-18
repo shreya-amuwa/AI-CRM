@@ -4,9 +4,8 @@ import { BookOpen, CalendarDays, ChevronDown, Clock3, LogOut, Menu, X } from 'lu
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
-import { registerServiceWorker } from '../../lib/push/registerServiceWorker';
-import { attendanceRequested, useOpenAttendanceRequest } from '../attendance/attendanceEvents';
-const ReminderBanner = React.lazy(() => import('../attendance/ReminderBanner'));
+import { attendanceRequested } from '../attendance/attendanceEvents';
+import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -384,10 +383,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
     if (firstActive.current) { firstActive.current = false; return; }
     setOverlay(null);
   }, [active]);
-  // the attendance reminders' service worker (public/sw.js): staff only, so it is registered here and not on the portals
-  useEffect(() => { void registerServiceWorker(); }, []);
-  // a reminder in the bell, or a tapped notification while the CRM is open, shows Attendance
-  useOpenAttendanceRequest(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []));
+  // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
+  useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []));
   const select = (id: string) => {
     if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
@@ -460,7 +457,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{reminders && <div className={flush ? 'px-4 pt-3' : undefined}><React.Suspense fallback={null}><ReminderBanner /></React.Suspense></div>}{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

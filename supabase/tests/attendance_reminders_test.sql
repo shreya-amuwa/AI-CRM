@@ -255,3 +255,27 @@ select test.must_fail($$select push_subscription_replace('https://push.example.c
   'only the server (service role) replaces a subscription', 'permission denied');
 reset role;
 delete from push_subscriptions where endpoint like 'https://push.example.com/%';
+
+\echo '   a device already subscribed is claimed by whoever signs in on it, but a removed device is never brought back'
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';
+insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label) values
+  (test.id('wkr_tms'), 'https://push.example.com/shared', 'BPk-s', 'auth-s', 'Shared phone');
+set role authenticated;
+select test.login('wkr_tmp');
+select test.check(push_subscription_claim('https://push.example.com/shared', 'BPk-s', 'auth-s', 'Shared phone'), 'the person now using a shared phone claims it');
+select test.check(jsonb_array_length(my_push_devices()) = 1, 'it is in their list');
+select test.check(not push_subscription_claim('https://push.example.com/removed', 'BPk-r', 'auth-r', 'Removed phone'), 'a device removed from the list is not brought back');
+reset role;
+select test.check((select profile_id = test.id('wkr_tmp') from push_subscriptions where endpoint = 'https://push.example.com/shared')
+                  and not exists (select 1 from push_subscriptions where endpoint = 'https://push.example.com/removed'), 'claiming moves the owner and creates nothing');
+select test.check((select count(*) = 1 from audit_logs a join push_subscriptions p on p.id = a.entity_id
+                    where a.action = 'PUSH_DEVICE_ADDED' and a.actor_id = test.id('wkr_tmp') and p.endpoint = 'https://push.example.com/shared'),
+  'a device moving to another person is on the audit trail');
+set role authenticated;
+select test.login('wkr_tmp');
+select push_subscription_claim('https://push.example.com/shared', 'BPk-s', 'auth-s', 'Shared phone');
+reset role;
+select test.check((select count(*) = 1 from audit_logs a join push_subscriptions p on p.id = a.entity_id
+                    where a.action = 'PUSH_DEVICE_ADDED' and a.actor_id = test.id('wkr_tmp') and p.endpoint = 'https://push.example.com/shared'),
+  'claiming your own device again writes nothing');
+delete from push_subscriptions where endpoint like 'https://push.example.com/%';

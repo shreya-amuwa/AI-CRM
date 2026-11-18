@@ -50,18 +50,35 @@ const keyBytes = (base64url: string) => {
   return Uint8Array.from(bin, c => c.charCodeAt(0));
 };
 
-async function save(sub: PushSubscription): Promise<void> {
+const parts = (sub: PushSubscription) => {
   const json = sub.toJSON();
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) throw new Error('This browser did not give a usable subscription.');
-  await attendanceApi.saveDevice(json.endpoint, json.keys.p256dh, json.keys.auth, deviceLabel());
+  return { endpoint: json.endpoint, p256dh: json.keys.p256dh, auth: json.keys.auth };
+};
+async function save(sub: PushSubscription): Promise<void> {
+  const p = parts(sub);
+  await attendanceApi.saveDevice(p.endpoint, p.p256dh, p.auth, deviceLabel());
+}
+
+/**
+ * The server's public push key, fetched once when the banner or the Reminders tab shows. Safari (and Firefox) only show the permission
+ * prompt when it is asked for straight from the tap, so "Turn on reminders" must not wait for the network before asking.
+ */
+let pushKey: Promise<string | null> | null = null;
+let pushKeyValue: string | null | undefined;
+export function loadPushKey(): Promise<string | null> {
+  pushKey ??= attendanceApi.pushKey().then(k => { pushKeyValue = k; return k; }, () => { pushKey = null; return null; });
+  return pushKey;
 }
 
 /** "Turn on reminders": ask for permission, subscribe this browser and save it for the signed-in person. Throws a message to show. */
 export async function subscribeThisDevice(): Promise<void> {
-  const key = await attendanceApi.pushKey();
-  if (!key) throw new Error(NOT_SET_UP);
+  if (pushKeyValue === null) throw new Error(NOT_SET_UP);
   if (!pushAvailable()) throw new Error('This browser cannot show reminders.');
-  const permission = await Notification.requestPermission();
+  // the first thing the tap does: nothing is awaited before it
+  const asked = Notification.requestPermission();
+  const [permission, key] = await Promise.all([asked, loadPushKey()]);
+  if (!key) throw new Error(NOT_SET_UP);
   if (permission !== 'granted') throw new Error('Notifications were not allowed. Allow them for this site to get reminders.');
   const reg = await registerServiceWorker();
   if (!reg) throw new Error('This browser cannot show reminders.');
@@ -71,12 +88,21 @@ export async function subscribeThisDevice(): Promise<void> {
 }
 
 /**
- * A device already subscribed is saved again for whoever is signed in now: on a shared phone where the last person did not sign out
- * (an expired session), the reminders then follow the person using it. Never throws.
+ * A device already subscribed is claimed by whoever is signed in now: on a shared phone where the last person did not sign out (an expired
+ * session), the reminders then follow the person using it. A device the person removed from their list is never brought back: the browser
+ * unsubscribes instead ('removed'). Never throws.
  */
-export async function claimThisDevice(): Promise<void> {
-  const sub = await currentSubscription().catch(() => null);
-  if (sub) await save(sub).catch(() => undefined);
+export async function claimThisDevice(): Promise<'claimed' | 'removed' | 'none'> {
+  try {
+    const sub = await currentSubscription();
+    if (!sub) return 'none';
+    const p = parts(sub);
+    if (await attendanceApi.claimDevice(p.endpoint, p.p256dh, p.auth, deviceLabel())) return 'claimed';
+    await sub.unsubscribe().catch(() => undefined);
+    return 'removed';
+  } catch {
+    return 'none';
+  }
 }
 
 /** Signing out: this browser stops getting the person's reminders. Never throws and never takes long (sign-out must not wait on it). */

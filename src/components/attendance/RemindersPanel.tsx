@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { BellRing, Smartphone } from 'lucide-react';
 import { attendanceApi, type PushDevice, type ReminderCompany, type ReminderSettings } from '../../lib/attendance';
-import { detectPushState, subscribeThisDevice, type PushState } from '../../lib/push/pushSupport';
+import { claimThisDevice, detectPushState, loadPushKey, subscribeThisDevice, type PushState } from '../../lib/push/pushSupport';
 
 const card = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4';
 const field = 'h-10 px-3 rounded-xl border border-slate-200 text-sm bg-white w-full max-w-[10rem]';
@@ -77,7 +77,7 @@ const MyDevices: React.FC = () => {
   const load = useCallback(async () => {
     try { setDevices(await attendanceApi.devices()); } catch (e) { setNote({ ok: false, text: message(e) }); }
   }, []);
-  useEffect(() => { void detectPushState().then(setState); void load(); }, [load]);
+  useEffect(() => { void detectPushState().then(s => { if (s === 'off') void loadPushKey(); setState(s); }); void load(); }, [load]);
   const run = async (key: string, work: () => Promise<string | void>) => {
     setBusy(key);
     setNote(null);
@@ -121,7 +121,12 @@ const MyDevices: React.FC = () => {
                   <p className="text-xs text-slate-500">Added {when(d.createdAt)} · last reminder delivered {when(d.lastSuccessAt)}</p>
                 </div>
                 <button type="button" className={secondary} disabled={!!busy} aria-label={`Remove ${d.label || 'device'}`}
-                  onClick={() => void run(d.id, async () => { await attendanceApi.removeDeviceById(d.id); setDevices(ds => (ds ?? []).filter(x => x.id !== d.id)); })}>
+                  onClick={() => void run(d.id, async () => {
+                    await attendanceApi.removeDeviceById(d.id);
+                    setDevices(ds => (ds ?? []).filter(x => x.id !== d.id));
+                    // the device in your hand: its browser stops too, and this page says so
+                    if (state === 'on' && (await claimThisDevice()) === 'removed') { setState('off'); void loadPushKey(); }
+                  })}>
                   Remove
                 </button>
               </li>

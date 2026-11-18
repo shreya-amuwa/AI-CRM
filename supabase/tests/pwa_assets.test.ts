@@ -1,5 +1,5 @@
 // The installable CRM (attendance reminders, PR 3): the web app manifest and its icons, the push-only service worker and how it is served.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync as list, statSync as stat } from 'node:fs';
 
 let passed = 0;
 const check = (ok: boolean, name: string, extra?: unknown) => { if (!ok) { console.error('not ok -', name, extra ?? ''); process.exit(1); } passed++; console.log('ok -', name); };
@@ -32,6 +32,17 @@ for (const event of ['push', 'notificationclick', 'pushsubscriptionchange']) {
 }
 check(!/addEventListener\(\s*['"]fetch/.test(sw) && !/caches\./.test(sw), 'sw.js has no fetch handler and caches nothing (every page and API call goes to the network)');
 check(/\/api\/v1\/attendance\/push-resubscribe/.test(sw), 'a replaced subscription is sent to the resubscribe route');
+
+// --- every staff layout carries the reminders: the banner, the service worker and "open Attendance" from a reminder
+const walk = (d: string): string[] => list(d).flatMap(f => { const p = `${d}/${f}`; return stat(p).isDirectory() ? walk(p) : p.endsWith('.tsx') ? [p] : []; });
+const layouts = walk('src/components').filter(f => /<SidebarFrame\b/.test(readFileSync(f, 'utf8')));
+check(layouts.length >= 2, `the staff layouts were found (${layouts.join(', ')})`);
+for (const f of layouts) {
+  const src = readFileSync(f, 'utf8');
+  check(/useStaffReminders\(/.test(src) && /<StaffReminderBanner\b/.test(src), `${f} wires the reminders (useStaffReminders + StaffReminderBanner)`);
+}
+check(/<StaffReminderBanner[^>]*hidden=\{[^}]*flush/.test(readFileSync('src/components/layout/shell.tsx', 'utf8')), 'no banner above the Chat page (it fills the screen)');
+check(/<StaffReminderBanner[^>]*hidden=\{[^}]*'chat'/.test(readFileSync('src/components/team-member/TeamMemberLayout.tsx', 'utf8')), 'nor above a Team Member\'s Chat');
 
 // --- how it is served
 const headers = readFileSync('public/_headers', 'utf8');

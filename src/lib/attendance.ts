@@ -138,6 +138,9 @@ export const attendanceApi = {
   saveDevice: (endpoint: string, p256dh: string, auth: string, label: string) =>
     rpc<string>('push_subscription_save', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
   removeDevice: (endpoint: string) => rpc<null>('push_subscription_remove', { p_endpoint: endpoint }),
+  /** An already-subscribed browser, for whoever is signed in now; false = the device was removed from the list (never re-created). */
+  claimDevice: (endpoint: string, p256dh: string, auth: string, label: string) =>
+    rpc<boolean>('push_subscription_claim', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
   removeDeviceById: (id: string) => rpc<null>('push_subscription_remove_by_id', { p_id: id }),
   devices: () => rpc<PushDevice[]>('my_push_devices'),
   testPush: () => api.post<{ sent: number; gone: number; failed: number }>('/attendance/push-test', {}),

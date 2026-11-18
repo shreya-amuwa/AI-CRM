@@ -15,6 +15,8 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, TopBar } from '../layout/shell';
+import { attendanceRequested } from '../attendance/attendanceEvents';
+import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
 import { closeMenu } from '../layout/menuState';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
@@ -97,7 +99,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   // the menu reads in sections, like the Department Head's: the label is shown above the first entry of each
   const SECTION_LABEL: Partial<Record<TeamMemberNav, string>> = { leads: 'Sales', 'work-tasks': 'Work', settings: 'Team' };
 
-  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(meetingsRequested() ? MEETINGS_NAV_ID : activeNav || 'leads');
+  // a tapped reminder opens the CRM on /?open=attendance
+  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
 
   React.useEffect(() => {
@@ -120,6 +123,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   useOpenReportsRequest(React.useCallback(() => handleNavClick('work-reports'), []));
   useOpenChatRequest(React.useCallback(() => handleNavClick('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => handleNavClick('raise-issue'), []));
+  // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
+  useStaffReminders(React.useCallback(() => handleNavClick(ATTENDANCE_NAV_ID as TeamMemberNav), []));
   const displayName = user?.name || 'Team Member';
   const displayRole = memberTitle(user);
 
@@ -225,6 +230,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           onSignOut={() => void logout()}
         />
         <main className={currentNav === 'chat' ? 'flex-1 min-w-0' : 'flex-1 px-4 sm:px-6 lg:px-8 py-5 sm:py-7 overflow-y-auto'}>
+          <StaffReminderBanner hidden={currentNav === 'chat'} />
           {currentNav === 'chat' && <ChatRoute />}
           {currentNav === 'raise-issue' && <IssuesRoute />}
           {currentNav === 'work-reports' && <ReportsRoute />}

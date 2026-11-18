@@ -4,6 +4,7 @@ const calls: { fn: string; args: any }[] = [];
 const company = { enabled: true, punchIn: '10:00', lunch: '14:00', punchOut: '19:00', followUpMinutes: 15, lunchWarningMinutes: 5, days: [1, 2, 3, 4, 5, 6] };
 const state: any = (window as any).__state = {
   role: 'staff',            // 'staff' | 'hr' | 'sa'
+  thisDevice: 'd1',         // the row of the browser under test (null: removed from the list)
   mine: { enabled: true, punchIn: null, lunch: null, punchOut: null },
   pausedToday: false,
   devices: [
@@ -34,7 +35,8 @@ const handlers: Record<string, (a: any) => any> = {
   hr_attendance_reminders_pause_today: a => { state.pausedToday = !!a.p_paused; return settings(); },
   push_subscription_save: () => 'new-device-id',
   push_subscription_remove: () => null,
-  push_subscription_remove_by_id: a => { state.devices = state.devices.filter((d: any) => d.id !== a.p_id); return null; },
+  push_subscription_remove_by_id: a => { state.devices = state.devices.filter((d: any) => d.id !== a.p_id); if (a.p_id === state.thisDevice) state.thisDevice = null; return null; },
+  push_subscription_claim: () => state.thisDevice !== null,
   my_push_devices: () => state.devices
 };
 const chain: any = { on: () => chain, subscribe: () => chain };

@@ -25,11 +25,12 @@ const bundle = built.outputFiles[0].text;
 // a made-up VAPID public key: 65 bytes starting with 0x04, base64url
 const KEY = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 7)]).toString('base64url');
 let pushKey = KEY;
+let keyRequests = 0;
 const json = (res, data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, data })); };
 const srv = createServer((req, res) => {
   if (req.url === '/app.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(bundle); }
   if (req.url === '/app.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css); }
-  if (req.url === '/api/v1/attendance/push-key') return json(res, { publicKey: pushKey });
+  if (req.url === '/api/v1/attendance/push-key') { keyRequests++; return json(res, { publicKey: pushKey }); }
   if (req.url === '/api/v1/attendance/push-test') return json(res, { sent: 2, gone: 0, failed: 0 });
   res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><div id="root"></div><script src="/app.js"></script>');
 });
@@ -56,12 +57,13 @@ const check = (ok, name, extra) => { if (!ok) { console.error('not ok -', name, 
 let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); srv.close(); process.exit(0); }
 const errors = [];
-const open = async (options = {}, contextOptions = {}) => {
+const open = async (options = {}, contextOptions = {}, before = undefined) => {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...contextOptions });
   await ctx.addInitScript(fakePush, options);
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(String(e)));
   await page.goto(base);
+  if (before) await page.evaluate(before);
   await page.evaluate(() => window.mountBanner());
   await page.getByTestId('attendance-opened').waitFor();
   return { ctx, page };
@@ -72,8 +74,12 @@ try {
   let { ctx, page } = await open();
   await page.getByRole('button', { name: 'Turn on reminders' }).waitFor();
   check(await page.getByText('Get Punch In, lunch and Punch Out reminders on this device.').isVisible(), 'off: banner shows Turn on reminders');
+  await page.waitForTimeout(300);
+  const keysBeforeClick = keyRequests;
   await page.getByRole('button', { name: 'Turn on reminders' }).click();
   await page.getByText('Reminders are on for this device.').waitFor();
+  check(keysBeforeClick >= 1 && keyRequests === keysBeforeClick,
+    'the push key is fetched when the banner shows, so the click asks for permission straight away (Safari needs the tap)', { keysBeforeClick, keyRequests });
   const saved = await calls(page, 'push_subscription_save');
   const opts = await page.evaluate(() => window.__push.opts);
   check(await page.evaluate(() => window.__push.requested) === 1 && saved.length === 1 && saved[0].p_endpoint === 'https://push.example.com/dev-ui'
@@ -95,9 +101,16 @@ try {
   ({ ctx, page } = await open({ permission: 'granted', subscribed: true }));
   await page.waitForTimeout(300);
   check(await page.getByTestId('reminder-banner').count() === 0, 'reminders already on for this device: no banner');
-  const claimed = await calls(page, 'push_subscription_save');
-  check(claimed.length === 1 && claimed[0].p_endpoint === 'https://push.example.com/dev-ui',
+  const claimed = await calls(page, 'push_subscription_claim');
+  check(claimed.length === 1 && claimed[0].p_endpoint === 'https://push.example.com/dev-ui' && (await calls(page, 'push_subscription_save')).length === 0,
     'a device already subscribed is saved for whoever is signed in now (a shared phone follows the person using it)', claimed);
+  await ctx.close();
+
+  // 2b. subscribed in the browser, but the person removed this device from their list: it is not brought back
+  ({ ctx, page } = await open({ permission: 'granted', subscribed: true }, {}, () => { window.__state.thisDevice = null; }));
+  await page.getByRole('button', { name: 'Turn on reminders' }).waitFor();
+  check(await page.evaluate(() => window.__push.unsubscribed) === 1 && (await calls(page, 'push_subscription_save')).length === 0,
+    'a device removed from the list stays removed: the browser unsubscribes and the banner offers to turn reminders on again');
   await ctx.close();
 
   // 3. iPhone Safari, app not installed: the Add to Home Screen steps, no Turn on button
@@ -167,16 +180,19 @@ try {
   await page.getByText('Punch In reminder must be between 06:00 and 13:00').waitFor();
   check(true, 'an out-of-range time shows the server message inline');
   check(await page.getByTestId('company-reminders').count() === 0, 'team member does not see Company defaults');
+  await page.getByText('Reminders are on for this device.').waitFor();
+  check(true, 'the panel says this device gets reminders');
   const devices = page.getByTestId('device-row');
   await devices.first().waitFor();
   check(await devices.count() === 2 && /Chrome on Android/.test(await devices.first().textContent()), 'devices list shows two devices');
   await devices.first().getByRole('button', { name: 'Remove' }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="device-row"]').length === 1);
   check((await calls(page, 'push_subscription_remove_by_id'))[0]?.p_id === 'd1', 'Remove deletes one');
+  await page.getByText('This device does not get reminders yet.').waitFor();
+  check(await page.evaluate(() => window.__push.unsubscribed) === 1, 'removing the device you are holding turns its reminders off here too');
   await page.getByRole('button', { name: 'Send test notification' }).click();
   await page.getByText('Sent to 2 devices').waitFor();
   check(true, 'Send test notification shows "Sent to 2 devices"');
-  check(/Reminders are on for this device/.test(await page.getByTestId('this-device').textContent()), 'the panel says this device gets reminders');
   await ctx.close();
 
   ({ ctx, page } = await panel('hr'));

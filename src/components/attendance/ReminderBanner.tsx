@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BellRing } from 'lucide-react';
-import { canInstall, claimThisDevice, detectPushState, installApp, onInstallChange, subscribeThisDevice, type PushState } from '../../lib/push/pushSupport';
+import { canInstall, claimThisDevice, detectPushState, installApp, loadPushKey, onInstallChange, subscribeThisDevice, type PushState } from '../../lib/push/pushSupport';
 
 /** "Not now" hides the banner until the next office day (India time). */
 const HIDDEN_KEY = 'att-reminder-banner-hidden';
@@ -23,10 +23,11 @@ export const ReminderBanner: React.FC = () => {
 
   useEffect(() => {
     let live = true;
-    void detectPushState().then(s => {
-      if (!live) return;
-      setState(s);
-      if (s === 'on') void claimThisDevice();
+    void detectPushState().then(async s => {
+      if (s === 'off') void loadPushKey();
+      // already subscribed: claim it for the person signed in now; a device they removed from their list is off again
+      if (s === 'on' && (await claimThisDevice()) === 'removed') { s = 'off'; void loadPushKey(); }
+      if (live) setState(s);
     });
     const off = onInstallChange(() => setInstallable(canInstall()));
     return () => { live = false; off(); };
