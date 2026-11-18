@@ -19,6 +19,28 @@ const TIME_FIELDS: { key: keyof Times; label: string; range: string }[] = [
   { key: 'punchOut', label: 'Punch Out', range: '14:00–23:30' }
 ];
 
+/** Chat messages on this person's devices: saved as soon as it is switched (no Save button). */
+const ChatSwitch: React.FC<{ settings: ReminderSettings; onSaved: (s: ReminderSettings) => void }> = ({ settings, onSaved }) => {
+  const [on, setOn] = useState(settings.chatPush !== false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const toggle = async (next: boolean) => {
+    setBusy(true);
+    setError('');
+    setOn(next);
+    try { onSaved(await attendanceApi.setChatPush(next)); } catch (e) { setOn(!next); setError(message(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" className="h-4 w-4" checked={on} disabled={busy} onChange={e => void toggle(e.target.checked)} /> Chat notifications
+      </label>
+      <p className="ml-6 text-xs text-slate-500">New chat messages. Colleague chats show the message; client chats show only the name.</p>
+      {error && <p role="alert" className="ml-6 text-sm text-red-700">{error}</p>}
+    </div>
+  );
+};
+
 /** Your own reminder times: empty = the company time. */
 const MyReminders: React.FC<{ settings: ReminderSettings; onSaved: (s: ReminderSettings) => void }> = ({ settings, onSaved }) => {
   const mine = settings.mine!;
@@ -41,11 +63,12 @@ const MyReminders: React.FC<{ settings: ReminderSettings; onSaved: (s: ReminderS
   return (
     <section className={card} aria-label="My reminder times" data-testid="my-reminders">
       <div>
-        <h3 className="text-base font-bold">My reminder times</h3>
+        <h3 className="text-base font-bold">My notifications</h3>
         <p className="text-sm text-slate-600">Monday to Saturday, India time. Leave a time empty to use the company time. Nothing is sent on approved leave or once it is done.</p>
       </div>
+      <ChatSwitch settings={settings} onSaved={onSaved} />
       <label className="flex items-center gap-2 text-sm font-semibold">
-        <input type="checkbox" className="h-4 w-4" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Send me reminders
+        <input type="checkbox" className="h-4 w-4" checked={enabled} onChange={e => setEnabled(e.target.checked)} /> Attendance reminders
       </label>
       <div className="grid gap-4 sm:grid-cols-3">
         {TIME_FIELDS.map(f => (
@@ -91,11 +114,11 @@ const MyDevices: React.FC = () => {
     }
   };
   const stateText: Record<PushState, string> = {
-    on: 'Reminders are on for this device.',
-    off: 'This device does not get reminders yet.',
+    on: 'Notifications are on for this device.',
+    off: 'This device does not get notifications yet.',
     blocked: "Notifications are blocked for this site. Allow them in your browser's site settings, then reload.",
-    'ios-needs-install': 'To get reminders on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.',
-    unsupported: 'This browser cannot show reminders. Use Chrome, Edge, Firefox or Safari.'
+    'ios-needs-install': 'To get notifications on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.',
+    unsupported: 'This browser cannot show notifications. Use Chrome, Edge, Firefox or Safari.'
   };
   return (
     <section className={card} aria-label="My devices">
@@ -104,13 +127,13 @@ const MyDevices: React.FC = () => {
         <BellRing className="w-5 h-5 text-blue-700" aria-hidden="true" />
         <p className="flex-1 min-w-[12rem]">{state ? stateText[state] : 'Checking this device…'}</p>
         {state === 'off' && (
-          <button type="button" className={primary} disabled={!!busy} onClick={() => void run('on', async () => { await subscribeThisDevice(); setState('on'); await load(); return 'Reminders are on for this device.'; })}>
-            Turn on reminders
+          <button type="button" className={primary} disabled={!!busy} onClick={() => void run('on', async () => { await subscribeThisDevice(); setState('on'); await load(); return 'Notifications are on for this device.'; })}>
+            Turn on notifications
           </button>
         )}
       </div>
       {devices === null ? <p className="text-sm text-slate-500" role="status">Loading devices…</p>
-        : devices.length === 0 ? <p className="text-sm text-slate-500">No devices yet. Turn on reminders on your phone and your laptop.</p>
+        : devices.length === 0 ? <p className="text-sm text-slate-500">No devices yet. Turn on notifications on your phone and your laptop.</p>
         : (
           <ul className="divide-y divide-slate-100">
             {devices.map(d => (

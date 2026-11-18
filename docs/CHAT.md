@@ -271,3 +271,25 @@ unread counts in the same instant. Requests waited on the database until Vercel 
   query after 20 s (`USER_QUERY_TIMEOUT_MS`) instead of hanging until the 30-second platform limit.
 
 Tests: `supabase/tests/chat_receipts_light_test.sql`, `supabase/tests/chat_live.test.ts`, `supabase/tests/chat_load.test.ts`.
+
+## Push notifications (migration `20270111000100_chat_push.sql`)
+
+A new chat message reaches the other people in the conversation as a phone / laptop notification within seconds, on the devices where they
+turned notifications on (the same devices and the same "Turn on notifications" as the attendance reminders, `docs/ATTENDANCE_PUNCH.md`).
+
+* **When:** right after a message is saved, the API hands its id to background work (`server/app.ts`, `afterResponse`; on the Worker it
+  runs after the answer, so sending never waits for it or fails because of it). Routes: `POST /chat/conversations/:id/messages`,
+  `POST /chat/conversations/:id/secure-messages`, `POST /client/chat/messages`.
+* **Who and what:** `chat_push_for_message` (service role only) decides. Recipients are `private.chat_recipients` (the existing rule), active
+  staff only, never the sender, only people who could see the message, with **Chat notifications** on (Attendance → Reminders; default on).
+  Clients are never pushed to. Each message is pushed once (`chat_push_log`); system lines and deleted messages never.
+  | Conversation | Title | Text |
+  |---|---|---|
+  | Direct | the sender | the message (120 characters) |
+  | Group | sender · group | the message (120 characters) |
+  | Client | the company | `New message from <sender>`: never the message itself (client chats are business records) |
+  A file without text shows `sent a file`; an end-to-end encrypted message `New message`.
+* **On the phone:** one notification per conversation (tag `chat-<id>`): a newer message replaces the older one and still alerts. Tapping it
+  opens that conversation (`/?open=chat&conversation=…` or `&client=…`; an open CRM window switches to it).
+* **Limits:** at most 40 devices per message (the Worker's request limit), 6 at a time, 10 seconds each. A failed push is not retried; the
+  message, the unread count and the bell are unaffected.

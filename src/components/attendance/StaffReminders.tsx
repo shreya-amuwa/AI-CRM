@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect } from 'react';
 import { registerServiceWorker } from '../../lib/push/registerServiceWorker';
 import { useOpenAttendanceRequest } from './attendanceEvents';
+import { openChat, type OpenChatDetail } from '../chat/chatEvents';
 
 const ReminderBanner = React.lazy(() => import('./ReminderBanner'));
 
@@ -12,7 +13,35 @@ const ReminderBanner = React.lazy(() => import('./ReminderBanner'));
 export function useStaffReminders(showAttendance: () => void) {
   useEffect(() => { void registerServiceWorker(); }, []);
   useOpenAttendanceRequest(showAttendance);
+  useEffect(() => {
+    // opened from a tapped notification: /?open=chat&conversation=… (colleague chat) or &client=… (client chat). The layouts read
+    // ?open=attendance when they first render; here the address is cleaned so a reload does not open it again.
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('open') === 'chat') {
+      const detail = chatDetail(q.get('conversation'), q.get('client'));
+      // next tick: a dashboard that wraps this layout attaches its "open chat" listener after this effect runs
+      if (detail) window.setTimeout(() => openChat(detail), 0);
+    }
+    if (q.has('open')) {
+      for (const k of ['open', 'conversation', 'client']) q.delete(k);
+      const rest = q.toString();
+      window.history.replaceState(window.history.state, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
+    }
+    // a notification tapped while the CRM is already open (public/sw.js)
+    const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined;
+    const fromWorker = (e: MessageEvent) => {
+      if (e.data?.type !== 'open-chat') return;
+      const detail = chatDetail(e.data.conversationId ?? null, e.data.clientConversationId ?? null);
+      if (detail) openChat(detail);
+    };
+    sw?.addEventListener('message', fromWorker);
+    return () => sw?.removeEventListener('message', fromWorker);
+  }, []);
 }
+
+const UUIDISH = /^[0-9A-Za-z-]{1,64}$/;
+const chatDetail = (conversation: string | null, client: string | null): OpenChatDetail | null =>
+  client && UUIDISH.test(client) ? { clientConversationId: client } : conversation && UUIDISH.test(conversation) ? { conversationId: conversation } : null;
 
 /** "Turn on reminders" at the top of the page; hidden above a page that fills the screen (Chat), and for the Super Admin. */
 export const StaffReminderBanner: React.FC<{ hidden?: boolean }> = ({ hidden = false }) =>

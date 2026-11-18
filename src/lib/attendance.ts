@@ -150,7 +150,9 @@ export const attendanceApi = {
   saveCompanyReminders: (c: ReminderCompany) =>
     rpc<ReminderSettings>('hr_attendance_reminder_defaults_save', { p_enabled: c.enabled, p_punch_in: c.punchIn, p_lunch: c.lunch, p_punch_out: c.punchOut,
       p_follow_up: c.followUpMinutes, p_warning: c.lunchWarningMinutes, p_days: c.days }),
-  pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused })
+  pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused }),
+  /** Chat notifications on this person's devices (20270111000100). */
+  setChatPush: (enabled: boolean) => rpc<ReminderSettings>('push_chat_set', { p_enabled: enabled })
 };
 
 export interface PushDevice { id: string; label: string | null; createdAt: string; lastSuccessAt: string | null; active: boolean }
@@ -164,6 +166,8 @@ export interface ReminderSettings {
   effective: ReminderTimes | null;
   pausedToday: boolean;
   canManage: boolean;
+  /** chat messages pushed to this person's devices (default on) */
+  chatPush?: boolean;
 }
 
 const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });

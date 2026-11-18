@@ -41,7 +41,7 @@ export const ReminderBanner: React.FC = () => {
       setJustOn(true);
       setState('on');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Reminders could not be turned on.');
+      setError(e instanceof Error ? e.message : 'Notifications could not be turned on.');
       setState(await detectPushState());
     } finally {
       setBusy(false);
@@ -53,23 +53,23 @@ export const ReminderBanner: React.FC = () => {
   };
 
   if (justOn) {
-    return <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">Reminders are on for this device.</p>;
+    return <p role="status" className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">Notifications are on for this device.</p>;
   }
   if (!state || state === 'on' || state === 'unsupported' || hidden) return null;
   const text = state === 'ios-needs-install'
-    ? 'To get reminders on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.'
+    ? 'To get notifications on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.'
     : state === 'blocked'
       ? "Notifications are blocked for this site. Allow them in your browser's site settings, then reload."
-      : 'Get Punch In, lunch and Punch Out reminders on this device.';
+      : 'Get chat messages and attendance reminders on this device.';
   return (
-    <section data-testid="reminder-banner" aria-label="Attendance reminders" className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
+    <section data-testid="reminder-banner" aria-label="Notifications on this device" className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
       <div className="flex flex-wrap items-center gap-3">
         <BellRing className="w-5 h-5 shrink-0 text-blue-700" aria-hidden="true" />
         <p className="flex-1 min-w-[12rem]">{text}</p>
         <div className="flex flex-wrap gap-2">
           {state === 'off' && (
             <button type="button" className={`${btn} bg-blue-700 text-white hover:bg-blue-800`} disabled={busy} onClick={() => void turnOn()}>
-              {busy ? 'Turning on…' : 'Turn on reminders'}
+              {busy ? 'Turning on…' : 'Turn on notifications'}
             </button>
           )}
           {installable && (

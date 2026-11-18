@@ -1,6 +1,6 @@
 /*
- * Amuwa CRM service worker: attendance reminders only (docs/ATTENDANCE_PUNCH.md, "Reminders and the app").
- * It shows the reminders the server pushes and opens the Attendance page when one is tapped. It deliberately has NO fetch handler and
+ * Amuwa CRM service worker: attendance reminders and chat messages (docs/ATTENDANCE_PUNCH.md, docs/CHAT.md "Push notifications").
+ * It shows what the server pushes and, when one is tapped, opens Attendance or that chat conversation. It deliberately has NO fetch handler and
  * caches nothing: every page and API call goes to the network exactly as without it, so it can never serve an old version of the CRM.
  */
 self.addEventListener('install', () => self.skipWaiting());
@@ -32,7 +32,13 @@ self.addEventListener('notificationclick', event => {
     const open = windows.find(w => new URL(w.url).origin === self.location.origin);
     if (open) {
       await open.focus();
-      open.postMessage({ type: 'open-attendance' });
+      // a chat message opens its conversation; a reminder opens Attendance
+      const q = new URL(url).searchParams;
+      if (q.get('open') === 'chat') {
+        open.postMessage(q.get('client') ? { type: 'open-chat', clientConversationId: q.get('client') } : { type: 'open-chat', conversationId: q.get('conversation') });
+      } else {
+        open.postMessage({ type: 'open-attendance' });
+      }
       return;
     }
     await self.clients.openWindow(url);
