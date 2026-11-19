@@ -29,7 +29,8 @@ Replaces the phase A design (`2026-11-19-realtime-trim-and-filter-design.md`), d
 
 ## Anti-goals (failure even if it "works")
 - A screen that updated live stops updating, or gets updates it must not see. **A signal must never carry data**: only "this kind of thing
-  changed" plus ids the receiver may already know; the screen still reads through the API, which checks permissions as today.
+  changed" plus ids the receiver may already know; the screen still reads its data the same way as today (the API, or the direct read
+  under row-level security where a screen does that today), so permissions are checked as today.
 - A private channel someone else can join: channels are authorized by Realtime's RLS on `realtime.messages` (only the person / the members
   of the team, department or conversation the topic names).
 - Sending a message, punching in or saving anything gets slower because of signalling (signals are sent by database triggers in the same
@@ -61,6 +62,25 @@ Replaces the phase A design (`2026-11-19-realtime-trim-and-filter-design.md`), d
   (`/chat/settings` mode and key status read once per session, not per open), run independent first calls in parallel, and combine the
   first screen's reads (list + unread counts + client-tab eligibility) where one database call can answer them. Targets: chat page shows the
   list after one round trip; a conversation shows its messages after one round trip.
+
+## Decisions from the builder check (the author's calls)
+- **Read receipts** (`src/lib/chat/receiptSignal.ts`, browser-sent Broadcast on the public topic `chat-receipts:<id>`, deliberately not a
+  database write): move to the private `conversation:<id>` topic, still **sent by the browser** (an INSERT policy on `realtime.messages`
+  lets the conversation's members send; no trigger on the receipt path). Old tabs keep using the public topic until step 3.
+- **The project's "Allow public access" Realtime setting is left as it is**; private topics work regardless.
+- **Chat mode and key status:** `/chat/settings` is already read once per page load. Key status checks stay as they are (cheap, and needed
+  when a key changes on another device); in the STANDARD (company-readable) mode no key work runs when a conversation opens. The
+  "one round trip" targets are for the STANDARD mode.
+- **Measurements:** the production "before" snapshot was taken on 2026-11-19 08:44 UTC (change feed 2,698,036 calls / 24,512,647 ms;
+  chat_unread_summary 12,783 / 576,486 ms; …); another snapshot is taken right before each deploy, and the "after" a few days after step 3.
+  The browser measurement of chat loading runs on the local test stack (Vite + the API + PostgREST of `run-api.sh`) with Realtime stubbed,
+  counting API calls and their order.
+- **Tabs left open across a deploy:** step 1 adds a version check (the build id, compared on focus and every few hours) that reloads an
+  idle staff tab after a deploy, so old `postgres_changes` subscriptions do not linger and keep the poller running.
+- **Outside subscribers:** none found (the candidate portal is in this repo and uses no live updates; `server`, `worker`, `n8n`,
+  `google-apps-script`, `scripts` checked). Step 3 samples `realtime.subscription` in production before removing the feed.
+- **Leads:** on a signal the leads screen fetches the new lead the way it reads leads today (the direct table read under its row-level
+  security); "reads its data as today" means the same read path, not a new API endpoint.
 
 ## Constraints
 - Supabase Realtime Broadcast with private channels must be enabled for the project (Realtime settings: "Allow public access" off is
