@@ -10390,6 +10390,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(m.status === 200 && m.json.data.some((x: any) => x.id === mid), 'meetings: it is in the calendar', m);
   m = await api('sh', 'GET', `/meetings/${mid}`);
   check(m.status === 404, 'meetings: a colleague who is not invited cannot open it', m);
+  m = await api('sa', 'GET', `/meetings/${mid}`);
+  check(m.status === 404, 'meetings: nor can the Super Admin (only the people taking part see a meeting)', m);
   m = await api('tm2', 'POST', '/meetings', { title: 'Ask the CEO', hostId: sa.id, startsAt: at(4, 6), endsAt: at(4, 7) });
   check(m.status === 201 && m.json.data.status === 'REQUESTED' && m.json.data.kind === 'CEO_MEETING', 'meetings: asking the CEO for time makes a request', m);
   const ceo = m.json.data;

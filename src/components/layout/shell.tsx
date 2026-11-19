@@ -6,6 +6,7 @@ import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
 import { attendanceRequested } from '../attendance/attendanceEvents';
 import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
+import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -385,6 +386,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   }, [active]);
   // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
   useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []), React.useCallback(() => setOverlay(null), []));
+  // a meeting notification was clicked: show Meetings (the page opens the meeting)
+  useOpenMeetingRequest(React.useCallback(() => setOverlay(MEETINGS_NAV_ID), []));
   const select = (id: string) => {
     if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);

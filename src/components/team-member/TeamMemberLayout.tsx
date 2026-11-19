@@ -30,6 +30,7 @@ import { CalendarDays, Clock3 } from 'lucide-react';
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
+import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 
 export type TeamMemberNav =
   | '__attendance'
@@ -125,6 +126,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   useOpenIssuesRequest(React.useCallback(() => handleNavClick('raise-issue'), []));
   // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
   useStaffReminders(React.useCallback(() => handleNavClick(ATTENDANCE_NAV_ID as TeamMemberNav), []));
+  useOpenMeetingRequest(React.useCallback(() => handleNavClick(MEETINGS_NAV_ID as TeamMemberNav), []));
   const displayName = user?.name || 'Team Member';
   const displayRole = memberTitle(user);
 

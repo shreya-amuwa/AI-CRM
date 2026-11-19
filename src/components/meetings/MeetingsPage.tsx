@@ -9,6 +9,7 @@ import type {
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type BookingLinkInput, type NewMeeting } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
+import { takePendingMeeting, useMeetingsChanged, useOpenMeetingRequest } from './meetingEvents';
 
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
@@ -103,9 +104,19 @@ export const MeetingsPage: React.FC = () => {
   const [isCeo, setIsCeo] = useState(false);
   const [flash, setFlash] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null);
   const [composer, setComposer] = useState<null | 'meeting' | 'ceo'>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  // a meeting notification clicked before this page opened: show that meeting
+  const [openId, setOpenId] = useState<string | null>(() => takePendingMeeting());
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
+  // live: a meeting notification (a new request, an approval, a move) reloads the page; so does coming back to the browser tab
+  useMeetingsChanged(reload);
+  useOpenMeetingRequest(useCallback((id?: string) => { if (id) setOpenId(id); reload(); }, [reload]));
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
+    window.addEventListener('focus', reload);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.removeEventListener('focus', reload); document.removeEventListener('visibilitychange', onVisible); };
+  }, [reload]);
 
   // back from Google's sign-in: ?tab=meetings&google=<outcome>
   useEffect(() => {

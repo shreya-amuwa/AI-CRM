@@ -214,6 +214,18 @@ try {
   check(await page.getByRole('button', { name: /New meeting/ }).isVisible(), 'the CEO can still book a new meeting');
   state.viewerIsCeo = false;
 
+  // 7c. live: a new request appears without a refresh, and a meeting notification opens the meeting
+  check(await page.getByRole('tab', { name: /^Requests$/ }).isVisible(), 'nothing is waiting for a decision');
+  state.approvals.push(meeting({ id: 'cccccccc-0000-4000-8000-000000000003', title: 'Office lease', kind: 'CEO_MEETING', kindLabel: 'Meeting with the CEO', status: 'REQUESTED',
+    hostId: CEO.id, hostName: CEO.name, createdBy: COL.id, createdByName: COL.name, canDecide: true, startsAt: at(tomorrow, '16:00'), endsAt: at(tomorrow, '16:30') }));
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('crm:meetings-changed')));
+  await page.getByRole('tab', { name: /Requests \(1\)/ }).waitFor({ timeout: 5000 });
+  check(true, 'a new request shows on the Requests tab as soon as its notification arrives');
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('crm:open-meeting', { detail: { id: 'cccccccc-0000-4000-8000-000000000003' } })));
+  await page.getByRole('dialog', { name: 'Office lease' }).waitFor({ timeout: 5000 });
+  check(true, 'clicking the meeting notification opens that meeting');
+  await page.keyboard.press('Escape');
+
   // 8. the public booking page
   const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Kolkata' });
   const gp = await guest.newPage();

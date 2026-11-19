@@ -116,7 +116,8 @@ function whereHtml(m: MailMeeting): string {
   return esc(m.location || 'To be confirmed');
 }
 
-export function renderMeetingEmail(kind: MeetingMailKind, m: MailMeeting, guestName: string | null, manageUrl: string | null): RenderedEmail {
+/** `signedBy`: the organiser, for the e-mail a colleague receives (it is sent in their name); the host otherwise. */
+export function renderMeetingEmail(kind: MeetingMailKind, m: MailMeeting, guestName: string | null, manageUrl: string | null, signedBy?: string | null): RenderedEmail {
   const hi = `<p>Dear ${esc(guestName || 'Sir/Madam')},</p>`;
   const when = esc(whenText(m.startsAt, m.endsAt, m.timezone));
   const facts = `<table style="border-collapse:collapse;margin:8px 0 16px">
@@ -126,7 +127,7 @@ export function renderMeetingEmail(kind: MeetingMailKind, m: MailMeeting, guestN
 <tr><td style="padding:2px 12px 2px 0;color:#666">With</td><td>${esc(m.hostName)}</td></tr>
 <tr><td style="padding:2px 12px 2px 0;color:#666">Reference</td><td>${esc(m.reference)}</td></tr></table>`;
   const manage = manageUrl ? `<p>To cancel${kind === 'PROPOSED' ? ' or answer the proposed time' : ''}, use your private link: <a href="${esc(manageUrl)}">${esc(manageUrl)}</a></p>` : '';
-  const sign = `<p>Regards,<br>${esc(m.hostName)}<br>${esc(COMPANY.senderName)} · ${esc(COMPANY.companyPhone)}</p>`;
+  const sign = `<p>Regards,<br>${esc(signedBy?.trim() || m.hostName)}<br>${esc(COMPANY.senderName)} · ${esc(COMPANY.companyPhone)}</p>`;
   const proposed = m.proposedStartsAt && m.proposedEndsAt ? esc(whenText(m.proposedStartsAt, m.proposedEndsAt, m.timezone)) : null;
   let subject: string;
   let body: string;

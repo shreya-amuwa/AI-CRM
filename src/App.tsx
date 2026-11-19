@@ -13,6 +13,7 @@ import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
 import { useOpenHrCaseRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
+import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
 import { TabBar } from './components/layout/TabBar';
 
 // Dedicated Department Panels
@@ -91,6 +92,9 @@ const MainAppContent: React.FC = () => {
   // and HR's Employee Issues / Meeting Requests section on one case
   const showHrCase = React.useRef<((d: OpenHrCaseDetail) => void) | null>(null);
   useOpenHrCaseRequest(React.useCallback(d => showHrCase.current?.(d), []));
+  // a meeting notification opens Meetings in the department panel's side menu
+  const showMeetings = React.useRef<(() => void) | null>(null);
+  useOpenMeetingRequest(React.useCallback(() => showMeetings.current?.(), []));
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
@@ -422,6 +426,8 @@ const MainAppContent: React.FC = () => {
   // Step 2: Home / Department Selector Screen if no department is selected (Super Admin only)
   if ((!currentDeptId || !currentDept) && tabs.length === 0) {
     if (user.role !== 'superadmin') return <ScreenLoader />;
+    // the hub's own menu (DashboardShell) shows Meetings for a clicked meeting notification
+    showMeetings.current = null;
     return (
       <div className="bg-slate-50 text-slate-900 min-h-screen">
         <Suspense fallback={<ScreenLoader />}><SuperAdminDashboard /></Suspense>
@@ -474,6 +480,7 @@ const MainAppContent: React.FC = () => {
   };
 
   showChat.current = () => handleTabUpdate('chat');
+  showMeetings.current = () => { if (showSidebar) handleTabUpdate('my_meetings'); };
   showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
 
   return (
