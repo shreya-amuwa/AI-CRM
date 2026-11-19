@@ -10,7 +10,7 @@ Migration `20270101000500_meetings_google_calendar.sql`.
 | Tab | What it does |
 | --- | --- |
 | Calendar | The week, day by day: your meetings, the ones you are invited to, and (for the CEO's delegates) the CEO's. Open one to join the Google Meet, reschedule, cancel, mark it done, or answer an invitation. |
-| Requests | Requests waiting for your decision (the CEO and their delegates): approve, propose another time, or decline. Also your own open requests. |
+| Requests | Requests waiting for your decision (the CEO and their delegates): approve, propose another time, or decline. Also your own open requests. A new request appears here as soon as its notification arrives, without a refresh. |
 | Google, hours & booking links | Connect your Google Calendar, set your working hours, create booking links, and (CEO) name delegates. |
 
 The page also has two buttons:
@@ -22,6 +22,8 @@ The page also has two buttons:
   - **Decline:** with a reason.
 
   A delegate can also book the CEO's time directly. When the person asking moves an approved meeting, it needs approval again.
+
+Clicking a meeting notification (the bell or the Notification Center) opens Meetings on that meeting.
 
 ### Booking links
 
@@ -54,9 +56,10 @@ Change or cancel them in their own page; Meetings follows. The Team Member's pri
 
 | Who | How |
 | --- | --- |
-| Colleagues | In the Notification Center: invited, request waiting (urgent), approved / declined / another time proposed, moved, cancelled, a guest booked or cancelled, someone cannot attend, reminders 24 hours and 1 hour before, Google sync failing, Google disconnected. |
+| Colleagues | By e-mail (`20270111000100`): when a meeting they take part in is scheduled or approved, moved or cancelled, and the one who asked when a request is declined. The e-mail comes from the CRM's mailbox **in the organiser's name** ("Priya Shah via Amuwa CRM", replies go to Priya) with a `.ics` file, and is skipped when Google already sent the invitation from the organiser's calendar. The organiser always gets it, because Google does not e-mail the organiser. |
+| Colleagues | In the Notification Center (only for meetings they take part in): invited, request waiting (urgent), approved / declined / another time proposed, moved, cancelled, a guest booked or cancelled, someone cannot attend, reminders 24 hours and 1 hour before, Google sync failing, Google disconnected. |
 | Guests outside the company | By e-mail, from the client sender address: confirmation (with a `.ics` calendar file), request received, another time proposed, declined, moved, cancelled, reminders 24 hours and 1 hour before. |
-| Everyone invited, when the host connected Google | Google also sends its own calendar invitation, update and cancellation. For meetings booked by staff, the CRM then skips its own confirmation / change / cancellation e-mail so guests do not get two. Booking-link guests always get the CRM's, because it carries their private link. |
+| Everyone invited, when the organiser connected Google | Google also sends its own calendar invitation, update and cancellation. For meetings booked by staff, the CRM then skips its own confirmation / change / cancellation e-mail so guests do not get two. Booking-link guests always get the CRM's, because it carries their private link. |
 
 E-mails follow the same switches as every other client e-mail (`AUTOMATION_MODE`, `EMAIL_PROVIDER`, test recipients). Nothing is sent in a dry run.
 
@@ -68,10 +71,11 @@ E-mails follow the same switches as every other client e-mail (`AUTOMATION_MODE`
   - `calendar.freebusy`: when the person is busy, never what their other events are.
   - the account's e-mail address.
 - **Token storage:** the refresh token is encrypted (AES-256-GCM, `GOOGLE_TOKEN_KEY`) in `google_calendar_connections`. Only the server (service role) can read that table.
-- **Where events go:** the **host's** Google Calendar, with the guests and invited colleagues as attendees, and a Google Meet link for "Google Meet" meetings.
-  - Requests are not put on the CEO's calendar until approved.
+- **Where events go:** the **organiser's** Google Calendar (`20270111000100`): the person who created the meeting, so Google e-mails the invitation, every change and the cancellation from their Gmail to everyone else, the host included. Meetings nobody created (BA demos, interviews, HR meetings, booking-link bookings) use the host's calendar. Every other participant is a guest, and a Google Meet link is added for "Google Meet" meetings.
+  - A request for the CEO's time gets no event until it is approved. Then the event is created on the calendar of the one who asked, with the CEO as a guest. When the CEO moves or cancels it, that same event is updated or removed, and Google e-mails everyone again.
+  - Events created before `20270111000100` stay on the host's calendar and keep being updated there.
   - Cancelled or declined meetings are removed, and Google tells the guests.
-- **Sync timing:** right after every change, and again on every automation dispatch, which retries with back-off. Failures show on the meeting. After 5 failed tries the host is notified.
+- **Sync timing:** right after every change, and again on every automation dispatch, which retries with back-off. Failures show on the meeting. After 5 failed tries the organiser is notified.
 - **Revoked access:** if Google stops accepting the access, the connection is marked *needs reconnect* and the person is asked to connect again.
 - **Disconnecting:** revokes the access at Google and deletes the stored token. Events already created stay in the calendar.
 
@@ -106,14 +110,17 @@ Without the Google variables everything else still works: the calendar, booking 
 
 Run `supabase/migrations/20270101000500_meetings_google_calendar.sql` in the Supabase SQL editor. It is additive, safe to run twice, and uses no temp tables. It also brings already-planned future demos, interviews and confirmed HR meetings into the calendar once.
 
+Then run `supabase/migrations/20270111000100_meetings_creator_organiser.sql` (after every earlier migration). It adds who holds each Google event, the colleague e-mails and participant-only access. It is additive and safe to run twice.
+
 ### 4. Reminders
 
 Reminders and retries run with `/api/v1/internal/automations/dispatch`. With only the two daily Vercel crons, the "1 hour before" reminder can come late. Call the dispatch every 5 minutes from Supabase `pg_cron` + `pg_net` (the same `net.http_post` call as in `docs/HR_EMAIL_AUTOMATION.md`, with `*/5 * * * *`), so reminders are on time.
 
 ## Rules the database enforces
 
-- **Seeing a meeting:** only its host, the person who booked it, invited colleagues, the host's delegates and the Super Admin can see it. Anyone else gets "not found".
-- **Changing a meeting:** only the host, the person who booked it, the host's delegates and the Super Admin can move, cancel or complete it. Invited colleagues only answer.
+- **Seeing a meeting:** only its host, the person who booked it, invited colleagues and the host's delegates can see it. The Super Admin sees a meeting only when taking part (a meeting between employees stays with those employees). Anyone else gets "not found".
+- **Changing a meeting:** only the host, the person who booked it and the host's delegates can move, cancel or complete it. Invited colleagues only answer.
+- **Deciding a request:** the host and their delegates; a Super Admin may also decide a request for another Super Admin's time.
 - **No double booking.** A host cannot have two requested or scheduled meetings at the same time. Checks run under a lock, so two guests can never take the same slot. A host may book an overlap in their own calendar on purpose.
 - **Booking-link slots are re-checked when booked:**
   - inside working hours
