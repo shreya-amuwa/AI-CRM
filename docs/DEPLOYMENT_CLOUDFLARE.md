@@ -188,3 +188,20 @@ npx wrangler dev          # the Worker on http://localhost:8787 (put local secre
 * Every request runs in a fresh or reused isolate; the in-memory rate limits (`RATE_LIMIT_*`) are per isolate, as they were per Vercel instance.
 * Cron Triggers can run more often than Vercel Hobby allowed (for example every 15 minutes for faster e-mail retries); the times were kept
   the same on purpose so behaviour does not change. Change `triggers.crons` in `wrangler.jsonc` to run more often.
+
+## Database load: Realtime tables and the Crocodial sync interval (19 Nov 2026)
+
+On 19 Nov 2026 the Supabase database ran out of CPU in the afternoon and evening: logins, attendance and the 5-minute jobs timed out and the Worker
+logged `[api] could not reach Supabase: TimeoutError`. Two contributions are reduced:
+
+* **Realtime.** 56% of all database time was Supabase Realtime working through every change of the 40 tables in the `supabase_realtime`
+  publication. Migration `20270116000200_realtime_publication_trim.sql` removes the 6 tables no screen listens to (`hr_attendance`,
+  `hr_leave_applications`, `team_assignments`, `department_operations_owner`, `onboarding_automation_runs`, `support_ticket_escalations`). Every table
+  a screen listens to stays (`supabase/tests/realtime_publication_trim_test.sql` lists them). A new screen that listens to a table must publish it
+  in its own migration (`alter publication supabase_realtime add table public.<name>;`).
+* **Crocodial sync.** It ran on every 5-minute tick (a large first read wrote all afternoon). It now runs every `CROCODIAL_SYNC_EVERY_MINUTES`
+  (Worker variable; 5, 10, 15 = default, 20, 30 or 60; `0` = only when the Super Admin starts one), on the ticks whose minute is a multiple of it.
+  The attendance reminders keep running every 5 minutes.
+
+If the database is still slow: Supabase → Reports → Database (CPU), and Project Settings → Compute and Disk (a larger compute size removes the
+CPU throttling of the smallest one).
