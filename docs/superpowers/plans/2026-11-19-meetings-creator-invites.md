@@ -19,7 +19,7 @@
 
 ## Global Constraints
 
-- **Migration file:** `supabase/migrations/20270111000100_meetings_creator_organiser.sql`. It sorts after `20270110000200`.
+- **Migration file:** `supabase/migrations/20270113000100_meetings_creator_organiser.sql`. It sorts after `20270112000100`.
 - **Migration style:**
   - additive and idempotent, pasteable into the SQL editor, no temp tables;
   - never edit older migrations;
@@ -42,7 +42,7 @@
 ### Task 1: Migration — organiser, colleague e-mails, participant-only access
 
 **Files:**
-- Create: `supabase/migrations/20270111000100_meetings_creator_organiser.sql`
+- Create: `supabase/migrations/20270113000100_meetings_creator_organiser.sql`
 - Modify: `supabase/tests/meetings_test.sql` (load the new migration; add checks; flip the two Super Admin visibility expectations)
 
 **Interfaces — produces:**

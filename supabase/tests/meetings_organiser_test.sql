@@ -1,13 +1,13 @@
 -- =============================================================================
--- Meetings (migration 20270111000100): the creator organises the Google event, colleagues get the meeting e-mail, and only the
+-- Meetings (migration 20270113000100): the creator organises the Google event, colleagues get the meeting e-mail, and only the
 -- people taking part see a meeting (the Super Admin included). Reuses sa (Super Admin = the CEO), tm_a, ck_a, ck_b.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
 \echo '--- 137. Meetings: invitations from the creator, participants only'
 reset role;
-\i supabase/migrations/20270111000100_meetings_creator_organiser.sql
-\i supabase/migrations/20270111000100_meetings_creator_organiser.sql
+\i supabase/migrations/20270113000100_meetings_creator_organiser.sql
+\i supabase/migrations/20270113000100_meetings_creator_organiser.sql
 
 delete from meeting_delegates where host_id in (test.id('sa'), test.id('tm_a'));
 delete from google_calendar_connections where profile_id in (test.id('sa'), test.id('tm_a'), test.id('ck_b'));
@@ -106,7 +106,7 @@ select test.check((select not private.mtg_can_view(m, test.id('sa')) from meetin
 
 \echo '   events made before this change stay on the host''s calendar'
 update meetings set google_event_id = 'evt-old', google_owner_id = null, created_by = test.id('ck_a') where id = (select id from mo where k = 'emp');
-\i supabase/migrations/20270111000100_meetings_creator_organiser.sql
+\i supabase/migrations/20270113000100_meetings_creator_organiser.sql
 select test.check((select google_owner_id = host_id from meetings where id = (select id from mo where k = 'emp')),
   'an event already on a calendar keeps being updated there');
 

@@ -1,6 +1,6 @@
 ---
-title: Attendance Reminders and the Amuwa CRM App
-description: Get Punch In, lunch and Punch Out reminders on your phone and laptop, install the CRM on your phone, and choose your own reminder times.
+title: Notifications (Chat and Attendance) and the Amuwa CRM App
+description: Get chat messages and Punch In, lunch and Punch Out reminders on your phone and laptop, install the CRM on your phone, and choose your own reminder times.
 order: 5
 group: Shared Features
 audience: internal
@@ -18,13 +18,17 @@ related:
   - /shared/notification-center-guide
 ---
 
-The CRM reminds you to **Punch In**, to **start your lunch**, that **your lunch ends soon**, and to **Punch Out**. Reminders appear in the
-bell and, once you turn them on, as notifications on your phone and laptop. Tapping one opens your attendance.
+The CRM tells you about **new chat messages** and reminds you to **Punch In**, to **start your lunch**, that **your lunch ends soon**, and to
+**Punch Out**. Once you turn notifications on, they appear on your phone and laptop. Tapping a chat notification opens that conversation;
+tapping a reminder opens your attendance.
 
-## Turn reminders on (do this on each device)
+Chat notifications from colleagues show the message. Notifications from **client** chats show only the name ("New message from …"), so a
+client's message never appears on your lock screen. Several quick messages in one chat show as one notification with the latest message.
+
+## Turn notifications on (do this on each device)
 
 **Android phone, Windows or Mac laptop:** a blue bar at the top of your dashboard says *Get Punch In, lunch and Punch Out reminders on this
-device*. Click **Turn on reminders** and then **Allow** when the browser asks. On Android you can also click **Install app** to put Amuwa CRM
+device*. Click **Turn on notifications** and then **Allow** when the browser asks. On Android you can also click **Install app** to put Amuwa CRM
 on your Home Screen.
 
 **iPhone or iPad** (iOS 16.4 or later): iPhone shows web notifications only for apps on the Home Screen.
@@ -32,15 +36,18 @@ on your Home Screen.
 1. Open the CRM in **Safari**.
 2. Tap **Share** (the square with an arrow), then **Add to Home Screen**, then **Add**.
 3. Open **Amuwa CRM** from your Home Screen and sign in.
-4. Tap **Turn on reminders** and then **Allow**.
+4. Tap **Turn on notifications** and then **Allow**.
 
 **Not now** hides the bar until tomorrow. If the bar says notifications are **blocked**, allow notifications for the CRM in your browser's
 site settings (the lock icon next to the address) and reload.
 
-## Choose your own times
+## Choose what you get
 
-Open **Attendance → Reminders**. Under **My reminder times**, set your Punch In (06:00–13:00), Lunch (11:00–17:00) or Punch Out
-(14:00–23:30) reminder, then **Save my times**. Leave a time empty to use the company time. Untick **Send me reminders** to stop them.
+Untick **Chat notifications** in **Attendance → Reminders** to stop chat notifications and keep the reminders.
+
+
+Open **Attendance → Reminders**. Under **My notifications**, set your Punch In (06:00–13:00), Lunch (11:00–17:00) or Punch Out
+(14:00–23:30) reminder, then **Save my times**. Leave a time empty to use the company time. Untick **Attendance reminders** to stop them.
 
 ## Your devices
 

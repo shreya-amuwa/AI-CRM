@@ -52,7 +52,7 @@ Status: draft for approval (2026-11-19). Scope: the **Meetings** page (sidebar).
 
 - **Migrations:**
   - additive, idempotent and pasteable into the SQL editor;
-  - a new file that sorts after `20270110000200`;
+  - a new file that sorts after `20270112000100`;
   - never edits the migrations already on `main`;
   - SECURITY DEFINER functions with `search_path=''`, as in the existing meetings migration.
 - **Google:** uses the existing per-person connection (`google_calendar_connections`), token cache and `insertEvent` / `patchEvent` / `deleteEvent`, which already pass `sendUpdates=all`.
@@ -117,7 +117,7 @@ Status: draft for approval (2026-11-19). Scope: the **Meetings** page (sidebar).
 
 ## Left to the builder
 
-- Exact names of the new private helpers and the migration file. The file must sort after `20270110000200`.
+- Exact names of the new private helpers and the migration file. The file must sort after `20270112000100`.
 - Wording of the e-mail templates for colleagues. Reuse the existing CONFIRMED / RESCHEDULED / CANCELLED / DECLINED templates, with the sender line added.
 - Where the pending-meeting id is kept for the notification click. Follow `issueEvents.ts`.
 

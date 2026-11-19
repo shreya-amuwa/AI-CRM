@@ -21,6 +21,7 @@ import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, ty
 import {
   META_VERIFIER_LABEL, OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isMetaVerifier, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
+import { designationsForDepartment, hasNoSalesSupport, staffChoicesForDepartment, staffTeamsForDepartment } from '../../lib/auth/departmentRoles';
 
 /**
  * Team Members & Access - create staff accounts and manage their access.
@@ -186,9 +187,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // Offered next to Team Lead / Team Member wherever a support team can be picked.
   const canCreateConsultant = allowedRoles.includes('TEAM_MEMBER') && supportTeams.length > 0 && (!division || division === 'SUPPORT');
   const canCreateOperationsHead = profile?.role === 'SUPER_ADMIN' && allowedRoles.includes('DEPARTMENT_HEAD');
+  // Amuwa Design Studio: only Department Head, Team Lead and Team Member (no Sales / Support role, team or side; the database refuses them too)
+  const designMode = hasNoSalesSupport(departmentSlug);
   const choices = useMemo<StaffChoice[]>(
-    () => [...allowedRoles, ...(canCreateConsultant ? (['META_VERIFIER', 'TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])],
-    [canCreateConsultant, canCreateOperationsHead, allowedRoles]
+    () => staffChoicesForDepartment<StaffChoice>(departmentSlug, [...allowedRoles, ...(canCreateConsultant ? (['META_VERIFIER', 'TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])]),
+    [canCreateConsultant, canCreateOperationsHead, allowedRoles, departmentSlug]
   );
   // HR department: the Role dropdown shows exactly HR Assistant / HR Recruiter / HR Admin Head (the ones the person creating may make) and nothing generic.
   // The choice IS the designation; it maps to the existing role (Team Member, or Department Head for HR Admin Head), so no new role system exists.
@@ -226,6 +229,22 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     if ((consultant || metaVerifier) && !supportTeams.some(t => t.id === teamId) && supportTeams[0]) setTeamId(supportTeams[0].id);
   }, [consultant, metaVerifier, supportTeams, teamId]);
 
+  // The teams the form offers (Amuwa Design Studio: its General team only). A team that is not offered (another department's, or a Sales /
+  // Support team of Amuwa Design Studio) is never kept as the choice: it falls back to the default team or the only one, else to "Select team".
+  const formTeams = useMemo(() => staffTeamsForDepartment(departmentSlug, consultant || metaVerifier ? supportTeams : teams), [departmentSlug, consultant, metaVerifier, supportTeams, teams]);
+  useEffect(() => {
+    if (!teamId || formTeams.some(t => t.id === teamId)) return;
+    setTeamId(defaultTeam && formTeams.some(t => t.id === defaultTeam.id) ? defaultTeam.id : formTeams.length === 1 ? formTeams[0].id : '');
+  }, [formTeams, teamId, defaultTeam]);
+  useEffect(() => {
+    if (!teamId && formTeams.length === 1 && !isTeamLead) setTeamId(formTeams[0].id);
+  }, [formTeams, teamId, isTeamLead]);
+  // a Sales role belongs to a Sales team only: leaving it (or the department) clears it
+  const chosenDivision = teams.find(t => t.id === teamId)?.division;
+  useEffect(() => {
+    if (chosenDivision !== 'SALES') setSalesSubRole('');
+  }, [chosenDivision]);
+
   const loadMembers = useCallback(async () => {
     // the Add Member page shows no list, so it does not ask the database for one
     if (!departmentId || view === 'add') return;
@@ -255,6 +274,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     () => allDepartments.filter(d => d.dbId).map(d => ({ id: d.dbId as string, name: d.name, slug: d.id, facetOf: d.facetOf, facetDivision: d.facetDivision })),
     [allDepartments]
   );
+  // A Sales / Support head is never offered for Amuwa Design Studio (its head is chosen with the department itself, without a side).
+  const headTeams = useMemo(() => {
+    const plain = new Set(assignable.filter(d => hasNoSalesSupport(d.slug)).map(d => d.id));
+    return assignTeams.filter(t => !plain.has(t.departmentId) || t.division === 'GENERAL');
+  }, [assignable, assignTeams]);
   // The department list at the top only chooses whose members are shown; the head starts with that department selected.
   useEffect(() => {
     if (departmentId && !headDeptsInit) {
@@ -299,6 +323,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
   useEffect(() => {
     if (!departmentId) return;
+    setTeams(ts => (ts.length && ts.every(t => t.departmentId === departmentId) ? ts : []));
     // The Sales Department Head works with the Sales teams only (the database refuses the rest as well).
     organizationApi.teams(departmentId).then(ts => setTeams(profile && isSalesHead(profile) ? ts.filter(t => t.division === 'SALES') : ts)).catch(err => setListError(errorMessage(err)));
   }, [departmentId, profile]);
@@ -428,11 +453,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
         setFormError('Choose at least one department for the Operations Head.');
         return;
       }
-    } else if (role === 'DEPARTMENT_HEAD' && adsMode) {
+    } else if (role === 'DEPARTMENT_HEAD' && (adsMode || designMode)) {
       if (!departmentId) {
-        setFormError('The AI Design Studio department could not be found.');
+        setFormError(`The ${adsMode ? 'AI Design Studio' : department?.name || 'Amuwa Design Studio'} department could not be found.`);
         return;
       }
+      // the head of the whole department: no Sales / Support side
       headPlan = { departmentId, additionalAccess: [] };
     } else if (role === 'DEPARTMENT_HEAD' && hrMode) {
       // HR Admin Head: the Department Head of the HR department itself (HR has no Sales / Support side to choose)
@@ -704,7 +730,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             No password is set here. The new employee is e-mailed a secure, one-time link to choose their own password and sign in.
           </p>
 
-          {(role !== 'DEPARTMENT_HEAD' || hrMode) && (
+          {(role !== 'DEPARTMENT_HEAD' || hrMode || (designMode && !operationsHead)) && (
             <label className="block text-xs font-semibold text-slate-700">
               Department
               {departmentOptions && onDepartmentChange ? (
@@ -753,6 +779,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 {hrChoice === 'HR Admin Head' && 'The Department Head of HR: opens the HR Department Head dashboard. One per department; it gives no Super Admin or Operations Head access.'}
               </span>
             )}
+            {designMode && (
+              <span className="block mt-1 font-normal text-slate-500" data-testid="designstudio-roles-hint">
+                {department?.name || 'Amuwa Design Studio'} has Department Head, Team Lead and Team Member only: no Sales or Support role.
+              </span>
+            )}
           </label>
 
           {needsTeam && (
@@ -765,7 +796,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 disabled={isTeamLead}
               >
                 <option value="">Select team…</option>
-                {(consultant || metaVerifier ? supportTeams : teams).map(t => (
+                {formTeams.map(t => (
                   <option key={t.id} value={t.id}>{t.name} ({t.division.toLowerCase()})</option>
                 ))}
               </select>
@@ -798,7 +829,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             />
           )}
 
-          {role === 'DEPARTMENT_HEAD' && !operationsHead && !hrMode && !adsMode && (
+          {role === 'DEPARTMENT_HEAD' && !operationsHead && !hrMode && !adsMode && !designMode && (
             <>
               <HeadDepartmentsField
                 fn={headFn}
@@ -806,7 +837,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 selected={headDepts}
                 onSelected={setHeadDepts}
                 departments={assignable}
-                teams={assignTeams}
+                teams={headTeams}
                 inputClass={inputClass}
                 multi={false}
               />
@@ -837,7 +868,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <label className="block text-xs font-semibold text-slate-700">
               Designation *
               <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
-                {DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d)).map(d => <option key={d} value={d}>{d}</option>)}
+                {designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d))).map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </label>
           )}
@@ -888,6 +919,13 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             </div>
           )}
 
+          {designMode && role === 'DEPARTMENT_HEAD' && !operationsHead && unlabelledHead && (
+            <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{department?.name || 'Amuwa Design Studio'} already has a Department Head (<strong>{unlabelledHead.fullName}</strong>). A department can have only one Department Head.</span>
+            </div>
+          )}
+
           {adsMode && role === 'DEPARTMENT_HEAD' && !operationsHead && existingHeads.length > 0 && (
             <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-1.5" role="alert">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -910,7 +948,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <button
             type="submit"
-            disabled={saving || !departmentId || (hrMode && hrOptions.length === 0) || (hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0) || (adsMode && role === 'DEPARTMENT_HEAD' && !operationsHead && existingHeads.length > 0) || (!hrMode && (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && !adsMode && (!headFn || headDepts.length === 0 || !!existingHead)))}
+            disabled={saving || !departmentId || (hrMode && hrOptions.length === 0) || (hrMode && role === 'DEPARTMENT_HEAD' && existingHeads.length > 0) || (adsMode && role === 'DEPARTMENT_HEAD' && !operationsHead && existingHeads.length > 0) || (designMode && role === 'DEPARTMENT_HEAD' && !operationsHead && !!unlabelledHead) || (!hrMode && (operationsHead ? opsDepts.length === 0 : role === 'DEPARTMENT_HEAD' && !adsMode && !designMode && (!headFn || headDepts.length === 0 || !!existingHead)))}
             className="w-full py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-semibold shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
           >
             <UserPlus className="w-4 h-4" /> {saving ? 'Creating account…' : 'Create Account'}

@@ -12,7 +12,7 @@ import { registerServiceWorker } from './registerServiceWorker';
  */
 export type PushState = 'unsupported' | 'ios-needs-install' | 'blocked' | 'off' | 'on';
 
-export const NOT_SET_UP = 'Reminders are not set up yet. Ask your administrator.';
+export const NOT_SET_UP = 'Notifications are not set up yet. Ask your administrator.';
 
 const isIos = () =>
   /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -74,14 +74,14 @@ export function loadPushKey(): Promise<string | null> {
 /** "Turn on reminders": ask for permission, subscribe this browser and save it for the signed-in person. Throws a message to show. */
 export async function subscribeThisDevice(): Promise<void> {
   if (pushKeyValue === null) throw new Error(NOT_SET_UP);
-  if (!pushAvailable()) throw new Error('This browser cannot show reminders.');
+  if (!pushAvailable()) throw new Error('This browser cannot show notifications.');
   // the first thing the tap does: nothing is awaited before it
   const asked = Notification.requestPermission();
   const [permission, key] = await Promise.all([asked, loadPushKey()]);
   if (!key) throw new Error(NOT_SET_UP);
-  if (permission !== 'granted') throw new Error('Notifications were not allowed. Allow them for this site to get reminders.');
+  if (permission !== 'granted') throw new Error('Notifications were not allowed. Allow them for this site to get them.');
   const reg = await registerServiceWorker();
-  if (!reg) throw new Error('This browser cannot show reminders.');
+  if (!reg) throw new Error('This browser cannot show notifications.');
   const sub = (await reg.pushManager.getSubscription())
     ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }));
   await save(sub);

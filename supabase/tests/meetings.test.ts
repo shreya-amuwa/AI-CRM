@@ -207,7 +207,7 @@ check(!ok(publicBookingSchema, { startsAt: '2026-11-18T04:30:00Z', name: 'Asha',
 
 
 // ---------------------------------------------------------------------------
-// the creator organises the event (migration 20270111000100)
+// the creator organises the event (migration 20270113000100)
 // ---------------------------------------------------------------------------
 const mailMeetingForSign = (): MailMeeting => ({ id, reference: 'MTG-1', title: 'Sync', description: null, hostName: 'Host', hostEmail: 'h@a.com',
   startsAt: '2026-11-18T04:30:00Z', endsAt: '2026-11-18T05:00:00Z', timezone: 'Asia/Kolkata', mode: 'IN_PERSON', location: 'Pune', meetLink: null,
