@@ -76,8 +76,8 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
     setNotice(null);
     try {
       // a fresh position for every punch (Punch Out never reuses the Punch In one); nothing is sent without one
-      const loc = await captureLocation();
       const max = day?.maxAccuracyM ?? 1000;
+      const loc = await captureLocation({ maxM: max });
       if (loc.status !== 'CAPTURED') { setNotice({ ok: false, text: locationHelp(loc.status) }); return; }
       if (loc.accuracy != null && loc.accuracy > max) { setNotice({ ok: false, text: locationHelp('CAPTURED', loc.accuracy, max) }); return; }
       const d = kind === 'in' ? await attendanceApi.punchIn(loc) : await attendanceApi.punchOut(loc);

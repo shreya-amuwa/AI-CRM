@@ -122,6 +122,24 @@ try {
     check(/low precision/.test(await pg.getByTestId('punch-in-location').textContent()), 'and the card marks the punch "low precision"');
     await c.close();
   }
+  // a phone whose first reading is the mobile network (1.4 km, over the limit) and whose GPS fix comes 4 s later: not refused at 3 s
+  const scripted = async (label, readings, expectRx, timeout = 25000) => {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await c.addInitScript(rs => {
+      navigator.geolocation.watchPosition = ok => { for (const [ms, acc] of rs) setTimeout(() => ok({ coords: { latitude: 18.5204, longitude: 73.8567, accuracy: acc } }), ms); return 7; };
+      navigator.geolocation.clearWatch = () => {};
+    }, readings);
+    const pg = await c.newPage();
+    await pg.goto(base);
+    await pg.evaluate(() => window.mount());
+    await pg.getByTestId('punch-in').click();
+    await pg.getByTestId('attendance-notice').waitFor({ timeout });
+    const note = await pg.getByTestId('attendance-notice').textContent();
+    check(expectRx.test(note), label, note);
+    await c.close();
+  };
+  await scripted('a first reading of 1.4 km and a GPS fix 4 s later: punched with the GPS fix (not refused at 3 s)', [[100, 1414], [4000, 30]], /^Punched in at .*within 30 m\)/);
+  await scripted('no reading for 12 s (a slow first fix or a long look at the permission prompt), then 40 m: punched', [[12000, 40]], /^Punched in at .*within 40 m\)/);
   await refused('a browser without geolocation: not marked', {}, () => { Object.defineProperty(Navigator.prototype, 'geolocation', { get: () => undefined }); }, /cannot share its location/);
 
   // 3. HR: the register of every employee for a day, CRM login / logout apart from punches, coordinates, maps, lunch, states

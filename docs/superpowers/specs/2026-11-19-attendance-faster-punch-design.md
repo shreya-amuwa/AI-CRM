@@ -14,7 +14,8 @@ accept up to the server limit with a "low precision" mark; (c) keep waiting long
 
 **Design**
 1. `captureLocation`: finish at once on a reading within **100 m**; otherwise wait at most **3 s** after the first reading for a better
-   one and take the best; overall timeout **10 s** (was 50 m / 8 s / 20 s). Same refusal and help when no reading or over the limit.
+   one and take the best (was 50 m / 8 s). A first reading over the server limit does not start the 3 s wait (it would be refused); the
+   overall limit stays **20 s** (it also covers the permission prompt and a slow first fix). Same refusal and help when no reading or over the limit.
 2. After a punch the card shows the returned day at once; the extra full reload right after the punch is dropped (the place-name lookup
    still refreshes it afterwards).
 3. A punch over 100 m shows **"low precision"** next to its accuracy wherever a punch location is shown (the employee's card, HR's
