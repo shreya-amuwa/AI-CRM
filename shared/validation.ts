@@ -3329,3 +3329,41 @@ export const aiStudioReportsQuerySchema = z
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
   })
   .strict();
+
+// ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
+/** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */
+export const crocodialCredentialRefSchema = z
+  .string()
+  .trim()
+  .transform(v => v.toUpperCase())
+  .pipe(z.string().regex(/^CROCODIAL_TOKEN_[A-Z0-9_]{1,40}$/, 'Enter the NAME of the server setting that holds the token, like CROCODIAL_TOKEN_MPILLAR (never the token itself).'));
+export const crocodialConnectionSaveSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    name: z.string().trim().min(2, 'Give the connection a name.').max(120),
+    externalAccountLabel: z.string().trim().max(200).optional().nullable(),
+    credentialRef: crocodialCredentialRefSchema,
+    enabled: z.boolean().optional()
+  })
+  .strict();
+export const crocodialRolloutSchema = z
+  .object({ departmentId: uuidSchema, division: z.literal('SALES'), allowed: z.boolean(), note: z.string().trim().max(300).optional().nullable() })
+  .strict();
+export const crocodialDepartmentLinkSchema = z
+  .object({
+    connectionId: uuidSchema,
+    departmentId: uuidSchema,
+    division: z.literal('SALES'),
+    enabled: z.boolean(),
+    stage: z.enum(['PILOT', 'PRODUCTION']).default('PILOT')
+  })
+  .strict();
+export const crocodialMappingSchema = z
+  .object({
+    connectionId: uuidSchema,
+    externalEmployeeId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    profileId: uuidSchema,
+    departmentId: uuidSchema
+  })
+  .strict();
+export const crocodialRevokeSchema = z.object({ reason: z.string().trim().max(300).optional().nullable() }).strict();

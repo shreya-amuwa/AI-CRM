@@ -11292,6 +11292,34 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
 }
 
+// --- Crocodial integration: configuration by the Super Admin only; the token never passes through the API ---
+{
+  let r = await api(null, 'GET', '/crocodial/admin');
+  check(r.status === 401, 'crocodial: the configuration needs a login', r);
+  r = await api('a', 'GET', '/crocodial/admin');
+  check(r.status === 403, 'crocodial: an employee cannot read the configuration', r);
+  r = await api('sa', 'GET', '/crocodial/admin');
+  check(r.status === 200 && r.json.data.rollout.length === 1 && r.json.data.rollout[0].departmentSlug === 'mpillar' && r.json.data.rollout[0].allowed,
+    'crocodial: only M Pillar Sales is rolled out', r);
+  r = await api('sa', 'POST', '/crocodial/connections', { name: 'API test', credentialRef: 'rmd_thisLooksLikeAToken123' });
+  check(r.status === 422, 'crocodial: a pasted token is refused as the credential', r);
+  r = await api('sa', 'POST', '/crocodial/connections', { name: 'API test', credentialRef: 'crocodial_token_apitest' });
+  check(r.status === 200 && r.json.data.credentialRef === 'CROCODIAL_TOKEN_APITEST' && r.json.data.credentialConfigured === false && r.json.data.enabled === false,
+    'crocodial: a connection stores the setting name, disabled, and says the server has no such setting', r);
+  const cid = r.json.data.id;
+  r = await api('a', 'POST', `/crocodial/connections/${cid}/test`);
+  check(r.status === 403, 'crocodial: an employee cannot test a connection', r);
+  r = await api('sa', 'POST', `/crocodial/connections/${cid}/test`);
+  check(r.status === 200 && r.json.data.ok === false && r.json.data.health === 'NO_CREDENTIAL' && r.json.data.requests === 0,
+    'crocodial: without the server setting the test calls nothing and says so', r);
+  const dt = (await db.query(`select id from public.departments where slug = 'dtalk'`)).rows[0].id;
+  r = await api('sa', 'POST', '/crocodial/department-links', { connectionId: cid, departmentId: dt, division: 'SALES', enabled: true });
+  check(r.status === 403, 'crocodial: a department that is not rolled out cannot be linked', r);
+  r = await api('a', 'GET', '/crocodial/me');
+  check(r.status === 200 && r.json.data.enabled === false, 'crocodial: an employee without an approved mapping has Crocodial off', r);
+  await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
