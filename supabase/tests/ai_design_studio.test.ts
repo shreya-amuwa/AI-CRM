@@ -38,7 +38,7 @@ check(toAuthUser(profile({ department: { id: 'h', name: 'HR', slug: 'hr' }, team
 check(toAuthUser(profile({ department: { id: 'a', name: 'Accounts', slug: 'accounts' }, team: null })).role === 'accounts-staff', 'Accounts is unchanged');
 check(toAuthUser(profile({ role: 'SUPER_ADMIN', department: null, team: null })).role === 'superadmin', 'the Super Admin keeps the Super Admin dashboard');
 check(toAuthUser(profile({ role: 'SUPER_ADMIN', department: ADS, team: null })).role === 'superadmin', 'even a Super Admin profile placed in the department');
-check(defaultDashboardLabel('TEAM_MEMBER', 'GENERAL', 'AI Design Studio', false, 'ai-design-studio').startsWith('AI Design Studio Team Member Dashboard'), 'the Add Team Member form says which dashboard opens');
+check(defaultDashboardLabel('TEAM_MEMBER', 'GENERAL', 'Amuwa Design Studio', false, 'ai-design-studio').startsWith('Amuwa Design Studio Team Member Dashboard'), 'the Add Team Member form says which dashboard opens');
 
 // ---- route guards
 (globalThis as unknown as { window: unknown }).window = { location: { pathname: '/ai-design-studio/dashboard/u1/assign' } };

@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { AiWebsiteOnboardingCard } from './AiWebsiteOnboarding';
+import { AI_WEBSITE_SERVICE } from '../../../../shared/validation';
 import { DeleteCustomerButton } from '../../common/DeleteCustomer';
 import type { PaymentOverview, PipelineCustomerDetail } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
@@ -58,6 +60,7 @@ export const CustomerQuickView: React.FC<{ id: string; title?: string; onClose: 
             <h3 className="text-xs font-bold text-slate-800 mb-2">Services</h3>
             <ServiceChips codes={c.services} catalog={byCode} max={12} />
           </div>
+          <AiWebsiteOnboardingCard data={c.aiWebsiteOnboarding} hasService={c.services.includes(AI_WEBSITE_SERVICE)} />
           {pay && (
             <div className="space-y-3">
               <h3 className="text-xs font-bold text-slate-800">Payments</h3>

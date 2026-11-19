@@ -1,4 +1,6 @@
 import { SubscriptionPanel } from '../../journey/SubscriptionPanel';
+import { AiWebsiteOnboardingCard } from '../../team-member/pipeline/AiWebsiteOnboarding';
+import { AI_WEBSITE_SERVICE } from '../../../../shared/validation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -422,6 +424,9 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
           </div>
         </dl>
       </section>
+
+      {/* AI Website: the client's onboarding details from the lead (view only) */}
+      <AiWebsiteOnboardingCard data={c.aiWebsiteOnboarding} hasService={c.services.includes(AI_WEBSITE_SERVICE)} />
 
       {actionError && <ErrorBanner message={actionError} />}
 

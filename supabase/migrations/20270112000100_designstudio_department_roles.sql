@@ -109,7 +109,8 @@ begin
     raise exception 'VALIDATION_ERROR: Choose the department.' using errcode = 'P0001';
   end if;
   -- Amuwa Design Studio has no Sales or Support side (its Operations Head request is about whole departments, so it has none either way)
-  if v_dept.slug = 'designstudio' and o_division in ('SALES', 'SUPPORT') then
+  -- (both: the department named Amuwa Design Studio since 20270112000200, slug ai-design-studio, and the retired one, slug designstudio)
+  if v_dept.slug in ('designstudio', 'ai-design-studio') and o_division in ('SALES', 'SUPPORT') then
     raise exception 'VALIDATION_ERROR: Amuwa Design Studio has no Sales or Support roles. Choose General (or leave the side empty).' using errcode = 'P0001';
   end if;
   -- Who the creator is decides the workflow, from their own account (never from the request): HR submits and the approver decides.

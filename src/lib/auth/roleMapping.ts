@@ -256,7 +256,7 @@ export function defaultDashboardLabel(
   if (departmentSlug === 'hr' && role === 'DEPARTMENT_HEAD') return `HR Department Head Dashboard${dept}`;
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   // AI Design Studio staff open the AI Design Studio dashboard (its own sidebar, the same for its Team Lead and Team Member)
-  if (departmentSlug === AI_DESIGN_STUDIO_SLUG && role !== 'SUPER_ADMIN') return `AI Design Studio ${ROLE_LABELS[role]} Dashboard`;
+  if (departmentSlug === AI_DESIGN_STUDIO_SLUG && role !== 'SUPER_ADMIN') return `Amuwa Design Studio ${ROLE_LABELS[role]} Dashboard`;
   switch (role) {
     case 'SUPER_ADMIN':
       return 'Super Admin Department Hub';
