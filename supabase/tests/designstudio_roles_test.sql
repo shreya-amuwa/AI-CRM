@@ -129,10 +129,13 @@ select test.must_fail($$select * from private.check_employee_submission(test.id(
   'Amuwa Design Studio: an HR request for the Support side is refused', 'no Sales or Support roles');
 
 \echo '   Access Control: no Sales / Support function, and the grants already given are withdrawn'
+insert into departments (slug, name) values ('dsr-other', 'DSR Other Dept') on conflict do nothing;
 select test.create_auth_user('dsr_ops', 'dsr.ops@example.com', '{"full_name":"DSR Ops"}',
-  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dsr_dep('wabastore'), 'provisioned_head_division', 'SALES'));
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dsr_dep('dsr-other')));
 -- a grant saved before this migration (the rule did not exist then)
+alter table department_access disable trigger department_access_operations_head;
 insert into department_access (profile_id, department_id, division) values (test.id('dsr_ops'), test.dsr_dep('designstudio'), 'SALES') on conflict do nothing;
+alter table department_access enable trigger department_access_operations_head;
 \i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
 select test.check(not exists (select 1 from department_access where profile_id = test.id('dsr_ops')), 'the migration withdraws an existing Sales grant for the retired department');
 select test.check((select count(*) = 1 from audit_logs where action = 'DEPARTMENT_ACCESS_REVOKED' and entity_id = test.id('dsr_ops') and department_id = test.dsr_dep('designstudio')), '... and audits it');
