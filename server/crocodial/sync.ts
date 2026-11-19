@@ -8,14 +8,15 @@ import { testCrocodialConnection } from './directory.js';
  * The read-only Crocodial sync (migration 20270115000200, docs/CROCODIAL_INTEGRATION.md). Runs with the automation dispatch and on the
  * Super Admin's "Sync now", for connections that are switched on AND serve a switched-on, rolled-out department (the database decides).
  *
- * Per connection: the user list is refreshed (so new Crocodial users show up for mapping), then leads, call logs, follow-ups and remarks,
+ * Per connection: the user list is refreshed (so new Crocodial users show up for mapping), then leads, follow-ups, remarks and call logs,
  * each on its own: one failing does not stop or move the others. Per resource the database hands out a lease and says what to fetch (a
  * resumed pull, a full pull, or rows updated since the checkpoint); every page is stored as it arrives, so a pull that runs out of time
  * resumes from the next page on the next run. The checkpoint moves only after a resource was read to the end.
  *
  * Only the fields the CRM needs are kept: no e-mail, budget, deal value, custom fields, raw numbers, SIM, location or recording.
  */
-export const SYNC_RESOURCES = ['leads', 'call-logs', 'followups', 'remarks'] as const;
+// the small lists first, the call log (by far the largest) last: a first read that takes several runs never holds the others back
+export const SYNC_RESOURCES = ['leads', 'followups', 'remarks', 'call-logs'] as const;
 export type SyncResource = (typeof SYNC_RESOURCES)[number];
 
 const ref = z.object({ id: z.number().int().positive() }).passthrough().nullable().optional();
