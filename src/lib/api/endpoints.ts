@@ -5,7 +5,7 @@
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   AiWebsiteOnboarding,
@@ -1071,7 +1071,8 @@ export const crocodialApi = {
   revokeMapping: (id: string, reason?: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/revoke`, { reason: reason || null }),
   me: () => api.get<CrocodialMyStatus>('/crocodial/me'),
   syncStatus: () => api.get<CrocodialSyncStatus[]>('/crocodial/sync'),
-  syncNow: (id: string) => api.post<CrocodialSyncRunResult>(`/crocodial/connections/${id}/sync`, {})
+  syncNow: (id: string) => api.post<CrocodialSyncRunResult>(`/crocodial/connections/${id}/sync`, {}),
+  activity: (q: { profileId?: string; from?: string; to?: string } = {}) => api.get<CrocodialActivity>('/crocodial/activity', { ...q })
 };
 
 export const leadWhatsAppApi = {

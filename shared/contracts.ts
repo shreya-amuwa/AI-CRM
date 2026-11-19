@@ -6454,3 +6454,24 @@ export interface CrocodialSyncRunResult {
   requests: number;
   note: string | null;
 }
+
+/** One person's Crocodial activity (croc_activity): absent figures mean "not available", never zero. */
+export interface CrocodialActivity {
+  enabled: boolean;
+  reason?: 'NOT_ENABLED';
+  available?: boolean;
+  stale?: boolean;
+  lastSyncAt?: string | null;
+  timezone?: string;
+  from?: string;
+  to?: string;
+  person?: { id: string; name: string; role: string; salesSubRole: string | null };
+  demos?: { scheduled: number; completed: number; cancelled: number; upcoming: number };
+  calls?: { made: number; connected: number; connectRate: number | null; talkSeconds: number; incoming: number; missed: number; uniqueLeads: number };
+  followups?: { scheduled: number; completed: number; completionRate: number | null; overdue: number };
+  leads?: { assigned: number; neverCalled: number; followUpDue: number };
+  remarks?: number;
+  daily?: { day: string; made: number; connected: number }[];
+  recentCalls?: { callAt: string; type: string; connected: boolean | null; durationSeconds: number | null; contactName: string | null; phone: string | null; leadStatus: string | null }[];
+  upcomingFollowups?: { scheduledAt: string; note: string | null; leadName: string | null; overdue: boolean }[];
+}

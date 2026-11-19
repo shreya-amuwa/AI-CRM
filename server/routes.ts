@@ -455,6 +455,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/crocodial/mappings/:id/revoke', handler: crocodial.mappingRevoke, options: S },
   { method: 'GET', path: '/crocodial/me', handler: crocodial.myStatus },
   { method: 'GET', path: '/crocodial/sync', handler: crocodial.syncStatus },
+  { method: 'GET', path: '/crocodial/activity', handler: crocodial.activity },
   { method: 'POST', path: '/crocodial/connections/:id/sync', handler: crocodial.syncNow, options: S },
   { method: 'GET', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.settings },
   { method: 'POST', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.setSettings, options: S },

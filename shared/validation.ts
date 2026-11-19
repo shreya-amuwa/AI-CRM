@@ -3367,3 +3367,10 @@ export const crocodialMappingSchema = z
   })
   .strict();
 export const crocodialRevokeSchema = z.object({ reason: z.string().trim().max(300).optional().nullable() }).strict();
+export const crocodialActivityQuerySchema = z
+  .object({
+    profileId: uuidSchema.optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional()
+  })
+  .strict();

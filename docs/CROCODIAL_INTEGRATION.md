@@ -11,8 +11,8 @@ It is delivered in parts:
 | Part | What | Status |
 | --- | --- | --- |
 | 1 | Configuration and identity (rollout, connections, department links, approved employee mappings, Super Admin page, connection test) | pull request #246 |
-| 2 | Read-only sync of leads, call logs, follow-ups and remarks (rate-limited, paged, checkpointed, reconciled) | this pull request |
-| 3 | "My Crocodial Activity" on the employee's own dashboard | next |
+| 2 | Read-only sync of leads, call logs, follow-ups and remarks (rate-limited, paged, checkpointed, reconciled) | pull request #247 |
+| 3 | "My Crocodial Activity" on the employee's own dashboard | this pull request |
 | 4 | Team Lead / Department Head / Operations Head pilot views | next |
 
 ## Pilot: M Pillar Sales, two people
@@ -144,9 +144,65 @@ This is `private.croc_can_view(profile, department, division)`. The screens in p
 
   Calls of 340, and of anyone not approved, stay unattributed until the Super Admin decides otherwise.
 
+## My Crocodial Activity (part 3, `public.croc_activity`, migration `20270115000300_crocodial_activity.sql`)
+
+**Where it appears.** A section on the dashboard the person already has:
+
+| Dashboard | What it shows |
+| --- | --- |
+| Telecaller Home | Calls and follow-ups |
+| Business Associate Home | The same, plus demo counts **from the CRM demo schedule** |
+| Team member Home | Calls and follow-ups |
+
+**When it appears.** Only for a person whose mapping is approved and switched on (`croc_my_status`); for everyone else nothing is shown. No role, permission or dashboard changes.
+
+**Section contents:**
+- a period filter: today, 7 days, 30 days, or custom (at most 93 days);
+- the source and last-sync label;
+- figure cards;
+- recent calls (last 4 digits of the number only);
+- open follow-ups.
+
+**Who can read it.** `GET /crocodial/activity` (optionally `?profileId=` for part 4) calls `croc_activity`. It answers for the caller, or for a person the caller may see (`private.croc_can_view`). Any other id gets 404.
+
+**Formulas.** Days are in the account's time zone, both ends included. A record counts only through the approved mapping in effect at its time.
+
+| Figure | How it is counted |
+| --- | --- |
+| Calls made | Outgoing calls by the person |
+| Connected | Of those, `connected = true` |
+| Connect rate | connected ÷ calls made ("—" when there are no calls made) |
+| Talk time | Duration of the connected outgoing calls |
+| Incoming / missed | Calls of that type, counted apart |
+| Unique leads contacted | Distinct Crocodial leads of the outgoing calls (a call without a lead is not counted here) |
+| Follow-ups scheduled | Created by the person, due in the period |
+| Completed | Of those, done |
+| Completion | completed ÷ scheduled |
+| Overdue | Created by the person, not done, due before now (any date) |
+| My Crocodial leads | Leads Crocodial shows as assigned to the person now. This is not the CRM owner, and nothing is copied into the CRM pipeline. |
+| Demos scheduled (CRM `ba_demos`, assigned to the person) | Starting in the period and not cancelled |
+| Demos completed | Of those, COMPLETED |
+| Demos cancelled | Shown apart |
+| Upcoming demos | From now, SCHEDULED or RESCHEDULED |
+
+A rescheduled demo is one record, counted once. Demos are never derived from Crocodial remarks or statuses.
+
+**States:**
+- **No approved mapping:** "switched off". Nothing is shown.
+- **Never fully synced:** "not available", with no figures, never zeros.
+- **Last complete sync older than 24 hours:** figures are shown with a "not current" label.
+- **Crocodial activity is kept apart** from the task-performance scores.
+
+**Live check (2026-11-19, local test database, removed afterwards).** Crocodial user 4138 was mapped to one test person and 371 to another, over the last 30 days. `croc_activity` matched a direct count of the stored calls exactly, in 9 to 42 ms:
+
+| Crocodial user | Calls made | Connected | Connect rate | Talk time |
+| --- | --- | --- | --- | --- |
+| 4138 | 19 | 8 | 42.1% | 424 s |
+| 371 | 954 | 534 | 56% | 49,675 s |
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `supabase/migrations/20270115000200_crocodial_sync.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

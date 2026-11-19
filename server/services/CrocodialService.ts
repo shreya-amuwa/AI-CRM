@@ -1,8 +1,8 @@
 import type {
-  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult
+  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity
 } from '../../shared/contracts.js';
 import {
-  crocodialConnectionSaveSchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
+  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
@@ -58,6 +58,11 @@ export class CrocodialService {
   }
   myStatus(): Promise<CrocodialMyStatus> { return this.repo.myStatus(); }
   syncStatus(): Promise<CrocodialSyncStatus[]> { return this.repo.syncStatus(); }
+  /** One person's activity: the caller's own, or (profileId) someone the database lets the caller see. */
+  activity(query: unknown): Promise<CrocodialActivity> {
+    const q = parse(crocodialActivityQuerySchema, query ?? {});
+    return this.repo.activity(q.profileId ?? null, q.from ?? null, q.to ?? null);
+  }
   /** "Sync now": the database checks the caller and the limit first; the run stops starting pages after 20 s and resumes on the next one. */
   async syncNow(id: string): Promise<CrocodialSyncRunResult> {
     const c = await this.repo.syncRequest(parse(uuidSchema, id));

@@ -14,6 +14,7 @@ import { Card, CardHead } from '../tasks/head/headParts';
 import { EmptyState, StatCard, dateText, dateTimeText, tcBtn } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
 import { BA_CHANGED } from './ui';
+import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -68,6 +69,8 @@ export const HomePage: React.FC<HomeProps> = ({ go, workspace, pipelineCounts, o
       <PageTitle title={`${greeting()}${first ? `, ${first}` : ''}`} subtitle="Your leads, customers, subscriptions, quotations, demos and project scopes." actions={<HomeClock />} />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!data && !error && <Spinner label="Loading your day…" />}
+      {/* Crocodial call activity next to the CRM's own demos (demo counts come from the CRM demo schedule, never from Crocodial) */}
+      <CrocodialActivityPanel showDemos />
       {data && (
         <>
           <section aria-label="Sales summary" className="grid grid-cols-2 xl:grid-cols-4 gap-4">
