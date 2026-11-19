@@ -157,6 +157,7 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch, default: worke
   r = await run('*/5 * * * *');
   check(!r.error && /\[cron\] attendance reminders: HTTP 200/.test(r.logs) && !/automations dispatched/.test(r.logs),
     'the 5-minute cron calls the reminders endpoint (with the secret), not the daily dispatch', r);
+  check(/\[cron\] crocodial sync: HTTP 200/.test(r.logs), 'the 5-minute cron also continues the Crocodial sync (a large first read finishes in minutes)', r);
   delete process.env.CRON_SECRET;
   r = await run('30 3 * * *');
   check(/set the CRON_SECRET/.test(r.error) && !/reminders/.test(r.logs), 'the daily crons still call the dispatch', r);

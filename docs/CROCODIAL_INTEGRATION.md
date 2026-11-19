@@ -144,6 +144,13 @@ This is `private.croc_can_view(profile, department, division)`. The screens in p
 
   Calls of 340, and of anyone not approved, stay unattributed until the Super Admin decides otherwise.
 
+
+**Timing (migration `20270115000500`, Cloudflare):**
+- **Every 5 minutes:** the 5-minute cron (the attendance reminders' cron) also calls `/internal/crocodial/sync`, with a 25 s budget. A first read still in progress continues every 5 minutes, and an up-to-date connection is refreshed every 15 minutes. This needs `SCHEDULED_ENABLED=true` and the dispatch secret, as for every scheduled run.
+- **Sync now:** reads for up to 50 s, and can be used again after 1 minute (it was 5).
+- **Reading order:** leads → follow-ups → remarks → call logs. The small lists finish first, and the large call log can never hold them back.
+- **Previously:** the sync only continued with the twice-daily automation run or Sync now (20 s, then 5 minutes to wait). The first read of the M Pillar account (about 40 pages) therefore looked stuck, showing "not available yet (not synced)".
+
 ## My Crocodial Activity (part 3, `public.croc_activity`, migration `20270115000300_crocodial_activity.sql`)
 
 **Where it appears.** A section on the dashboard the person already has:
@@ -227,7 +234,7 @@ For Team Leads and heads, the entry appears only when they have at least one con
 
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

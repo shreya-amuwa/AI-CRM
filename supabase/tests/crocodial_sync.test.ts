@@ -72,6 +72,8 @@ function stubDb(begins: Record<string, any> = {}) {
   check(['leads', 'call-logs', 'followups', 'remarks'].every(res => urls.some(u => u.pathname.endsWith(res))) && !urls.some(u => /recordings/.test(u.pathname)),
     'leads, call logs, follow-ups and remarks are read; recordings never');
   check(urls[0].pathname.endsWith('employees'), 'the account\'s users are refreshed first');
+  const order = urls.map(u => u.pathname.split('/').pop()).filter(r => r !== 'employees' && r !== 'branches').filter((r, i, a) => a.indexOf(r) === i);
+  check(JSON.stringify(order) === JSON.stringify(['leads', 'followups', 'remarks', 'call-logs']), 'the small lists are read first, the large call log last (a long first read never holds them back)', order);
   const stored = calls[0].p_rows[0];
   check(stored.calledBy === 4138 && stored.lead === 9 && stored.callType === 'outgoing' && stored.durationSeconds === 60 && stored.connected === true,
     'a call keeps who made it (the Crocodial user id), the lead, type, time, duration and whether it connected', stored);

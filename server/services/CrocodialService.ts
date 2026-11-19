@@ -68,10 +68,11 @@ export class CrocodialService {
     const q = parse(crocodialActivityQuerySchema, query ?? {});
     return this.repo.activity(q.profileId ?? null, q.from ?? null, q.to ?? null);
   }
-  /** "Sync now": the database checks the caller and the limit first; the run stops starting pages after 20 s and resumes on the next one. */
+  /** "Sync now": the database checks the caller and the limit first; the run stops starting pages after 50 s (enough for a first read of
+   * about 40 pages) and anything left continues with the 5-minute scheduled run. */
   async syncNow(id: string): Promise<CrocodialSyncRunResult> {
     const c = await this.repo.syncRequest(parse(uuidSchema, id));
-    const r = await runCrocodialSync({ connectionId: c.id, budgetMs: 20_000, env: this.env });
+    const r = await runCrocodialSync({ connectionId: c.id, budgetMs: 50_000, env: this.env });
     return { connections: r.connections, requests: r.requests, note: r.note ?? null };
   }
 }
