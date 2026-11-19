@@ -2998,7 +2998,7 @@ export const ceoRequestsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0)
 }).strict();
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
-// ---- Live meeting availability (migration 20270114000200): Enter Meeting may name the meeting being entered ----
+// ---- Live meeting availability (migration 20270116000100): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
 export const meetingBusySchema = z.object({
   profileIds: z.array(uuidSchema).min(1).max(30),
@@ -3329,5 +3329,58 @@ export const aiStudioReportsQuerySchema = z
     to: isoDate.optional(),
     page: z.coerce.number().int().min(1).max(5000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
+  })
+  .strict();
+
+// ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
+/** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */
+export const crocodialCredentialRefSchema = z
+  .string()
+  .trim()
+  .transform(v => v.toUpperCase())
+  .pipe(z.string().regex(/^CROCODIAL_TOKEN_[A-Z0-9_]{1,40}$/, 'Enter the NAME of the server setting that holds the token, like CROCODIAL_TOKEN_MPILLAR (never the token itself).'));
+export const crocodialConnectionSaveSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    name: z.string().trim().min(2, 'Give the connection a name.').max(120),
+    externalAccountLabel: z.string().trim().max(200).optional().nullable(),
+    credentialRef: crocodialCredentialRefSchema,
+    enabled: z.boolean().optional()
+  })
+  .strict();
+export const crocodialRolloutSchema = z
+  .object({ departmentId: uuidSchema, division: z.literal('SALES'), allowed: z.boolean(), note: z.string().trim().max(300).optional().nullable() })
+  .strict();
+export const crocodialDepartmentLinkSchema = z
+  .object({
+    connectionId: uuidSchema,
+    departmentId: uuidSchema,
+    division: z.literal('SALES'),
+    enabled: z.boolean(),
+    stage: z.enum(['PILOT', 'PRODUCTION']).default('PILOT')
+  })
+  .strict();
+export const crocodialMappingSchema = z
+  .object({
+    connectionId: uuidSchema,
+    externalEmployeeId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    profileId: uuidSchema,
+    departmentId: uuidSchema
+  })
+  .strict();
+export const crocodialRevokeSchema = z.object({ reason: z.string().trim().max(300).optional().nullable() }).strict();
+export const crocodialActivityQuerySchema = z
+  .object({
+    profileId: uuidSchema.optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional()
+  })
+  .strict();
+export const crocodialTeamActivityQuerySchema = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    departmentId: uuidSchema.optional(),
+    teamId: uuidSchema.optional()
   })
   .strict();

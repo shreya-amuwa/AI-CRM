@@ -159,6 +159,24 @@ export const chatController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+// Crocodial integration: configuration (Super Admin; the database checks the caller) and an employee's own switch
+export const crocodialController = {
+  overview: (async ctx => ok(await svc(ctx).crocodial.overview())) as Handler,
+  rolloutSet: (async ctx => ok(await svc(ctx).crocodial.rolloutSet(ctx.req.body))) as Handler,
+  connectionSave: (async ctx => ok(await svc(ctx).crocodial.connectionSave(ctx.req.body))) as Handler,
+  testConnection: (async ctx => ok(await svc(ctx).crocodial.testConnection(ctx.params.id))) as Handler,
+  departmentLinkSave: (async ctx => ok(await svc(ctx).crocodial.departmentLinkSave(ctx.req.body))) as Handler,
+  mappingCheck: (async ctx => ok(await svc(ctx).crocodial.mappingCheck(ctx.req.body))) as Handler,
+  mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
+  mappingApprove: (async ctx => ok(await svc(ctx).crocodial.mappingApprove(ctx.params.id))) as Handler,
+  mappingRevoke: (async ctx => ok(await svc(ctx).crocodial.mappingRevoke(ctx.params.id, ctx.req.body))) as Handler,
+  myStatus: (async ctx => ok(await svc(ctx).crocodial.myStatus())) as Handler,
+  syncStatus: (async ctx => ok(await svc(ctx).crocodial.syncStatus())) as Handler,
+  syncNow: (async ctx => ok(await svc(ctx).crocodial.syncNow(ctx.params.id))) as Handler,
+  activity: (async ctx => ok(await svc(ctx).crocodial.activity(ctx.req.query))) as Handler,
+  teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler
+};
+
 export const leadWhatsAppController = {
   settings: (async ctx => ok(await svc(ctx).leadWhatsApp.settings())) as Handler,
   setSettings: (async ctx => ok(await svc(ctx).leadWhatsApp.setSettings(ctx.req.body))) as Handler,

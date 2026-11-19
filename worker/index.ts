@@ -132,8 +132,21 @@ export async function runScheduledReminders(env: WorkerEnv): Promise<void> {
     env
   );
   const text = await res.text();
+  // the Crocodial sync rides on the same 5-minute cron (on its own: a failure of one never stops the other)
+  await runScheduledCrocodialSync(env, secret).catch(err => console.log(`[cron] crocodial sync failed: ${err instanceof Error ? err.message : 'error'}`));
   if (!res.ok) throw new Error(`Attendance reminders failed: HTTP ${res.status} ${text.slice(0, 300)}`);
   console.log(`[cron] attendance reminders: HTTP ${res.status} ${text.slice(0, 200)}`);
+}
+
+/** Crocodial (read-only): continue the sync of the connections that are switched on (does nothing when none is). */
+export async function runScheduledCrocodialSync(env: WorkerEnv, secret: string): Promise<void> {
+  const res = await app.fetch(
+    new Request('https://worker.internal/api/v1/internal/crocodial/sync', { method: 'POST', headers: { authorization: `Bearer ${secret}` } }),
+    env
+  );
+  const text = await res.text();
+  if (!res.ok) throw new Error(`HTTP ${res.status} ${text.slice(0, 300)}`);
+  console.log(`[cron] crocodial sync: HTTP ${res.status} ${text.slice(0, 200)}`);
 }
 
 export default {

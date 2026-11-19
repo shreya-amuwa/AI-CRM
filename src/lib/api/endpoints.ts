@@ -5,6 +5,7 @@
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialTeamActivity } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   AiWebsiteOnboarding,
@@ -1053,6 +1054,28 @@ export const leadUploadApi = {
 };
 
 /** The lead welcome WhatsApp ("our services", once when a lead first reaches a sales person). */
+/** Crocodial integration: the Super Admin's configuration and an employee's own switch (the database decides who may do what). */
+export const crocodialApi = {
+  overview: () => api.get<CrocodialAdminOverview>('/crocodial/admin'),
+  setRollout: (body: { departmentId: string; division: 'SALES'; allowed: boolean; note?: string | null }) => api.post<CrocodialAdminOverview>('/crocodial/rollout', body),
+  saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef: string; enabled?: boolean }) =>
+    api.post<CrocodialConnection>('/crocodial/connections', body),
+  testConnection: (id: string) => api.post<CrocodialTestResult>(`/crocodial/connections/${id}/test`, {}),
+  saveDepartmentLink: (body: { connectionId: string; departmentId: string; division: 'SALES'; enabled: boolean; stage?: 'PILOT' | 'PRODUCTION' }) =>
+    api.post<{ id: string }>('/crocodial/department-links', body),
+  checkMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
+    api.post<CrocodialMappingCheck>('/crocodial/mappings/check', body),
+  createMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
+    api.post<CrocodialMapping>('/crocodial/mappings', body),
+  approveMapping: (id: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/approve`, {}),
+  revokeMapping: (id: string, reason?: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/revoke`, { reason: reason || null }),
+  me: () => api.get<CrocodialMyStatus>('/crocodial/me'),
+  syncStatus: () => api.get<CrocodialSyncStatus[]>('/crocodial/sync'),
+  syncNow: (id: string) => api.post<CrocodialSyncRunResult>(`/crocodial/connections/${id}/sync`, {}),
+  activity: (q: { profileId?: string; from?: string; to?: string } = {}) => api.get<CrocodialActivity>('/crocodial/activity', { ...q }),
+  teamActivity: (q: { from?: string; to?: string; departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamActivity>('/crocodial/team-activity', { ...q })
+};
+
 export const leadWhatsAppApi = {
   settings: () => api.get<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings'),
   saveSettings: (body: { enabled: boolean; templateName: string | null; templateLanguage: string; templateApproved: boolean; variables: LeadWhatsAppVariable[] }) =>

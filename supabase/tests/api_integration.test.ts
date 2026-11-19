@@ -11292,7 +11292,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
 }
 
-// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270114000200) ---------------
+// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270116000100) ---------------
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
@@ -11338,6 +11338,57 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sa', 'POST', '/meetings/presence/exit', {});
   check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.length === 0, 'live availability: a second Exit changes nothing', r);
   await db.query(`delete from public.meetings where title like 'LAX %'`);
+}
+
+// --- Crocodial integration: configuration by the Super Admin only; the token never passes through the API ---
+{
+  let r = await api(null, 'GET', '/crocodial/admin');
+  check(r.status === 401, 'crocodial: the configuration needs a login', r);
+  r = await api('a', 'GET', '/crocodial/admin');
+  check(r.status === 403, 'crocodial: an employee cannot read the configuration', r);
+  r = await api('sa', 'GET', '/crocodial/admin');
+  check(r.status === 200 && r.json.data.rollout.length === 1 && r.json.data.rollout[0].departmentSlug === 'mpillar' && r.json.data.rollout[0].allowed,
+    'crocodial: only M Pillar Sales is rolled out', r);
+  r = await api('sa', 'POST', '/crocodial/connections', { name: 'API test', credentialRef: 'rmd_thisLooksLikeAToken123' });
+  check(r.status === 422, 'crocodial: a pasted token is refused as the credential', r);
+  r = await api('sa', 'POST', '/crocodial/connections', { name: 'API test', credentialRef: 'crocodial_token_apitest' });
+  check(r.status === 200 && r.json.data.credentialRef === 'CROCODIAL_TOKEN_APITEST' && r.json.data.credentialConfigured === false && r.json.data.enabled === false,
+    'crocodial: a connection stores the setting name, disabled, and says the server has no such setting', r);
+  const cid = r.json.data.id;
+  r = await api('a', 'POST', `/crocodial/connections/${cid}/test`);
+  check(r.status === 403, 'crocodial: an employee cannot test a connection', r);
+  r = await api('sa', 'POST', `/crocodial/connections/${cid}/test`);
+  check(r.status === 200 && r.json.data.ok === false && r.json.data.health === 'NO_CREDENTIAL' && r.json.data.requests === 0,
+    'crocodial: without the server setting the test calls nothing and says so', r);
+  const dt = (await db.query(`select id from public.departments where slug = 'dtalk'`)).rows[0].id;
+  r = await api('sa', 'POST', '/crocodial/department-links', { connectionId: cid, departmentId: dt, division: 'SALES', enabled: true });
+  check(r.status === 403, 'crocodial: a department that is not rolled out cannot be linked', r);
+  r = await api('a', 'GET', '/crocodial/me');
+  check(r.status === 200 && r.json.data.enabled === false, 'crocodial: an employee without an approved mapping has Crocodial off', r);
+  r = await api('a', 'GET', '/crocodial/sync');
+  check(r.status === 403, 'crocodial: an employee cannot read the sync status', r);
+  r = await api('sa', 'GET', '/crocodial/sync');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.some((x: any) => x.connectionId === cid && x.syncable === false), 'crocodial: the Super Admin sees the sync status (off: not syncable)', r);
+  r = await api('a', 'POST', `/crocodial/connections/${cid}/sync`);
+  check(r.status === 403, 'crocodial: an employee cannot start a sync', r);
+  r = await api('sa', 'POST', `/crocodial/connections/${cid}/sync`);
+  check(r.status === 422, 'crocodial: a connection that is off is never synced', r);
+  r = await api('a', 'GET', '/crocodial/activity');
+  check(r.status === 200 && r.json.data.enabled === false, 'crocodial: without an approved mapping the activity is switched off (not zeros)', r);
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' limit 1`)).rows[0].id;
+  r = await api('a', 'GET', `/crocodial/activity?profileId=${saId}`);
+  check(r.status === 404, 'crocodial: nobody reads another person\'s activity by sending their id', r);
+  r = await api('a', 'GET', '/crocodial/activity?from=yesterday');
+  check(r.status === 422, 'crocodial: the period is validated', r);
+  r = await api(null, 'GET', '/crocodial/activity');
+  check(r.status === 401, 'crocodial: the activity needs a login', r);
+  r = await api('a', 'GET', '/crocodial/team-activity');
+  check(r.status === 200 && r.json.data.connectedEmployees === 0 && Array.isArray(r.json.data.people), 'crocodial: an employee sees nobody else in the management view', r);
+  r = await api('sa', 'GET', '/crocodial/team-activity?from=2026-11-01&to=2026-11-07');
+  check(r.status === 200 && typeof r.json.data.label === 'string' && /connected employee/.test(r.json.data.label), 'crocodial: the management view is labelled with the number of connected employees', r);
+  r = await api('sa', 'GET', '/crocodial/team-activity?teamId=nope');
+  check(r.status === 422, 'crocodial: the management view validates its filters', r);
+  await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

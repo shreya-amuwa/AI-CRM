@@ -5699,7 +5699,7 @@ export interface HrEmployeeFileUploadTicket {
 // ---------------------------------------------------------------------------
 export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING';
 export type CalendarMeetingMode = 'GOOGLE_MEET' | 'ONLINE_LINK' | 'IN_PERSON' | 'PHONE';
-/** PENDING_AVAILABILITY (migration 20270114000200): asked for while the CEO was in a meeting; scheduled automatically when they are free. */
+/** PENDING_AVAILABILITY (migration 20270116000100): asked for while the CEO was in a meeting; scheduled automatically when they are free. */
 export type CalendarMeetingStatus = 'REQUESTED' | 'PROPOSED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED' | 'PENDING_AVAILABILITY';
 export type CalendarMeetingSyncStatus = 'PENDING' | 'SYNCED' | 'FAILED' | 'NOT_CONNECTED' | 'SKIPPED';
 
@@ -5831,7 +5831,7 @@ export interface MeetingBookingLink {
 
 export interface MeetingAvailabilityWindow { weekday: number; start: string; end: string }
 
-// ---- Live meeting availability of the CEO (migration 20270114000200): Enter / Exit Meeting ----
+// ---- Live meeting availability of the CEO (migration 20270116000100): Enter / Exit Meeting ----
 export type CeoAvailabilityStatus = 'AVAILABLE' | 'BUSY';
 /** One Super Admin's live availability, as every signed-in employee sees it (the meeting and the queue only for those who may see them). */
 export interface CeoPresence {
@@ -6366,4 +6366,157 @@ export interface AiStudioOverview {
     reportsToday: number;
     projects: { id: string; name: string; status: AiStudioProjectStatus; total: number; completed: number; ongoing: number; progress: number; leads: string[] }[];
   };
+}
+
+// ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
+export type CrocodialHealth = 'UNKNOWN' | 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR';
+export interface CrocodialConnection {
+  id: string;
+  name: string;
+  externalAccountLabel: string | null;
+  /** The NAME of the server setting that holds the token; the token itself never leaves the server. */
+  credentialRef: string;
+  /** Whether the server has that setting (added by the server; the database cannot know). */
+  credentialConfigured?: boolean;
+  enabled: boolean;
+  health: CrocodialHealth;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  timezone: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CrocodialMapping {
+  id: string;
+  connectionId: string;
+  externalEmployeeId: number;
+  externalName: string | null;
+  profileId: string;
+  profileName: string;
+  departmentId: string;
+  departmentName: string | null;
+  division: 'SALES';
+  roleSnapshot: { role?: string; salesSubRole?: string | null; teamId?: string | null; teamName?: string | null };
+  status: 'PENDING' | 'APPROVED' | 'REVOKED';
+  approvedByName: string | null;
+  approvedAt: string | null;
+  effectiveFrom: string | null;
+  endedAt: string | null;
+  endReason: string | null;
+  createdAt: string;
+  live: boolean;
+}
+export interface CrocodialAdminOverview {
+  rollout: { departmentId: string; departmentName: string; departmentSlug: string; division: 'SALES'; allowed: boolean; note: string | null; updatedAt: string }[];
+  connections: CrocodialConnection[];
+  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string }[];
+  mappings: CrocodialMapping[];
+  externalEmployees: { connectionId: string; externalId: number; name: string | null; isActive: boolean | null; branchIds: number[]; lastSeenAt: string; missingSince: string | null; mappingStatus: 'PENDING' | 'APPROVED' | null }[];
+  externalBranches: { connectionId: string; externalId: number; name: string | null; status: string | null; missingSince: string | null }[];
+  audit: { at: string; action: string; actorName: string | null; entityId: string | null; metadata: Record<string, unknown> }[];
+}
+export interface CrocodialProfileCheck {
+  profileId: string;
+  name: string;
+  status: string;
+  role: string;
+  salesSubRole: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  teamId: string | null;
+  teamName: string | null;
+  teamDivision: string | null;
+  active: boolean;
+  inDepartment: boolean;
+  inFunction: boolean;
+  eligible: boolean;
+}
+export interface CrocodialMappingCheck {
+  profile: CrocodialProfileCheck | null;
+  externalEmployee: { externalId: number; name: string | null; isActive: boolean | null } | null;
+  externalAlreadyMapped: boolean;
+  profileAlreadyMapped: boolean;
+  departmentLinked: boolean;
+}
+export interface CrocodialTestResult {
+  ok: boolean;
+  health: Exclude<CrocodialHealth, 'UNKNOWN'>;
+  message: string;
+  employees: number;
+  branches: number;
+  timezone: string | null;
+  requests: number;
+}
+export interface CrocodialMyStatus {
+  enabled: boolean;
+  connectionName?: string;
+  externalName?: string | null;
+  departmentName?: string;
+  lastSuccessAt?: string | null;
+  health?: CrocodialHealth;
+  timezone?: string | null;
+}
+
+export type CrocodialSyncResource = 'leads' | 'call-logs' | 'followups' | 'remarks';
+export interface CrocodialSyncStatus {
+  connectionId: string;
+  syncable: boolean;
+  lastManualSyncAt: string | null;
+  resources: { resource: CrocodialSyncResource; checkpoint: string | null; lastFullAt: string | null; running: boolean; inProgress: boolean;
+    lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; rowsLastRun: number | null; skippedLastRun: number | null }[];
+  counts: { leads: number; calls: number; followups: number; remarks: number; missing: number };
+  /** Records whose Crocodial user has no approved mapping: kept, never counted for anyone. */
+  unmatched: { calls: number; followups: number; leads: number };
+  unmatchedByUser: { externalId: number; name: string | null; calls: number }[];
+  recentRuns: { resource: CrocodialSyncResource; startedAt: string; finishedAt: string; outcome: 'DONE' | 'PARTIAL' | 'FAILED'; fullPull: boolean; pages: number; rows: number; skipped: number; error: string | null }[];
+}
+export interface CrocodialSyncRunResult {
+  connections: { connectionId: string; health: string; error?: string;
+    resources: { resource: CrocodialSyncResource; outcome: 'DONE' | 'PARTIAL' | 'FAILED' | 'SKIPPED'; pages: number; rows: number; skipped: number; error?: string }[] }[];
+  requests: number;
+  note: string | null;
+}
+
+/** One person's Crocodial activity (croc_activity): absent figures mean "not available", never zero. */
+export interface CrocodialActivity {
+  enabled: boolean;
+  reason?: 'NOT_ENABLED';
+  available?: boolean;
+  stale?: boolean;
+  lastSyncAt?: string | null;
+  timezone?: string;
+  from?: string;
+  to?: string;
+  person?: { id: string; name: string; role: string; salesSubRole: string | null };
+  demos?: { scheduled: number; completed: number; cancelled: number; upcoming: number };
+  calls?: { made: number; connected: number; connectRate: number | null; talkSeconds: number; incoming: number; missed: number; uniqueLeads: number };
+  followups?: { scheduled: number; completed: number; completionRate: number | null; overdue: number };
+  leads?: { assigned: number; neverCalled: number; followUpDue: number };
+  remarks?: number;
+  daily?: { day: string; made: number; connected: number }[];
+  recentCalls?: { callAt: string; type: string; connected: boolean | null; durationSeconds: number | null; contactName: string | null; phone: string | null; leadStatus: string | null }[];
+  upcomingFollowups?: { scheduledAt: string; note: string | null; leadName: string | null; overdue: boolean }[];
+}
+
+/** The connected people a manager may see (croc_team_activity). Totals cover only these people, never the whole department. */
+export interface CrocodialTeamActivity {
+  connectedEmployees: number;
+  label: string;
+  stage: 'PILOT' | 'PRODUCTION';
+  from: string | null;
+  to: string | null;
+  oldestSyncAt: string | null;
+  anyStale: boolean;
+  unavailable: number;
+  note: string;
+  people: {
+    profileId: string; name: string; role: string; salesSubRole: string | null; teamId: string | null; teamName: string | null;
+    departmentId: string; departmentName: string | null; available: boolean; stale: boolean; lastSyncAt: string | null;
+    calls: CrocodialActivity['calls'] | null; followups: CrocodialActivity['followups'] | null; demos: CrocodialActivity['demos'] | null;
+  }[];
+  totals: { made: number; connected: number; connectRate: number | null; talkSeconds: number; uniqueLeads: number; followupsScheduled: number;
+    followupsCompleted: number; followupsOverdue: number; demosScheduled: number; demosCompleted: number };
+  teams: { teamId: string | null; teamName: string | null; people: number; made: number | null; connected: number | null }[];
+  daily: { day: string; made: number; connected: number }[];
 }

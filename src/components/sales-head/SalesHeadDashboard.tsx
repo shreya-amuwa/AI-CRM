@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, Briefcase, MessageCircle, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Building2, Briefcase, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -32,6 +32,7 @@ import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
 import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
+import { CrocodialTeamPanel, useCrocodialTeamVisible } from '../crocodial/CrocodialTeamPanel';
 export { SALES_HEAD_BASE, parseSalesHeadPage };
 export type { SalesHeadNavigate, SalesHeadPage };
 
@@ -56,6 +57,7 @@ export const SalesHeadDashboard: React.FC = () => {
   const [intent, setIntent] = useState<{ filter?: string; n: number }>({ n: 0 });
   const chatUnread = useChatNavBadge();
   const reportsBadge = useReportsBadge();
+  const crocodialVisible = useCrocodialTeamVisible();
   const { counts: pipelineCounts } = usePipelineCounts();
 
   useEffect(() => {
@@ -93,6 +95,8 @@ export const SalesHeadDashboard: React.FC = () => {
           },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
+          // Crocodial calling activity of the connected people this head covers (only when there are any)
+          ...(crocodialVisible ? [{ id: 'crocodial', label: 'Crocodial Activity', icon: PhoneCall }] : []),
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'income', label: 'Department Income', icon: TrendingUp },
           { id: 'reports', label: 'Sales Reports', icon: ReceiptIndianRupee },
@@ -108,7 +112,7 @@ export const SalesHeadDashboard: React.FC = () => {
         ]
       }
     ],
-    [chatUnread, operationsHead, reportsBadge]
+    [chatUnread, operationsHead, reportsBadge, crocodialVisible]
   );
 
   const roleName = operationsHead ? 'Sales Operations Head' : 'Sales Department Head';
@@ -158,6 +162,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
+      {page === 'crocodial' && <CrocodialTeamPanel />}
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}
