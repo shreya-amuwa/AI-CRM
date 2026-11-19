@@ -6475,3 +6475,25 @@ export interface CrocodialActivity {
   recentCalls?: { callAt: string; type: string; connected: boolean | null; durationSeconds: number | null; contactName: string | null; phone: string | null; leadStatus: string | null }[];
   upcomingFollowups?: { scheduledAt: string; note: string | null; leadName: string | null; overdue: boolean }[];
 }
+
+/** The connected people a manager may see (croc_team_activity). Totals cover only these people, never the whole department. */
+export interface CrocodialTeamActivity {
+  connectedEmployees: number;
+  label: string;
+  stage: 'PILOT' | 'PRODUCTION';
+  from: string | null;
+  to: string | null;
+  oldestSyncAt: string | null;
+  anyStale: boolean;
+  unavailable: number;
+  note: string;
+  people: {
+    profileId: string; name: string; role: string; salesSubRole: string | null; teamId: string | null; teamName: string | null;
+    departmentId: string; departmentName: string | null; available: boolean; stale: boolean; lastSyncAt: string | null;
+    calls: CrocodialActivity['calls'] | null; followups: CrocodialActivity['followups'] | null; demos: CrocodialActivity['demos'] | null;
+  }[];
+  totals: { made: number; connected: number; connectRate: number | null; talkSeconds: number; uniqueLeads: number; followupsScheduled: number;
+    followupsCompleted: number; followupsOverdue: number; demosScheduled: number; demosCompleted: number };
+  teams: { teamId: string | null; teamName: string | null; people: number; made: number | null; connected: number | null }[];
+  daily: { day: string; made: number; connected: number }[];
+}

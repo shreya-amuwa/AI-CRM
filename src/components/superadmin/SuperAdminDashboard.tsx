@@ -18,11 +18,12 @@ import { CompanyOverview } from './CompanyOverview';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
 import { CrocodialAdminPage } from '../crocodial/CrocodialAdminPage';
+import { CrocodialTeamPanel } from '../crocodial/CrocodialTeamPanel';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'crocodial' | 'ai-studio' | 'chat' | 'notifications';
+type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'crocodial' | 'crocodial-activity' | 'ai-studio' | 'chat' | 'notifications';
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -64,7 +65,7 @@ export const SuperAdminDashboard: React.FC = () => {
       // AI Studio: the Super Admin is its Department Head; the entry opens AI Studio's own workspace (a button there brings the Super Admin back)
       { label: 'AI Studio', items: [{ id: 'ai-studio', label: 'AI Studio', icon: Sparkles }] },
       { label: 'Governance', items: [{ id: 'security', label: 'Security & Audit Logs', icon: ShieldCheck }] },
-      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }, { id: 'crocodial', label: 'Crocodial Integration', icon: PhoneCall }] },
+      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }, { id: 'crocodial', label: 'Crocodial Integration', icon: PhoneCall }, { id: 'crocodial-activity', label: 'Crocodial Activity', icon: PhoneCall }] },
       {
         label: 'Communication',
         items: [
@@ -134,6 +135,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'crocodial' && <CrocodialAdminPage />}
+      {page === 'crocodial-activity' && <CrocodialTeamPanel />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
     </DashboardShell>

@@ -3374,3 +3374,11 @@ export const crocodialActivityQuerySchema = z
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional()
   })
   .strict();
+export const crocodialTeamActivityQuerySchema = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    departmentId: uuidSchema.optional(),
+    teamId: uuidSchema.optional()
+  })
+  .strict();

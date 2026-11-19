@@ -182,3 +182,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/task_skip_level_test.sql 2>&1 | se
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_sync_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_activity_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_team_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

@@ -11334,6 +11334,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'crocodial: the period is validated', r);
   r = await api(null, 'GET', '/crocodial/activity');
   check(r.status === 401, 'crocodial: the activity needs a login', r);
+  r = await api('a', 'GET', '/crocodial/team-activity');
+  check(r.status === 200 && r.json.data.connectedEmployees === 0 && Array.isArray(r.json.data.people), 'crocodial: an employee sees nobody else in the management view', r);
+  r = await api('sa', 'GET', '/crocodial/team-activity?from=2026-11-01&to=2026-11-07');
+  check(r.status === 200 && typeof r.json.data.label === 'string' && /connected employee/.test(r.json.data.label), 'crocodial: the management view is labelled with the number of connected employees', r);
+  r = await api('sa', 'GET', '/crocodial/team-activity?teamId=nope');
+  check(r.status === 422, 'crocodial: the management view validates its filters', r);
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
