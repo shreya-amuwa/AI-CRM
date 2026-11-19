@@ -32,6 +32,7 @@ for (const event of ['push', 'notificationclick', 'pushsubscriptionchange']) {
 }
 check(!/addEventListener\(\s*['"]fetch/.test(sw) && !/caches\./.test(sw), 'sw.js has no fetch handler and caches nothing (every page and API call goes to the network)');
 check(/\/api\/v1\/attendance\/push-resubscribe/.test(sw), 'a replaced subscription is sent to the resubscribe route');
+check(/'open-chat'/.test(sw) && /conversation/.test(sw), 'sw.js posts open-chat for a chat url (an open CRM window switches to that conversation)');
 
 // --- every staff layout carries the reminders: the banner, the service worker and "open Attendance" from a reminder
 const walk = (d: string): string[] => list(d).flatMap(f => { const p = `${d}/${f}`; return stat(p).isDirectory() ? walk(p) : p.endsWith('.tsx') ? [p] : []; });

@@ -7,6 +7,7 @@ const state: any = (window as any).__state = {
   thisDevice: 'd1',         // the row of the browser under test (null: removed from the list)
   mine: { enabled: true, punchIn: null, lunch: null, punchOut: null },
   pausedToday: false,
+  chatPush: true,
   devices: [
     { id: 'd1', label: 'Chrome on Android', createdAt: '2026-11-10T05:00:00Z', lastSuccessAt: '2026-11-17T04:30:00Z', active: true },
     { id: 'd2', label: 'Edge on Windows', createdAt: '2026-11-12T05:00:00Z', lastSuccessAt: null, active: true }
@@ -16,7 +17,7 @@ const hhmm = (t: string | null) => (t ? t.slice(0, 5) : null);
 const settings = () => {
   const staff = state.role !== 'sa';
   const eff = { enabled: company.enabled && state.mine.enabled, punchIn: state.mine.punchIn ?? company.punchIn, lunch: state.mine.lunch ?? company.lunch, punchOut: state.mine.punchOut ?? company.punchOut };
-  return { company: { ...company }, mine: staff ? { ...state.mine } : null, effective: staff ? eff : null, pausedToday: state.pausedToday, canManage: state.role !== 'staff' };
+  return { company: { ...company }, mine: staff ? { ...state.mine } : null, effective: staff ? eff : null, pausedToday: state.pausedToday, canManage: state.role !== 'staff', chatPush: state.chatPush };
 };
 const fail = (message: string) => { throw Object.assign(new Error(message), { isRpcError: true }); };
 const handlers: Record<string, (a: any) => any> = {
@@ -33,6 +34,7 @@ const handlers: Record<string, (a: any) => any> = {
     return settings();
   },
   hr_attendance_reminders_pause_today: a => { state.pausedToday = !!a.p_paused; return settings(); },
+  push_chat_set: a => { state.chatPush = !!a.p_enabled; return settings(); },
   push_subscription_save: () => 'new-device-id',
   push_subscription_remove: () => null,
   push_subscription_remove_by_id: a => { state.devices = state.devices.filter((d: any) => d.id !== a.p_id); if (a.p_id === state.thisDevice) state.thisDevice = null; return null; },

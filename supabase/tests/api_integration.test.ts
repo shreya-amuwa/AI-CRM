@@ -11115,6 +11115,23 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check([200, 201, 404].includes(q.status), 'AI Studio: the leave module is reachable for AI Studio people', q);
 }
 
+// Chat push notifications (20270111000100): a sent message is handed to the push right after the answer; push off never slows or breaks sending.
+{
+  const logged = async (id: string) => (await db.query(`select 1 from public.chat_push_log where message_id = $1`, [id])).rowCount === 1;
+  const smId = (await db.query(`select id from public.profiles where email = 'sm@amuwa.com'`)).rows[0]?.id as string;
+  let r = await api('tm2', 'POST', '/chat/direct', { profileId: smId });
+  check(r.status === 200 || r.status === 201, 'chat push: a colleague chat to send in', r);
+  const dm = r.json.data.id as string;
+  r = await api('tm2', 'POST', `/chat/conversations/${dm}/messages`, { body: 'push me', clientMsgId: crypto.randomUUID() });
+  check(r.status === 201 && typeof r.json.data.id === 'string', 'chat push: sending a colleague message still answers 201 with push not set up', r);
+  check(await logged(r.json.data.id), 'chat push: the message is recorded as pushed (chat_push_log has its id)');
+  const before = (await db.query(`select count(*)::int n from public.chat_push_log`)).rows[0].n as number;
+  r = await api('tm2', 'POST', `/chat/conversations/${dm}/messages`, { body: '   ', clientMsgId: crypto.randomUUID() });
+  check(r.status >= 400 && (await db.query(`select count(*)::int n from public.chat_push_log`)).rows[0].n === before, 'chat push: a failed send (empty body) logs nothing', r);
+  r = await api('imp', 'POST', '/client/chat/messages', { body: 'client push me', clientMsgId: crypto.randomUUID() });
+  check(r.status === 201 && await logged(r.json.data.id), 'chat push: a client message is logged too', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

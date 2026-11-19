@@ -44,7 +44,9 @@ const fakePush = ({ permission = 'default', grant = 'granted', subscribed = fals
   if (subscribed) window.__push.sub = fakeSub('https://push.example.com/dev-ui');
   const reg = { pushManager: { getSubscription: async () => window.__push.sub, subscribe: async opts => { window.__push.opts = opts; window.__push.sub = fakeSub('https://push.example.com/dev-ui'); return window.__push.sub; } } };
   if (pushManager) {
-    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register: async () => reg, ready: Promise.resolve(reg), getRegistration: async () => reg, addEventListener() {}, removeEventListener() {} } });
+    window.__swListeners = [];
+    Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register: async () => reg, ready: Promise.resolve(reg), getRegistration: async () => reg,
+      addEventListener: (t, l) => { if (t === 'message') window.__swListeners.push(l); }, removeEventListener() {} } });
     window.PushManager = function PushManager() {};
   } else {
     delete window.PushManager;
@@ -57,12 +59,12 @@ const check = (ok, name, extra) => { if (!ok) { console.error('not ok -', name, 
 let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); srv.close(); process.exit(0); }
 const errors = [];
-const open = async (options = {}, contextOptions = {}, before = undefined) => {
+const open = async (options = {}, contextOptions = {}, before = undefined, path = '/') => {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, ...contextOptions });
   await ctx.addInitScript(fakePush, options);
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(String(e)));
-  await page.goto(base);
+  await page.goto(base + path);
   if (before) await page.evaluate(before);
   await page.evaluate(() => window.mountBanner());
   await page.getByTestId('attendance-opened').waitFor();
@@ -72,12 +74,12 @@ const calls = (page, fn) => page.evaluate(f => window.__calls.filter(c => c.fn =
 try {
   // 1. a browser that can receive push, reminders off: the banner, then Turn on reminders
   let { ctx, page } = await open();
-  await page.getByRole('button', { name: 'Turn on reminders' }).waitFor();
-  check(await page.getByText('Get Punch In, lunch and Punch Out reminders on this device.').isVisible(), 'off: banner shows Turn on reminders');
+  await page.getByRole('button', { name: 'Turn on notifications' }).waitFor();
+  check(await page.getByText('Get chat messages and attendance reminders on this device.').isVisible(), 'off: banner shows Turn on reminders');
   await page.waitForTimeout(300);
   const keysBeforeClick = keyRequests;
-  await page.getByRole('button', { name: 'Turn on reminders' }).click();
-  await page.getByText('Reminders are on for this device.').waitFor();
+  await page.getByRole('button', { name: 'Turn on notifications' }).click();
+  await page.getByText('Notifications are on for this device.').waitFor();
   check(keysBeforeClick >= 1 && keyRequests === keysBeforeClick,
     'the push key is fetched when the banner shows, so the click asks for permission straight away (Safari needs the tap)', { keysBeforeClick, keyRequests });
   const saved = await calls(page, 'push_subscription_save');
@@ -85,7 +87,7 @@ try {
   check(await page.evaluate(() => window.__push.requested) === 1 && saved.length === 1 && saved[0].p_endpoint === 'https://push.example.com/dev-ui'
     && saved[0].p_p256dh === 'BPk-test' && saved[0].p_auth === 'auth-test' && /Chrome/.test(saved[0].p_label) && opts.userVisibleOnly === true
     && Object.keys(opts.applicationServerKey).length === 65, 'clicking it requests permission and saves the device with its keys and a label', { saved, opts });
-  check(await page.getByRole('button', { name: 'Turn on reminders' }).count() === 0, 'and the banner goes away');
+  check(await page.getByRole('button', { name: 'Turn on notifications' }).count() === 0, 'and the banner goes away');
   // sign-out: this device stops getting the person's reminders
   await page.evaluate(() => window.unsubscribeThisDevice());
   const removed = await calls(page, 'push_subscription_remove');
@@ -108,7 +110,7 @@ try {
 
   // 2b. subscribed in the browser, but the person removed this device from their list: it is not brought back
   ({ ctx, page } = await open({ permission: 'granted', subscribed: true }, {}, () => { window.__state.thisDevice = null; }));
-  await page.getByRole('button', { name: 'Turn on reminders' }).waitFor();
+  await page.getByRole('button', { name: 'Turn on notifications' }).waitFor();
   check(await page.evaluate(() => window.__push.unsubscribed) === 1 && (await calls(page, 'push_subscription_save')).length === 0,
     'a device removed from the list stays removed: the browser unsubscribes and the banner offers to turn reminders on again');
   await ctx.close();
@@ -120,7 +122,7 @@ try {
   }));
   await page.getByTestId('reminder-banner').waitFor();
   const ios = await page.getByTestId('reminder-banner').textContent();
-  check(/tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen/.test(ios) && await page.getByRole('button', { name: 'Turn on reminders' }).count() === 0,
+  check(/tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen/.test(ios) && await page.getByRole('button', { name: 'Turn on notifications' }).count() === 0,
     'iPhone Safari not installed: shows the Add to Home Screen steps and no Turn on button', ios);
   const box = await page.getByTestId('reminder-banner').boundingBox();
   check(box.width <= 390, 'the banner fits a phone screen', box);
@@ -130,7 +132,7 @@ try {
   ({ ctx, page } = await open({ permission: 'denied' }));
   await page.getByTestId('reminder-banner').waitFor();
   check(/Notifications are blocked for this site\. Allow them in your browser's site settings, then reload\./.test(await page.getByTestId('reminder-banner').textContent())
-    && await page.getByRole('button', { name: 'Turn on reminders' }).count() === 0, 'blocked: shows the site-settings help');
+    && await page.getByRole('button', { name: 'Turn on notifications' }).count() === 0, 'blocked: shows the site-settings help');
   await ctx.close();
 
   // 5. Not now: hidden for the rest of the day, back the next day
@@ -141,16 +143,16 @@ try {
   check(await page.getByTestId('reminder-banner').count() === 0, 'and it stays hidden for the rest of the day');
   await page.evaluate(() => localStorage.setItem('att-reminder-banner-hidden', '2000-01-01'));
   await page.reload(); await page.evaluate(() => window.mountBanner());
-  await page.getByRole('button', { name: 'Turn on reminders' }).waitFor();
+  await page.getByRole('button', { name: 'Turn on notifications' }).waitFor();
   check(true, 'Not now hides it for today and it returns the next day');
   await ctx.close();
 
   // 6. push not set up on the server yet: a clear message, nothing thrown, nothing saved
   pushKey = null;
   ({ ctx, page } = await open());
-  await page.getByRole('button', { name: 'Turn on reminders' }).click();
-  await page.getByText('Reminders are not set up yet. Ask your administrator.').waitFor();
-  check((await calls(page, 'push_subscription_save')).length === 0, 'no VAPID key: shows "Reminders are not set up yet" and does not throw');
+  await page.getByRole('button', { name: 'Turn on notifications' }).click();
+  await page.getByText('Notifications are not set up yet. Ask your administrator.').waitFor();
+  check((await calls(page, 'push_subscription_save')).length === 0, 'no VAPID key: shows "Notifications are not set up yet" and does not throw');
   pushKey = KEY;
   await ctx.close();
 
@@ -180,7 +182,7 @@ try {
   await page.getByText('Punch In reminder must be between 06:00 and 13:00').waitFor();
   check(true, 'an out-of-range time shows the server message inline');
   check(await page.getByTestId('company-reminders').count() === 0, 'team member does not see Company defaults');
-  await page.getByText('Reminders are on for this device.').waitFor();
+  await page.getByText('Notifications are on for this device.').waitFor();
   check(true, 'the panel says this device gets reminders');
   const devices = page.getByTestId('device-row');
   await devices.first().waitFor();
@@ -188,7 +190,7 @@ try {
   await devices.first().getByRole('button', { name: 'Remove' }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="device-row"]').length === 1);
   check((await calls(page, 'push_subscription_remove_by_id'))[0]?.p_id === 'd1', 'Remove deletes one');
-  await page.getByText('This device does not get reminders yet.').waitFor();
+  await page.getByText('This device does not get notifications yet.').waitFor();
   check(await page.evaluate(() => window.__push.unsubscribed) === 1, 'removing the device you are holding turns its reminders off here too');
   await page.getByRole('button', { name: 'Send test notification' }).click();
   await page.getByText('Sent to 2 devices').waitFor();
@@ -219,6 +221,30 @@ try {
   ({ ctx, page } = await panel('hr'));
   await page.setViewportSize({ width: 375, height: 800 });
   check(await page.evaluate(() => document.documentElement.scrollWidth <= 375), 'the Reminders tab fits a phone screen');
+  await ctx.close();
+
+  // 8. chat notifications: the wording, opening a conversation from a notification, and the Chat notifications switch
+  ({ ctx, page } = await open({}, {}, undefined, '/?open=chat&conversation=c1'));
+  await page.waitForFunction(() => (window.__chatOpened || []).length === 1);
+  check(JSON.stringify(await page.evaluate(() => window.__chatOpened[0])) === JSON.stringify({ conversationId: 'c1' })
+    && !/open=/.test(await page.evaluate(() => location.search)), '/?open=chat&conversation=c1 opens the chat on c1 and the address no longer has open=');
+  await page.evaluate(() => window.__swListeners.forEach(l => l({ data: { type: 'open-chat', clientConversationId: 'cc1' } })));
+  await page.waitForFunction(() => window.__chatOpened.length === 2);
+  check(JSON.stringify(await page.evaluate(() => window.__chatOpened[1])) === JSON.stringify({ clientConversationId: 'cc1' }),
+    'a worker message open-chat with clientConversationId opens that client chat');
+  check(await page.getByTestId('overlay-closed').textContent() === '2', 'opening a chat closes Attendance if it was on screen (the layout is told each time)');
+  await ctx.close();
+  ({ ctx, page } = await open({}, {}, undefined, '/?open=attendance'));
+  await page.waitForFunction(() => document.querySelector('[data-testid="attendance-opened"]').textContent !== '0' || !/open=/.test(location.search));
+  check(!/open=/.test(await page.evaluate(() => location.search)), 'opening from a reminder also clears ?open=attendance (a reload does not reopen it)');
+  await ctx.close();
+  ({ ctx, page } = await panel('staff'));
+  const chatSwitch = page.getByLabel('Chat notifications');
+  await chatSwitch.waitFor();
+  check(await chatSwitch.isChecked(), 'the Reminders tab has a Chat notifications switch, on by default');
+  await chatSwitch.uncheck();
+  await page.waitForFunction(() => window.__calls.some(c => c.fn === 'push_chat_set'));
+  check((await calls(page, 'push_chat_set'))[0]?.p_enabled === false && !(await chatSwitch.isChecked()), 'turning it off calls push_chat_set(false)');
   await ctx.close();
 
   check(errors.length === 0, 'no script errors', errors);

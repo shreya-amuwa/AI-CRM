@@ -29,6 +29,7 @@ import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices }
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
 import { runAttendanceReminders } from './automations/attendanceReminders.js';
+import { messageIdFrom, pushChatMessage } from './automations/chatPush.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
 import { isPausedVercelCron } from './platform.js';
@@ -134,6 +135,18 @@ app.use('/pipeline/customers/*', async (c, next) => {
   await next();
   if (c.req.method !== 'GET' && c.res.status < 300) await dispatchQuietly();
 });
+
+// Chat push notifications (20270111000100): a message that was sent is pushed to the other people's phones and laptops right after the
+// answer (Worker waitUntil), so sending never waits for it or fails because of it.
+const chatPushAfterSend: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (c.req.method !== 'POST' || c.res.status >= 300) return;
+  const id = messageIdFrom(await c.res.clone().json().catch(() => null));
+  if (id) await afterResponse(c, pushChatMessage(id));
+};
+app.use('/chat/conversations/:id/messages', chatPushAfterSend);
+app.use('/chat/conversations/:id/secure-messages', chatPushAfterSend);
+app.use('/client/chat/messages', chatPushAfterSend);
 
 // New employees: the database queues the welcome e-mail when an account becomes active (a request approved, or an active account created);
 // it is sent right away, within the same request, so the employee has the e-mail in seconds. Never fails the request itself. The scheduler

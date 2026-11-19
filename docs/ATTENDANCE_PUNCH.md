@@ -59,6 +59,8 @@ they turned them on, as phone / laptop notifications (Web Push).
   served with `Cache-Control: no-cache` (`public/_headers`) and registered only by the staff dashboard shell. When a browser renews its
   subscription, the service worker sends the old and new one to `POST /api/v1/attendance/push-resubscribe` (no sign-in; only an existing,
   active device is moved, `push_subscription_replace`, service role only).
+* **Chat messages** use the same devices: see `docs/CHAT.md`, "Push notifications". The banner and the button say "notifications" because
+  they cover both; each person has a separate **Chat notifications** switch.
 * **iPhone / iPad:** web notifications work only for the app added to the Home Screen (iOS 16.4 or later): Safari → Share → Add to Home
   Screen, then open Amuwa CRM from the Home Screen and turn reminders on there. The banner shows these steps in a Safari tab.
 
