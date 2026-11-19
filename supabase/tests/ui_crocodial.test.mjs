@@ -33,7 +33,8 @@ const reset = () => {
   state = {
     o: { rollout: [{ departmentId: MP, departmentName: 'M Pillar', departmentSlug: 'mpillar', division: 'SALES', allowed: true, note: 'Crocodial pilot', updatedAt: now }],
       connections: [], departmentLinks: [], mappings: [], externalEmployees: [], externalBranches: [], audit: [] },
-    calls: []
+    calls: [],
+    synced: false
   };
 };
 reset();
@@ -45,6 +46,13 @@ function api(req, res, body) {
   state.calls.push({ method: req.method, path: p, body, auth: req.headers.authorization || null });
   const o = state.o;
   if (p === '/crocodial/admin') return ok(res, o);
+  if (p === '/crocodial/sync') return ok(res, o.connections.map(c => ({ connectionId: c.id, syncable: c.enabled, lastManualSyncAt: null,
+    resources: state.synced ? [{ resource: 'call-logs', checkpoint: now, lastFullAt: now, running: false, inProgress: false, lastRunAt: now, lastOkAt: now, lastError: null, rowsLastRun: 18387, skippedLastRun: 0 }] : [],
+    counts: { leads: 234, calls: state.synced ? 18387 : 0, followups: 0, remarks: 0, missing: 0 },
+    unmatched: { calls: state.synced ? 5714 : 0, followups: 0, leads: 0 },
+    unmatchedByUser: state.synced ? [{ externalId: 340, name: null, calls: 5714 }] : [], recentRuns: [] })));
+  const sy = p.match(/^\/crocodial\/connections\/([^/]+)\/sync$/);
+  if (sy) { state.synced = true; return ok(res, { connections: [{ connectionId: sy[1], health: 'OK', resources: [{ resource: 'call-logs', outcome: 'DONE', pages: 37, rows: 18387, skipped: 0 }] }], requests: 42, note: null }); }
   if (p === '/crocodial/connections') {
     if (!/^CROCODIAL_TOKEN_[A-Z0-9_]{1,40}$/.test(body.credentialRef)) return fail(res, 422, 'VALIDATION_ERROR', 'Enter the NAME of the server setting that holds the token, like CROCODIAL_TOKEN_MPILLAR (never the token itself).');
     let c = o.connections.find(x => x.id === body.id);
@@ -158,6 +166,18 @@ try {
     await page.getByText(/Approved by Root/).waitFor();
     check(lastCall('POST', '/crocodial/mappings/mmmmmmmm-0000-4000-8000-000000000001/approve'), `${label}: Approve asks the server`);
     check(await page.getByTestId('croc-audit').isVisible(), `${label}: the history is listed`);
+
+    // sync: off until the connection is switched on; then Sync now, the counts and what is not attributed to anyone
+    check(await page.getByText(/Not synced: the connection or its department is switched off/).isVisible() && await page.getByRole('button', { name: 'Sync now' }).isDisabled(),
+      `${label}: a connection that is off is not synced`);
+    await page.getByRole('button', { name: 'Switch on' }).first().click();
+    await page.getByRole('button', { name: 'Sync now' }).and(page.locator(':not([disabled])')).waitFor();
+    await page.getByRole('button', { name: 'Sync now' }).click();
+    await page.getByText(/Sync: Call logs 18387 rows/).waitFor();
+    check(lastCall('POST', `/crocodial/connections/${state.o.connections[0].id}/sync`), `${label}: Sync now asks the server`);
+    check(await page.getByTestId('croc-sync').getByText(/18387 calls/).isVisible(), `${label}: what was stored is shown`);
+    check(await page.getByTestId('croc-unmatched').getByText(/5714 calls/).first().isVisible() && await page.getByText(/id 340, not in the account’s user list/).isVisible(),
+      `${label}: calls of an unmapped Crocodial user are shown as not attributed, never counted`);
     check(errors.length === 0, `${label}: no script errors`, errors);
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${label}: nothing runs off the screen`);
     await ctx.close();
