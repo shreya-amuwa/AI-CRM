@@ -3,6 +3,7 @@ import { openReports } from '../reports/reportEvents';
 import { openAiStudio } from '../ai-studio/aiStudioEvents';
 import { openAttendance } from '../attendance/attendanceEvents';
 import { openAds } from '../ai-design-studio/adsEvents';
+import { openMeeting } from '../meetings/meetingEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -70,6 +71,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   // AI Studio: a task or a daily report opens its page of the AI Studio dashboard, on that item
   // an attendance reminder (Punch In, lunch, Punch Out) opens the person's own attendance
   if (n.entityType === 'attendance') { openAttendance(); return true; }
+  // a meeting (a request, an approval, a move, a cancellation, a reminder) opens Meetings on it
+  if (n.entityType === 'meeting') { openMeeting(n.entityId ?? undefined); return true; }
   if (n.entityType === 'ai_studio_task') { openAiStudio({ kind: 'task', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'ai_studio_report') { openAiStudio({ kind: 'report', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'ai_studio_project') { openAiStudio({ kind: 'task' }); return true; }
