@@ -854,6 +854,26 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
   conversations: Conversation[];
   checklist: ChecklistItem[];
   handover: HandoverInfo | null;
+  /** AI Website client onboarding details (migration 20270113000100); null when none were recorded (or the database is not updated yet). */
+  aiWebsiteOnboarding?: AiWebsiteOnboarding | null;
+}
+
+// ---- AI Website client onboarding (migration 20270113000100): one record per lead, kept through every stage ----
+export interface AiWebsiteOnboarding {
+  customerId: string;
+  clientName: string;
+  mobile: string;
+  email: string | null;
+  businessName: string;
+  onGoogleMaps: boolean;
+  googleMapsLink: string | null;
+  city: string;
+  businessType: string;
+  businessTypeOther: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Who saved it last (returned by the save; not read back with the lead). */
+  updatedBy: { id: string; name: string } | null;
 }
 
 /** Leads tabs beyond the status ones: with Accounts for payment confirmation / returned by Accounts. */

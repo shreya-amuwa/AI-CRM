@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Building2, Check, Clock, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
 import type { Conversation, LeadStatus, PaymentOverview, PipelineCustomerDetail, ServiceCatalogItem, ServiceRequirement } from '../../../../shared/contracts';
 import { LEAD_STATUSES } from '../../../../shared/contracts';
-import { leadCreateSchema } from '../../../../shared/validation';
+import { AI_WEBSITE_SERVICE, leadCreateSchema } from '../../../../shared/validation';
+import { AiWebsiteOnboardingCard, AiWebsiteOnboardingFields, aiWebsiteDraftFrom, checkAiWebsite, emptyAiWebsiteDraft, prefillAiWebsite, type AiWebsiteDraft, type AiWebsiteErrors } from './AiWebsiteOnboarding';
 import { ApiError, errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { fmtDate, PaymentHistory, rupees, WorkflowBadge } from '../../payments/PaymentBits';
@@ -277,6 +278,15 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // AI Website: the client onboarding section appears while the service is ticked; what is typed in it is kept if it is unticked and ticked again
+  const hasAiWebsite = selected.includes(AI_WEBSITE_SERVICE);
+  const [aiw, setAiw] = useState<AiWebsiteDraft>(emptyAiWebsiteDraft);
+  const [aiwErrors, setAiwErrors] = useState<AiWebsiteErrors>({});
+  useEffect(() => {
+    // the empty fields start from the customer details above (nothing is typed twice; a filled field is never replaced)
+    if (hasAiWebsite) setAiw(d => prefillAiWebsite(d, form));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAiWebsite]);
   // typing in a field makes it the person's own: a later photo never replaces it without asking
   const setValue = (k: keyof typeof EMPTY, value: string) => {
     setForm(f => ({ ...f, [k]: value }));
@@ -349,10 +359,18 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
       else subErrors[code] = c.errors;
     }
     setTermErrors(subErrors);
-    const parsed = leadCreateSchema.safeParse({ ...payload, subscriptions });
-    if (!parsed.success || Object.keys(subErrors).length > 0) {
+    const aiwCheck = hasAiWebsite ? checkAiWebsite(aiw) : null;
+    setAiwErrors(aiwCheck && !aiwCheck.ok ? aiwCheck.errors : {});
+    const parsed = leadCreateSchema.safeParse({ ...payload, subscriptions, ...(aiwCheck?.ok ? { aiWebsiteOnboarding: aiwCheck.body } : {}) });
+    if (!parsed.success || Object.keys(subErrors).length > 0 || (aiwCheck && !aiwCheck.ok)) {
       setErrors(parsed.success ? {} : fieldErrors(parsed.error.issues));
-      setError(Object.keys(subErrors).length > 0 ? 'Choose the plan, duration and amount of every selected service.' : 'Please fix the highlighted fields.');
+      setError(
+        Object.keys(subErrors).length > 0
+          ? 'Choose the plan, duration and amount of every selected service.'
+          : aiwCheck && !aiwCheck.ok && parsed.success
+            ? 'Fill in the AI Website client onboarding details.'
+            : 'Please fix the highlighted fields.'
+      );
       return;
     }
     setErrors({});
@@ -528,6 +546,8 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
         )}
       </Card>
 
+      {hasAiWebsite && <AiWebsiteOnboardingFields value={aiw} onChange={setAiw} errors={aiwErrors} />}
+
       {selected.length > 0 && (
         <Card className="p-5">
           <h2 className="text-sm font-bold text-slate-900">Subscription</h2>
@@ -654,9 +674,16 @@ export const EditLeadView: React.FC<{
   const [overview, setOverview] = useState<PaymentOverview | null>(null);
   // Which journey the selected services follow, and where the customer is on it
   const { journey } = useJourney(id);
+  // AI Website client onboarding: the one saved record of this lead (or the lead's own details to start from), sent when it was changed
+  const [aiw, setAiw] = useState<AiWebsiteDraft>(emptyAiWebsiteDraft);
+  const [aiwDirty, setAiwDirty] = useState(false);
+  const [aiwErrors, setAiwErrors] = useState<AiWebsiteErrors>({});
 
   const hydrate = (l: PipelineCustomerDetail) => {
     setLead(l);
+    setAiw(l.aiWebsiteOnboarding ? aiWebsiteDraftFrom(l.aiWebsiteOnboarding) : prefillAiWebsite(emptyAiWebsiteDraft(), l));
+    setAiwDirty(false);
+    setAiwErrors({});
     setConversations(l.conversations);
     setForm({
       name: l.name,
@@ -732,9 +759,22 @@ export const EditLeadView: React.FC<{
     if ([...selected].sort().join() !== [...lead.services].sort().join()) body.services = selected;
     return body;
   };
+  const hasAiWebsite = selected.includes(AI_WEBSITE_SERVICE);
+  /** The AI Website details to send: when they were edited, or when AI Website is newly chosen and nothing is saved yet. */
+  const aiwNeeded = hasAiWebsite && (aiwDirty || (!lead.aiWebsiteOnboarding && !lead.services.includes(AI_WEBSITE_SERVICE)));
 
   const save = async (): Promise<boolean> => {
     const body = changes();
+    if (aiwNeeded) {
+      const c = checkAiWebsite(aiw);
+      if (!c.ok) {
+        setAiwErrors(c.errors);
+        setError('Fill in the AI Website client onboarding details.');
+        return false;
+      }
+      body.aiWebsiteOnboarding = c.body;
+    }
+    setAiwErrors({});
     if (Object.keys(body).length === 0) return true;
     if (Array.isArray(body.services) && (body.services as string[]).length === 0) {
       setErrors({ services: 'Select at least one service.' });
@@ -982,6 +1022,23 @@ export const EditLeadView: React.FC<{
         </div>
         <ServicePicker services={services} value={selected} onChange={setSelected} variant="chips" error={errors.services} disabled={locked} />
       </Card>
+
+      {hasAiWebsite ? (
+        <AiWebsiteOnboardingFields
+          value={aiw}
+          onChange={v => { setAiw(v); setAiwDirty(true); }}
+          errors={aiwErrors}
+          disabled={locked}
+          footer={
+            !lead.aiWebsiteOnboarding ? (
+              <p className="mt-2 text-[11px] text-amber-700" data-testid="aiw-not-saved">Not saved yet: fill in the details and press Save changes.</p>
+            ) : null
+          }
+        />
+      ) : (
+        // AI Website was unticked: the saved details are kept with the lead (shown, not edited) in case it is chosen again
+        lead.aiWebsiteOnboarding && <AiWebsiteOnboardingCard data={lead.aiWebsiteOnboarding} hasService={false} />
+      )}
 
       {/* Subscription: Sales sets the plan and duration of each saved service; the dates are read-only here (they come from the panel activation) */}
       <SubscriptionPanel key={`${id}-${lead.services.join(',')}`} customerId={id} />

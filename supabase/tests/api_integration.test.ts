@@ -11174,6 +11174,61 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.ads.head.api@amuwa.com')) === 0, 'design studio roles: Amuwa Design Studio refuses a Support Department Head', r);
 }
 
+// --- AI Website client onboarding details on a lead (migration 20270113000100) ------------------------------------------------
+{
+  const details = { clientName: 'Kavya Nair', mobile: '+91 98470 12345', email: 'Kavya@NairBakes.example', businessName: 'AIW Nair Bakes', onGoogleMaps: true,
+    googleMapsLink: 'https://maps.app.goo.gl/nairbakes', city: 'Kochi', businessType: 'Restaurant / Food' };
+  const lead = { name: 'Kavya Nair', company: 'AIW Nair Bakes', phone: '9847012345', leadSource: 'Walk-in', services: ['AI_WEBSITE'] };
+  const records = async (company: string) =>
+    (await db.query(`select count(*)::int n from public.ai_website_onboarding a join public.customers c on c.id = a.customer_id where c.company = $1`, [company])).rows[0].n as number;
+  const leads = async (company: string) => (await db.query(`select count(*)::int n from public.customers where company = $1`, [company])).rows[0].n as number;
+
+  let r = await api('a', 'POST', '/pipeline/leads', lead);
+  check(r.status === 422 && /AI Website client onboarding/.test(r.json.error?.message) && (await leads('AIW Nair Bakes')) === 0, 'ai website: an AI Website lead needs the onboarding details, and nothing is saved without them', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, mobile: '12345' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: a wrong mobile number is refused before the lead exists', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, businessType: 'Other' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: "Other" needs the type typed in', r);
+  const requestId = crypto.randomUUID();
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: details, clientRequestId: requestId });
+  check(r.status === 201, 'ai website: the lead is created with its details', r);
+  const id = r.json.data.id as string;
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: details, clientRequestId: requestId });
+  check(r.status === 201 && r.json.data.id === id && (await leads('AIW Nair Bakes')) === 1 && (await records('AIW Nair Bakes')) === 1, 'ai website: a retry returns the same lead and one record', r);
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  const got = r.json.data?.aiWebsiteOnboarding;
+  check(r.status === 200 && got?.clientName === 'Kavya Nair' && got.mobile === '9847012345' && got.email === 'kavya@nairbakes.example' && got.onGoogleMaps === true
+    && got.googleMapsLink === 'https://maps.app.goo.gl/nairbakes' && got.city === 'Kochi' && got.businessType === 'Restaurant / Food', 'ai website: the lead details page reads them back', r);
+
+  // edit: with the lead (PATCH) and on their own (POST)
+  r = await api('a', 'PATCH', `/pipeline/leads/${id}`, { notes: 'Wants online orders', aiWebsiteOnboarding: { ...details, onGoogleMaps: false, city: 'Thrissur' } });
+  check(r.status === 200, 'ai website: editing the lead saves the changed details', r);
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  check(r.json.data.aiWebsiteOnboarding.city === 'Thrissur' && r.json.data.aiWebsiteOnboarding.onGoogleMaps === false && r.json.data.aiWebsiteOnboarding.googleMapsLink === null
+    && r.json.data.notes === 'Wants online orders' && (await records('AIW Nair Bakes')) === 1, 'ai website: the edit is kept in the one record ("No" drops the link)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, { ...details, businessType: 'Other', businessTypeOther: 'Home bakery' });
+  check(r.status === 200 && r.json.data.businessType === 'Other' && r.json.data.businessTypeOther === 'Home bakery', 'ai website: the details can be saved on their own', r);
+  r = await api('a', 'PATCH', `/pipeline/leads/${id}`, { services: ['AI_WEBSITE', 'AI_CALLING'] });
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  check(r.json.data.aiWebsiteOnboarding?.businessTypeOther === 'Home bakery', 'ai website: changing the services keeps the details', r);
+  r = await api('a', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, { ...details, email: 'nope' });
+  check(r.status === 422, 'ai website: the API validates an edit too', r);
+
+  // who: another Sales member and another department get nothing
+  r = await api('b', 'GET', `/pipeline/customers/${id}`);
+  check(r.status === 404, 'ai website: a colleague who does not own the lead cannot open it', r);
+  r = await api('b', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, details);
+  check(r.status === 404, 'ai website: nor save its details', r);
+  r = await api('sa', 'GET', `/pipeline/customers/${id}`);
+  check(r.status === 200 && r.json.data.aiWebsiteOnboarding?.clientName === 'Kavya Nair', 'ai website: the Super Admin sees them', r);
+
+  // another service: nothing is asked or stored
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, company: 'AIW Other Service', phone: '9847012346', services: ['AI_CALLING'] });
+  check(r.status === 201 && (await records('AIW Other Service')) === 0, 'ai website: a lead for another service needs no AI Website details', r);
+  r = await api('a', 'GET', `/pipeline/customers/${r.json.data.id}`);
+  check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
