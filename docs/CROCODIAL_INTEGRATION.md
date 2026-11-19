@@ -12,8 +12,8 @@ It is delivered in parts:
 | --- | --- | --- |
 | 1 | Configuration and identity (rollout, connections, department links, approved employee mappings, Super Admin page, connection test) | pull request #246 |
 | 2 | Read-only sync of leads, call logs, follow-ups and remarks (rate-limited, paged, checkpointed, reconciled) | pull request #247 |
-| 3 | "My Crocodial Activity" on the employee's own dashboard | this pull request |
-| 4 | Team Lead / Department Head / Operations Head pilot views | next |
+| 3 | "My Crocodial Activity" on the employee's own dashboard | pull request #249 |
+| 4 | Team Lead / Department Head / Operations Head / Super Admin pilot views | this pull request |
 
 ## Pilot: M Pillar Sales, two people
 
@@ -200,9 +200,34 @@ A rescheduled demo is one record, counted once. Demos are never derived from Cro
 | 4138 | 19 | 8 | 42.1% | 424 s |
 | 371 | 954 | 534 | 56% | 49,675 s |
 
+## Management view (part 4, `public.croc_team_activity`, migration `20270115000400_crocodial_team_activity.sql`)
+
+**Who sees what.** A **Crocodial Activity** page in the existing dashboards, inside the existing reporting hierarchy:
+
+| Dashboard | People listed |
+| --- | --- |
+| Team Lead | Only the connected people they lead (`private.led_by`), never another Team Lead's people in the same team |
+| Sales Department Head and Sales Operations Head (the Sales head dashboard) | The connected people of every department + Sales their scope covers (`private.scopes_of`). A Support-only head, or a head of other departments, sees nobody. |
+| Super Admin | Everyone, under Automations → Crocodial Activity |
+| An employee | Nobody else |
+
+For Team Leads and heads, the entry appears only when they have at least one connected person. The database decides who is listed (`croc_team_activity`, built on `croc_can_view`). Drilling down into a person opens their activity through `croc_activity`, which checks the caller again.
+
+**What the page shows:**
+- **The label** "Crocodial Pilot — N connected employees", and a note that the totals cover only the connected employees listed, never the whole department.
+- **Totals:** calls made, connected and connect rate (from the totals), talk time, follow-ups completed / scheduled and overdue, CRM demos completed / scheduled.
+- **A calls-per-day chart.**
+- **One row per person**, with the same figures as their own view, and Open to see their activity.
+- **A breakdown by team**, and a team filter when there are several teams.
+
+**Rules:**
+- **Same formulas** as "My Crocodial Activity".
+- **Not synced yet:** a person who has never been fully synced is listed as "not available yet" and **left out of the totals**, never counted as zero.
+- **Stale data:** data older than 24 hours is labelled.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity } from '../../shared/contracts.js';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialTeamActivity } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Crocodial integration's database functions, called with the signed-in user's own login (the database decides who may do what). */
@@ -36,6 +36,9 @@ export class CrocodialRepository {
   myStatus() { return this.rpc<CrocodialMyStatus>('croc_my_status'); }
   activity(profileId: string | null, from: string | null, to: string | null) {
     return this.rpc<CrocodialActivity>('croc_activity', { p_profile: profileId, p_from: from, p_to: to });
+  }
+  teamActivity(from: string | null, to: string | null, departmentId: string | null, teamId: string | null) {
+    return this.rpc<CrocodialTeamActivity>('croc_team_activity', { p_from: from, p_to: to, p_department: departmentId, p_team: teamId });
   }
   syncStatus() { return this.rpc<CrocodialSyncStatus[]>('croc_sync_status'); }
   /** Checks the caller (Super Admin), the connection is on, and the 5-minute limit; records the request. */

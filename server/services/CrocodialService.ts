@@ -1,8 +1,8 @@
 import type {
-  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity
+  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialTeamActivity
 } from '../../shared/contracts.js';
 import {
-  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
+  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
@@ -58,6 +58,11 @@ export class CrocodialService {
   }
   myStatus(): Promise<CrocodialMyStatus> { return this.repo.myStatus(); }
   syncStatus(): Promise<CrocodialSyncStatus[]> { return this.repo.syncStatus(); }
+  /** The connected people the caller may see (their own people, their department's Sales, or everyone for the Super Admin). */
+  teamActivity(query: unknown): Promise<CrocodialTeamActivity> {
+    const q = parse(crocodialTeamActivityQuerySchema, query ?? {});
+    return this.repo.teamActivity(q.from ?? null, q.to ?? null, q.departmentId ?? null, q.teamId ?? null);
+  }
   /** One person's activity: the caller's own, or (profileId) someone the database lets the caller see. */
   activity(query: unknown): Promise<CrocodialActivity> {
     const q = parse(crocodialActivityQuerySchema, query ?? {});
