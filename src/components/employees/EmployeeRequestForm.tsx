@@ -5,7 +5,10 @@ import { BLOOD_GROUPS, EMPLOYEE_REQUEST_ROLES, HR_DESIGNATIONS, HR_DESIGNATION_R
 import { useDepartments } from '../../context/DepartmentContext';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi } from '../../lib/api/endpoints';
+import { requestSidesForDepartment, staffChoicesForDepartment } from '../../lib/auth/departmentRoles';
 import { btn, inputCls } from '../team-member/pipeline/shared';
+
+const SIDE_LABEL = { SALES: 'Sales', SUPPORT: 'Support', GENERAL: 'General' } as const;
 
 export const ROLE_LABEL: Record<EmployeeRequestRole, string> = {
   OPERATIONS_HEAD: 'Operations Head', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
@@ -28,7 +31,6 @@ const label = 'block text-xs font-semibold text-slate-700';
 export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeRequest) => void }> = ({ onSubmitted }) => {
   const { departments } = useDepartments();
   const usable = useMemo(() => departments.filter(d => d.dbId), [departments]);
-  const roles = EMPLOYEE_REQUEST_ROLES;
   const [pickedRole, setRole] = useState<EmployeeRequestRole>('TEAM_MEMBER');
   const [departmentId, setDepartmentId] = useState('');
   const [hrDesignation, setHrDesignation] = useState<HrDesignation>('HR Assistant');
@@ -47,7 +49,14 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
 
   // The HR department has its own three designations instead of the generic roles: HR Assistant, HR Recruiter, HR Admin Head (the Department Head of HR). The choice maps to
   // the existing role, so the approval route is unchanged (a Department Head still needs the Super Admin / Operations Head). The database checks the same rule.
-  const isHrDept = usable.find(d => d.dbId === departmentId)?.id === 'hr';
+  const deptSlug = usable.find(d => d.dbId === departmentId)?.id;
+  const isHrDept = deptSlug === 'hr';
+  // Amuwa Design Studio: Department Head, Team Lead and Team Member only, and no Sales / Support side (the database refuses them too)
+  const roles = useMemo(() => staffChoicesForDepartment(deptSlug, EMPLOYEE_REQUEST_ROLES), [deptSlug]);
+  const sides = useMemo(() => requestSidesForDepartment(deptSlug), [deptSlug]);
+  // switching the department never keeps a role or side the new department does not have
+  useEffect(() => { if (!roles.includes(pickedRole)) setRole('TEAM_MEMBER'); }, [roles, pickedRole]);
+  useEffect(() => { if (division && !sides.includes(division)) setDivision(''); }, [sides, division]);
   const role: EmployeeRequestRole = isHrDept ? HR_DESIGNATION_ROLE[hrDesignation] : pickedRole;
   // choosing HR clears a generic role that does not exist there (Operations Head / Team Lead), and leaving HR starts again from Team Member
   useEffect(() => { setRole('TEAM_MEMBER'); }, [isHrDept]);
@@ -114,7 +123,8 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
         {role !== 'OPERATIONS_HEAD' && (
           <label className={label}>Side
             <select className={`${inputCls} mt-1`} value={division} onChange={e => setDivision(e.target.value as typeof division)}>
-              <option value="">Not specified</option><option value="SALES">Sales</option><option value="SUPPORT">Support</option><option value="GENERAL">General</option>
+              <option value="">Not specified</option>
+              {sides.map(v => <option key={v} value={v}>{SIDE_LABEL[v]}</option>)}
             </select>
           </label>
         )}

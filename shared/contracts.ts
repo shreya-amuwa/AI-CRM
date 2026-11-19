@@ -5934,6 +5934,15 @@ export interface ReminderCallList {
 }
 
 // =============================================================================
+// Amuwa Design Studio roles (migration 20270112000100): the department has only Department Head -> Team Lead -> Team Member.
+// No Sales or Support role, team or side is offered or accepted there (the database refuses it: private.designstudio_role_problem).
+// =============================================================================
+/** The slug of Amuwa Design Studio (a different department from "AI Design Studio"). */
+export const AMUWA_DESIGN_STUDIO_SLUG = 'designstudio';
+/** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
+export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AMUWA_DESIGN_STUDIO_SLUG];
+
+// =============================================================================
 // AI Design Studio (migration 20270110000100): a separate, client-oriented department.
 // Department Head -> Team Lead -> Team Member. Every shape below is what the ads_* database functions return.
 // =============================================================================

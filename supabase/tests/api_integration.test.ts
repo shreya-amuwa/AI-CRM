@@ -11132,6 +11132,40 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 201 && await logged(r.json.data.id), 'chat push: a client message is logged too', r);
 }
 
+// --- Amuwa Design Studio: Department Head, Team Lead and Team Member only (migration 20270112000100) -------------------------
+{
+  const ds = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'designstudio');
+  const dsTeams = (await api('sa', 'GET', `/teams?departmentId=${ds.id}`)).json.data as any[];
+  const general = dsTeams.find(t => t.division === 'GENERAL');
+  const sales = dsTeams.find(t => t.division === 'SALES');
+  const support = dsTeams.find(t => t.division === 'SUPPORT');
+  check(!!general && !!sales && !!support, 'design studio roles: (setup) the General, Sales and Support teams', dsTeams);
+  const users = async (email: string) => (await db.query(`select count(*)::int n from public.profiles where email = $1`, [email])).rows[0].n as number;
+  let r = await api('sa', 'POST', '/users', { email: 'dsr.sales.api@amuwa.com', fullName: 'DSR Sales API', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(r.status === 422 && /no Sales or Support roles/.test(r.json.error?.message) && (await users('dsr.sales.api@amuwa.com')) === 0, 'design studio roles: a Sales Team Member is refused and nothing is saved', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.sales.api@amuwa.com', fullName: 'DSR Sales API', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 422 && (await users('dsr.sales.api@amuwa.com')) === 0, 'design studio roles: a Telecaller is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.support.api@amuwa.com', fullName: 'DSR Support API', role: 'TEAM_HEAD', teamId: support.id });
+  check(r.status === 422 && /no Sales or Support roles/.test(r.json.error?.message) && (await users('dsr.support.api@amuwa.com')) === 0, 'design studio roles: a Support Team Lead is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.tc.api@amuwa.com', fullName: 'DSR Consultant API', role: 'TEAM_MEMBER', teamId: support.id, technicalConsultant: true });
+  check(r.status === 422 && (await users('dsr.tc.api@amuwa.com')) === 0, 'design studio roles: a Technical Consultant is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.head.api@amuwa.com', fullName: 'DSR Head API', role: 'DEPARTMENT_HEAD', departmentId: ds.id, headDivision: 'SALES' });
+  check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.head.api@amuwa.com')) === 0, 'design studio roles: a Sales Department Head is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.member.api@amuwa.com', fullName: 'DSR Member API', role: 'TEAM_MEMBER', teamId: general.id });
+  check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department?.slug === 'designstudio' && r.json.data.teamId === general.id,
+    'design studio roles: a Team Member of the General team is created in Amuwa Design Studio', r);
+  const memberId = r.json.data.id as string;
+  r = await api('sa', 'POST', '/users', { email: 'dsr.lead.api@amuwa.com', fullName: 'DSR Lead API', role: 'TEAM_HEAD', teamId: general.id });
+  check(r.status === 201 && r.json.data.role === 'TEAM_HEAD' && r.json.data.department?.slug === 'designstudio', 'design studio roles: a Team Lead of the General team is created', r);
+  r = await api('sa', 'PATCH', `/users/${memberId}`, { role: 'TEAM_MEMBER', teamId: sales.id });
+  const after = (await db.query(`select team_id from public.profiles where id = $1`, [memberId])).rows[0].team_id;
+  check(r.status >= 400 && after === general.id, 'design studio roles: moving the member into the Sales team is refused and they stay in General', r);
+  const ws = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'wabastore');
+  const wsSales = (await api('sa', 'GET', `/teams?departmentId=${ws.id}`)).json.data.find((t: any) => t.division === 'SALES');
+  r = await api('sa', 'POST', '/users', { email: 'dsr.ws.sales.api@amuwa.com', fullName: 'DSR Wabastore Sales', role: 'TEAM_MEMBER', teamId: wsSales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 201 && r.json.data.salesSubRole === 'TELECALLER', 'design studio roles: another department still gets its Sales roles', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
