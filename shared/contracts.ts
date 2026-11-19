@@ -6434,3 +6434,23 @@ export interface CrocodialMyStatus {
   health?: CrocodialHealth;
   timezone?: string | null;
 }
+
+export type CrocodialSyncResource = 'leads' | 'call-logs' | 'followups' | 'remarks';
+export interface CrocodialSyncStatus {
+  connectionId: string;
+  syncable: boolean;
+  lastManualSyncAt: string | null;
+  resources: { resource: CrocodialSyncResource; checkpoint: string | null; lastFullAt: string | null; running: boolean; inProgress: boolean;
+    lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; rowsLastRun: number | null; skippedLastRun: number | null }[];
+  counts: { leads: number; calls: number; followups: number; remarks: number; missing: number };
+  /** Records whose Crocodial user has no approved mapping: kept, never counted for anyone. */
+  unmatched: { calls: number; followups: number; leads: number };
+  unmatchedByUser: { externalId: number; name: string | null; calls: number }[];
+  recentRuns: { resource: CrocodialSyncResource; startedAt: string; finishedAt: string; outcome: 'DONE' | 'PARTIAL' | 'FAILED'; fullPull: boolean; pages: number; rows: number; skipped: number; error: string | null }[];
+}
+export interface CrocodialSyncRunResult {
+  connections: { connectionId: string; health: string; error?: string;
+    resources: { resource: CrocodialSyncResource; outcome: 'DONE' | 'PARTIAL' | 'FAILED' | 'SKIPPED'; pages: number; rows: number; skipped: number; error?: string }[] }[];
+  requests: number;
+  note: string | null;
+}

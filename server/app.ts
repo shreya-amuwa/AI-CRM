@@ -57,6 +57,7 @@ import { reportServerError } from './monitoring.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
 import { currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
 import { candidateGuardSchema } from '../shared/validation.js';
+import { crocodialSyncQuietly } from './crocodial/sync.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
@@ -279,6 +280,9 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
   // Lead welcome WhatsApp ("our services", once when a lead is first given to a sales person): the retries and anything left waiting.
   const leadWhatsApp = await runLeadWhatsApp().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every 15 minutes each;
+  // a long first pull continues on the next runs. Never throws.
+  const crocodial = await crocodialSyncQuietly(15_000);
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const careers = await runCareerAutomation().catch(() => ({ error: 'Candidate maintenance failed.' }));
@@ -292,7 +296,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, crocodial, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
