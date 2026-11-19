@@ -4,7 +4,7 @@ import {
   Phone, Plus, Settings2, Trash2, UserPlus, Users, Video, X
 } from 'lucide-react';
 import type {
-  GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
 } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type BookingLinkInput, type NewMeeting } from '../../lib/api/meetings';
@@ -14,7 +14,8 @@ import { takePendingMeeting, useMeetingsChanged, useOpenMeetingRequest } from '.
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
  *  - each employee connects their OWN Google Calendar; booked meetings then appear there with a Google Meet link, and Google sends the invitations
- *  - asking the CEO (Super Admin) for time makes a request the CEO or their delegate approves, declines or answers with another time
+ *  - asking the CEO (Super Admin) for time makes a request that ONLY the Super Admin approves, rejects or reschedules (the database enforces it;
+ *    these buttons only follow what it says the signed-in person may do: canDecide / canManage / canWithdraw / canRequestChange)
  *  - booking links let customers, leads and candidates pick a free slot themselves (/book/<link>)
  *  - demos, interviews and HR meetings booked in their own pages appear here too (changed there)
  * Reminders reach colleagues in the Notification Center and guests by e-mail, 24 hours and 1 hour before.
@@ -46,6 +47,9 @@ const STATUS_STYLE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done'
 };
+/** How a request for the CEO's time reads to the people involved. */
+const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
+  : m.status === 'SCHEDULED' ? (m.rescheduleCount > 0 ? 'Rescheduled' : 'Approved') : m.status === 'COMPLETED' ? 'Completed' : 'Cancelled');
 const SYNC_LABEL: Record<string, string> = {
   SYNCED: 'On Google Calendar', PENDING: 'Sending to Google…', FAILED: 'Google sync failed (retrying)', NOT_CONNECTED: 'Host has not connected Google', SKIPPED: 'Not on Google'
 };
@@ -106,6 +110,9 @@ export const MeetingsPage: React.FC = () => {
   const [composer, setComposer] = useState<null | 'meeting' | 'ceo'>(null);
   // a meeting notification clicked before this page opened: show that meeting
   const [openId, setOpenId] = useState<string | null>(() => takePendingMeeting());
+  // a button on a request row can open its details straight at the reject / reschedule form
+  const [openIntent, setOpenIntent] = useState<'reject' | 'reschedule' | undefined>(undefined);
+  const openMeeting = useCallback((id: string | null, intent?: 'reject' | 'reschedule') => { setOpenIntent(intent); setOpenId(id); }, []);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
   // live: a meeting notification (a new request, an approval, a move) reloads the page; so does coming back to the browser tab
@@ -159,7 +166,7 @@ export const MeetingsPage: React.FC = () => {
       {google && tab !== 'settings' && <GoogleBanner status={google} onOpenSettings={() => setTab('settings')} />}
 
       <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200">
-        {([['calendar', 'Calendar'], ['requests', `Requests${approvals.length ? ` (${approvals.length})` : ''}`], ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
+        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
             className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
             {label}
@@ -167,8 +174,8 @@ export const MeetingsPage: React.FC = () => {
         ))}
       </div>
 
-      {tab === 'calendar' && <CalendarTab reloadKey={reloadKey} onOpen={setOpenId} />}
-      {tab === 'requests' && <RequestsTab approvals={approvals} reloadKey={reloadKey} onOpen={setOpenId} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} />}
+      {tab === 'calendar' && <CalendarTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
+      {tab === 'requests' && <RequestsTab reloadKey={reloadKey} onOpen={openMeeting} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} />}
       {tab === 'settings' && <SettingsTab google={google} onGoogleChange={setGoogle} onFlash={setFlash} />}
 
       {composer && <MeetingComposer mode={composer} onClose={() => setComposer(null)} onSaved={m => {
@@ -177,7 +184,7 @@ export const MeetingsPage: React.FC = () => {
           ? `Request sent to ${m.hostName}. You will be told when it is approved.`
           : `${m.kindLabel} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
       }} />}
-      {openId && <MeetingDrawer id={openId} onClose={() => setOpenId(null)} onChanged={text => { done(text); }} />}
+      {openId && <MeetingDrawer id={openId} intent={openIntent} onClose={() => openMeeting(null)} onChanged={text => { done(text); }} />}
     </div>
   );
 };
@@ -272,25 +279,62 @@ const CalendarTab: React.FC<{ reloadKey: number; onOpen: (id: string) => void }>
 };
 
 // ---------------------------------------------------------------------------
-// Requests: waiting for my decision (the CEO and their delegates), and my own requests
+// Meeting requests with the CEO. The Super Admin (the CEO) sees every employee's request in sections and approves, rejects or reschedules
+// them; every other employee sees their own requests (status, confirmed time, the reasons) and can only withdraw or ask for another time.
 // ---------------------------------------------------------------------------
-const RequestsTab: React.FC<{ approvals: Meeting[]; reloadKey: number; onOpen: (id: string) => void; onDone: (t: string) => void; onError: (t: string) => void }> = ({
-  approvals, reloadKey, onOpen, onDone, onError
+const SECTIONS: [CeoRequestSection, string, keyof CeoRequestList['counts']][] = [
+  ['PENDING', 'Pending Requests', 'pending'], ['APPROVED', 'Approved Meetings', 'approved'], ['REJECTED', 'Rejected Meetings', 'rejected'],
+  ['RESCHEDULED', 'Rescheduled Meetings', 'rescheduled'], ['ALL', 'Meeting History', 'all']
+];
+
+const RequestRow: React.FC<{ m: Meeting; sa: boolean; busy: boolean; onOpen: (id: string, intent?: 'reject' | 'reschedule') => void; onApprove: (m: Meeting) => void }> = ({ m, sa, busy, onOpen, onApprove }) => (
+  <div className={`rounded-xl border p-3 ${m.status === 'REQUESTED' ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-white'}`}>
+    <div className="flex flex-wrap items-start gap-3">
+      <div className="flex-1 min-w-[220px]">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => onOpen(m.id)} className="font-semibold text-slate-900 hover:underline text-left">{m.title}</button>
+          <span className={`text-[11px] font-semibold border rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status]}`}>{ceoStatusLabel(m)}</span>
+        </div>
+        {sa && <p className="text-xs text-slate-700 mt-0.5"><span className="font-semibold">{m.createdByName ?? 'A guest'}</span>{m.createdByDepartment ? ` · ${m.createdByDepartment}` : ''}{m.createdByDesignation ? ` · ${m.createdByDesignation}` : ''}</p>}
+        {m.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap line-clamp-3"><span className="font-semibold">Agenda: </span>{m.description}</p>}
+        <p className="text-xs text-slate-500 mt-1">
+          {m.status === 'SCHEDULED' || m.status === 'COMPLETED' ? 'Confirmed' : 'Requested'}: {fullWhen(m.startsAt, m.endsAt)} · sent {new Date(m.createdAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
+        </p>
+        {m.rescheduleCount > 0 && m.previousStartsAt && (
+          <p className="text-xs text-violet-800 mt-1">Moved from {new Date(m.previousStartsAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}{m.rescheduleReason ? ` — ${m.rescheduleReason}` : ''}</p>
+        )}
+        {m.status === 'DECLINED' && m.rejectionReason && <p className="text-xs text-rose-700 mt-1">Rejected: {m.rejectionReason}</p>}
+        {m.status === 'CANCELLED' && m.cancelReason && <p className="text-xs text-slate-600 mt-1">Cancelled: {m.cancelReason}</p>}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {m.canDecide && <button type="button" disabled={busy} className={btnPrimary} onClick={() => onApprove(m)}><Check className="w-4 h-4" /> Approve</button>}
+        {m.canDecide && <button type="button" disabled={busy} className={btnGhost} onClick={() => onOpen(m.id, 'reject')}>Reject</button>}
+        {m.canManage && ['REQUESTED', 'PROPOSED', 'SCHEDULED'].includes(m.status) && <button type="button" disabled={busy} className={btnGhost} onClick={() => onOpen(m.id, 'reschedule')}><Clock3 className="w-4 h-4" /> Reschedule</button>}
+        <button type="button" className={btnGhost} onClick={() => onOpen(m.id)}>Details</button>
+      </div>
+    </div>
+  </div>
+);
+
+const RequestsTab: React.FC<{ reloadKey: number; onOpen: (id: string, intent?: 'reject' | 'reschedule') => void; onDone: (t: string) => void; onError: (t: string) => void }> = ({
+  reloadKey, onOpen, onDone, onError
 }) => {
-  const [mine, setMine] = useState<Meeting[] | null>(null);
+  const [section, setSection] = useState<CeoRequestSection>('PENDING');
+  const [data, setData] = useState<CeoRequestList | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   useEffect(() => {
-    const now = new Date();
-    meetingsApi.list(addDays(now, -1).toISOString(), addDays(now, 120).toISOString())
-      .then(r => setMine(r.filter(m => (m.status === 'REQUESTED' || m.status === 'PROPOSED') && !m.canDecide)))
-      .catch(() => setMine([]));
-  }, [reloadKey]);
-  const act = async (m: Meeting, decision: 'APPROVE' | 'DECLINE') => {
+    let live = true;
+    setLoadError(null);
+    meetingsApi.ceoRequests(section).then(r => { if (live) setData(r); }).catch(e => { if (live) setLoadError(errorMessage(e)); });
+    return () => { live = false; };
+  }, [section, reloadKey]);
+  const sa = !!data?.isSuperAdmin;
+  const approve = async (m: Meeting) => {
     setBusy(m.id);
     try {
-      const note = decision === 'DECLINE' ? window.prompt('Reason for declining (optional, shared with the person asking):') ?? undefined : undefined;
-      await meetingsApi.decide(m.id, { decision, note, version: m.version });
-      onDone(decision === 'APPROVE' ? `Approved: ${m.title}.` : `Declined: ${m.title}.`);
+      await meetingsApi.decide(m.id, { decision: 'APPROVE', version: m.version });
+      onDone(`Approved: ${m.title}.`);
     } catch (e) {
       onError(errorMessage(e));
     } finally {
@@ -298,34 +342,25 @@ const RequestsTab: React.FC<{ approvals: Meeting[]; reloadKey: number; onOpen: (
     }
   };
   return (
-    <div className="space-y-6">
-      <section>
-        <h2 className="text-sm font-bold text-slate-800 mb-2">Waiting for your decision</h2>
-        {!approvals.length ? <p className="text-sm text-slate-500">Nothing is waiting for you.</p> : (
-          <div className="space-y-2">
-            {approvals.map(m => (
-              <div key={m.id} className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 flex flex-wrap items-center gap-3">
-                <div className="flex-1 min-w-[200px]">
-                  <button type="button" onClick={() => onOpen(m.id)} className="font-semibold text-slate-900 hover:underline text-left">{m.title}</button>
-                  <p className="text-xs text-slate-600">{fullWhen(m.startsAt, m.endsAt)} · asked by {m.createdByName ?? m.attendees.find(a => a.role === 'EXTERNAL')?.name ?? 'a guest'} · for {m.hostName}</p>
-                  {m.description && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{m.description}</p>}
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" disabled={busy === m.id} className={btnPrimary} onClick={() => act(m, 'APPROVE')}><Check className="w-4 h-4" /> Approve</button>
-                  <button type="button" disabled={busy === m.id} className={btnGhost} onClick={() => onOpen(m.id)}>Propose another time</button>
-                  <button type="button" disabled={busy === m.id} className={btnGhost} onClick={() => act(m, 'DECLINE')}>Decline</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-      <section>
-        <h2 className="text-sm font-bold text-slate-800 mb-2">Your requests</h2>
-        {mine === null ? <p className="text-sm text-slate-500">Loading…</p> : !mine.length ? <p className="text-sm text-slate-500">You have no open requests.</p> : (
-          <div className="space-y-1.5">{mine.map(m => <MeetingRow key={m.id} m={m} onOpen={onOpen} />)}</div>
-        )}
-      </section>
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> {data === null ? 'Meeting requests with the CEO' : sa ? 'Meeting requests from employees' : 'My Meeting Requests'}</h2>
+        <p className="text-xs text-slate-500">{sa ? 'Only you, the Super Admin (CEO), can approve, reject or reschedule a request. The employee is told with your reason.' : 'You are told here when the CEO approves, rejects or reschedules a request. You can withdraw one that is still pending.'}</p>
+      </div>
+      <div role="tablist" aria-label="Request sections" className="flex flex-wrap gap-1.5">
+        {SECTIONS.map(([id, label, key]) => (
+          <button key={id} role="tab" aria-selected={section === id} type="button" onClick={() => setSection(id)}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold ${section === id ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
+            {sa ? label : label.replace('Pending Requests', 'Pending').replace(' Meetings', '').replace('Meeting History', 'History')}{data ? ` (${data.counts[key]})` : ''}
+          </button>
+        ))}
+      </div>
+      {loadError && <Notice tone="error">{loadError}</Notice>}
+      {data === null && !loadError ? <p className="text-sm text-slate-500">Loading…</p> : data && (
+        data.items.length === 0 ? <p className="text-sm text-slate-500">{sa ? 'Nothing here.' : 'You have no requests in this list.'}</p> : (
+          <div className="space-y-2">{data.items.map(m => <RequestRow key={m.id} m={m} sa={sa} busy={busy === m.id} onOpen={onOpen} onApprove={approve} />)}</div>
+        )
+      )}
     </div>
   );
 };
@@ -333,15 +368,28 @@ const RequestsTab: React.FC<{ approvals: Meeting[]; reloadKey: number; onOpen: (
 // ---------------------------------------------------------------------------
 // One meeting: details and what the viewer may do
 // ---------------------------------------------------------------------------
-const MeetingDrawer: React.FC<{ id: string; onClose: () => void; onChanged: (text: string) => void }> = ({ id, onClose, onChanged }) => {
+const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; onClose: () => void; onChanged: (text: string) => void }> = ({ id, intent, onClose, onChanged }) => {
   const [m, setM] = useState<MeetingDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [when, setWhen] = useState<{ purpose: 'reschedule' | 'propose'; date: string; start: string; end: string } | null>(null);
   const [note, setNote] = useState('');
+  // rejecting a request: the reason is required (the employee reads it)
+  const [rejectReason, setRejectReason] = useState<string | null>(null);
 
   const load = useCallback(() => meetingsApi.detail(id).then(setM).catch(e => setError(errorMessage(e))), [id]);
   useEffect(() => { load(); }, [load]);
+  const [intentDone, setIntentDone] = useState(false);
+  useEffect(() => {
+    if (!m || intentDone || !intent) return;
+    setIntentDone(true);
+    if (intent === 'reject' && m.canDecide) setRejectReason('');
+    if (intent === 'reschedule' && m.canManage) {
+      const s0 = new Date(m.startsAt);
+      const e0 = new Date(m.endsAt);
+      setWhen({ purpose: 'reschedule', date: dateKey(s0), start: `${pad(s0.getHours())}:${pad(s0.getMinutes())}`, end: `${pad(e0.getHours())}:${pad(e0.getMinutes())}` });
+    }
+  }, [m, intent, intentDone]);
 
   const run = async (fn: () => Promise<unknown>, text: string) => {
     setBusy(true);
@@ -363,6 +411,8 @@ const MeetingDrawer: React.FC<{ id: string; onClose: () => void; onChanged: (tex
     setWhen({ purpose, date: dateKey(s), start: `${pad(s.getHours())}:${pad(s.getMinutes())}`, end: `${pad(e.getHours())}:${pad(e.getMinutes())}` });
   };
 
+  // the Super Admin always says why when moving, rejecting or cancelling someone's request: the employee reads it
+  const needsReason = !!m && m.kind === 'CEO_MEETING' && m.canManage;
   return (
     <SideDrawer title={m?.title ?? 'Meeting'} subtitle={m ? `${m.reference} · ${m.kindLabel}` : undefined} onClose={onClose}>
       <div className="p-5 space-y-4 text-sm">
@@ -371,7 +421,7 @@ const MeetingDrawer: React.FC<{ id: string; onClose: () => void; onChanged: (tex
         {m && (
           <>
             <div className="flex flex-wrap gap-2 items-center">
-              <span className={`text-xs font-semibold border rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status]}`}>{STATUS_LABEL[m.status]}</span>
+              <span className={`text-xs font-semibold border rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status]}`}>{m.kind === 'CEO_MEETING' ? ceoStatusLabel(m) : STATUS_LABEL[m.status]}</span>
               <span className="text-xs text-slate-500">{SYNC_LABEL[m.googleSyncStatus]}</span>
             </div>
             <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5">
@@ -380,14 +430,18 @@ const MeetingDrawer: React.FC<{ id: string; onClose: () => void; onChanged: (tex
               <dt className="text-slate-500">Where</dt>
               <dd className="flex items-center gap-1.5"><ModeIcon mode={m.mode} />{MODE_LABEL[m.mode]}{m.location ? ` — ${m.location}` : ''}</dd>
               <dt className="text-slate-500">Host</dt><dd>{m.hostName}</dd>
-              {m.createdByName && m.createdBy !== m.hostId && (<><dt className="text-slate-500">Booked by</dt><dd>{m.createdByName}</dd></>)}
-              {m.decisionNote && (<><dt className="text-slate-500">Note</dt><dd>{m.decisionNote}</dd></>)}
+              {m.createdByName && m.createdBy !== m.hostId && (<><dt className="text-slate-500">{m.kind === 'CEO_MEETING' ? 'Requested by' : 'Booked by'}</dt><dd>{m.createdByName}{m.createdByDepartment ? ` · ${m.createdByDepartment}` : ''}{m.createdByDesignation ? ` · ${m.createdByDesignation}` : ''}</dd></>)}
+              {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">Sent</dt><dd>{new Date(m.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>)}
+              {m.rescheduleCount > 0 && m.previousStartsAt && m.previousEndsAt && (<><dt className="text-violet-700">Moved from</dt><dd className="text-violet-800">{fullWhen(m.previousStartsAt, m.previousEndsAt)}{m.rescheduledByName ? ` by ${m.rescheduledByName}` : ''}{m.rescheduleReason ? ` — ${m.rescheduleReason}` : ''}</dd></>)}
+              {m.status === 'DECLINED' && m.rejectionReason ? (<><dt className="text-rose-700">Rejected</dt><dd className="text-rose-800">{m.rejectionReason}</dd></>)
+                : m.decisionNote && (<><dt className="text-slate-500">Note</dt><dd>{m.decisionNote}</dd></>)}
               {m.cancelReason && (<><dt className="text-slate-500">Reason</dt><dd>{m.cancelReason}</dd></>)}
             </dl>
             {m.meetLink && m.status === 'SCHEDULED' && (
               <a href={m.meetLink} target="_blank" rel="noopener noreferrer" className={`${btnPrimary} w-full`}><Video className="w-4 h-4" /> Join the meeting <ExternalLink className="w-3.5 h-3.5" /></a>
             )}
-            {m.description && <p className="whitespace-pre-wrap text-slate-700 bg-slate-50 rounded-lg p-3">{m.description}</p>}
+            {m.description && <p className="whitespace-pre-wrap text-slate-700 bg-slate-50 rounded-lg p-3">{m.kind === 'CEO_MEETING' && <span className="font-semibold">Agenda: </span>}{m.description}</p>}
+            {m.requestMessage && <p className="whitespace-pre-wrap text-slate-700 bg-amber-50/60 rounded-lg p-3"><span className="font-semibold">Message: </span>{m.requestMessage}</p>}
             <div>
               <h3 className="text-xs font-bold text-slate-500 uppercase mb-1.5">People</h3>
               <ul className="space-y-1">
@@ -406,33 +460,42 @@ const MeetingDrawer: React.FC<{ id: string; onClose: () => void; onChanged: (tex
 
             {when && (
               <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 space-y-2">
-                <p className="font-semibold text-slate-800">{when.purpose === 'reschedule' ? 'Move to' : 'Propose this time instead'}</p>
+                <p className="font-semibold text-slate-800">{when.purpose === 'reschedule' ? (m.canManage ? 'Reschedule to' : 'Ask for this time instead') : 'Propose this time instead'}</p>
                 <div className="grid grid-cols-3 gap-2">
                   <input aria-label="Date" type="date" className={inputCls} value={when.date} onChange={e => setWhen({ ...when, date: e.target.value })} />
                   <input aria-label="Start time" type="time" className={inputCls} value={when.start} onChange={e => setWhen({ ...when, start: e.target.value })} />
                   <input aria-label="End time" type="time" className={inputCls} value={when.end} onChange={e => setWhen({ ...when, end: e.target.value })} />
                 </div>
-                <input aria-label="Note" className={inputCls} placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} maxLength={1000} />
+                <input aria-label={needsReason ? 'Reason for rescheduling' : 'Note'} required={needsReason} className={inputCls} placeholder={needsReason ? 'Reason for rescheduling (required, the employee will see it)' : m.canRequestChange ? 'Why another time? (optional)' : 'Note (optional)'} value={note} onChange={e => setNote(e.target.value)} maxLength={1000} />
                 <div className="flex gap-2">
-                  <button type="button" disabled={busy} className={btnPrimary} onClick={() => run(
+                  <button type="button" disabled={busy || (when.purpose === 'reschedule' && needsReason && note.trim().length < 3)} className={btnPrimary} onClick={() => run(
                     () => when.purpose === 'reschedule'
                       ? meetingsApi.reschedule(m.id, toIso(when.date, when.start), toIso(when.date, when.end), m.version, note)
                       : meetingsApi.decide(m.id, { decision: 'PROPOSE', note: note || undefined, startsAt: toIso(when.date, when.start), endsAt: toIso(when.date, when.end), version: m.version }),
-                    when.purpose === 'reschedule' ? 'Meeting moved. Everyone is told.' : 'Another time proposed.')}>Save</button>
+                    when.purpose === 'reschedule' ? (m.canManage ? 'Meeting rescheduled. The employee is told.' : 'Your request for another time was sent.') : 'Another time proposed.')}>Save</button>
                   <button type="button" className={btnGhost} onClick={() => setWhen(null)}>Back</button>
                 </div>
               </div>
             )}
 
-            {!when && (
+            {rejectReason !== null && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50/40 p-3 space-y-2">
+                <p className="font-semibold text-slate-800">Reject this request</p>
+                <textarea aria-label="Reason for rejecting" required rows={3} maxLength={1000} className={inputCls} placeholder="Reason (required, the employee will see it)" value={rejectReason} onChange={e => setRejectReason(e.target.value)} />
+                <div className="flex gap-2">
+                  <button type="button" disabled={busy || rejectReason.trim().length < 3} className={btnPrimary}
+                    onClick={() => run(() => meetingsApi.decide(m.id, { decision: 'DECLINE', note: rejectReason.trim(), version: m.version }), 'Request rejected. The employee is told with your reason.')}>Reject the request</button>
+                  <button type="button" className={btnGhost} onClick={() => setRejectReason(null)}>Back</button>
+                </div>
+              </div>
+            )}
+
+            {!when && rejectReason === null && (
               <div className="flex flex-wrap gap-2 pt-1">
                 {m.canDecide && <>
-                  <button type="button" disabled={busy} className={btnPrimary} onClick={() => run(() => meetingsApi.decide(m.id, { decision: 'APPROVE', version: m.version }), 'Approved.')}><Check className="w-4 h-4" /> Approve</button>
+                  <button type="button" disabled={busy} className={btnPrimary} onClick={() => run(() => meetingsApi.decide(m.id, { decision: 'APPROVE', version: m.version }), 'Approved. The employee is told.')}><Check className="w-4 h-4" /> Approve</button>
+                  <button type="button" disabled={busy} className={btnGhost} onClick={() => setRejectReason('')}>Reject</button>
                   <button type="button" disabled={busy} className={btnGhost} onClick={() => openWhen('propose')}>Propose another time</button>
-                  <button type="button" disabled={busy} className={btnGhost} onClick={() => {
-                    const reason = window.prompt('Reason for declining (optional):');
-                    if (reason !== null) run(() => meetingsApi.decide(m.id, { decision: 'DECLINE', note: reason || undefined, version: m.version }), 'Request declined.');
-                  }}>Decline</button>
                 </>}
                 {m.canAnswerProposal && <>
                   <button type="button" disabled={busy} className={btnPrimary} onClick={() => run(() => meetingsApi.answerProposal(m.id, true), 'Proposed time accepted. The meeting is scheduled.')}>Accept the proposed time</button>
@@ -441,10 +504,20 @@ const MeetingDrawer: React.FC<{ id: string; onClose: () => void; onChanged: (tex
                 {m.canManage && ['REQUESTED', 'PROPOSED', 'SCHEDULED'].includes(m.status) && <>
                   <button type="button" disabled={busy} className={btnGhost} onClick={() => openWhen('reschedule')}><Clock3 className="w-4 h-4" /> Reschedule</button>
                   <button type="button" disabled={busy} className={`${btnGhost} text-rose-700`} onClick={() => {
-                    const reason = window.prompt('Why is it cancelled? (optional, shared with everyone invited)');
-                    if (reason !== null) run(() => meetingsApi.cancel(m.id, reason || undefined, m.version), 'Meeting cancelled. Everyone is told.');
+                    const reason = window.prompt(m.kind === 'CEO_MEETING' ? 'Why is it cancelled? (required, the employee will see it)' : 'Why is it cancelled? (optional, shared with everyone invited)');
+                    if (reason === null) return;
+                    if (m.kind === 'CEO_MEETING' && reason.trim().length < 3) { setError('Give the reason for cancelling. The employee will see it.'); return; }
+                    run(() => meetingsApi.cancel(m.id, reason || undefined, m.version), 'Meeting cancelled. Everyone is told.');
                   }}><Trash2 className="w-4 h-4" /> Cancel</button>
                 </>}
+                {m.canWithdraw && (
+                  <button type="button" disabled={busy} className={`${btnGhost} text-rose-700`} onClick={() => {
+                    if (window.confirm('Withdraw this request?')) run(() => meetingsApi.cancel(m.id, undefined, m.version), 'Request withdrawn.');
+                  }}><Trash2 className="w-4 h-4" /> Withdraw request</button>
+                )}
+                {m.canRequestChange && (
+                  <button type="button" disabled={busy} className={btnGhost} onClick={() => openWhen('reschedule')}><Clock3 className="w-4 h-4" /> Ask for another time</button>
+                )}
                 {m.canManage && m.status === 'SCHEDULED' && new Date(m.startsAt) <= new Date() && (
                   <button type="button" disabled={busy} className={btnGhost} onClick={() => run(() => meetingsApi.complete(m.id), 'Marked as done.')}><Check className="w-4 h-4" /> Mark done</button>
                 )}
@@ -484,7 +557,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   const [people, setPeople] = useState<MeetingDirectoryEntry[]>([]);
   const [search, setSearch] = useState('');
   const [f, setF] = useState({
-    title: '', description: '', kind: 'MEETING' as NewMeeting['kind'], hostId: '', date: dateKey(tomorrow), time: '11:00', duration: 30,
+    title: '', description: '', message: '', kind: 'MEETING' as NewMeeting['kind'], hostId: '', date: dateKey(tomorrow), time: '11:00', duration: 30,
     mode: 'GOOGLE_MEET' as NewMeeting['mode'], location: '', meetLink: ''
   });
   const [invited, setInvited] = useState<string[]>([]);
@@ -521,7 +594,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
     setError(null);
     try {
       const m = await meetingsApi.create({
-        title: f.title, description: f.description || null, kind: mode === 'ceo' ? 'CEO_MEETING' : f.kind, hostId: mode === 'ceo' ? f.hostId : null,
+        title: f.title, description: f.description || null, message: mode === 'ceo' ? f.message || null : null, kind: mode === 'ceo' ? 'CEO_MEETING' : f.kind, hostId: mode === 'ceo' ? f.hostId : null,
         startsAt: start.toISOString(), endsAt: end.toISOString(), timezone: BROWSER_TZ, mode: f.mode,
         location: f.location || null, meetLink: f.mode === 'ONLINE_LINK' ? f.meetLink : null,
         attendeeIds: invited, guests: guests.filter(g => g.email.trim()).map(g => ({ name: g.name || null, email: g.email.trim() })), allowOverlap: overlap
@@ -535,7 +608,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   };
 
   return (
-    <SideDrawer title={mode === 'ceo' ? 'Ask the CEO for time' : 'New meeting'} subtitle={mode === 'ceo' ? 'The CEO (or their delegate) approves, proposes another time or declines.' : 'Invite colleagues and guests; Google sends the invitations.'} onClose={onClose}>
+    <SideDrawer title={mode === 'ceo' ? 'Ask the CEO for time' : 'New meeting'} subtitle={mode === 'ceo' ? 'Only the CEO (Super Admin) approves, reschedules or rejects your request.' : 'Invite colleagues and guests; Google sends the invitations.'} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-4 text-sm">
         {error && <Notice tone="error">{error}</Notice>}
         {mode === 'ceo' && (
@@ -627,9 +700,15 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
           {!guests.length && <p className="text-xs text-slate-400">Customers, leads or candidates get the invitation and reminders by e-mail.</p>}
         </div>
         <div>
-          <label className={labelCls} htmlFor="mtg-desc">{mode === 'ceo' ? 'What it is about' : 'Agenda'}</label>
-          <textarea id="mtg-desc" rows={3} maxLength={4000} className={inputCls} value={f.description} onChange={e => setF({ ...f, description: e.target.value })} />
+          <label className={labelCls} htmlFor="mtg-desc">{mode === 'ceo' ? 'Agenda or purpose' : 'Agenda'}</label>
+          <textarea id="mtg-desc" rows={3} maxLength={4000} required={mode === 'ceo'} minLength={mode === 'ceo' ? 5 : undefined} className={inputCls} value={f.description} onChange={e => setF({ ...f, description: e.target.value })} />
         </div>
+        {mode === 'ceo' && (
+          <div>
+            <label className={labelCls} htmlFor="mtg-msg">Additional message (optional)</label>
+            <textarea id="mtg-msg" rows={2} maxLength={2000} className={inputCls} value={f.message} onChange={e => setF({ ...f, message: e.target.value })} />
+          </div>
+        )}
         {mode === 'meeting' && /already have a meeting/i.test(error ?? '') && (
           <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={overlap} onChange={e => setOverlap(e.target.checked)} /> Book it anyway (overlapping my other meeting)</label>
         )}
@@ -705,7 +784,12 @@ const SettingsTab: React.FC<{ google: GoogleCalendarStatus | null; onGoogleChang
       {error && <Notice tone="error">{error}</Notice>}
       {s && <HoursEditor settings={s} onSaved={x => { setS(x); onFlash({ tone: 'ok', text: 'Working hours saved.' }); }} onError={t => onFlash({ tone: 'error', text: t })} />}
       {s && <BookingLinks settings={s} onChanged={l => setS({ ...s, bookingTypes: [...s.bookingTypes.filter(x => x.id !== l.id), l] })} onFlash={onFlash} />}
-      {s?.isCeo && <Delegates settings={s} onSaved={x => { setS(x); onFlash({ tone: 'ok', text: 'Delegates saved.' }); }} onError={t => onFlash({ tone: 'error', text: t })} />}
+      {s?.isCeo && (
+        <section className="rounded-xl border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> Requests for your time</h2>
+          <p className="text-xs text-slate-500 mt-1">Only you, the Super Admin (CEO), approve, reject or reschedule requests for your time. Nobody else can, and it cannot be delegated.</p>
+        </section>
+      )}
     </div>
   );
 };
@@ -850,36 +934,6 @@ const BookingLinks: React.FC<{ settings: MeetingSettings; onChanged: (l: Meeting
           </div>
         </form>
       )}
-    </section>
-  );
-};
-
-const Delegates: React.FC<{ settings: MeetingSettings; onSaved: (s: MeetingSettings) => void; onError: (t: string) => void }> = ({ settings, onSaved, onError }) => {
-  const [people, setPeople] = useState<MeetingDirectoryEntry[]>([]);
-  const [chosen, setChosen] = useState<string[]>(settings.delegates.map(d => d.id));
-  const [saving, setSaving] = useState(false);
-  useEffect(() => { meetingsApi.directory().then(p => setPeople(p.filter(x => !x.isCeo))).catch(() => setPeople([])); }, []);
-  const save = async () => {
-    setSaving(true);
-    try {
-      onSaved(await meetingsApi.setDelegates(chosen));
-    } catch (e) {
-      onError(errorMessage(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-      <div>
-        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> Who may approve requests for your time</h2>
-        <p className="text-xs text-slate-500">An assistant you name here sees your meetings, approves or declines requests, proposes other times, and can book your time directly.</p>
-      </div>
-      <select multiple aria-label="Delegates" className={`${inputCls} h-40`} value={chosen} onChange={e => setChosen(Array.from(e.target.selectedOptions).map(o => o.value))}>
-        {people.map(p => <option key={p.id} value={p.id}>{p.name} — {p.department ?? p.role}</option>)}
-      </select>
-      <p className="text-[11px] text-slate-500">Hold Ctrl (Cmd on a Mac) to choose more than one. At most 10.</p>
-      <button type="button" disabled={saving || chosen.length > 10} className={btnPrimary} onClick={save}>{saving && <Loader2 className="w-4 h-4 animate-spin" />} Save delegates</button>
     </section>
   );
 };

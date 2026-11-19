@@ -8,6 +8,7 @@
 reset role;
 \i supabase/migrations/20270113000100_meetings_creator_organiser.sql
 \i supabase/migrations/20270113000100_meetings_creator_organiser.sql
+\i supabase/migrations/20270114000100_meetings_superadmin_approval.sql
 
 delete from meeting_delegates where host_id in (test.id('sa'), test.id('tm_a'));
 delete from google_calendar_connections where profile_id in (test.id('sa'), test.id('tm_a'), test.id('ck_b'));
@@ -48,7 +49,7 @@ reset role;
 \echo '   asking the Super Admin for time: the one asking organises the event'
 set role authenticated;
 select test.login('ck_b');
-insert into mo select 'req', (x ->> 'id')::uuid from (select mtg_create(jsonb_build_object('title', 'Pricing for Surat', 'hostId', test.id('sa'),
+insert into mo select 'req', (x ->> 'id')::uuid from (select mtg_create(jsonb_build_object('title', 'Pricing for Surat', 'hostId', test.id('sa'), 'description', 'Pricing for the Surat launch',
   'startsAt', date_trunc('hour', now()) + interval '4 days 12 hours', 'endsAt', date_trunc('hour', now()) + interval '4 days 12 hours 30 minutes')) x) s;
 reset role;
 select test.check((select count(*) = 0 from meeting_mail_outbox where meeting_id = (select id from mo where k = 'req')), 'a request sends no meeting e-mail yet');
@@ -81,7 +82,7 @@ select test.check((select count(*) >= 1 from jsonb_array_elements(mtg_mail_claim
 set role authenticated;
 select test.login('sa');
 select test.check((select mtg_reschedule((select id from mo where k = 'req'), date_trunc('hour', now()) + interval '5 days 12 hours',
-  date_trunc('hour', now()) + interval '5 days 12 hours 30 minutes') ->> 'status' = 'SCHEDULED'), 'the Super Admin moves the meeting');
+  date_trunc('hour', now()) + interval '5 days 12 hours 30 minutes', 'The board meets that morning') ->> 'status' = 'SCHEDULED'), 'the Super Admin moves the meeting (with the reason)');
 reset role;
 select test.check((select google_owner_id = test.id('ck_b') and google_sync_status = 'PENDING' from meetings where id = (select id from mo where k = 'req')),
   'the change goes to the event on the calendar of the one asking');
@@ -91,7 +92,7 @@ select test.check((select count(*) = 2 from meeting_mail_outbox where meeting_id
 \echo '   a declined request'
 set role authenticated;
 select test.login('ck_b');
-insert into mo select 'dec', (x ->> 'id')::uuid from (select mtg_create(jsonb_build_object('title', 'Leave question', 'hostId', test.id('sa'),
+insert into mo select 'dec', (x ->> 'id')::uuid from (select mtg_create(jsonb_build_object('title', 'Leave question', 'hostId', test.id('sa'), 'description', 'A question about leave',
   'startsAt', date_trunc('hour', now()) + interval '6 days 15 hours', 'endsAt', date_trunc('hour', now()) + interval '6 days 15 hours 30 minutes')) x) s;
 select test.login('sa');
 select mtg_decide((select id from mo where k = 'dec'), 'DECLINE', 'Please ask HR');
@@ -107,6 +108,7 @@ select test.check((select not private.mtg_can_view(m, test.id('sa')) from meetin
 \echo '   events made before this change stay on the host''s calendar'
 update meetings set google_event_id = 'evt-old', google_owner_id = null, created_by = test.id('ck_a') where id = (select id from mo where k = 'emp');
 \i supabase/migrations/20270113000100_meetings_creator_organiser.sql
+\i supabase/migrations/20270114000100_meetings_superadmin_approval.sql
 select test.check((select google_owner_id = host_id from meetings where id = (select id from mo where k = 'emp')),
   'an event already on a calendar keeps being updated there');
 

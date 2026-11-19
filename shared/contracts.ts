@@ -5752,9 +5752,37 @@ export interface Meeting {
   canManage: boolean;
   canDecide: boolean;
   canAnswerProposal: boolean;
+  /** The one who asked for the CEO's time may withdraw a request that is still pending, or ask for another time; never decide. */
+  canWithdraw: boolean;
+  canRequestChange: boolean;
   /** The viewer's own answer when they are an invited colleague; null otherwise. */
   myResponse: MeetingAttendee['response'] | null;
+  /** Requests for the CEO's time: the employee's extra message, department and designation, the reason of a rejection, and the last move. */
+  requestMessage: string | null;
+  createdByDepartment: string | null;
+  createdByDesignation: string | null;
+  rejectionReason: string | null;
+  previousStartsAt: string | null;
+  previousEndsAt: string | null;
+  rescheduledAt: string | null;
+  rescheduledBy: string | null;
+  rescheduledByName: string | null;
+  rescheduleReason: string | null;
+  rescheduleCount: number;
   attendees: MeetingAttendee[];
+}
+
+/** The dashboard sections for meeting requests with the CEO (Super Admin: everybody's; everybody else: their own). */
+export const CEO_REQUEST_SECTIONS = ['PENDING', 'APPROVED', 'REJECTED', 'RESCHEDULED', 'ALL'] as const;
+export type CeoRequestSection = (typeof CEO_REQUEST_SECTIONS)[number];
+export interface CeoRequestList {
+  section: CeoRequestSection;
+  /** True for the Super Admin (the CEO): they see every employee's request and the management actions. */
+  isSuperAdmin: boolean;
+  counts: { pending: number; approved: number; rejected: number; rescheduled: number; all: number };
+  items: Meeting[];
+  limit: number;
+  offset: number;
 }
 
 export interface MeetingHistoryEntry { kind: string; note: string | null; actorName: string | null; at: string; data: Record<string, unknown> }
