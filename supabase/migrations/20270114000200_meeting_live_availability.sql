@@ -15,7 +15,8 @@
 --     follow through the existing sync); the one who asked is told the confirmed time, and that it changed when it did.
 --   * A meeting that is already confirmed is never touched by any of this.
 --
--- Additive and safe to run twice. Replaces public.mtg_create and public.mtg_cancel (same signatures; only the waiting state is added).
+-- Additive and safe to run twice. Run it after 20270114000100_meetings_superadmin_approval.sql: it replaces public.mtg_create, public.mtg_cancel
+-- and private.tg_meetings_ceo_guard with that migration's definitions plus the waiting state (same signatures).
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -327,8 +328,43 @@ returns jsonb language sql security definer set search_path = '' as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- 5. Asking for the CEO's time while the CEO is BUSY: saved as PENDING_AVAILABILITY (20270101000500 + the waiting state)
+-- 5. Asking for the CEO's time while the CEO is BUSY: saved as PENDING_AVAILABILITY. These are the definitions of
+--    20270114000100_meetings_superadmin_approval.sql (only the Super Admin decides; an agenda is required; no delegate shortcut) with the
+--    waiting state added, so running this migration after it keeps every rule of it.
 -- ---------------------------------------------------------------------------
+-- the guard: a team member may also save a request that waits, and withdraw it
+create or replace function private.tg_meetings_ceo_guard()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+begin
+  if v_uid is null or private.mtg_is_ceo(v_uid) then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    if new.kind = 'CEO_MEETING' and private.mtg_host_is_sa(new.host_id) and new.status not in ('REQUESTED', 'PENDING_AVAILABILITY') then
+      raise exception 'FORBIDDEN: Only the Super Admin (CEO) can schedule a meeting with the CEO. Send a request instead.' using errcode = '42501';
+    end if;
+    return new;
+  end if;
+  if old.kind = 'CEO_MEETING' and private.mtg_host_is_sa(old.host_id)
+     and (new.status is distinct from old.status or new.starts_at is distinct from old.starts_at or new.ends_at is distinct from old.ends_at
+          or new.decided_by is distinct from old.decided_by) then
+    if not (
+         -- withdraw a pending request
+         (old.created_by = v_uid and old.status in ('REQUESTED', 'PROPOSED', 'PENDING_AVAILABILITY') and new.status = 'CANCELLED')
+         -- ask for another time: the meeting goes back to "requested"; nobody's decision is touched
+         or (old.created_by = v_uid and old.status in ('REQUESTED', 'PROPOSED', 'SCHEDULED') and new.status = 'REQUESTED'
+             and new.decided_by is not distinct from old.decided_by)
+         -- answer the time the CEO proposed
+         or (old.created_by = v_uid and old.status = 'PROPOSED' and new.status in ('SCHEDULED', 'DECLINED')
+             and new.decided_by is not distinct from old.decided_by)) then
+      raise exception 'FORBIDDEN: Only the Super Admin (CEO) can approve, reject, reschedule or cancel a meeting with the CEO.' using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end $$;
+
 create or replace function public.mtg_create(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -384,11 +420,17 @@ begin
   if v_kind = 'CEO_MEETING' and not private.mtg_is_ceo(v_host) then
     raise exception 'VALIDATION_ERROR: Choose the CEO for a meeting with the CEO.' using errcode = '22023';
   end if;
-  -- the CEO's time is asked for, not taken (unless the CEO or their delegate books it)
-  v_request := private.mtg_is_ceo(v_host) and v_host <> me.id and not private.mtg_is_delegate(v_host, me.id);
+  -- the CEO's time is asked for, never taken: everybody but the CEO themselves sends a request (no shortcut for delegates)
+  v_request := private.mtg_is_ceo(v_host) and v_host <> me.id;
+  if v_request and length(btrim(coalesce(p ->> 'description', ''))) < 5 then
+    raise exception 'VALIDATION_ERROR: Describe the agenda or purpose of the meeting (at least 5 characters).' using errcode = '22023';
+  end if;
+  if length(coalesce(p ->> 'message', '')) > 2000 then
+    raise exception 'VALIDATION_ERROR: The message can have at most 2000 characters.' using errcode = '22023';
+  end if;
 
   perform private.mtg_lock_host(v_host);
-  -- the CEO is in a meeting: the request is saved and waits; the slot is found when the CEO is free (no time is held now)
+  -- the CEO is in a meeting (Enter Meeting): the request is saved and waits; its slot is found when the CEO exits (no time is held now)
   v_waiting := v_request and private.mtg_host_busy(v_host);
   if not v_waiting then
     v_conflict := private.mtg_host_conflict(v_host, v_start, v_end);
@@ -398,9 +440,10 @@ begin
     end if;
   end if;
 
-  insert into public.meetings (kind, title, description, host_id, created_by, starts_at, ends_at, timezone, mode, location, meet_link,
+  insert into public.meetings (kind, title, description, request_message, host_id, created_by, starts_at, ends_at, timezone, mode, location, meet_link,
                                status, requires_approval, booked_via, customer_id, requested_starts_at, requested_ends_at)
-  values (v_kind, btrim(p ->> 'title'), nullif(btrim(coalesce(p ->> 'description', '')), ''), v_host, me.id, v_start, v_end,
+  values (v_kind, btrim(p ->> 'title'), nullif(btrim(coalesce(p ->> 'description', '')), ''), nullif(btrim(coalesce(p ->> 'message', '')), ''),
+          v_host, me.id, v_start, v_end,
           coalesce(nullif(p ->> 'timezone', ''), (select timezone from public.meeting_host_settings where host_id = v_host), 'Asia/Kolkata'),
           v_mode, nullif(btrim(coalesce(p ->> 'location', '')), ''),
           case when v_mode = 'ONLINE_LINK' then nullif(btrim(coalesce(p ->> 'meetLink', '')), '') end,
@@ -433,10 +476,9 @@ begin
 
   select * into m from public.meetings where id = v_id;
   perform private.mtg_event(m.id, case when v_waiting then 'REQUESTED_WHILE_BUSY' when v_request then 'REQUESTED' else 'SCHEDULED' end, null,
-    jsonb_build_object('startsAt', m.starts_at, 'endsAt', m.ends_at, 'overlapAllowed', v_conflict is not null));
+    jsonb_build_object('startsAt', m.starts_at, 'endsAt', m.ends_at, 'overlapAllowed', v_conflict is not null, 'toStatus', m.status));
   if v_waiting then
-    -- told to the one who asked only (the CEO is in a meeting; the request is scheduled automatically when they are free)
-    -- (a receipt in their own Notification Center: private.notify leaves out the one acting, so it is written here)
+    -- a receipt for the one who asked only (private.notify leaves out the one acting, so it is written here); the busy CEO is not interrupted
     insert into public.notifications (recipient_id, type, title, body, entity_type, entity_id, actor_id, data, priority)
     values (me.id, 'MEETING_PENDING_AVAILABILITY', 'Request saved: ' || m.title,
       (select full_name from public.profiles where id = v_host) || ' is in another meeting. Your request for '
@@ -444,48 +486,103 @@ begin
       'meeting', m.id, me.id, jsonb_build_object('meetingId', m.id, 'startsAt', m.starts_at), 'normal');
   elsif v_request then
     perform private.mtg_notify_deciders(m, 'Meeting request from ' || me.full_name,
-      m.title || ' — ' || private.mtg_when(m.starts_at, m.timezone) || '. Approve, propose another time or decline.');
+      m.title || ' — ' || private.mtg_when(m.starts_at, m.timezone) || '. Approve, reschedule or reject.');
   else
     perform private.mtg_notify_staff(m, 'MEETING_INVITED', 'New ' || lower(private.mtg_kind_label(m.kind)) || ': ' || m.title,
       'By ' || me.full_name || ' — ' || private.mtg_when(m.starts_at, m.timezone) || '.', me.id);
     perform private.mtg_mail_externals(m, 'CONFIRMED');
   end if;
-  perform private.write_audit('MEETING_' || case when v_waiting then 'PENDING_AVAILABILITY' when v_request then 'REQUESTED' else 'SCHEDULED' end,
-    'meeting', m.id, me.department_id, me.team_id, jsonb_build_object('kind', m.kind, 'host', m.host_id, 'startsAt', m.starts_at));
+  perform private.write_audit('MEETING_' || case when v_waiting then 'PENDING_AVAILABILITY' when v_request then 'REQUESTED' else 'SCHEDULED' end, 'meeting', m.id, me.department_id, me.team_id,
+    jsonb_build_object('kind', m.kind, 'host', m.host_id, 'startsAt', m.starts_at));
   return private.mtg_json(m, me.id);
 end $$;
 
--- a waiting request can be cancelled like a request (20270101000500 + PENDING_AVAILABILITY)
+-- a waiting request can be withdrawn by the one who asked, like a pending request
 create or replace function public.mtg_cancel(p_id uuid, p_reason text default null, p_version integer default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   me public.profiles := private.mtg_me();
-  m public.meetings := private.mtg_for_update(p_id, p_version);
+  m public.meetings;
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
-  v_was text := m.status;
+  v_was text;
+  v_sa_host boolean;
+  v_decider boolean;
 begin
+  select * into m from public.meetings where id = p_id;
+  if m.id is not null and private.mtg_host_is_sa(m.host_id)
+     and not (private.mtg_can_decide(m, me.id) or (m.created_by = me.id and m.status in ('REQUESTED', 'PROPOSED', 'PENDING_AVAILABILITY'))) then
+    raise exception 'FORBIDDEN: Only the Super Admin (CEO) can cancel a meeting with the CEO. You can withdraw a request that is still pending.' using errcode = '42501';
+  end if;
+  m := private.mtg_for_update(p_id, p_version);
+  v_was := m.status;
+  v_sa_host := private.mtg_host_is_sa(m.host_id);
+  v_decider := private.mtg_can_decide(m, me.id);
   if not private.mtg_can_view(m, me.id) then
     raise exception 'NOT_FOUND: Meeting not found.' using errcode = 'P0002';
   end if;
   if m.source_type is not null then
     raise exception 'CONFLICT: This meeting is managed in its own page (demo, interview or HR meeting). Cancel it there.' using errcode = 'P0001';
   end if;
-  if not private.mtg_can_manage(m, me.id) then
+  if not (case when v_sa_host then v_decider or (m.created_by = me.id and m.status in ('REQUESTED', 'PROPOSED', 'PENDING_AVAILABILITY')) else private.mtg_can_manage(m, me.id) end) then
     raise exception 'FORBIDDEN: Only the host or the person who booked the meeting can cancel it.' using errcode = '42501';
   end if;
   if m.status not in ('REQUESTED', 'PROPOSED', 'SCHEDULED', 'PENDING_AVAILABILITY') then
     raise exception 'CONFLICT: This meeting is already %.', lower(m.status) using errcode = 'P0001';
   end if;
+  if v_sa_host and v_decider and m.created_by is distinct from me.id and v_reason is null then
+    raise exception 'VALIDATION_ERROR: Give the reason for cancelling. The employee will see it.' using errcode = '22023';
+  end if;
   update public.meetings set status = 'CANCELLED', cancel_reason = v_reason, cancelled_by = me.id, version = version + 1
    where id = m.id returning * into m;
-  perform private.mtg_event(m.id, 'CANCELLED', v_reason);
+  perform private.mtg_event(m.id, 'CANCELLED', v_reason, jsonb_build_object('fromStatus', v_was, 'toStatus', m.status, 'cancelledBy', me.id));
   perform private.mtg_notify_staff(m, 'MEETING_CANCELLED', 'Meeting cancelled: ' || m.title,
     private.mtg_when(m.starts_at, m.timezone) || coalesce('. Reason: ' || v_reason, '') || '.', me.id);
   if v_was not in ('REQUESTED', 'PENDING_AVAILABILITY') or m.booked_via = 'BOOKING_LINK' then
     perform private.mtg_mail_externals(m, 'CANCELLED');
   end if;
-  perform private.write_audit('MEETING_CANCELLED', 'meeting', m.id, me.department_id, me.team_id, jsonb_build_object('reason', v_reason));
+  perform private.write_audit('MEETING_CANCELLED', 'meeting', m.id, me.department_id, me.team_id,
+    jsonb_build_object('reason', v_reason, 'fromStatus', v_was));
   return private.mtg_json(m, me.id);
+end $$;
+
+-- a request waiting for the CEO to be free is a pending request in the CEO requests sections (20270114000100 + PENDING_AVAILABILITY)
+create or replace function public.mtg_ceo_requests(p_section text default 'ALL', p_limit integer default 50, p_offset integer default 0)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  me public.profiles := private.mtg_me();
+  v_sa boolean := private.mtg_is_ceo(me.id);
+  v_sec text := upper(coalesce(nullif(btrim(p_section), ''), 'ALL'));
+  v_limit integer := least(greatest(coalesce(p_limit, 50), 1), 100);
+  v_offset integer := greatest(coalesce(p_offset, 0), 0);
+  v_counts jsonb;
+  v_items jsonb := '[]'::jsonb;
+  r public.meetings;
+begin
+  if v_sec not in ('PENDING', 'APPROVED', 'REJECTED', 'RESCHEDULED', 'ALL') then
+    raise exception 'VALIDATION_ERROR: Choose PENDING, APPROVED, REJECTED, RESCHEDULED or ALL.' using errcode = '22023';
+  end if;
+  select jsonb_build_object(
+           'pending', count(*) filter (where m.status in ('REQUESTED', 'PROPOSED', 'PENDING_AVAILABILITY')),
+           'approved', count(*) filter (where m.status in ('SCHEDULED', 'COMPLETED') and m.reschedule_count = 0),
+           'rejected', count(*) filter (where m.status = 'DECLINED'),
+           'rescheduled', count(*) filter (where m.status in ('SCHEDULED', 'COMPLETED') and m.reschedule_count > 0),
+           'all', count(*))
+    into v_counts
+    from public.meetings m
+   where m.kind = 'CEO_MEETING' and m.source_type is null and (v_sa or m.created_by = me.id);
+  for r in select m.* from public.meetings m
+            where m.kind = 'CEO_MEETING' and m.source_type is null and (v_sa or m.created_by = me.id)
+              and case v_sec
+                    when 'PENDING' then m.status in ('REQUESTED', 'PROPOSED', 'PENDING_AVAILABILITY')
+                    when 'APPROVED' then m.status in ('SCHEDULED', 'COMPLETED') and m.reschedule_count = 0
+                    when 'REJECTED' then m.status = 'DECLINED'
+                    when 'RESCHEDULED' then m.status in ('SCHEDULED', 'COMPLETED') and m.reschedule_count > 0
+                    else true end
+            order by m.created_at desc, m.id
+            limit v_limit offset v_offset loop
+    v_items := v_items || jsonb_build_array(private.mtg_json(r, me.id));
+  end loop;
+  return jsonb_build_object('section', v_sec, 'isSuperAdmin', v_sa, 'counts', v_counts, 'items', v_items, 'limit', v_limit, 'offset', v_offset);
 end $$;
 
 -- ---------------------------------------------------------------------------
@@ -500,7 +597,7 @@ begin
     execute format('revoke all on function %s from public, anon, authenticated', f);
   end loop;
   foreach f in array array['public.mtg_presence()', 'public.mtg_presence_enter(uuid)', 'public.mtg_presence_exit(jsonb)',
-    'public.mtg_create(jsonb)', 'public.mtg_cancel(uuid, text, integer)'] loop
+    'public.mtg_create(jsonb)', 'public.mtg_cancel(uuid, text, integer)', 'public.mtg_ceo_requests(text, integer, integer)'] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated, service_role', f);
   end loop;

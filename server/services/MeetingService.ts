@@ -1,8 +1,8 @@
 import type {
-  CeoPresence, CeoPresenceExit, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoPresence, CeoPresenceExit, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
 } from '../../shared/contracts.js';
 import {
-  calendarMeetingCancelSchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
+  calendarMeetingCancelSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
   meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingProposalAnswerSchema,
   meetingRescheduleSchema, meetingResponseSchema, uuidSchema
 } from '../../shared/validation.js';
@@ -19,8 +19,8 @@ import type { MeetingRepository } from '../repositories/MeetingRepository.js';
 const appUrl = () => automationSettings().appUrl ?? 'https://crm.amuwacorporation.com';
 
 /**
- * Meetings for signed-in employees. The database decides who may see and change what (host, the one who booked, invited colleagues, the
- * CEO's delegates); this layer validates the input, adds Google free/busy times, and right after a change runs the meetings worker briefly
+ * Meetings for signed-in employees. The database decides who may see and change what (host, the one who booked, invited colleagues; for the
+ * CEO's time ONLY the Super Admin decides, moves or cancels: the role is read from the signed-in account in the database, never from the request); this layer validates the input, adds Google free/busy times, and right after a change runs the meetings worker briefly
  * so Google Calendar and the guests hear about it at once.
  */
 export class MeetingService {
@@ -54,6 +54,11 @@ export class MeetingService {
     const to = new Date(from.getTime() + 31 * 86_400_000);
     const busy = actor.role === 'SUPER_ADMIN' ? (await googleBusy([actor.id], from, to).catch(() => ({} as Record<string, { start: string; end: string }[]>)))[actor.id] ?? [] : [];
     return this.after(this.repo.presenceExit(busy.map(b => ({ start: b.start, end: b.end }))));
+  }
+  /** The meeting requests with the CEO: the Super Admin sees everyone's, an employee only their own. */
+  ceoRequests(query: unknown): Promise<CeoRequestList> {
+    const q = parse(ceoRequestsQuerySchema, query ?? {});
+    return this.repo.ceoRequests(q.section, q.limit, q.offset);
   }
   directory(query: unknown): Promise<MeetingDirectoryEntry[]> { return this.repo.directory(parse(meetingDirectoryQuerySchema, query).search ?? null); }
 

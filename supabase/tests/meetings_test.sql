@@ -1,5 +1,5 @@
 -- =============================================================================
--- Meetings engine (migration 20270101000500): booking, overlaps, CEO approval, booking links, Google sync queue, reminders,
+-- Meetings engine (migration 20270101000500, then the Super Admin-only CEO approval 20270114000100; the organiser migration 20270113000100 has its own suite): booking, overlaps, CEO approval, booking links, Google sync queue, reminders,
 -- e-mails to guests, and the mirrors of demos / interviews / HR meetings. Reuses sa (Super Admin = the CEO), tm_a, ck_a, ck_b.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -7,7 +7,8 @@
 \echo '--- 136. Meetings: one booking engine with Google Calendar'
 reset role;
 \i supabase/migrations/20270101000500_meetings_google_calendar.sql
-\i supabase/migrations/20270101000500_meetings_google_calendar.sql
+\i supabase/migrations/20270114000100_meetings_superadmin_approval.sql
+\i supabase/migrations/20270114000100_meetings_superadmin_approval.sql
 
 -- a clean slate for this suite (re-runnable)
 delete from meeting_delegates where host_id in (test.id('sa'), test.id('tm_a'));
@@ -103,17 +104,23 @@ select test.check((select count(*) = 1 from meeting_attendees where meeting_id =
 set role authenticated;
 select test.login('ck_b');
 select test.must_fail($$select mtg_decide((select id from mt where k = 'ceo1'), 'APPROVE')$$, 'the one asking cannot approve their own request', 'FORBIDDEN');
-select test.must_fail($$select mtg_create(jsonb_build_object('title', 'Same time', 'hostId', test.id('sa'), 'startsAt', date_trunc('hour', now()) + interval '6 days 11 hours',
+select test.must_fail($$select mtg_create(jsonb_build_object('title', 'Same time', 'hostId', test.id('sa'), 'description', 'Another request for the same slot', 'startsAt', date_trunc('hour', now()) + interval '6 days 11 hours',
   'endsAt', date_trunc('hour', now()) + interval '6 days 11 hours 30 minutes'))$$, 'a requested time is held: nobody else can ask for it', 'CONFLICT');
--- the CEO names a delegate (an assistant) who may decide
+-- the CEO's approvals are not delegated: naming a delegate is refused, and a delegate left over from before cannot decide
 select test.login('sa');
-select test.check((select jsonb_array_length(mtg_set_delegates(array[test.id('ck_a')]) -> 'delegates') = 1), 'the CEO names a delegate');
+select test.must_fail($$select mtg_set_delegates(array[test.id('ck_a')])$$, 'the CEO cannot delegate meeting decisions', 'FORBIDDEN');
+reset role;
+insert into meeting_delegates (host_id, delegate_id) values (test.id('sa'), test.id('ck_a')) on conflict do nothing;   -- a row from before this rule
+set role authenticated;
 select test.login('ck_a');
-select test.check((select count(*) = 1 from jsonb_array_elements(mtg_pending_approvals()) x where (x ->> 'id')::uuid = (select id from mt where k = 'ceo1')),
-  'the delegate sees the request waiting');
+select test.check((select count(*) = 0 from jsonb_array_elements(mtg_pending_approvals()) x where (x ->> 'id')::uuid = (select id from mt where k = 'ceo1')),
+  'a leftover delegate does not see the request waiting');
+select test.must_fail($$select mtg_decide((select id from mt where k = 'ceo1'), 'PROPOSE', 'Earlier works better',
+  date_trunc('hour', now()) + interval '6 days 9 hours', date_trunc('hour', now()) + interval '6 days 9 hours 30 minutes')$$, 'nor propose another time', 'FORBIDDEN');
+select test.login('sa');
 select test.check((select mtg_decide((select id from mt where k = 'ceo1'), 'PROPOSE', 'Earlier works better',
   date_trunc('hour', now()) + interval '6 days 9 hours', date_trunc('hour', now()) + interval '6 days 9 hours 30 minutes') ->> 'status' = 'PROPOSED'),
-  'the delegate proposes another time');
+  'the CEO proposes another time');
 select test.login('tm_a');
 select test.must_fail($$select mtg_answer_proposal((select id from mt where k = 'ceo1'), true)$$, 'an outsider cannot answer the proposal', 'NOT_FOUND');
 select test.login('ck_b');
@@ -127,7 +134,7 @@ select test.check((select mtg_reschedule((select id from mt where k = 'ceo1'), d
   'when the one asking moves a CEO meeting, it needs approval again');
 select test.login('sa');
 select test.check((select mtg_decide((select id from mt where k = 'ceo1'), 'APPROVE', 'See you then') ->> 'status' = 'SCHEDULED'), 'the CEO approves');
-select test.must_fail($$select mtg_decide((select id from mt where k = 'ceo1'), 'DECLINE')$$, 'an answered request cannot be answered again', 'CONFLICT');
+select test.must_fail($$select mtg_decide((select id from mt where k = 'ceo1'), 'DECLINE', 'Too late')$$, 'an answered request cannot be answered again', 'CONFLICT');
 reset role;
 select test.check((select count(*) >= 1 from notifications where recipient_id = test.id('ck_b') and type = 'MEETING_APPROVED'), 'the one asking is told it is approved');
 -- the CEO's own booking is not a request
@@ -136,10 +143,10 @@ select test.login('sa');
 select test.check((select mtg_create(jsonb_build_object('title', 'CEO call', 'startsAt', date_trunc('hour', now()) + interval '8 days 15 hours',
   'endsAt', date_trunc('hour', now()) + interval '8 days 16 hours')) ->> 'status' = 'SCHEDULED'), 'the CEO''s own meeting is booked at once');
 select test.login('ck_a');
-select test.check((select mtg_create(jsonb_build_object('title', 'Board prep (by the delegate)', 'hostId', test.id('sa'), 'startsAt', date_trunc('hour', now()) + interval '9 days 15 hours',
-  'endsAt', date_trunc('hour', now()) + interval '9 days 16 hours')) ->> 'status' = 'SCHEDULED'), 'the CEO''s delegate books the CEO''s time directly');
+select test.check((select mtg_create(jsonb_build_object('title', 'Board prep (by the delegate)', 'hostId', test.id('sa'), 'description', 'Prepare the board deck', 'startsAt', date_trunc('hour', now()) + interval '9 days 15 hours',
+  'endsAt', date_trunc('hour', now()) + interval '9 days 16 hours')) ->> 'status' = 'REQUESTED'), 'a leftover delegate asks for the CEO''s time like everyone else: a request');
 select test.login('ck_b');
-insert into mt select 'ceo2', (x ->> 'id')::uuid, null from (select mtg_create(jsonb_build_object('title', 'Leave policy question', 'hostId', test.id('sa'),
+insert into mt select 'ceo2', (x ->> 'id')::uuid, null from (select mtg_create(jsonb_build_object('title', 'Leave policy question', 'hostId', test.id('sa'), 'description', 'A question about the leave policy',
   'startsAt', date_trunc('hour', now()) + interval '10 days 12 hours', 'endsAt', date_trunc('hour', now()) + interval '10 days 12 hours 30 minutes')) x) s;
 select test.login('sa');
 select test.check((select mtg_decide((select id from mt where k = 'ceo2'), 'DECLINE', 'Please ask HR') ->> 'status' = 'DECLINED'), 'the CEO declines a request');
@@ -195,8 +202,10 @@ insert into mt select 'pubceo', (x ->> 'id')::uuid, null from (select mtg_public
 select test.check((select status = 'REQUESTED' from meetings where id = (select id from mt where k = 'pubceo')), 'booking the CEO''s link makes a request');
 select test.check((select count(*) = 1 from meeting_mail_outbox where meeting_id = (select id from mt where k = 'pubceo') and kind = 'REQUEST_RECEIVED'),
   'the guest is told the request was received (not confirmed)');
-select test.check((select count(*) >= 1 from notifications where recipient_id = test.id('ck_a') and type = 'MEETING_REQUESTED' and entity_id = (select id from mt where k = 'pubceo')),
-  'the CEO''s delegate is asked too');
+select test.check((select count(*) = 0 from notifications where recipient_id = test.id('ck_a') and type = 'MEETING_REQUESTED' and entity_id = (select id from mt where k = 'pubceo')),
+  'a leftover delegate is not asked: they cannot decide');
+select test.check((select count(*) >= 1 from notifications where recipient_id = test.id('sa') and type = 'MEETING_REQUESTED' and entity_id = (select id from mt where k = 'pubceo')),
+  'the CEO is asked');
 
 \echo '   Google sync queue (the server''s worker)'
 select test.check((select count(*) >= 1 from jsonb_array_elements(mtg_sync_claim(50)) x where (x ->> 'id')::uuid = (select id from mt where k = 'm1')),
@@ -268,6 +277,7 @@ select id, 'Backfill demo', now() + interval '14 days', now() + interval '14 day
 alter table ba_demos enable trigger ba_demos_meeting_mirror;
 select test.check((select count(*) = 0 from meetings m join ba_demos d on d.id = m.source_id where d.title = 'Backfill demo'), 'a demo made before the calendar existed is not in it yet');
 \i supabase/migrations/20270101000500_meetings_google_calendar.sql
+\i supabase/migrations/20270114000100_meetings_superadmin_approval.sql
 select test.check((select count(*) = 1 from meetings m join ba_demos d on d.id = m.source_id where m.source_type = 'ba_demo' and d.title = 'Backfill demo' and m.mode = 'IN_PERSON'),
   'the migration brings already-planned demos into the calendar');
 select test.check((select updated_at < now() - interval '2 days' from ba_demos where title = 'Backfill demo'), 'without touching the demo itself');

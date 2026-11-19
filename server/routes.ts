@@ -453,6 +453,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/meetings/presence', handler: meetings.presence },
   { method: 'POST', path: '/meetings/presence/enter', handler: meetings.presenceEnter, options: S },
   { method: 'POST', path: '/meetings/presence/exit', handler: meetings.presenceExit, options: S },
+  { method: 'GET', path: '/meetings/ceo-requests', handler: meetings.ceoRequests },
   { method: 'GET', path: '/meetings/directory', handler: meetings.directory },
   { method: 'POST', path: '/meetings/busy', handler: meetings.busy },
   { method: 'GET', path: '/meetings/settings', handler: meetings.settings },

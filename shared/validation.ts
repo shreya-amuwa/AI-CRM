@@ -2948,6 +2948,8 @@ const meetingGuestSchema = z.object({
 export const meetingCreateSchema = z.object({
   title: trimmed(200).min(2, 'Give the meeting a title.'),
   description: optionalText(4000),
+  /** Extra message to the CEO with a request for their time (the agenda is the description). */
+  message: optionalText(2000),
   kind: z.enum(CALENDAR_MEETING_KINDS).default('MEETING'),
   hostId: uuidSchema.optional().nullable(),
   startsAt: isoInstant,
@@ -2989,6 +2991,12 @@ export const meetingDecisionSchema = z.object({
   { message: 'Propose a start and an end time.', path: ['startsAt'] });
 export const meetingProposalAnswerSchema = z.object({ accept: z.boolean() }).strict();
 export const meetingResponseSchema = z.object({ response: z.enum(['ACCEPTED', 'DECLINED', 'TENTATIVE']) }).strict();
+/** The dashboard sections of the meeting requests with the CEO. */
+export const ceoRequestsQuerySchema = z.object({
+  section: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'RESCHEDULED', 'ALL']).default('ALL'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
 // ---- Live meeting availability (migration 20270114000200): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();

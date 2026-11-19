@@ -180,6 +180,7 @@ export const meetingsController = {
   presence: (async ctx => ok(await svc(ctx).meetings.presence())) as Handler,
   presenceEnter: (async ctx => ok(await svc(ctx).meetings.presenceEnter(ctx.req.body))) as Handler,
   presenceExit: (async ctx => ok(await svc(ctx).meetings.presenceExit(ctx.actor))) as Handler,
+  ceoRequests: (async ctx => ok(await svc(ctx).meetings.ceoRequests(ctx.req.query))) as Handler,
   directory: (async ctx => ok(await svc(ctx).meetings.directory(ctx.req.query))) as Handler,
   busy: (async ctx => ok(await svc(ctx).meetings.busy(ctx.req.body))) as Handler,
   settings: (async ctx => ok(await svc(ctx).meetings.settings())) as Handler,

@@ -1,5 +1,7 @@
 # Meetings: Google Calendar, booking links and CEO approval
 
+> **The CEO's time is decided by the Super Admin only.** See [CEO_MEETING_APPROVAL.md](CEO_MEETING_APPROVAL.md) (migration `20270114000100`): delegates, Admin, HR and every other role can ask, never approve, reject or reschedule. Where this guide still says "delegate", read that guide.
+
 One booking system for appointments, demos, interviews, meetings and meetings with the CEO (the Super Admin).
 Migration `20270101000500_meetings_google_calendar.sql`.
 
@@ -9,19 +11,19 @@ Migration `20270101000500_meetings_google_calendar.sql`.
 
 | Tab | What it does |
 | --- | --- |
-| Calendar | The week, day by day: your meetings, the ones you are invited to, and (for the CEO's delegates) the CEO's. Open one to join the Google Meet, reschedule, cancel, mark it done, or answer an invitation. |
-| Requests | Requests waiting for your decision (the CEO and their delegates): approve, propose another time, or decline. Also your own open requests. A new request appears here as soon as its notification arrives, without a refresh. |
-| Google, hours & booking links | Connect your Google Calendar, set your working hours, create booking links, and (CEO) name delegates. |
+| Calendar | The week, day by day: your meetings, the ones you are invited to, (the CEO's meetings are the Super Admin's own). Open one to join the Google Meet, reschedule, cancel, mark it done, or answer an invitation. |
+| Requests | The Super Admin (CEO): every employee's request in Pending / Approved / Rejected / Rescheduled / History sections, with Approve, Reject and Reschedule. Everybody else: *My CEO requests*, their own requests with the status, the confirmed time and the reasons. A new request appears here as soon as its notification arrives, without a refresh. |
+| Google, hours & booking links | Connect your Google Calendar, set your working hours, create booking links, and (CEO) a note that decisions are not delegated. |
 
 The page also has two buttons:
 
 - **New meeting** books a meeting you host. You invite colleagues (their busy times for that day are shown, from the CRM and their Google Calendar) and guests outside the company by e-mail.
-- **Ask the CEO for time** sends a request. It holds the time until the CEO, or a delegate the CEO named, does one of three things:
+- **Ask the CEO for time** sends a request. It holds the time until the Super Admin (the CEO) does one of three things (nobody else can):
   - **Approve:** it is booked.
   - **Propose another time:** the person asking accepts or declines it.
   - **Decline:** with a reason.
 
-  A delegate can also book the CEO's time directly. When the person asking moves an approved meeting, it needs approval again.
+  Nobody books the CEO's time directly: everybody else sends a request. When the person asking asks for another time for an approved meeting, it goes back to "requested" and needs approval again.
 
 Clicking a meeting notification (the bell or the Notification Center) opens Meetings on that meeting.
 
@@ -118,9 +120,9 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
 
 ## Rules the database enforces
 
-- **Seeing a meeting:** only its host, the person who booked it, invited colleagues and the host's delegates can see it. The Super Admin sees a meeting only when taking part (a meeting between employees stays with those employees). Anyone else gets "not found".
-- **Changing a meeting:** only the host, the person who booked it and the host's delegates can move, cancel or complete it. Invited colleagues only answer.
-- **Deciding a request:** the host and their delegates; a Super Admin may also decide a request for another Super Admin's time.
+- **Seeing a meeting:** only its host, the person who booked it, invited colleagues and (for other hosts) the host's delegates can see it; a Super Admin also sees every request for the CEO's time. The Super Admin sees a meeting only when taking part (a meeting between employees stays with those employees). Anyone else gets "not found".
+- **Changing a meeting:** only the host, the person who booked it and the host's delegates can move, cancel or complete it. Invited colleagues only answer. **The CEO's meetings: only a Super Admin** (the one who asked can withdraw a pending request or ask for another time).
+- **Deciding a request:** a request for a colleague's booking link: the host and their delegates. **A request for the CEO's time: a Super Admin only.**
 - **No double booking.** A host cannot have two requested or scheduled meetings at the same time. Checks run under a lock, so two guests can never take the same slot. A host may book an overlap in their own calendar on purpose.
 - **Booking-link slots are re-checked when booked:**
   - inside working hours

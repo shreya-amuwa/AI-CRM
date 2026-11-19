@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  CeoPresence, CeoPresenceExit, Meeting, MeetingBookingLink, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoPresence, CeoPresenceExit, CeoRequestList, Meeting, MeetingBookingLink, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -25,6 +25,9 @@ export class MeetingRepository {
   }
   answerProposal(id: string, accept: boolean) { return this.rpc<Meeting>('mtg_answer_proposal', { p_id: id, p_accept: accept }); }
   respond(id: string, response: string) { return this.rpc<Meeting>('mtg_respond', { p_id: id, p_response: response }); }
+  ceoRequests(section: string, limit: number, offset: number) {
+    return this.rpc<CeoRequestList>('mtg_ceo_requests', { p_section: section, p_limit: limit, p_offset: offset });
+  }
   pendingApprovals() { return this.rpc<Meeting[]>('mtg_pending_approvals'); }
   // live availability of the CEO (the database lets only a Super Admin change their own)
   presence() { return this.rpc<CeoPresence[]>('mtg_presence'); }

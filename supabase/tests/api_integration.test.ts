@@ -10392,7 +10392,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(m.status === 404, 'meetings: a colleague who is not invited cannot open it', m);
   m = await api('sa', 'GET', `/meetings/${mid}`);
   check(m.status === 404, 'meetings: nor can the Super Admin (only the people taking part see a meeting)', m);
-  m = await api('tm2', 'POST', '/meetings', { title: 'Ask the CEO', hostId: sa.id, startsAt: at(4, 6), endsAt: at(4, 7) });
+  m = await api('tm2', 'POST', '/meetings', { title: 'Ask the CEO', hostId: sa.id, description: 'Budget for the new office', message: 'Any slot works', startsAt: at(4, 6), endsAt: at(4, 7) });
   check(m.status === 201 && m.json.data.status === 'REQUESTED' && m.json.data.kind === 'CEO_MEETING', 'meetings: asking the CEO for time makes a request', m);
   const ceo = m.json.data;
   m = await api('tm2', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'APPROVE' });
@@ -10403,6 +10403,65 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(m.status === 422, 'meetings: proposing needs a time', m);
   m = await api('sa', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'APPROVE', note: 'Fine' });
   check(m.status === 200 && m.json.data.status === 'SCHEDULED', 'meetings: the CEO approves', m);
+
+  // ---- 20270114000100: ONLY the Super Admin decides; every other role is refused with HTTP 403 (HTTP -> PostgREST -> Postgres)
+  m = await api('tm2', 'POST', '/meetings', { title: 'No agenda', hostId: sa.id, startsAt: at(5, 6), endsAt: at(5, 7) });
+  check(m.status === 422, 'meetings: a request for the CEO needs an agenda', m);
+  m = await api('tm2', 'POST', '/meetings', { title: 'Sneaky', hostId: sa.id, description: 'Agenda here', status: 'SCHEDULED', startsAt: at(5, 6), endsAt: at(5, 7) });
+  check(m.status === 422, 'meetings: a request cannot set its own status', m);
+  const target = (await api('tm2', 'POST', '/meetings', { title: 'Role matrix', hostId: sa.id, description: 'Agenda for the role matrix', startsAt: at(19, 6), endsAt: at(19, 7) })).json.data;
+  const roles = ['hr', 'hrmember', 'dh', 'th', 'a', 'accm', 'tc'];
+  let slotDay = 20;
+  for (const who of roles) {
+    m = await api(who, 'POST', '/meetings', { title: `Own request ${who}`, hostId: sa.id, description: `Agenda from ${who}`, startsAt: at(slotDay, 6), endsAt: at(slotDay, 7) });
+    slotDay++;
+    check(m.status === 201 && m.json.data.status === 'REQUESTED', `meetings: ${who} can ask the CEO for time (and is active)`, m);
+    const own = m.json.data;
+    const refused = [
+      await api(who, 'POST', `/meetings/${target.id}/decision`, { decision: 'APPROVE' }),
+      await api(who, 'POST', `/meetings/${own.id}/decision`, { decision: 'APPROVE' }),
+      await api(who, 'POST', `/meetings/${target.id}/decision`, { decision: 'DECLINE', note: 'No' }),
+      await api(who, 'POST', `/meetings/${target.id}/decision`, { decision: 'PROPOSE', startsAt: at(30, 6), endsAt: at(30, 7) }),
+      await api(who, 'POST', `/meetings/${target.id}/reschedule`, { startsAt: at(31, 6), endsAt: at(31, 7), note: 'Moved' }),
+      await api(who, 'POST', `/meetings/${target.id}/cancel`, { reason: 'No' }),
+      await api(who, 'POST', `/meetings/${own.id}/complete`, {})
+    ];
+    check(refused.every(x => x.status === 403), `meetings: ${who} gets HTTP 403 on approve, reject, propose, reschedule, cancel and complete`, refused.map(x => x.status));
+    m = await api(who, 'GET', '/meetings/ceo-requests?section=ALL');
+    check(m.status === 200 && m.json.data.isSuperAdmin === false && m.json.data.items.length === 1 && m.json.data.items[0].id === own.id, `meetings: ${who} sees only their own request`, m);
+    m = await api(who, 'GET', '/meetings/approvals');
+    check(m.status === 200 && m.json.data.length === 0, `meetings: ${who} has nothing to decide`, m);
+  }
+  m = await api('sa', 'POST', '/meetings/settings/delegates', { delegateIds: ['00000000-0000-4000-8000-000000000001'] });
+  check(m.status === 403, 'meetings: the Super Admin cannot delegate the CEO\'s decisions', m);
+  m = await api('tm2', 'POST', `/meetings/${target.id}/decision`, { decision: 'APPROVE', role: 'SUPER_ADMIN' });
+  check(m.status === 422, 'meetings: a role sent in the request is refused (the role comes from the database, never the caller)', m);
+  m = await api('tm2', 'POST', `/meetings/${target.id}/decision`, { decision: 'APPROVE', decidedBy: sa.id });
+  check(m.status === 422, 'meetings: an approver id sent in the request is refused', m);
+  // the Super Admin: sees everyone's requests, rejects only with a reason, reschedules with a reason
+  m = await api('sa', 'GET', '/meetings/ceo-requests?section=PENDING&limit=100');
+  check(m.status === 200 && m.json.data.isSuperAdmin === true && m.json.data.items.some((x: any) => x.id === target.id) && m.json.data.items.length >= roles.length, 'meetings: the Super Admin sees every employee\'s pending request', m);
+  check(m.json.data.items.every((x: any) => x.createdByName && x.description), 'meetings: with the employee and the agenda', m.json.data.items[0]);
+  m = await api('sa', 'POST', `/meetings/${target.id}/decision`, { decision: 'DECLINE' });
+  check(m.status === 422, 'meetings: rejecting without a reason is refused', m);
+  m = await api('sa', 'POST', `/meetings/${target.id}/reschedule`, { startsAt: at(31, 6), endsAt: at(31, 7) });
+  check(m.status === 422, 'meetings: rescheduling without a reason is refused', m);
+  m = await api('sa', 'POST', `/meetings/${target.id}/reschedule`, { startsAt: at(31, 6), endsAt: at(31, 7), note: 'The board meets that morning' });
+  check(m.status === 200 && m.json.data.status === 'SCHEDULED' && m.json.data.rescheduleCount === 1 && m.json.data.rescheduleReason === 'The board meets that morning' && !!m.json.data.previousStartsAt && !!m.json.data.rescheduledByName, 'meetings: the Super Admin reschedules with a reason (previous time, reason and who are saved)', m);
+  m = await api('tm2', 'GET', '/meetings/ceo-requests?section=RESCHEDULED');
+  check(m.status === 200 && m.json.data.items.some((x: any) => x.id === target.id && x.rescheduleReason === 'The board meets that morning'), 'meetings: the employee sees the new schedule and the reason', m);
+  const rej = (await api('a', 'POST', '/meetings', { title: 'To be rejected', hostId: sa.id, description: 'Agenda to reject', startsAt: at(40, 6), endsAt: at(40, 7) })).json.data;
+  m = await api('sa', 'POST', `/meetings/${rej.id}/decision`, { decision: 'DECLINE', note: 'Please ask your Department Head first' });
+  check(m.status === 200 && m.json.data.status === 'DECLINED' && m.json.data.rejectionReason === 'Please ask your Department Head first', 'meetings: the Super Admin rejects with a reason', m);
+  m = await api('a', 'GET', '/meetings/ceo-requests?section=REJECTED');
+  check(m.status === 200 && m.json.data.items.some((x: any) => x.id === rej.id && x.rejectionReason === 'Please ask your Department Head first'), 'meetings: the employee reads the rejection reason', m);
+  m = await api('a', 'POST', `/meetings/${rej.id}/cancel`, { reason: 'x' });
+  check(m.status === 409 || m.status === 403, 'meetings: a rejected request cannot be reopened by the employee', m);
+  const w = (await api('a', 'POST', '/meetings', { title: 'To withdraw', hostId: sa.id, description: 'Agenda to withdraw', startsAt: at(41, 6), endsAt: at(41, 7) })).json.data;
+  m = await api('a', 'POST', `/meetings/${w.id}/cancel`, { reason: 'No longer needed' });
+  check(m.status === 200 && m.json.data.status === 'CANCELLED', 'meetings: an employee can withdraw their own pending request', m);
+  m = await api('a', 'POST', `/meetings/${target.id}/cancel`, { reason: 'x' });
+  check(m.status === 403, 'meetings: but never somebody else\'s, or an approved meeting', m);
   m = await api('tm2', 'POST', `/meetings/${mid}/cancel`, { reason: 'Moved to email' });
   check(m.status === 200 && m.json.data.status === 'CANCELLED', 'meetings: the host cancels', m);
 
@@ -11258,7 +11317,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('a', 'POST', '/meetings', { title: 'LAX Budget review', description: 'Pune office budget', hostId: saId, startsAt: at(11), endsAt: at(12), mode: 'GOOGLE_MEET' });
   check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a request while BUSY is saved as PENDING AVAILABILITY', r);
   const reqA = r.json.data.id as string;
-  r = await api('a', 'POST', '/meetings', { title: 'LAX Second request', hostId: saId, startsAt: at(11), endsAt: at(11, 30), mode: 'PHONE' });
+  r = await api('a', 'POST', '/meetings', { title: 'LAX Second request', description: 'Hiring plan for Q1', hostId: saId, startsAt: at(11), endsAt: at(11, 30), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a second request for the same time is saved too (not refused)', r);
   const reqB = r.json.data.id as string;
   r = await api('sa', 'GET', '/meetings/presence');
