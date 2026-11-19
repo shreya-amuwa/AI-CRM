@@ -354,7 +354,7 @@ const HeadReports: React.FC<{ onOpen: (id: string) => void }> = ({ onOpen }) => 
   const [to, setTo] = useState('');
   return (
     <Card label="All reports">
-      <CardHead title="All AI Design Studio reports" hint="Review what the Team Leads approved, and see every report with its full approval history." />
+      <CardHead title="All Amuwa Design Studio reports" hint="Review what the Team Leads approved, and see every report with its full approval history." />
       <div className="px-5 pb-3 space-y-3">
         <Tabs label="Status" value={status} onChange={setStatus} options={STATUS_TABS({ id: 'PENDING_DH', count: waiting.data?.length ?? 0 })} />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">

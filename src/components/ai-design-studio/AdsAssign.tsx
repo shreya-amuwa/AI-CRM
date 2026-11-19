@@ -529,7 +529,7 @@ const HeadAssign: React.FC<{ onOpen: (id: string) => void }> = ({ onOpen }) => {
     <div className="space-y-6">
       <NewAssignmentForm />
       <Card label="All assignments">
-        <CardHead title="All assignments" hint="Everything given out in AI Design Studio and how it is going."
+        <CardHead title="All assignments" hint="Everything given out in Amuwa Design Studio and how it is going."
           right={
             <div className="w-full sm:w-64">
               <label htmlFor="asg-filter-client" className="sr-only">Filter by client</label>

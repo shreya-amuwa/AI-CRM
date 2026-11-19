@@ -1,5 +1,5 @@
 -- =============================================================================
--- Amuwa Design Studio roles (migration 20270112000100): only Department Head, Team Lead and Team Member; no Sales or Support role, team,
+-- Amuwa Design Studio roles (migrations 20270112000100, 20270112000200): only Department Head, Team Lead and Team Member; no Sales or Support role, team,
 -- side or Sales role, whichever path tries it. Own synthetic people (prefix dsr_). Runs after the other suites on the same database.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -9,6 +9,8 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270112000100_designstudio_department_roles.sql
 \i supabase/migrations/20270112000100_designstudio_department_roles.sql
+\i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
+\i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
 delete from auth.users where email like 'dsr.%@example.com';
 delete from test.users where name like 'dsr\_%';
 create or replace function test.dsr_dep(p text) returns uuid language sql stable as $$ select id from public.departments where slug = p $$;
@@ -99,4 +101,47 @@ select test.must_fail($$select * from private.check_employee_submission(test.id(
 select test.check(assert_can_create_user('TEAM_MEMBER', null, test.team('designstudio', 'General')), 'the Team Lead adds a Team Member to their own General team');
 select test.must_fail($$select assert_can_create_user('TEAM_MEMBER', null, test.team('designstudio', 'Sales'))$$, '... but never one of the Sales team', 'no Sales or Support roles');
 reset role;
+select set_config('request.jwt.claims', '', false);
+
+\echo '   one Amuwa Design Studio (migration 20270112000200): the former AI Design Studio, the old department retired'
+reset role;
+select test.check((select name from departments where slug = 'ai-design-studio') = 'Amuwa Design Studio'
+                  and (select name from departments where slug = 'designstudio') = 'Amuwa Design Studio (Retired)'
+                  and (select count(*) = 1 from departments where lower(name) = 'amuwa design studio'),
+  'ONE department is named Amuwa Design Studio (slug ai-design-studio); the old one is Amuwa Design Studio (Retired)');
+select test.check(not (select is_locked from departments where slug = 'designstudio') and exists (select 1 from profiles where email = 'dsr.tl@example.com' and status = 'ACTIVE'),
+  'the retired department is not locked and its people are untouched');
+select test.check((select count(*) = 1 and bool_and(division = 'GENERAL') from teams where department_id = test.dsr_dep('ai-design-studio')), 'Amuwa Design Studio has its one General team and nothing Sales or Support');
+set role authenticated;
+select test.login('sa');
+select test.must_fail($$select assert_can_create_user('DEPARTMENT_HEAD', test.dsr_dep('ai-design-studio'), null, 'SALES')$$, 'Amuwa Design Studio: a Sales Department Head is refused', 'no Sales or Support Department Head');
+select test.must_fail($$select assert_can_create_user('DEPARTMENT_HEAD', test.dsr_dep('ai-design-studio'), null, 'SUPPORT')$$, '... and a Support one', 'no Sales or Support Department Head');
+select test.check(assert_can_create_user('TEAM_MEMBER', null, test.team('ai-design-studio', 'General')) and assert_can_create_user('TEAM_HEAD', null, test.team('ai-design-studio', 'General')),
+  'Amuwa Design Studio: a Team Lead and a Team Member of its General team may be created');
+reset role;
+-- a Sales team added to Amuwa Design Studio by hand still could not hold anybody
+insert into teams (department_id, name, division) select test.dsr_dep('ai-design-studio'), 'DSR Sales', 'SALES' where not exists (select 1 from teams where department_id = test.dsr_dep('ai-design-studio') and name = 'DSR Sales');
+select test.must_fail($$select test.create_auth_user('dsr_ads_sales', 'dsr.ads.sales@example.com', '{"full_name":"DSR ADS Sales"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('ai-design-studio', 'DSR Sales')))$$,
+  'Amuwa Design Studio: nobody is ever placed in a Sales team, even one added by hand', 'no Sales or Support roles');
+delete from teams where department_id = test.dsr_dep('ai-design-studio') and name = 'DSR Sales';
+select test.must_fail($$select * from private.check_employee_submission(test.id('sa'), 'TEAM_MEMBER', false, test.dsr_dep('ai-design-studio'), 'SUPPORT')$$,
+  'Amuwa Design Studio: an HR request for the Support side is refused', 'no Sales or Support roles');
+
+\echo '   Access Control: no Sales / Support function, and the grants already given are withdrawn'
+insert into departments (slug, name) values ('dsr-other', 'DSR Other Dept') on conflict do nothing;
+select test.create_auth_user('dsr_ops', 'dsr.ops@example.com', '{"full_name":"DSR Ops"}',
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD', 'provisioned_department_id', test.dsr_dep('dsr-other')));
+-- a grant saved before this migration (the rule did not exist then)
+alter table department_access disable trigger department_access_operations_head;
+insert into department_access (profile_id, department_id, division) values (test.id('dsr_ops'), test.dsr_dep('designstudio'), 'SALES') on conflict do nothing;
+alter table department_access enable trigger department_access_operations_head;
+\i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
+select test.check(not exists (select 1 from department_access where profile_id = test.id('dsr_ops')), 'the migration withdraws an existing Sales grant for the retired department');
+select test.check((select count(*) = 1 from audit_logs where action = 'DEPARTMENT_ACCESS_REVOKED' and entity_id = test.id('dsr_ops') and department_id = test.dsr_dep('designstudio')), '... and audits it');
+select test.check((select count(*) = 1 from profiles where email = 'dsr.ops@example.com'), '... without touching the person');
+select test.check(private.department_access_problem(test.dsr_dep('designstudio'), 'SALES') ~ 'no Sales or Support function'
+                  and private.department_access_problem(test.dsr_dep('ai-design-studio'), 'SUPPORT') ~ 'no Sales or Support function'
+                  and private.department_access_problem(test.dsr_dep('wabastore'), 'SUPPORT') is null,
+  'no new Sales / Support grant for either department; other departments unchanged');
 select set_config('request.jwt.claims', '', false);

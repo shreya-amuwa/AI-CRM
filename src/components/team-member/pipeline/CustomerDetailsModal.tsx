@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { AiWebsiteOnboardingCard } from './AiWebsiteOnboarding';
+import { AI_WEBSITE_SERVICE } from '../../../../shared/validation';
 import { Building2, Check, FileText, IndianRupee, Mail, MapPin, MessageSquare, Receipt, StickyNote, User, X } from 'lucide-react';
 import type { PaymentOverview, PipelineCustomerDetail } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
@@ -143,6 +145,8 @@ export const CustomerDetailsModal: React.FC<{ id: string; onClose: () => void }>
                   <Section icon={<Building2 className="w-4 h-4" />} title="Services">
                     {c.services.length > 0 ? <ServiceChips codes={c.services} catalog={byCode} max={20} /> : <p className="text-xs text-slate-500">No services selected.</p>}
                   </Section>
+
+                  <AiWebsiteOnboardingCard data={c.aiWebsiteOnboarding} hasService={c.services.includes(AI_WEBSITE_SERVICE)} />
 
                   {c.notes && (
                     <Section icon={<StickyNote className="w-4 h-4" />} title="Notes">

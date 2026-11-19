@@ -1,4 +1,6 @@
 import { WorkflowStatusPanel } from '../../support/consultant/WorkflowStatusPanel';
+import { AiWebsiteOnboardingCard } from './AiWebsiteOnboarding';
+import { AI_WEBSITE_SERVICE } from '../../../../shared/validation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -491,6 +493,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
           )}
         </div>
       )}
+
+      {/* AI Website: the client's onboarding details from the lead, so nobody asks the client again */}
+      <AiWebsiteOnboardingCard data={c.aiWebsiteOnboarding} hasService={c.services.includes(AI_WEBSITE_SERVICE)} />
 
       {mode === 'sales' && (
         <>

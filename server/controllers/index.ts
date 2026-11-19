@@ -396,6 +396,7 @@ export const pipelineController = {
   get: (async ctx => ok(await svc(ctx).pipeline.get(ctx.params.id))) as Handler,
   createLead: (async ctx => ok(await svc(ctx).pipeline.createLead(ctx.actor, ctx.req.body), 201)) as Handler,
   updateLead: (async ctx => ok(await svc(ctx).pipeline.updateLead(ctx.params.id, ctx.req.body))) as Handler,
+  saveAiWebsiteOnboarding: (async ctx => ok(await svc(ctx).pipeline.saveAiWebsiteOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
   accountsCreateClientLogin: (async ctx => ok(await svc(ctx).pipeline.accountsCreateClientLogin(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,

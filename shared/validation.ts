@@ -599,8 +599,46 @@ const leadFields = {
   notes: optionalText(5000)
 };
 
+// ---- AI Website client onboarding (migration 20270113000200) ----------------------------------------------------------------------------
+/** The service whose leads carry the AI Website onboarding details. */
+export const AI_WEBSITE_SERVICE = 'AI_WEBSITE';
+/** The types of business offered (the CRM's business categories; the database holds the same list: private.ai_website_business_types). */
+export const AI_WEBSITE_BUSINESS_TYPES = [
+  'Jewellery / Gold', 'Retail', 'Restaurant / Food', 'Healthcare', 'Education', 'Real Estate',
+  'Beauty / Salon', 'Fitness', 'Manufacturing', 'Services', 'Other'
+] as const;
+/** A 10-digit Indian mobile number; spaces and dashes, and a leading +91 / 91 / 0, are removed. */
+const aiWebsiteMobile = z.preprocess(
+  v => (typeof v === 'string' ? v.replace(/[\s\-()]/g, '').replace(/^(\+91|91|0)(?=\d{10}$)/, '') : v),
+  z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number.')
+);
+export const aiWebsiteOnboardingSchema = z
+  .object({
+    clientName: trimmed(160).min(1, 'Client name is required.'),
+    mobile: aiWebsiteMobile,
+    email: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), emailSchema.optional()).refine(v => !!v, 'Email is required.'),
+    businessName: trimmed(200).min(1, 'Business name is required.'),
+    onGoogleMaps: z.boolean({ required_error: 'Choose whether the business is on Google Maps.', invalid_type_error: 'Choose whether the business is on Google Maps.' }),
+    googleMapsLink: z.preprocess(
+      v => (typeof v === 'string' && v.trim() === '' ? null : v),
+      trimmed(500).regex(/^https?:\/\/\S+$/i, 'Enter the Google Maps link as a web address (https://...).').nullable().optional()
+    ),
+    city: trimmed(80).min(1, 'City is required.'),
+    businessType: z.enum(AI_WEBSITE_BUSINESS_TYPES, { errorMap: () => ({ message: 'Choose the type of business.' }) }),
+    businessTypeOther: optionalText(120)
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.businessType === 'Other' && !v.businessTypeOther) ctx.addIssue({ code: 'custom', path: ['businessTypeOther'], message: 'Type the type of business.' });
+  })
+  // a link belongs to a business that is on Google Maps; another type than "Other" needs no typed type
+  .transform(v => ({ ...v, googleMapsLink: v.onGoogleMaps ? v.googleMapsLink ?? null : null, businessTypeOther: v.businessType === 'Other' ? v.businessTypeOther ?? null : null }));
+export type AiWebsiteOnboardingInput = z.infer<typeof aiWebsiteOnboardingSchema>;
+/** What a form sends (before the schema trims and normalises it). */
+export type AiWebsiteOnboardingBody = z.input<typeof aiWebsiteOnboardingSchema>;
+
 export const leadCreateSchema = z
-  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional(), subscriptions: leadSubscriptionsSchema.optional() })
+  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional(), subscriptions: leadSubscriptionsSchema.optional(), aiWebsiteOnboarding: aiWebsiteOnboardingSchema.optional() })
   .strict();
 export type LeadCreateInput = z.infer<typeof leadCreateSchema>;
 
@@ -610,7 +648,8 @@ export const leadUpdateSchema = z
   .extend({
     services: serviceCodes.min(1, 'Select at least one service.').optional(),
     subscriptions: leadSubscriptionsSchema.optional(),
-    activityNote: optionalText(500)
+    activityNote: optionalText(500),
+    aiWebsiteOnboarding: aiWebsiteOnboardingSchema.optional()
   })
   .strict()
   .refine(v => Object.keys(v).length > 0, { message: 'Nothing to update.' });

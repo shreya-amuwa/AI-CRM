@@ -1,4 +1,4 @@
-import { accountsCustomerDetailsSchema } from '../../shared/validation.js';
+import { accountsCustomerDetailsSchema, AI_WEBSITE_SERVICE, aiWebsiteOnboardingSchema } from '../../shared/validation.js';
 import type {
   ClientLoginOutcome,
   CustomerJourneyInfo,
@@ -31,6 +31,7 @@ import type {
   PipelineCustomer,
   OnboardingHandoffInfo,
   PipelineCustomerDetail,
+  AiWebsiteOnboarding,
   ServiceCatalogItem
 } from '../../shared/contracts.js';
 import {
@@ -176,7 +177,8 @@ export class PipelineService {
     const owner = customer.owner ?? (await this.repo.ownerSummary(customerId));
     const handover =
       customer.lifecycleStage === 'ONBOARDING' || customer.lifecycleStage === 'CUSTOMER' ? await this.repo.handoverInfo(customerId) : null;
-    return { ...customer, owner, documents, documentTypes, activities, conversations, checklist, handover };
+    const aiWebsiteOnboarding = await this.repo.aiWebsiteOnboarding(customerId);
+    return { ...customer, owner, documents, documentTypes, activities, conversations, checklist, handover, aiWebsiteOnboarding };
   }
 
   /** Sales saves a detail / yes-no / approval / access / amount / choice item. */
@@ -204,9 +206,16 @@ export class PipelineService {
       throw new AppError('VALIDATION_ERROR', 'Choose a lead owner who belongs to a team.', [{ path: 'ownerId', message: 'Required' }]);
     }
     // with a request id (the browser makes one per form), a retry returns the lead the first request made, and its terms are not set twice
+    // AI Website: the client onboarding details come with the lead (checked before the lead exists)
+    const { aiWebsiteOnboarding } = input;
+    if (input.services.includes(AI_WEBSITE_SERVICE) && !aiWebsiteOnboarding) {
+      throw new AppError('VALIDATION_ERROR', 'Fill in the AI Website client onboarding details.', [{ path: 'aiWebsiteOnboarding', message: 'Required' }]);
+    }
     const { id: customerId, existing } = clientRequestId
       ? await this.repo.createLeadOnce(input, clientRequestId)
       : { id: await this.repo.createLead(input), existing: false };
+    // saved for a retry too: the one record per lead is updated, never duplicated, so a first attempt that stopped half-way is completed
+    if (aiWebsiteOnboarding && input.services.includes(AI_WEBSITE_SERVICE)) await this.repo.saveAiWebsiteOnboarding(customerId, aiWebsiteOnboarding);
     if (existing) return this.repo.get(customerId);
     // the plan, duration, amount and credits chosen for each service (validated above: there is no date in them)
     for (const { service, ...terms } of input.subscriptions ?? []) {
@@ -224,11 +233,18 @@ export class PipelineService {
   async updateLead(id: string, body: unknown): Promise<PipelineCustomer> {
     const customerId = parse(uuidSchema, id);
     const input = parse(leadUpdateSchema, body);
-    await this.repo.updateLead(customerId, input);
+    const { aiWebsiteOnboarding, ...lead } = input;
+    if (Object.keys(lead).length > 0) await this.repo.updateLead(customerId, lead);
     for (const { service, ...terms } of input.subscriptions ?? []) {
       await this.repo.setSubscriptionTerms(customerId, service, this.termsPayload(terms));
     }
+    if (aiWebsiteOnboarding) await this.repo.saveAiWebsiteOnboarding(customerId, aiWebsiteOnboarding);
     return this.repo.get(customerId);
+  }
+
+  /** The AI Website client onboarding details of a lead: one record per lead, added or updated (the database checks who may). */
+  async saveAiWebsiteOnboarding(id: string, body: unknown): Promise<AiWebsiteOnboarding> {
+    return this.repo.saveAiWebsiteOnboarding(parse(uuidSchema, id), parse(aiWebsiteOnboardingSchema, body));
   }
 
   async moveToPotential(id: string, body: unknown): Promise<PipelineCustomer> {

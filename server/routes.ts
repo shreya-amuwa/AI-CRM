@@ -179,6 +179,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/pipeline/customers/:id', handler: pipeline.get },
   { method: 'POST', path: '/pipeline/leads', handler: pipeline.createLead },
   { method: 'PATCH', path: '/pipeline/leads/:id', handler: pipeline.updateLead },
+  { method: 'POST', path: '/pipeline/customers/:id/ai-website-onboarding', handler: pipeline.saveAiWebsiteOnboarding },
   // Upload Leads: preview, then start / send the rows in chunks / finish; history and the rows that were not created
   { method: 'POST', path: '/lead-uploads/check', handler: leadUploads.check },
   { method: 'GET', path: '/lead-uploads', handler: leadUploads.history },

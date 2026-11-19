@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AiWebsiteOnboardingCard } from '../team-member/pipeline/AiWebsiteOnboarding';
+import { AI_WEBSITE_SERVICE } from '../../../shared/validation';
 import { ArrowLeft, ArrowRight, Eye, KeyRound, Search, UserCheck } from 'lucide-react';
 import type {
   ChecklistItem,
@@ -446,6 +448,8 @@ const HandoverDetail: React.FC<{
       </Card>
 
       <div className="space-y-5">
+        {/* AI Website: the client's onboarding details from the lead (view only) */}
+        <AiWebsiteOnboardingCard data={c.aiWebsiteOnboarding} hasService={c.services.includes(AI_WEBSITE_SERVICE)} />
         <Card className="p-5">
           <h2 className="text-sm font-bold text-slate-900">Verified documents &amp; details</h2>
           <p className="text-xs text-slate-500 mb-3">Collected by sales and authorized by the {h?.route === 'TECHNICAL' ? 'Technical Consultant' : 'Meta Verifier'}. View only.</p>

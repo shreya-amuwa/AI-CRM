@@ -5,7 +5,7 @@ import { BLOOD_GROUPS, EMPLOYEE_REQUEST_ROLES, HR_DESIGNATIONS, HR_DESIGNATION_R
 import { useDepartments } from '../../context/DepartmentContext';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi } from '../../lib/api/endpoints';
-import { requestSidesForDepartment, staffChoicesForDepartment } from '../../lib/auth/departmentRoles';
+import { isRetiredDepartment, requestSidesForDepartment, staffChoicesForDepartment } from '../../lib/auth/departmentRoles';
 import { btn, inputCls } from '../team-member/pipeline/shared';
 
 const SIDE_LABEL = { SALES: 'Sales', SUPPORT: 'Support', GENERAL: 'General' } as const;
@@ -30,7 +30,8 @@ const label = 'block text-xs font-semibold text-slate-700';
  */
 export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeRequest) => void }> = ({ onSubmitted }) => {
   const { departments } = useDepartments();
-  const usable = useMemo(() => departments.filter(d => d.dbId), [departments]);
+  // the retired department of the old Amuwa Design Studio takes no new people
+  const usable = useMemo(() => departments.filter(d => d.dbId && !isRetiredDepartment(d.id)), [departments]);
   const [pickedRole, setRole] = useState<EmployeeRequestRole>('TEAM_MEMBER');
   const [departmentId, setDepartmentId] = useState('');
   const [hrDesignation, setHrDesignation] = useState<HrDesignation>('HR Assistant');

@@ -1,4 +1,8 @@
-# AI Design Studio
+# AI Design Studio (now named Amuwa Design Studio)
+
+> Since migration `20270112000200_amuwa_design_studio_rename.sql` this department is **named Amuwa Design Studio** (slug `ai-design-studio`,
+> its dashboards and `ads_*` functions unchanged). The old department of that name (slug `designstudio`) is "Amuwa Design Studio (Retired)".
+> See [DESIGN_STUDIO_ROLES.md](DESIGN_STUDIO_ROLES.md). The text below describes the department as it was built.
 
 A separate, client-oriented department with its own Team Member, Team Lead and Department Head dashboard. Migration:
 `supabase/migrations/20270110000100_ai_design_studio.sql` (additive, safe to run twice).
