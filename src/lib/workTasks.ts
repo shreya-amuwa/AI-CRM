@@ -38,6 +38,19 @@ export interface WorkTask {
 }
 
 /** A Department Head an Operations Head may give a task to, for one department and function. */
+/** A Team Lead or Team Member a Department Head / Operations Head may give a task to directly (task_direct_assignees, 20270114000100). */
+export interface DirectAssignee {
+  id: string;
+  name: string;
+  role: 'TEAM_HEAD' | 'TEAM_MEMBER';
+  teamId: string | null;
+  team: string | null;
+  departmentId: string;
+  department: string | null;
+  teamLeadId: string | null;
+  teamLead: string | null;
+}
+
 export interface OperationsAssignee { id: string; name: string; departmentId: string; department: string; function: 'SALES' | 'SUPPORT' | 'ALL' }
 /** One task with everything below it (task_hierarchy / operations_tasks). */
 export interface TaskNode {
@@ -156,6 +169,18 @@ export const workTasksApi = {
     }
     throw new Error(cleanError(error.message));
   },
+  // ---- Skip a level (20270114000100): a Department Head / Operations Head gives a task straight to a Team Lead or a Team Member of their own teams ----
+  /** null when the database does not have it yet (before the migration): the screens then keep the one-level-at-a-time choices. */
+  directAssignees: async (): Promise<DirectAssignee[] | null> => {
+    const { data, error } = await db().rpc('task_direct_assignees', {});
+    if (!error) return (data as DirectAssignee[]) ?? [];
+    if (/task_direct_assignees|PGRST202|schema cache/i.test(`${error.code ?? ''} ${error.message}`)) return null;
+    throw new Error(cleanError(error.message));
+  },
+  assignDirect: (input: { assigneeId: string; title: string; description?: string; priority: TaskPriority; dueDate?: string | null }) =>
+    rpc<string>('assign_task_direct', {
+      p_assignee: input.assigneeId, p_title: input.title, p_description: input.description || null, p_priority: input.priority, p_due: input.dueDate || null
+    }),
   // ---- Operations Head -> Department Head -> Team Lead -> Team Member (20261230000300) ----
   operationsAssignees: () => rpc<OperationsAssignee[]>('operations_task_assignees', {}),
   assignToDepartmentHead: (input: { assigneeId: string; departmentId: string; fn: 'SALES' | 'SUPPORT' | 'ALL'; title: string; description?: string; priority: TaskPriority; dueDate?: string | null }) =>

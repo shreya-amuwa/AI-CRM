@@ -11233,7 +11233,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
 }
 
-// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270114000100) ---------------
+// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270114000200) ---------------
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;

@@ -5699,7 +5699,7 @@ export interface HrEmployeeFileUploadTicket {
 // ---------------------------------------------------------------------------
 export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING';
 export type CalendarMeetingMode = 'GOOGLE_MEET' | 'ONLINE_LINK' | 'IN_PERSON' | 'PHONE';
-/** PENDING_AVAILABILITY (migration 20270114000100): asked for while the CEO was in a meeting; scheduled automatically when they are free. */
+/** PENDING_AVAILABILITY (migration 20270114000200): asked for while the CEO was in a meeting; scheduled automatically when they are free. */
 export type CalendarMeetingStatus = 'REQUESTED' | 'PROPOSED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED' | 'PENDING_AVAILABILITY';
 export type CalendarMeetingSyncStatus = 'PENDING' | 'SYNCED' | 'FAILED' | 'NOT_CONNECTED' | 'SKIPPED';
 
@@ -5803,7 +5803,7 @@ export interface MeetingBookingLink {
 
 export interface MeetingAvailabilityWindow { weekday: number; start: string; end: string }
 
-// ---- Live meeting availability of the CEO (migration 20270114000100): Enter / Exit Meeting ----
+// ---- Live meeting availability of the CEO (migration 20270114000200): Enter / Exit Meeting ----
 export type CeoAvailabilityStatus = 'AVAILABLE' | 'BUSY';
 /** One Super Admin's live availability, as every signed-in employee sees it (the meeting and the queue only for those who may see them). */
 export interface CeoPresence {

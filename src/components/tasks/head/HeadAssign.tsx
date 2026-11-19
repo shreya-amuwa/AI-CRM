@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { ChevronDown, Plus, Search } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { isOverdue, localDateKey, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
+import { isOverdue, localDateKey, workTasksApi, type DirectAssignee, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, fmtDateTime, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../TaskParts';
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, Tabs, textareaCls } from './headParts';
 import { isOperationsHead } from '../../../lib/auth/roleMapping';
-import { OperationsAssign, ReceivedTasks } from './TaskHierarchy';
+import { DirectOptions, OperationsAssign, ReceivedTasks } from './TaskHierarchy';
 
 type Filter = 'all' | 'progress' | 'completed' | 'overdue';
 const PRIORITIES: { id: TaskPriority; label: string; on: string }[] = [
@@ -25,6 +25,14 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
   const { profile } = useAuth();
   const leads = data.people.filter(p => p.role === 'TEAM_HEAD' && p.status === 'ACTIVE' && p.departmentId === profile?.departmentId);
   const leadTasks = data.tasks.filter(t => t.parentId === null && t.assignedBy === profile?.id);
+  // Team Leads AND Team Members of the teams this head manages, decided by the database (task_direct_assignees). null = the database is older:
+  // only Team Leads are offered, as before.
+  const [direct, setDirect] = useState<DirectAssignee[] | null | undefined>(undefined);
+  React.useEffect(() => {
+    let live = true;
+    workTasksApi.directAssignees().then(d => live && setDirect(d), () => live && setDirect(null));
+    return () => { live = false; };
+  }, []);
 
   const [assigneeId, setAssigneeId] = useState('');
   const [title, setTitle] = useState('');
@@ -43,8 +51,9 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
     setBusy(true);
     setNotice(null);
     try {
-      await workTasksApi.assignToTeamLead({ assigneeId, title: title.trim(), description, priority, dueDate });
-      setNotice({ ok: true, text: `Task assigned to ${nameOf(data.people, assigneeId)}.` });
+      if (direct) await workTasksApi.assignDirect({ assigneeId, title: title.trim(), description, priority, dueDate });
+      else await workTasksApi.assignToTeamLead({ assigneeId, title: title.trim(), description, priority, dueDate });
+      setNotice({ ok: true, text: `Task assigned to ${direct?.find(d => d.id === assigneeId)?.name ?? nameOf(data.people, assigneeId)}.` });
       setTitle('');
       setDescription('');
       await data.reload();
@@ -70,14 +79,14 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Assign</h1>
-        <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Give a task to a team lead. They split it across their team members, and every update comes back here.</p>
+        <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Give a task to a team lead, who splits it across their team members, or straight to a team member (for example when their team lead is away). Every update comes back here.</p>
       </div>
 
       {profile ? <ReceivedTasks data={data} meId={profile.id} leads={leads} /> : null}
 
-      <Card label="Assign a task to a team lead">
-        <form onSubmit={submit} aria-label="Assign a task to a team lead">
-          <CardHead title="New task" hint="The team lead is notified right away." />
+      <Card label="Assign a task">
+        <form onSubmit={submit} aria-label="Assign a task">
+          <CardHead title="New task" hint="The person is notified right away. A team member's own team lead is told too." />
           <div className="px-5 pb-5 space-y-4">
             {notice && (
               <p role={notice.ok ? 'status' : 'alert'} className={`p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
@@ -86,17 +95,23 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
             )}
             <div className="grid grid-cols-1 md:grid-cols-[1fr_1.4fr_200px] gap-4">
               <label className="block text-[13px] font-bold text-slate-700">
-                Team lead *
-                <select className={`${fieldCls} mt-1.5 font-medium`} value={assigneeId} onChange={e => setAssigneeId(e.target.value)} required>
-                  <option value="">Choose a team lead</option>
-                  {leads.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.fullName}
-                      {l.teamId ? ` - ${data.teams.find(t => t.id === l.teamId)?.name || 'Team'}` : ''}
-                    </option>
-                  ))}
+                {direct ? 'Assign to *' : 'Team lead *'}
+                <select className={`${fieldCls} mt-1.5 font-medium`} value={assigneeId} onChange={e => setAssigneeId(e.target.value)} required data-testid="dh-assignee">
+                  <option value="">{direct ? 'Choose a team lead or team member' : 'Choose a team lead'}</option>
+                  {direct ? (
+                    <DirectOptions people={direct} />
+                  ) : (
+                    leads.map(l => (
+                      <option key={l.id} value={l.id}>
+                        {l.fullName}
+                        {l.teamId ? ` - ${data.teams.find(t => t.id === l.teamId)?.name || 'Team'}` : ''}
+                      </option>
+                    ))
+                  )}
                 </select>
-                {leads.length === 0 && <span className="block mt-1 text-xs font-medium text-amber-700">No active team leads in your department yet.</span>}
+                {(direct ? direct.length === 0 : leads.length === 0) && (
+                  <span className="block mt-1 text-xs font-medium text-amber-700">{direct ? 'No active team leads or team members in the teams you manage yet.' : 'No active team leads in your department yet.'}</span>
+                )}
               </label>
               <label className="block text-[13px] font-bold text-slate-700">
                 Task *
@@ -132,7 +147,7 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
             </div>
             <div className="flex justify-end">
               <button type="submit" disabled={busy || !assigneeId || !title.trim()} className={primaryBtn}>
-                <Plus className="w-4 h-4" aria-hidden="true" /> {busy ? 'Assigning…' : 'Assign to team lead'}
+                <Plus className="w-4 h-4" aria-hidden="true" /> {busy ? 'Assigning…' : direct ? 'Assign task' : 'Assign to team lead'}
               </button>
             </div>
           </div>
@@ -164,7 +179,7 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
         {data.loading ? (
           <LoadingLine />
         ) : leadTasks.length === 0 ? (
-          <EmptyState title="No tasks assigned yet" hint="Tasks you assign to team leads appear here with their team members' progress." />
+          <EmptyState title="No tasks assigned yet" hint="Tasks you assign appear here with their progress." />
         ) : shown.length === 0 ? (
           <EmptyState title="No task matches" hint="Try another filter or search." />
         ) : (
@@ -177,6 +192,8 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
 
 const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data }) => {
   const [open, setOpen] = useState(false);
+  // a task given straight to a Team Member (20270114000100) has no members below it
+  const toMember = data.people.find(p => p.id === task.assigneeId)?.role === 'TEAM_MEMBER';
   const children = data.tasks.filter(c => c.parentId === task.id);
   const done = children.filter(c => c.status === 'COMPLETED').length;
   const leadUpdates = data.updates.filter(u => u.taskId === task.id);
@@ -190,7 +207,7 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
             <PriorityPill priority={task.priority} />
           </div>
           <p className="text-[13px] text-slate-500 mt-1">
-            Team lead: <strong className="text-slate-700">{nameOf(data.people, task.assigneeId)}</strong> · <DueLabel task={task} />
+            {toMember ? 'Team member' : 'Team lead'}: <strong className="text-slate-700">{nameOf(data.people, task.assigneeId)}</strong> · <DueLabel task={task} />
           </p>
         </div>
         <StatusPill status={task.status} />
@@ -200,7 +217,7 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
           <ProgressBar value={task.progress} label={`Progress of ${task.title}`} />
         </div>
         <span className="text-xs font-bold text-slate-700 whitespace-nowrap">{task.progress}%</span>
-        <span className="text-xs text-slate-500 whitespace-nowrap">{children.length ? `${done}/${children.length} members done` : 'Not yet assigned to Team Members'}</span>
+        <span className="text-xs text-slate-500 whitespace-nowrap">{toMember ? 'Given straight to the team member' : children.length ? `${done}/${children.length} members done` : 'Not yet assigned to Team Members'}</span>
       </div>
       {task.lastUpdateNote && (
         <p className="mt-3 text-[13px] text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
@@ -208,7 +225,7 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
         </p>
       )}
       {/* Department Head -> Team Lead -> Team Members: who got which part, read from the stored member tasks (never generated here) */}
-      <section className="mt-4" aria-label={`Assigned to Team Members: ${task.title}`} data-testid="delegated-members">
+      {!toMember && <section className="mt-4" aria-label={`Assigned to Team Members: ${task.title}`} data-testid="delegated-members">
         <div className="flex items-center justify-between gap-2 mb-2">
           <h4 className="text-[13px] font-extrabold text-slate-900">Assigned to Team Members</h4>
           <span className="text-xs font-semibold text-slate-500">{children.length} member{children.length === 1 ? '' : 's'}</span>
@@ -238,12 +255,18 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
             ))}
           </ul>
         )}
-      </section>
+      </section>}
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="mt-3 inline-flex items-center gap-1 text-[13px] font-bold text-blue-700 hover:text-blue-800">
         <ChevronDown className={`w-4 h-4 transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden="true" />
         {open ? 'Hide update history' : 'Show update history'}
       </button>
-      {open && (
+      {open && toMember && (
+        <div className="mt-3 p-4 rounded-xl border border-slate-200">
+          <div className="text-[13px] font-extrabold text-slate-900 mb-2">Updates from the team member</div>
+          <UpdateTimeline updates={leadUpdates} people={data.people} empty="No update from the team member yet." />
+        </div>
+      )}
+      {open && !toMember && (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="p-4 rounded-xl border border-slate-200">
             <div className="text-[13px] font-extrabold text-slate-900 mb-2">Updates from the team members</div>

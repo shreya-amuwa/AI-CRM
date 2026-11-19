@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
-import { localDateKey, workTasksApi, type OperationsAssignee, type TaskNode, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
+import { localDateKey, workTasksApi, type DirectAssignee, type OperationsAssignee, type TaskNode, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
 import { EmptyState, fmtDate, fmtDateTime, PriorityPill, ProgressBar, StatusPill, UpdateForm, nameOf } from '../TaskParts';
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, textareaCls } from './headParts';
 
@@ -49,6 +49,27 @@ export const TaskTreeNode: React.FC<{ node: TaskNode; depth?: number }> = ({ nod
   );
 };
 
+/** The picker's options: Team Leads, then Team Members with their own Team Lead (so the head sees whose member they are skipping to). */
+export const DirectOptions: React.FC<{ people: DirectAssignee[] }> = ({ people }) => {
+  const leads = people.filter(p => p.role === 'TEAM_HEAD');
+  const members = people.filter(p => p.role === 'TEAM_MEMBER');
+  const where = (p: DirectAssignee) => [p.team, p.department].filter(Boolean).join(', ');
+  return (
+    <>
+      {leads.length > 0 && (
+        <optgroup label="Team leads">
+          {leads.map(p => <option key={p.id} value={p.id}>{p.name}{where(p) ? ` - ${where(p)}` : ''}</option>)}
+        </optgroup>
+      )}
+      {members.length > 0 && (
+        <optgroup label="Team members (straight to them)">
+          {members.map(p => <option key={p.id} value={p.id}>{p.name}{where(p) ? ` - ${where(p)}` : ''}{p.teamLead ? ` (team lead: ${p.teamLead})` : ' (no team lead)'}</option>)}
+        </optgroup>
+      )}
+    </>
+  );
+};
+
 /** The Operations Head's Assign page: a task goes to a Department Head of a department and function they manage; the list shows each task's chain. */
 export const OperationsAssign: React.FC = () => {
   const [heads, setHeads] = useState<OperationsAssignee[] | null>(null);
@@ -61,8 +82,14 @@ export const OperationsAssign: React.FC = () => {
   const [dueDate, setDueDate] = useState(localDateKey());
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  // skip a level when a Department Head (or Team Lead) is away: a Team Lead or Team Member of the departments and functions this Operations Head
+  // manages (task_direct_assignees, 20270114000100). null = the database is older: only Department Heads are offered.
+  const [to, setTo] = useState<'HEAD' | 'DIRECT'>('HEAD');
+  const [direct, setDirect] = useState<DirectAssignee[] | null>(null);
+  const [pickDirect, setPickDirect] = useState('');
 
   const load = useCallback(() => {
+    workTasksApi.directAssignees().then(setDirect, () => setDirect(null));
     workTasksApi.operationsAssignees().then(setHeads, e => setError(e instanceof Error ? e.message : String(e)));
     workTasksApi.operationsTasks().then(setTasks, e => setError(e instanceof Error ? e.message : String(e)));
   }, []);
@@ -74,12 +101,18 @@ export const OperationsAssign: React.FC = () => {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chosen || !title.trim()) return;
+    const person = to === 'DIRECT' ? direct?.find(d => d.id === pickDirect) : undefined;
+    if ((to === 'HEAD' ? !chosen : !person) || !title.trim()) return;
     setBusy(true);
     setNotice(null);
     try {
-      await workTasksApi.assignToDepartmentHead({ assigneeId: chosen.id, departmentId: chosen.departmentId, fn: chosen.function, title: title.trim(), description, priority, dueDate });
-      setNotice({ ok: true, text: `Task assigned to ${chosen.name} (${chosen.department}).` });
+      if (person) {
+        await workTasksApi.assignDirect({ assigneeId: person.id, title: title.trim(), description, priority, dueDate });
+        setNotice({ ok: true, text: `Task assigned to ${person.name}${person.team ? ` (${person.team})` : ''}.` });
+      } else if (chosen) {
+        await workTasksApi.assignToDepartmentHead({ assigneeId: chosen.id, departmentId: chosen.departmentId, fn: chosen.function, title: title.trim(), description, priority, dueDate });
+        setNotice({ ok: true, text: `Task assigned to ${chosen.name} (${chosen.department}).` });
+      }
       setTitle('');
       setDescription('');
       load();
@@ -94,23 +127,44 @@ export const OperationsAssign: React.FC = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Assign</h1>
-        <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Give a task to a Department Head. They pass it to their Team Leads, who work on it or share it with their Team Members. Every level shows below.</p>
+        <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Give a task to a Department Head, who passes it to their Team Leads, or straight to a Team Lead or Team Member when the person above them is away. Every level shows below.</p>
       </div>
       {error ? <p role="alert" className="p-3 rounded-xl bg-rose-50 text-rose-700 text-sm">{error}</p> : null}
-      <Card label="Assign a task to a Department Head">
-        <form onSubmit={submit} aria-label="Assign a task to a Department Head">
-          <CardHead title="New task" hint="The Department Head is notified right away." />
+      <Card label="Assign a task">
+        <form onSubmit={submit} aria-label="Assign a task">
+          <CardHead title="New task" hint="The person is notified right away. Given straight to a Team Member, their own Team Lead is told too." />
           <div className="px-5 pb-5 space-y-4">
             {notice && <p role={notice.ok ? 'status' : 'alert'} className={`p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{notice.text}</p>}
+            {direct && (
+              <div role="radiogroup" aria-label="Give the task to" className="flex flex-wrap gap-2">
+                {([['HEAD', 'A Department Head'], ['DIRECT', 'A Team Lead or Team Member']] as const).map(([id, label]) => (
+                  <button key={id} type="button" role="radio" aria-checked={to === id} onClick={() => setTo(id)} data-testid={`oh-to-${id}`}
+                    className={`h-10 px-4 rounded-xl border text-sm font-bold ${to === id ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-[1.2fr_1.4fr_180px] gap-4">
-              <label className="block text-[13px] font-bold text-slate-700">
-                Department Head *
-                <select className={`${fieldCls} mt-1.5 font-medium`} value={pick} onChange={e => setPick(e.target.value)} required data-testid="oh-assignee">
-                  <option value="">Choose a Department Head</option>
-                  {(heads ?? []).map(h => <option key={key(h)} value={key(h)}>{h.name} - {h.department} ({FN[h.function]})</option>)}
-                </select>
-                {heads && heads.length === 0 ? <span className="block mt-1 text-xs font-medium text-amber-700">No active Department Head in the departments you manage.</span> : null}
-              </label>
+              {to === 'DIRECT' && direct ? (
+                <label className="block text-[13px] font-bold text-slate-700">
+                  Team Lead or Team Member *
+                  <select className={`${fieldCls} mt-1.5 font-medium`} value={pickDirect} onChange={e => setPickDirect(e.target.value)} required data-testid="oh-direct-assignee">
+                    <option value="">Choose a Team Lead or Team Member</option>
+                    <DirectOptions people={direct} />
+                  </select>
+                  {direct.length === 0 ? <span className="block mt-1 text-xs font-medium text-amber-700">No active Team Lead or Team Member in the departments you manage.</span> : null}
+                </label>
+              ) : (
+                <label className="block text-[13px] font-bold text-slate-700">
+                  Department Head *
+                  <select className={`${fieldCls} mt-1.5 font-medium`} value={pick} onChange={e => setPick(e.target.value)} required data-testid="oh-assignee">
+                    <option value="">Choose a Department Head</option>
+                    {(heads ?? []).map(h => <option key={key(h)} value={key(h)}>{h.name} - {h.department} ({FN[h.function]})</option>)}
+                  </select>
+                  {heads && heads.length === 0 ? <span className="block mt-1 text-xs font-medium text-amber-700">No active Department Head in the departments you manage.</span> : null}
+                </label>
+              )}
               <label className="block text-[13px] font-bold text-slate-700">
                 Task *
                 <input className={`${fieldCls} mt-1.5 font-medium`} value={title} onChange={e => setTitle(e.target.value)} maxLength={200} required placeholder="e.g. Review all pending customer escalations" />
@@ -133,7 +187,7 @@ export const OperationsAssign: React.FC = () => {
               </label>
             </div>
             <div className="flex justify-end">
-              <button type="submit" disabled={busy || !chosen || !title.trim()} className={primaryBtn}><Plus className="w-4 h-4" aria-hidden="true" /> {busy ? 'Assigning…' : 'Assign to Department Head'}</button>
+              <button type="submit" disabled={busy || (to === 'HEAD' ? !chosen : !pickDirect) || !title.trim()} className={primaryBtn}><Plus className="w-4 h-4" aria-hidden="true" /> {busy ? 'Assigning…' : to === 'HEAD' ? 'Assign to Department Head' : 'Assign task'}</button>
             </div>
           </div>
         </form>

@@ -7,7 +7,7 @@ import { listenToTables } from '../../lib/realtimeShared';
 import { notifyMeetingsChanged } from './meetingEvents';
 
 /**
- * Live availability of the CEO (Super Admin), migration 20270114000100.
+ * Live availability of the CEO (Super Admin), migration 20270114000200.
  *  - The state lives in the database (public.meeting_presence); every open dashboard listens to that table through Supabase Realtime and
  *    reloads at once, so BUSY / AVAILABLE changes everywhere without a refresh. Coming back to the tab reloads too (a missed event).
  *  - Only the Super Admin presses Enter / Exit Meeting for themself; the database refuses anyone else.
