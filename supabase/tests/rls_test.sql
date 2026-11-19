@@ -7,6 +7,10 @@
 \set ON_ERROR_STOP 1
 \set QUIET 1
 
+-- The suites below were written for the department-wide Support desk (the shipped default until 20270114000100, which switches it off; still a
+-- supported setting). They keep testing it ON; task_skip_level_test.sql (run last) checks the migration's new default and the strict isolation.
+update public.access_settings set support_desk_department_wide = true, updated_by = null where id;
+
 create schema test;
 grant usage on schema test to anon, authenticated;
 create table test.users (name text primary key, id uuid not null);
