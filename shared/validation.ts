@@ -2990,6 +2990,8 @@ export const meetingDecisionSchema = z.object({
 export const meetingProposalAnswerSchema = z.object({ accept: z.boolean() }).strict();
 export const meetingResponseSchema = z.object({ response: z.enum(['ACCEPTED', 'DECLINED', 'TENTATIVE']) }).strict();
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
+// ---- Live meeting availability (migration 20270114000100): Enter Meeting may name the meeting being entered ----
+export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
 export const meetingBusySchema = z.object({
   profileIds: z.array(uuidSchema).min(1).max(30),
   from: isoInstant,

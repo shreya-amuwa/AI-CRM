@@ -1,4 +1,5 @@
 import type {
+  CeoPresence, CeoPresenceExit,
   GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
   MeetingSettings, PublicBookingPage, PublicBookingResult, PublicBookingView
 } from '../../../shared/contracts';
@@ -36,6 +37,10 @@ export const meetingsApi = {
   answerProposal: (id: string, accept: boolean) => api.post<Meeting>(`/meetings/${id}/proposal`, { accept }),
   respond: (id: string, response: 'ACCEPTED' | 'DECLINED' | 'TENTATIVE') => api.post<Meeting>(`/meetings/${id}/response`, { response }),
   approvals: () => api.get<Meeting[]>('/meetings/approvals'),
+  // live availability of the CEO: everyone reads it; only the Super Admin enters / exits their own meeting
+  presence: () => api.get<CeoPresence[]>('/meetings/presence'),
+  presenceEnter: (meetingId?: string | null) => api.post<CeoPresence>('/meetings/presence/enter', { meetingId: meetingId ?? null }),
+  presenceExit: () => api.post<CeoPresenceExit>('/meetings/presence/exit', {}),
   directory: (search?: string) => api.get<MeetingDirectoryEntry[]>('/meetings/directory', { search }),
   busy: (profileIds: string[], from: string, to: string) => api.post<MeetingBusyBlock[]>('/meetings/busy', { profileIds, from, to }),
   settings: () => api.get<MeetingSettings>('/meetings/settings'),

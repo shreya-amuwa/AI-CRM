@@ -11233,6 +11233,54 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
 }
 
+// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270114000100) ---------------
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
+  // a weekday (Monday-Saturday, the default working days) 40+ days ahead, 11:00 India time
+  const day = new Date(Date.now() + 40 * 86_400_000);
+  while (day.getUTCDay() === 0) day.setUTCDate(day.getUTCDate() + 1);
+  const at = (hh: number, mm = 0) => new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hh - 5, mm - 30)).toISOString();
+  const statusOf = async (id: string) => (await db.query(`select status, starts_at from public.meetings where id = $1`, [id])).rows[0];
+
+  let r = await api('a', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data.some((p: any) => p.hostId === saId && p.status === 'AVAILABLE'), 'live availability: a member sees the CEO AVAILABLE', r);
+  r = await api('a', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 403, 'live availability: a member cannot Enter a meeting for the CEO', r);
+  r = await api('sa', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'live availability: the CEO enters a meeting: BUSY', r);
+  r = await api('a', 'GET', '/meetings/presence');
+  check(r.json.data.find((p: any) => p.hostId === saId)?.status === 'BUSY' && r.json.data.find((p: any) => p.hostId === saId)?.pending === null,
+    'live availability: the member now sees BUSY (and not the CEO\'s queue)', r);
+  r = await api('a', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 403, 'live availability: a member cannot Exit for the CEO', r);
+
+  r = await api('a', 'POST', '/meetings', { title: 'LAX Budget review', description: 'Pune office budget', hostId: saId, startsAt: at(11), endsAt: at(12), mode: 'GOOGLE_MEET' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a request while BUSY is saved as PENDING AVAILABILITY', r);
+  const reqA = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings', { title: 'LAX Second request', hostId: saId, startsAt: at(11), endsAt: at(11, 30), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a second request for the same time is saved too (not refused)', r);
+  const reqB = r.json.data.id as string;
+  r = await api('sa', 'GET', '/meetings/presence');
+  check(r.json.data.find((p: any) => p.hostId === saId)?.pending?.length >= 2, 'live availability: the CEO sees the waiting queue', r);
+
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.some((x: any) => x.id === reqA) && r.json.data.scheduled.some((x: any) => x.id === reqB),
+    'live availability: Exit Meeting: AVAILABLE, and both waiting requests are scheduled', r);
+  const a = await statusOf(reqA);
+  const b = await statusOf(reqB);
+  check(a.status === 'SCHEDULED' && b.status === 'SCHEDULED' && new Date(a.starts_at).toISOString() === at(11) && new Date(b.starts_at).toISOString() === at(12),
+    'live availability: in queue order and without overlap (A 11:00-12:00, B moved to 12:00)', { a, b });
+  r = await api('a', 'GET', `/meetings/${reqB}`);
+  check(r.status === 200 && r.json.data.status === 'SCHEDULED', 'live availability: the member sees the confirmed meeting', r);
+  const notes = (await db.query(`select type from public.notifications where recipient_id = $1 and entity_id = any($2::uuid[])`, [memberId, [reqA, reqB]])).rows.map((x: any) => x.type);
+  check(notes.filter((t: string) => t === 'MEETING_SCHEDULED').length === 2 && notes.includes('MEETING_MOVED'),
+    'live availability: the member is notified of each confirmed time, and of the moved one', notes);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.length === 0, 'live availability: a second Exit changes nothing', r);
+  await db.query(`delete from public.meetings where title like 'LAX %'`);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

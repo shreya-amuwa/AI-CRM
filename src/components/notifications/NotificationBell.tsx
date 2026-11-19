@@ -4,6 +4,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { SideDrawer } from '../common/SideDrawer';
 import { openChat } from '../chat/chatEvents';
 import { openFromNotification } from '../issues/issueEvents';
+import { CeoAvailabilityBadge } from '../meetings/CeoPresence';
 
 /**
  * The bell in the header: the unread count, and a side panel with the person's own notifications (newest first),
@@ -15,6 +16,8 @@ export const NotificationBell: React.FC = () => {
 
   return (
     <>
+      {/* the CEO's live meeting availability, on every dashboard (Realtime) */}
+      <CeoAvailabilityBadge />
       <button
         type="button"
         onClick={() => setOpen(true)}
