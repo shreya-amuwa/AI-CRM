@@ -8,8 +8,10 @@ Staff report slow screens. Production numbers (`pg_stat_statements`, read-only, 
   ~24,000 s, spikes to 14 s. The next biggest item is about 10 times smaller.
 - When the database is busy with it, ordinary screens that normally take 30–80 ms spike to 5–8 s (`attendance_today`,
   `chat_unread_summary`, `leave_requests_to_review`, `work_reports_context`, `customer_pipeline_counts`).
-- **40 tables are published to Realtime, only ~22 have a listener.** Every change to the others (GPS tracking points, profiles, HR
-  tables, automation jobs, …) is still decoded for nothing.
+- **40 tables are published to Realtime; at the moment measured only 22 had a listener.** The code listens to more of them (the GPS
+  tracking points, `profiles` and `hr_employees` among them: those stay). Tables that neither the code nor any live connection listens
+  to (for example `automation_jobs`, `onboarding_automation_runs`, `invoice_requests`, HR's `hr_attendance` / `hr_leave_applications`) are
+  still decoded for nothing.
 - **Most listeners have no filter**, so every change is checked against every listener's permissions: `crm_leads` INSERT (32 listeners,
   mounted for everybody by `LeadStoreContext`), `chat_conversations` (27), `work_report_signals` (16), `member_invoices` (11), `customers`
   (9), `work_tasks` / `work_task_updates` (7), support tables (5–6), customer onboarding tables (6).
@@ -36,26 +38,32 @@ Staff report slow screens. Production numbers (`pg_stat_statements`, read-only, 
 | **C (chosen)** | **A now; B for chat and the bell only if A's measurements show it is still needed.** | Cheap safe win first, the larger change only where the numbers justify it. |
 
 ## Phase A design
-1. **Trim the feed** (one migration, safe to run twice): remove from `supabase_realtime` every table that no code listens to. The list is
-   derived from the code (every `postgres_changes` `table:` and every `listenToTables([...])` argument, including the client portal and
-   variables such as `support.ts`'s `useRealtime(table)`), not guessed. A unit test keeps the two in step: it fails when a listener names a
+1. **Trim the feed** (one migration, safe to run twice): remove from `supabase_realtime` only **named** tables that are (a) not listened to
+   anywhere in the code (every `postgres_changes` `table:` and every `listenToTables([...])` argument, including the client portal and
+   variables such as `support.ts`'s `useRealtime(table)`) and (b) never seen in `realtime.subscription` in production over several
+   samplings (any outside subscriber shows up there). Each removed table is listed in the migration and the PR. A unit test keeps the two in step: it fails when a listener names a
    table that is not published, or a published table has no listener.
 2. **Filter the busiest listeners** (Realtime `filter`, one column, `eq` or `in`):
    - `work_report_signals` → `recipient_id=eq.<me>` (the table is per recipient).
    - `chat_conversations` in the chat list (`useChatLive`) → `id=in.(<my conversation ids>)` (Realtime allows up to 100 values); with more
      than 100 conversations keep today's unfiltered listener.
-   - `crm_leads` INSERT (`LeadStoreContext`) → only on the screens that show inbound leads, not mounted for everybody. Also stop logging the
-     lead's personal data to the browser console (`console.log('[Supabase Realtime] Inbound lead arrived live:', row)`).
+   - `crm_leads` INSERT (`LeadStoreContext`) → `department=eq.<the person's department>`; the Super Admin keeps all departments. (The store
+     stays global; only the listener is narrowed.) Also stop logging the lead's personal data to the browser console
+     (`console.log('[Supabase Realtime] Inbound lead arrived live:', row)`).
    - Pipeline tables (`customers`, `customer_documents`, `customer_onboarding`, `customer_onboarding_entries`, `member_invoices`),
      `work_tasks` / `work_task_updates`, support tables: filter by the narrowest column that matches the viewer's scope when the table has
      one (own records → owner / assignee; a team → `team_id`; a department → `department_id`); a company-wide viewer (Super Admin,
      Accounts, HR where it applies) keeps the unfiltered listener. A filter is added only where it is certain to include everything the
      screen shows today; otherwise the listener stays as it is.
+   - **Deletes and records moving away (decided):** Realtime filters apply to the new row and cannot filter deletes. Every filtered listener
+     keeps an **unfiltered DELETE** listener on the same table (deletes are rare); a record reassigned away from someone disappears from
+     their screen at the next refresh on focus / visibility, which these screens already do. Accepted as not "stopping updating".
 3. **Measurement**
    - Find out why Sentry receives no browser timings (DSN or sample rate missing from the production build, or traces dropped) and make the
      10% sampling work. No personal data in traces (the existing scrubbing applies).
    - Record the database numbers (calls, total and mean time of the change feed and of the screens listed above) before deploying, and
-     again a few days after; written into the PR / a doc table.
+     again a few days after, as differences between cumulative `pg_stat_statements` snapshots taken at known times (never reset in
+     production); written into the PR / a doc table. The builder has read access to production statistics and to Sentry.
 
 ## Constraints
 - One PR; migration timestamp later than every migration on `main`; safe to run twice; pasteable in the SQL editor.
