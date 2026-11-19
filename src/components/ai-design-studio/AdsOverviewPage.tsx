@@ -34,7 +34,7 @@ export const AdsOverviewPage: React.FC<{ onNavigate: (page: Page) => void }> = (
       <div>
         <h1 className="text-xl font-extrabold text-slate-900 font-heading">Hello, {ctx.name}</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          AI Design Studio · {ROLE_TITLE[ctx.role]}
+          Amuwa Design Studio · {ROLE_TITLE[ctx.role]}
           {isMember(ctx) && (ctx.leadName ? ` · Team Lead: ${ctx.leadName}` : '')}
         </p>
         {isMember(ctx) && ctx.unassigned && (

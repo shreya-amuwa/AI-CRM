@@ -256,7 +256,7 @@ export const AdsIssues: React.FC = () => {
       <div>
         <h1 className="text-xl font-extrabold text-slate-900 font-heading">Raise an Issue</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          {isHead(ctx) ? 'Every issue of AI Design Studio: respond, change the status and resolve.' : 'Tell us what is blocking your work. It reaches the right person and you can follow it here.'}
+          {isHead(ctx) ? 'Every issue of Amuwa Design Studio: respond, change the status and resolve.' : 'Tell us what is blocking your work. It reaches the right person and you can follow it here.'}
         </p>
       </div>
 

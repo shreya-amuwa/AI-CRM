@@ -1,7 +1,7 @@
 -- =============================================================================
 -- 1. Tasks: a Department Head or an Operations Head may skip a level (when a Team Lead / Department Head is away) - only within their own people.
 -- 2. Support customers: a Support Team Lead sees only their own and their own members' customers (the department-wide Support desk is switched off).
--- Run after 20270113000100_meetings_creator_organiser.sql. Safe to run twice. No row is deleted; no task, report or customer is moved.
+-- Run after 20270113000200_ai_website_onboarding.sql. Safe to run twice. No row is deleted; no task, report or customer is moved.
 --
 -- WHY (1). The chain was strictly one step at a time (20261230000300): Operations Head -> Department Head (assign_task_to_department_head),
 -- Department Head -> Team Lead (assign_task_to_team_lead / delegate_task_to_team_lead), Team Lead -> own Team Members. When the person in the middle is

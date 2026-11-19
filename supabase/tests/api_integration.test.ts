@@ -4592,7 +4592,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/conversations`, { note: 'Wants to start this month' });
   check(r.status === 201 || r.status === 200, 'Support: it records a conversation', r);
   r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
-  check(r.status === 200 && r.json.data.journey === 'DIRECT' && r.json.data.step === 'LEAD' && r.json.data.services[0].deliveryDepartment.name === 'Amuwa Design Studio', 'journey: a Meta Ads lead follows the direct journey; the service knows its department', r);
+  check(r.status === 200 && r.json.data.journey === 'DIRECT' && r.json.data.step === 'LEAD' && r.json.data.services[0].deliveryDepartment.name === 'Amuwa Design Studio (Retired)', 'journey: a Meta Ads lead follows the direct journey; the service knows its department', r);
   r = await api('a', 'GET', `/pipeline/customers/${lead}/journey`);
   check(r.status === 404, 'journey: a Sales member cannot read it', r);
 
@@ -4676,7 +4676,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('dsm', 'GET', '/pipeline/delivery-queue');
   check(r.status === 200 && r.json.data.total === 0, 'delivery: the Design Studio queue is empty before sending', r);
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, { note: 'Start on the ad account' });
-  check(r.status === 200 && r.json.data.sent === 1 && r.json.data.remaining === 0 && r.json.data.departments === 'Amuwa Design Studio', 'delivery: the owner sends the service to the Design Studio', r);
+  check(r.status === 200 && r.json.data.sent === 1 && r.json.data.remaining === 0 && r.json.data.departments === 'Amuwa Design Studio (Retired)', 'delivery: the owner sends the service to the Design Studio', r);
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, {});
   check(r.status === 409, 'delivery: a second send is refused', r);
   r = await api('dsm', 'GET', '/pipeline/delivery-queue');
@@ -4810,7 +4810,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false });
   check(r.status === 422, 'settings: a service without a consultant needs a delivery department', r);
   r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false, deliveryDepartmentId: ds.id });
-  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').deliveryDepartment === 'Amuwa Design Studio', 'settings: the Super Admin can configure a service', r);
+  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').deliveryDepartment === 'Amuwa Design Studio (Retired)', 'settings: the Super Admin can configure a service', r);
   r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: true });
   check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').requiresTechnicalConsultant === true, 'settings: and put it back', r);
 
@@ -7454,9 +7454,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const dsId = await mk('combined.ds.acx@amuwa.com', 'Design Studio Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('designstudio').id });
   tokens.set('acds', tokenFor(dsId));
   r = await apply(dsId, [{ departmentId: dep('designstudio').id, division: 'SALES' }, { departmentId: dep('designstudio').id, division: 'SUPPORT' }]);
-  check(r.status === 200, 'access: Amuwa Design Studio can be given both functions (it has Sales and Support teams now)', r);
-  r = await api('acds', 'GET', '/me/department-scopes');
-  check(r.json.data.departments.length === 1 && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'access: one department with the Sales | Support selector', r);
+  // Amuwa Design Studio has no Sales or Support function to give (migration 20270112000200); the retired department included
+  check(r.status === 422 && /no Sales or Support function/.test(r.json.error.message), 'access: the retired Amuwa Design Studio cannot be given Sales or Support', r);
+  const adsDep = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'ai-design-studio');
+  r = await apply(dsId, [{ departmentId: adsDep.id, division: 'SALES' }]);
+  check(r.status === 422 && /no Sales or Support function/.test(r.json.error.message), 'access: nor can Amuwa Design Studio', r);
   const dtId = await mk('combined.dt.acx@amuwa.com', 'D Talk Combined Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id });
   tokens.set('acdt', tokenFor(dtId));
   r = await apply(dtId, [{ departmentId: dep('dtalk').id, division: 'SALES' }, { departmentId: wabatalkId, division: 'SUPPORT' }]);
@@ -11134,7 +11136,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 201 && await logged(r.json.data.id), 'chat push: a client message is logged too', r);
 }
 
-// --- Amuwa Design Studio: Department Head, Team Lead and Team Member only (migration 20270112000100) -------------------------
+// --- Amuwa Design Studio: Department Head, Team Lead and Team Member only (migrations 20270112000100, 20270112000200) -------
 {
   const ds = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'designstudio');
   const dsTeams = (await api('sa', 'GET', `/teams?departmentId=${ds.id}`)).json.data as any[];
@@ -11166,6 +11168,69 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const wsSales = (await api('sa', 'GET', `/teams?departmentId=${ws.id}`)).json.data.find((t: any) => t.division === 'SALES');
   r = await api('sa', 'POST', '/users', { email: 'dsr.ws.sales.api@amuwa.com', fullName: 'DSR Wabastore Sales', role: 'TEAM_MEMBER', teamId: wsSales.id, salesSubRole: 'TELECALLER' });
   check(r.status === 201 && r.json.data.salesSubRole === 'TELECALLER', 'design studio roles: another department still gets its Sales roles', r);
+  // one Amuwa Design Studio (migration 20270112000200): the former AI Design Studio, with the same rule
+  const deps = (await api('sa', 'GET', '/departments')).json.data as any[];
+  const ads = deps.find(d => d.slug === 'ai-design-studio');
+  check(ads.name === 'Amuwa Design Studio' && ds.name === 'Amuwa Design Studio (Retired)', 'design studio roles: ONE Amuwa Design Studio, the old one is retired', { ads: ads.name, old: ds.name });
+  r = await api('sa', 'POST', '/users', { email: 'dsr.ads.head.api@amuwa.com', fullName: 'DSR ADS Head', role: 'DEPARTMENT_HEAD', departmentId: ads.id, headDivision: 'SUPPORT' });
+  check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.ads.head.api@amuwa.com')) === 0, 'design studio roles: Amuwa Design Studio refuses a Support Department Head', r);
+}
+
+// --- AI Website client onboarding details on a lead (migration 20270113000200) ------------------------------------------------
+{
+  const details = { clientName: 'Kavya Nair', mobile: '+91 98470 12345', email: 'Kavya@NairBakes.example', businessName: 'AIW Nair Bakes', onGoogleMaps: true,
+    googleMapsLink: 'https://maps.app.goo.gl/nairbakes', city: 'Kochi', businessType: 'Restaurant / Food' };
+  const lead = { name: 'Kavya Nair', company: 'AIW Nair Bakes', phone: '9847012345', leadSource: 'Walk-in', services: ['AI_WEBSITE'] };
+  const records = async (company: string) =>
+    (await db.query(`select count(*)::int n from public.ai_website_onboarding a join public.customers c on c.id = a.customer_id where c.company = $1`, [company])).rows[0].n as number;
+  const leads = async (company: string) => (await db.query(`select count(*)::int n from public.customers where company = $1`, [company])).rows[0].n as number;
+
+  let r = await api('a', 'POST', '/pipeline/leads', lead);
+  check(r.status === 422 && /AI Website client onboarding/.test(r.json.error?.message) && (await leads('AIW Nair Bakes')) === 0, 'ai website: an AI Website lead needs the onboarding details, and nothing is saved without them', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, mobile: '12345' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: a wrong mobile number is refused before the lead exists', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, email: '' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: the email is required', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, businessType: 'Other' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: "Other" needs the type typed in', r);
+  const requestId = crypto.randomUUID();
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: details, clientRequestId: requestId });
+  check(r.status === 201, 'ai website: the lead is created with its details', r);
+  const id = r.json.data.id as string;
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: details, clientRequestId: requestId });
+  check(r.status === 201 && r.json.data.id === id && (await leads('AIW Nair Bakes')) === 1 && (await records('AIW Nair Bakes')) === 1, 'ai website: a retry returns the same lead and one record', r);
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  const got = r.json.data?.aiWebsiteOnboarding;
+  check(r.status === 200 && got?.clientName === 'Kavya Nair' && got.mobile === '9847012345' && got.email === 'kavya@nairbakes.example' && got.onGoogleMaps === true
+    && got.googleMapsLink === 'https://maps.app.goo.gl/nairbakes' && got.city === 'Kochi' && got.businessType === 'Restaurant / Food', 'ai website: the lead details page reads them back', r);
+
+  // edit: with the lead (PATCH) and on their own (POST)
+  r = await api('a', 'PATCH', `/pipeline/leads/${id}`, { notes: 'Wants online orders', aiWebsiteOnboarding: { ...details, onGoogleMaps: false, city: 'Thrissur' } });
+  check(r.status === 200, 'ai website: editing the lead saves the changed details', r);
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  check(r.json.data.aiWebsiteOnboarding.city === 'Thrissur' && r.json.data.aiWebsiteOnboarding.onGoogleMaps === false && r.json.data.aiWebsiteOnboarding.googleMapsLink === null
+    && r.json.data.notes === 'Wants online orders' && (await records('AIW Nair Bakes')) === 1, 'ai website: the edit is kept in the one record ("No" drops the link)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, { ...details, businessType: 'Other', businessTypeOther: 'Home bakery' });
+  check(r.status === 200 && r.json.data.businessType === 'Other' && r.json.data.businessTypeOther === 'Home bakery', 'ai website: the details can be saved on their own', r);
+  r = await api('a', 'PATCH', `/pipeline/leads/${id}`, { services: ['AI_WEBSITE', 'AI_CALLING'] });
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  check(r.json.data.aiWebsiteOnboarding?.businessTypeOther === 'Home bakery', 'ai website: changing the services keeps the details', r);
+  r = await api('a', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, { ...details, email: 'nope' });
+  check(r.status === 422, 'ai website: the API validates an edit too', r);
+
+  // who: another Sales member and another department get nothing
+  r = await api('b', 'GET', `/pipeline/customers/${id}`);
+  check(r.status === 404, 'ai website: a colleague who does not own the lead cannot open it', r);
+  r = await api('b', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, details);
+  check(r.status === 404, 'ai website: nor save its details', r);
+  r = await api('sa', 'GET', `/pipeline/customers/${id}`);
+  check(r.status === 200 && r.json.data.aiWebsiteOnboarding?.clientName === 'Kavya Nair', 'ai website: the Super Admin sees them', r);
+
+  // another service: nothing is asked or stored
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, company: 'AIW Other Service', phone: '9847012346', services: ['AI_CALLING'] });
+  check(r.status === 201 && (await records('AIW Other Service')) === 0, 'ai website: a lead for another service needs no AI Website details', r);
+  r = await api('a', 'GET', `/pipeline/customers/${r.json.data.id}`);
+  check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

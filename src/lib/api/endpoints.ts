@@ -7,6 +7,7 @@ import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
+  AiWebsiteOnboarding,
   WelcomeEmailItem, WelcomeEmailList,
   ReminderCallList,
   OperationsHeadReviewItem, OperationsOverviewRow,
@@ -190,7 +191,7 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType, AiWebsiteOnboardingBody } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -283,6 +284,8 @@ export const pipelineApi = {
   get: (id: string) => api.get<PipelineCustomerDetail>(`/pipeline/customers/${id}`),
   createLead: (body: LeadCreateRequestInput) => api.post<PipelineCustomer>('/pipeline/leads', body),
   updateLead: (id: string, body: LeadUpdateInput) => api.patch<PipelineCustomer>(`/pipeline/leads/${id}`, body),
+  /** Add or update the AI Website client onboarding details of a lead (one record per lead). */
+  saveAiWebsiteOnboarding: (id: string, body: AiWebsiteOnboardingBody) => api.post<AiWebsiteOnboarding>(`/pipeline/customers/${id}/ai-website-onboarding`, body),
   moveToPotential: (id: string, body: { dealAmount: number; paymentDueDate: string }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
   recordPayment: (id: string, body: { amount: number; method?: PaymentMethod }) =>

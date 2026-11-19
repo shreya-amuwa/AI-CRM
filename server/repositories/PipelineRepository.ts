@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StorageProviderName } from './StorageRepository.js';
 import type {
+  AiWebsiteOnboarding,
   ProvisioningQueue,
   CustomerJourneyInfo,
   CustomerJourneyStatus,
@@ -34,7 +35,7 @@ import type {
   SubscriptionList,
   SubscriptionOverview
 } from '../../shared/contracts.js';
-import type { LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
+import type { AiWebsiteOnboardingInput, LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
 import { likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
 const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, whatsapp, email, city, address, business_category,
@@ -158,7 +159,7 @@ export function mapDocument(r: any): CustomerDocument {
 function leadPayload(input: Partial<LeadCreateInput> & { activityNote?: string | null }) {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input)) {
-    if (v !== undefined && k !== 'services' && k !== 'subscriptions') out[k] = v;
+    if (v !== undefined && k !== 'services' && k !== 'subscriptions' && k !== 'aiWebsiteOnboarding') out[k] = v;
   }
   return out;
 }
@@ -337,6 +338,31 @@ export class PipelineRepository {
       .range(...pageRange(q));
     const rows = unwrap({ data, error }) as any[];
     return { items: rows.map(mapPipelineCustomer), page: q.page, pageSize: q.pageSize, total: count ?? rows.length };
+  }
+
+  /** The AI Website onboarding details of a lead, read as the caller (visible wherever the customer is); null when none, or before the migration. */
+  async aiWebsiteOnboarding(customerId: string): Promise<AiWebsiteOnboarding | null> {
+    const { data, error } = await this.db
+      .from('ai_website_onboarding')
+      .select('customer_id, client_name, mobile, email, business_name, on_google_maps, google_maps_link, city, business_type, business_type_other, created_at, updated_at')
+      .eq('customer_id', customerId)
+      .maybeSingle();
+    if (error) {
+      if (['42P01', 'PGRST205', 'PGRST200'].includes(error.code ?? '')) return null;
+      return unwrap({ data: null, error }) as never;
+    }
+    if (!data) return null;
+    const r = data as Record<string, any>;
+    return {
+      customerId: r.customer_id, clientName: r.client_name, mobile: r.mobile, email: r.email, businessName: r.business_name,
+      onGoogleMaps: r.on_google_maps, googleMapsLink: r.google_maps_link, city: r.city, businessType: r.business_type,
+      businessTypeOther: r.business_type_other, createdAt: r.created_at, updatedAt: r.updated_at, updatedBy: null
+    };
+  }
+
+  /** Add or update the one AI Website onboarding record of a lead (validated and permission-checked by the database). */
+  async saveAiWebsiteOnboarding(customerId: string, input: AiWebsiteOnboardingInput): Promise<AiWebsiteOnboarding> {
+    return unwrap(await this.db.rpc('ai_website_onboarding_save', { p_customer: customerId, p: input })) as AiWebsiteOnboarding;
   }
 
   async get(id: string): Promise<PipelineCustomer> {

@@ -854,6 +854,26 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
   conversations: Conversation[];
   checklist: ChecklistItem[];
   handover: HandoverInfo | null;
+  /** AI Website client onboarding details (migration 20270113000200); null when none were recorded (or the database is not updated yet). */
+  aiWebsiteOnboarding?: AiWebsiteOnboarding | null;
+}
+
+// ---- AI Website client onboarding (migration 20270113000200): one record per lead, kept through every stage ----
+export interface AiWebsiteOnboarding {
+  customerId: string;
+  clientName: string;
+  mobile: string;
+  email: string | null;
+  businessName: string;
+  onGoogleMaps: boolean;
+  googleMapsLink: string | null;
+  city: string;
+  businessType: string;
+  businessTypeOther: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Who saved it last (returned by the save; not read back with the lead). */
+  updatedBy: { id: string; name: string } | null;
 }
 
 /** Leads tabs beyond the status ones: with Accounts for payment confirmation / returned by Accounts. */
@@ -5934,20 +5954,21 @@ export interface ReminderCallList {
 }
 
 // =============================================================================
-// Amuwa Design Studio roles (migration 20270112000100): the department has only Department Head -> Team Lead -> Team Member.
-// No Sales or Support role, team or side is offered or accepted there (the database refuses it: private.designstudio_role_problem).
-// =============================================================================
-/** The slug of Amuwa Design Studio (a different department from "AI Design Studio"). */
-export const AMUWA_DESIGN_STUDIO_SLUG = 'designstudio';
-/** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
-export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AMUWA_DESIGN_STUDIO_SLUG];
-
-// =============================================================================
 // AI Design Studio (migration 20270110000100): a separate, client-oriented department.
 // Department Head -> Team Lead -> Team Member. Every shape below is what the ads_* database functions return.
 // =============================================================================
-/** The department slug. It is a different department from "AI Studio" and from "Amuwa Design Studio" (slug designstudio). */
+/**
+ * The department slug. Since migration 20270112000200 this department is named "Amuwa Design Studio" (the slug and every ads_* function
+ * are unchanged). It is a different department from "AI Studio"; the old department of that name (slug designstudio) is retired.
+ */
 export const AI_DESIGN_STUDIO_SLUG = 'ai-design-studio';
+
+// ---- Amuwa Design Studio roles (migrations 20270112000100, 20270112000200): Department Head -> Team Lead -> Team Member only. ----
+// No Sales or Support role, team or side is offered or accepted (the database refuses it: private.designstudio_role_problem).
+/** The retired department once named Amuwa Design Studio ("Amuwa Design Studio (Retired)"): its people and data stay, nobody new is added from the forms. */
+export const RETIRED_DESIGN_STUDIO_SLUG = 'designstudio';
+/** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
+export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AI_DESIGN_STUDIO_SLUG, RETIRED_DESIGN_STUDIO_SLUG];
 
 export const ADS_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export type AdsPriority = (typeof ADS_PRIORITIES)[number];
