@@ -6344,3 +6344,93 @@ export interface AiStudioOverview {
     projects: { id: string; name: string; status: AiStudioProjectStatus; total: number; completed: number; ongoing: number; progress: number; leads: string[] }[];
   };
 }
+
+// ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
+export type CrocodialHealth = 'UNKNOWN' | 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR';
+export interface CrocodialConnection {
+  id: string;
+  name: string;
+  externalAccountLabel: string | null;
+  /** The NAME of the server setting that holds the token; the token itself never leaves the server. */
+  credentialRef: string;
+  /** Whether the server has that setting (added by the server; the database cannot know). */
+  credentialConfigured?: boolean;
+  enabled: boolean;
+  health: CrocodialHealth;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  timezone: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CrocodialMapping {
+  id: string;
+  connectionId: string;
+  externalEmployeeId: number;
+  externalName: string | null;
+  profileId: string;
+  profileName: string;
+  departmentId: string;
+  departmentName: string | null;
+  division: 'SALES';
+  roleSnapshot: { role?: string; salesSubRole?: string | null; teamId?: string | null; teamName?: string | null };
+  status: 'PENDING' | 'APPROVED' | 'REVOKED';
+  approvedByName: string | null;
+  approvedAt: string | null;
+  effectiveFrom: string | null;
+  endedAt: string | null;
+  endReason: string | null;
+  createdAt: string;
+  live: boolean;
+}
+export interface CrocodialAdminOverview {
+  rollout: { departmentId: string; departmentName: string; departmentSlug: string; division: 'SALES'; allowed: boolean; note: string | null; updatedAt: string }[];
+  connections: CrocodialConnection[];
+  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string }[];
+  mappings: CrocodialMapping[];
+  externalEmployees: { connectionId: string; externalId: number; name: string | null; isActive: boolean | null; branchIds: number[]; lastSeenAt: string; missingSince: string | null; mappingStatus: 'PENDING' | 'APPROVED' | null }[];
+  externalBranches: { connectionId: string; externalId: number; name: string | null; status: string | null; missingSince: string | null }[];
+  audit: { at: string; action: string; actorName: string | null; entityId: string | null; metadata: Record<string, unknown> }[];
+}
+export interface CrocodialProfileCheck {
+  profileId: string;
+  name: string;
+  status: string;
+  role: string;
+  salesSubRole: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  teamId: string | null;
+  teamName: string | null;
+  teamDivision: string | null;
+  active: boolean;
+  inDepartment: boolean;
+  inFunction: boolean;
+  eligible: boolean;
+}
+export interface CrocodialMappingCheck {
+  profile: CrocodialProfileCheck | null;
+  externalEmployee: { externalId: number; name: string | null; isActive: boolean | null } | null;
+  externalAlreadyMapped: boolean;
+  profileAlreadyMapped: boolean;
+  departmentLinked: boolean;
+}
+export interface CrocodialTestResult {
+  ok: boolean;
+  health: Exclude<CrocodialHealth, 'UNKNOWN'>;
+  message: string;
+  employees: number;
+  branches: number;
+  timezone: string | null;
+  requests: number;
+}
+export interface CrocodialMyStatus {
+  enabled: boolean;
+  connectionName?: string;
+  externalName?: string | null;
+  departmentName?: string;
+  lastSuccessAt?: string | null;
+  health?: CrocodialHealth;
+  timezone?: string | null;
+}
