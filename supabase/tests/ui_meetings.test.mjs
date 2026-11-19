@@ -303,6 +303,8 @@ try {
   state.approvals.length = 0;
   await page.goto(base);
   await page.evaluate(() => window.mount());
+  // the page loads its requests after it appears: wait for that load instead of looking at the first paint
+  await page.getByRole('tab', { name: /^Requests$/ }).waitFor({ timeout: 5000 });
   check(await page.getByRole('tab', { name: /^Requests$/ }).isVisible(), 'nothing is waiting for a decision');
   state.approvals.push(meeting({ id: 'cccccccc-0000-4000-8000-000000000003', title: 'Office lease', kind: 'CEO_MEETING', kindLabel: 'Meeting with the CEO', status: 'REQUESTED',
     hostId: CEO.id, hostName: CEO.name, createdBy: COL.id, createdByName: COL.name, canDecide: true, startsAt: at(tomorrow, '16:00'), endsAt: at(tomorrow, '16:30') }));
