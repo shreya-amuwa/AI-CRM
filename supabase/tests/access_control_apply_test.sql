@@ -122,7 +122,9 @@ select test.nohdr();
 select test.login('sa');
 -- M Pillar (existing head), Amuwa Design Studio, D Talk (Sales + its Support, Wabatalk), Digitree (Sales head given Support too)
 select department_access_apply(test.id('gb_h'), jsonb_build_array(test.pair('mpillar', 'SALES'), test.pair('mpillar', 'SUPPORT')));
-select department_access_apply(test.id('ds_head'), jsonb_build_array(test.pair('designstudio', 'SALES'), test.pair('designstudio', 'SUPPORT')));
+-- Amuwa Design Studio has no Sales or Support function to give (migration 20270112000200), for the retired department as well
+select test.must_fail($$select department_access_apply(test.id('ds_head'), jsonb_build_array(test.pair('designstudio', 'SALES'), test.pair('designstudio', 'SUPPORT')))$$,
+  'the retired Amuwa Design Studio cannot be given Sales or Support', 'no Sales or Support function');
 select department_access_apply(test.id('ac_dt'), jsonb_build_array(test.pair('dtalk', 'SALES'), test.pair('wabatalk', 'SUPPORT')));
 select department_access_apply(test.id('ac_dg'), jsonb_build_array(test.pair('digitree', 'SALES'), test.pair('digitree', 'SUPPORT')));
 select test.check((select count(*) = 1 from profiles where email = 'ds.head@amuwa.com' ) and (select count(*) = 1 from profiles where email = 'ac.dt@amuwa.com') and (select count(*) = 1 from profiles where email = 'ac.dg@amuwa.com'), 'one account each');
@@ -139,7 +141,9 @@ select test.check((my_department_scopes() ->> 'activeDepartmentId') = test.dep('
 select test.hdr(test.dep('wabastar'), 'SALES');
 select test.check((select count(*) = 1 and bool_and(name = 'AC DTalk Sales') from customers where name like 'AC %'), 'another department is not reachable (home: D Talk)');
 select test.login('ds_head');
-select test.check((select jsonb_array_length(my_department_scopes() -> 'departments') = 1 and (my_department_scopes() -> 'departments' -> 0 -> 'divisions') = '["SALES","SUPPORT"]'::jsonb), 'Amuwa Design Studio: both functions, one department');
+reset role;
+select test.check((select count(*) = 0 from department_access where profile_id = test.id('ds_head')), 'Amuwa Design Studio: no Sales / Support grant was saved for its head');
+set role authenticated;
 select test.nohdr();
 select test.login('gb_h');
 select test.check((select jsonb_array_length(my_department_scopes() -> 'departments') = 1 and (my_department_scopes() -> 'departments' -> 0 -> 'divisions') = '["SALES","SUPPORT"]'::jsonb), 'M Pillar: both functions, one department');

@@ -4592,7 +4592,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/conversations`, { note: 'Wants to start this month' });
   check(r.status === 201 || r.status === 200, 'Support: it records a conversation', r);
   r = await api('sm', 'GET', `/pipeline/customers/${lead}/journey`);
-  check(r.status === 200 && r.json.data.journey === 'DIRECT' && r.json.data.step === 'LEAD' && r.json.data.services[0].deliveryDepartment.name === 'Amuwa Design Studio', 'journey: a Meta Ads lead follows the direct journey; the service knows its department', r);
+  check(r.status === 200 && r.json.data.journey === 'DIRECT' && r.json.data.step === 'LEAD' && r.json.data.services[0].deliveryDepartment.name === 'Amuwa Design Studio (Retired)', 'journey: a Meta Ads lead follows the direct journey; the service knows its department', r);
   r = await api('a', 'GET', `/pipeline/customers/${lead}/journey`);
   check(r.status === 404, 'journey: a Sales member cannot read it', r);
 
@@ -4676,7 +4676,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('dsm', 'GET', '/pipeline/delivery-queue');
   check(r.status === 200 && r.json.data.total === 0, 'delivery: the Design Studio queue is empty before sending', r);
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, { note: 'Start on the ad account' });
-  check(r.status === 200 && r.json.data.sent === 1 && r.json.data.remaining === 0 && r.json.data.departments === 'Amuwa Design Studio', 'delivery: the owner sends the service to the Design Studio', r);
+  check(r.status === 200 && r.json.data.sent === 1 && r.json.data.remaining === 0 && r.json.data.departments === 'Amuwa Design Studio (Retired)', 'delivery: the owner sends the service to the Design Studio', r);
   r = await api('sm', 'POST', `/pipeline/customers/${lead}/send-to-delivery`, {});
   check(r.status === 409, 'delivery: a second send is refused', r);
   r = await api('dsm', 'GET', '/pipeline/delivery-queue');
@@ -4810,7 +4810,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false });
   check(r.status === 422, 'settings: a service without a consultant needs a delivery department', r);
   r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: false, deliveryDepartmentId: ds.id });
-  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').deliveryDepartment === 'Amuwa Design Studio', 'settings: the Super Admin can configure a service', r);
+  check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').deliveryDepartment === 'Amuwa Design Studio (Retired)', 'settings: the Super Admin can configure a service', r);
   r = await api('sa', 'PATCH', '/pipeline/service-journeys/GBP_SETUP', { requiresTechnicalConsultant: true });
   check(r.status === 200 && r.json.data.find((x: any) => x.code === 'GBP_SETUP').requiresTechnicalConsultant === true, 'settings: and put it back', r);
 
@@ -7454,9 +7454,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const dsId = await mk('combined.ds.acx@amuwa.com', 'Design Studio Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('designstudio').id });
   tokens.set('acds', tokenFor(dsId));
   r = await apply(dsId, [{ departmentId: dep('designstudio').id, division: 'SALES' }, { departmentId: dep('designstudio').id, division: 'SUPPORT' }]);
-  check(r.status === 200, 'access: Amuwa Design Studio can be given both functions (it has Sales and Support teams now)', r);
-  r = await api('acds', 'GET', '/me/department-scopes');
-  check(r.json.data.departments.length === 1 && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'access: one department with the Sales | Support selector', r);
+  // Amuwa Design Studio has no Sales or Support function to give (migration 20270112000200); the retired department included
+  check(r.status === 422 && /no Sales or Support function/.test(r.json.error.message), 'access: the retired Amuwa Design Studio cannot be given Sales or Support', r);
+  const adsDep = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'ai-design-studio');
+  r = await apply(dsId, [{ departmentId: adsDep.id, division: 'SALES' }]);
+  check(r.status === 422 && /no Sales or Support function/.test(r.json.error.message), 'access: nor can Amuwa Design Studio', r);
   const dtId = await mk('combined.dt.acx@amuwa.com', 'D Talk Combined Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id });
   tokens.set('acdt', tokenFor(dtId));
   r = await apply(dtId, [{ departmentId: dep('dtalk').id, division: 'SALES' }, { departmentId: wabatalkId, division: 'SUPPORT' }]);
@@ -11132,7 +11134,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 201 && await logged(r.json.data.id), 'chat push: a client message is logged too', r);
 }
 
-// --- Amuwa Design Studio: Department Head, Team Lead and Team Member only (migration 20270112000100) -------------------------
+// --- Amuwa Design Studio: Department Head, Team Lead and Team Member only (migrations 20270112000100, 20270112000200) -------
 {
   const ds = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'designstudio');
   const dsTeams = (await api('sa', 'GET', `/teams?departmentId=${ds.id}`)).json.data as any[];
@@ -11164,6 +11166,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const wsSales = (await api('sa', 'GET', `/teams?departmentId=${ws.id}`)).json.data.find((t: any) => t.division === 'SALES');
   r = await api('sa', 'POST', '/users', { email: 'dsr.ws.sales.api@amuwa.com', fullName: 'DSR Wabastore Sales', role: 'TEAM_MEMBER', teamId: wsSales.id, salesSubRole: 'TELECALLER' });
   check(r.status === 201 && r.json.data.salesSubRole === 'TELECALLER', 'design studio roles: another department still gets its Sales roles', r);
+  // one Amuwa Design Studio (migration 20270112000200): the former AI Design Studio, with the same rule
+  const deps = (await api('sa', 'GET', '/departments')).json.data as any[];
+  const ads = deps.find(d => d.slug === 'ai-design-studio');
+  check(ads.name === 'Amuwa Design Studio' && ds.name === 'Amuwa Design Studio (Retired)', 'design studio roles: ONE Amuwa Design Studio, the old one is retired', { ads: ads.name, old: ds.name });
+  r = await api('sa', 'POST', '/users', { email: 'dsr.ads.head.api@amuwa.com', fullName: 'DSR ADS Head', role: 'DEPARTMENT_HEAD', departmentId: ads.id, headDivision: 'SUPPORT' });
+  check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.ads.head.api@amuwa.com')) === 0, 'design studio roles: Amuwa Design Studio refuses a Support Department Head', r);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

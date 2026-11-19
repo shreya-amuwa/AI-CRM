@@ -1,4 +1,5 @@
-// Browser test of the Add Team Member form and HR's employee request form for Amuwa Design Studio: choosing the department leaves only
+// Browser test of the Add Team Member form and HR's employee request form for Amuwa Design Studio (slug ai-design-studio since migration
+// 20270112000200; the old department of that name is retired): choosing the department leaves only
 // Department Head, Team Lead and Team Member (no Sales / Support role, team, side or Sales role), an earlier Sales / Support choice is cleared,
 // what is sent places the person in Amuwa Design Studio, and other departments keep their Sales and Support options. Real React components
 // (the HR designations harness) + the app's stylesheet (npm run build first); the API is an in-page stand-in. Skipped, loudly, when Playwright,
@@ -38,18 +39,20 @@ let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); process.exit(0); }
 
 const DS = '55555555-5555-4555-8555-555555555555';
+const OLD = '77777777-7777-4777-8777-777777777777';
 const T = { dsGeneral: '66666666-6666-4666-8666-666666666661', dsSales: '66666666-6666-4666-8666-666666666662', dsSupport: '66666666-6666-4666-8666-666666666663', wsSales: '66666666-6666-4666-8666-666666666664', wsSupport: '66666666-6666-4666-8666-666666666665' };
-const apiScript = ([DS, T]) => {
-  const U = { hr: '22222222-2222-4222-8222-222222222222', wabastore: '11111111-1111-4111-8111-111111111111', designstudio: DS };
+const apiScript = ([DS, OLD, T]) => {
+  const U = { hr: '22222222-2222-4222-8222-222222222222', wabastore: '11111111-1111-4111-8111-111111111111', 'ai-design-studio': DS, designstudio: OLD };
   const dep = (id, name) => ({ id, dbId: U[id], name, description: '', category: 'x', facetOf: null, facetDivision: null });
-  window.__departments = [dep('hr', 'HR Department'), dep('wabastore', 'Wabastore'), dep('designstudio', 'Amuwa Design Studio')];
+  window.__departments = [dep('hr', 'HR Department'), dep('wabastore', 'Wabastore'), dep('ai-design-studio', 'Amuwa Design Studio'), dep('designstudio', 'Amuwa Design Studio (Retired)')];
   window.__profile = { id: 'sa1', fullName: 'Super Admin', email: 'sa@x.example', role: 'SUPER_ADMIN', status: 'ACTIVE', departmentId: null, teamId: null, department: null, team: null };
   window.__posts = [];
   const teamsOf = {
     hr: [{ id: '44444444-4444-4444-8444-444444444443', departmentId: U.hr, name: 'HR Team', division: 'GENERAL' }],
     wabastore: [{ id: T.wsSales, departmentId: U.wabastore, name: 'Sales', division: 'SALES' }, { id: T.wsSupport, departmentId: U.wabastore, name: 'Support', division: 'SUPPORT' }],
-    // like the real department: a General team plus the Sales / Support teams the Access Control matrix uses
-    designstudio: [{ id: T.dsGeneral, departmentId: DS, name: 'General', division: 'GENERAL' }, { id: T.dsSales, departmentId: DS, name: 'Sales', division: 'SALES' }, { id: T.dsSupport, departmentId: DS, name: 'Support', division: 'SUPPORT' }]
+    // Amuwa Design Studio: its General team (plus, defensively, a Sales and a Support team that must never be offered)
+    'ai-design-studio': [{ id: T.dsGeneral, departmentId: DS, name: 'General', division: 'GENERAL' }, { id: T.dsSales, departmentId: DS, name: 'Sales', division: 'SALES' }, { id: T.dsSupport, departmentId: DS, name: 'Support', division: 'SUPPORT' }],
+    designstudio: [{ id: '66666666-6666-4666-8666-666666666666', departmentId: OLD, name: 'General', division: 'GENERAL' }]
   };
   const json = (data, status = 200) => new Response(JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data }), { status, headers: { 'Content-Type': 'application/json' } });
   window.fetch = async (url, init = {}) => {
@@ -59,7 +62,7 @@ const apiScript = ([DS, T]) => {
     if (p === '/teams') { const slug = Object.keys(teamsOf).find(k => U[k] === u.searchParams.get('departmentId')); return json(slug ? teamsOf[slug] : Object.values(teamsOf).flat()); }
     if (p === '/users' && method === 'GET') return json({ items: [], total: 0, page: 1, pageSize: 10 });
     if (p === '/employee-requests' && method === 'POST') { const body = JSON.parse(init.body); window.__posts.push(body); return json({ id: 'r1', status: 'PENDING', requestedRole: body.role, employee: { name: body.fullName }, approver: { name: 'Approver' }, awaitingOwner: false }, 201); }
-    if (p === '/users' && method === 'POST') { const body = JSON.parse(init.body); window.__posts.push(body); return json({ id: 'new', email: body.email, fullName: body.fullName, role: body.role, status: 'ACTIVE', department: { id: DS, slug: 'designstudio', name: 'Amuwa Design Studio' }, team: null }, 201); }
+    if (p === '/users' && method === 'POST') { const body = JSON.parse(init.body); window.__posts.push(body); return json({ id: 'new', email: body.email, fullName: body.fullName, role: body.role, status: 'ACTIVE', department: { id: DS, slug: 'ai-design-studio', name: 'Amuwa Design Studio' }, team: null }, 201); }
     return json([]);
   };
 };
@@ -67,7 +70,7 @@ const open = async (request = false, viewport = { width: 1280, height: 1100 }) =
   const page = await browser.newPage({ viewport });
   page.on('pageerror', e => { console.error('page error:', e.message); process.exitCode = 1; });
   await page.setContent('<!doctype html><html><head><meta charset="utf-8"><style>' + css + '</style></head><body><div id="root"></div></body></html>');
-  await page.evaluate(apiScript, [DS, T]);
+  await page.evaluate(apiScript, [DS, OLD, T]);
   await page.addScriptTag({ content: bundle });
   await page.evaluate(request ? () => window.mountRequest() : () => window.mount());
   await page.waitForSelector(request ? 'form[aria-label="Employee request"]' : '#staff-role');
@@ -105,7 +108,7 @@ const submitted = async page => {
   await page.selectOption('#staff-sales-role', 'TELECALLER');
   check(await page.isVisible('#staff-sales-role'), 'Wabastore: a Sales Team Member gets the Sales Role dropdown (Telecaller chosen)');
 
-  await page.selectOption('#dept', 'designstudio');
+  await page.selectOption('#dept', 'ai-design-studio');
   await page.waitForFunction(T => [...document.querySelectorAll('select option')].some(o => o.value === T), T.dsGeneral);
   check((await roleOptions(page)).join('|') === 'Department Head|Team Lead|Team Member', 'Amuwa Design Studio: the Role dropdown is exactly Department Head, Team Lead, Team Member', await roleOptions(page));
   check((await teamOptions(page)).join() === T.dsGeneral, 'Amuwa Design Studio: the team list is its General team only (no Sales / Support team)', await teamOptions(page));
@@ -123,7 +126,7 @@ const submitted = async page => {
 {
   // a Department Head: the head of the whole department, no Sales / Support picker
   const page = await open();
-  await page.selectOption('#dept', 'designstudio');
+  await page.selectOption('#dept', 'ai-design-studio');
   await page.waitForFunction(T => [...document.querySelectorAll('select option')].some(o => o.value === T), T.dsGeneral);
   await page.selectOption('#staff-role', 'DEPARTMENT_HEAD');
   check((await page.$$('[data-testid="head-departments"]')).length === 0, 'Department Head: no Sales / Support head picker is shown');
@@ -137,7 +140,7 @@ const submitted = async page => {
 {
   // Team Lead, and switching back to a Sales / Support department restores its options
   const page = await open();
-  await page.selectOption('#dept', 'designstudio');
+  await page.selectOption('#dept', 'ai-design-studio');
   await page.waitForFunction(T => [...document.querySelectorAll('select option')].some(o => o.value === T), T.dsGeneral);
   await page.selectOption('#staff-role', 'TEAM_HEAD');
   check((await teamOptions(page)).join() === T.dsGeneral, 'Team Lead: General team only');
@@ -154,6 +157,8 @@ const submitted = async page => {
   await page.selectOption('select:has(option:text("Choose a department"))', '11111111-1111-4111-8111-111111111111');
   await page.selectOption('select:has(option:text("Not specified"))', 'SALES');
   await page.selectOption('select:has(option:text("Operations Head"))', 'OPERATIONS_HEAD');
+  const listed = await page.$$eval('select:has(option:text("Choose a department")) option', os => os.map(o => o.textContent.trim()));
+  check(listed.includes('Amuwa Design Studio') && !listed.some(t => /Retired/.test(t)), 'request form: Amuwa Design Studio is listed, the retired department is not', listed);
   await page.selectOption('select:has(option:text("Choose a department"))', DS);
   const sides = await page.$$eval('select:has(option:text("Not specified")) option', os => os.map(o => o.textContent.trim()));
   check(sides.join('|') === 'Not specified|General', 'request form: Amuwa Design Studio offers the General side only', sides);
@@ -162,9 +167,19 @@ const submitted = async page => {
   check(roles.join('|') === 'Department Head|Team Lead|Team Member', 'request form: Department Head, Team Lead, Team Member only (no Operations Head)', roles);
   await page.close();
 }
+{
+  // the retired department: its people stay, but the form adds nobody to it
+  const page = await open();
+  await page.selectOption('#dept', 'designstudio');
+  await page.waitForSelector('[data-testid="retired-department"]');
+  check(/retired/.test(await page.innerText('[data-testid="retired-department"]')), 'retired department: the form says nobody new is added to it');
+  check(await page.$eval('button[type="submit"]', b => b.disabled), 'retired department: the Create button is disabled');
+  check((await roleOptions(page)).join('|') === 'Department Head|Team Lead|Team Member', 'retired department: no Sales or Support role either');
+  await page.close();
+}
 for (const [name, vp] of [['phone', { width: 360, height: 740 }], ['desktop', { width: 1440, height: 900 }]]) {
   const page = await open(false, vp);
-  await page.selectOption('#dept', 'designstudio');
+  await page.selectOption('#dept', 'ai-design-studio');
   await page.waitForFunction(T => [...document.querySelectorAll('select option')].some(o => o.value === T), T.dsGeneral);
   const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, w: document.querySelector('#staff-role').getBoundingClientRect().width }));
   check(m.sw <= m.iw && m.w > 150, `${name}: the form fits and the Role dropdown is usable`, m);
