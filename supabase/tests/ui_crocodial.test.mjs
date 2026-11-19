@@ -43,7 +43,7 @@ const fail = (res, status, code, message) => { res.writeHead(status, { 'Content-
 
 function api(req, res, body) {
   const p = new URL(req.url, 'http://x').pathname.replace(/^\/api\/v1/, '');
-  state.calls.push({ method: req.method, path: p, body, auth: req.headers.authorization || null });
+  state.calls.push({ method: req.method, path: p, body, auth: req.headers.authorization || null, raw: req.url.replace(/^\/api\/v1\/users/, '') });
   const o = state.o;
   if (p === '/crocodial/admin') return ok(res, o);
   if (p === '/crocodial/sync') return ok(res, o.connections.map(c => ({ connectionId: c.id, syncable: c.enabled, lastManualSyncAt: null,
@@ -74,6 +74,8 @@ function api(req, res, body) {
     l.enabled = body.enabled;
     return ok(res, l);
   }
+  // like the real API: at most 100 a page
+  if (p === '/users' && Number(new URL(req.url, 'http://x').searchParams.get('pageSize')) > 100) return fail(res, 422, 'VALIDATION_ERROR', 'Number must be less than or equal to 100');
   if (p === '/users') return ok(res, { items: [{ id: SACHIN, fullName: 'Sachin Kumar', email: 'sachin@amuwa.com' }, { id: SUPPORT, fullName: 'Support Person', email: 'sp@amuwa.com' }], total: 2, page: 1, pageSize: 200 });
   if (p === '/crocodial/mappings/check') {
     const eligible = body.profileId === SACHIN;
@@ -156,6 +158,9 @@ try {
     await page.getByLabel(/CRM employee/).selectOption(SUPPORT);
     await page.getByTestId('croc-mapping-check').getByText('✗ Not Sales', { exact: false }).waitFor();
     check(await page.getByRole('button', { name: /Propose mapping/ }).isDisabled(), `${label}: someone outside Sales cannot be proposed`);
+    const usersQ = new URL('http://x' + [...state.calls].reverse().find(c => c.path === '/users').raw).searchParams;
+    check(Number(usersQ.get('pageSize')) <= 100 && !usersQ.has('division') && usersQ.get('departmentId') === MP,
+      `${label}: the CRM employees of the department are loaded within the API's page limit (heads included: no team filter)`);
     await page.getByLabel(/CRM employee/).selectOption(SACHIN);
     await page.getByTestId('croc-mapping-check').getByText(/✓ Sales/).waitFor();
     check(await page.getByText(/Names are not proof of identity/).isVisible(), `${label}: the check reminds that names are not proof`);

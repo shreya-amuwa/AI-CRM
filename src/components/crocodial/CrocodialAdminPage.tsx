@@ -71,7 +71,19 @@ const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    usersApi.list({ departmentId, division: 'SALES', status: 'ACTIVE', pageSize: 200 }).then(r => setPeople(r.items)).catch(e => setError(errText(e)));
+    // every active person of the department (heads have no team, so no Sales-team filter here: the check below says who can be mapped),
+    // 100 at a time - the most the API returns per page
+    let alive = true;
+    (async () => {
+      const all: Profile[] = [];
+      for (let page = 1; page <= 10; page++) {
+        const r = await usersApi.list({ departmentId, status: 'ACTIVE', page, pageSize: 100 });
+        all.push(...r.items);
+        if (all.length >= r.total || r.items.length < 100) break;
+      }
+      if (alive) setPeople(all.sort((a, b) => a.fullName.localeCompare(b.fullName)));
+    })().catch(e => alive && setError(errText(e)));
+    return () => { alive = false; };
   }, [departmentId]);
   const unmapped = data.externalEmployees.filter(e => e.connectionId === connectionId && !e.mappingStatus && !e.missingSince);
   useEffect(() => {
