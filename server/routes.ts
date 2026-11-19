@@ -453,6 +453,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/crocodial/mappings', handler: crocodial.mappingCreate, options: S },
   { method: 'POST', path: '/crocodial/mappings/:id/approve', handler: crocodial.mappingApprove, options: S },
   { method: 'POST', path: '/crocodial/mappings/:id/revoke', handler: crocodial.mappingRevoke, options: S },
+  { method: 'POST', path: '/crocodial/mappings/:id/count-from', handler: crocodial.mappingCountFrom, options: S },
   { method: 'GET', path: '/crocodial/me', handler: crocodial.myStatus },
   { method: 'GET', path: '/crocodial/sync', handler: crocodial.syncStatus },
   { method: 'GET', path: '/crocodial/activity', handler: crocodial.activity },

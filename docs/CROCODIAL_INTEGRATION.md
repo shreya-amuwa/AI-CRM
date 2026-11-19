@@ -232,9 +232,42 @@ For Team Leads and heads, the entry appears only when they have at least one con
 - **Not synced yet:** a person who has never been fully synced is listed as "not available yet" and **left out of the totals**, never counted as zero.
 - **Stale data:** data older than 24 hours is labelled.
 
+## Earlier activity and the heads' view (migration `20270115000600_crocodial_count_from.sql`)
+
+**Counting earlier activity.** Approving a mapping counts activity from that moment. Everything the sync stored before it (calls,
+follow-ups, remarks) counted for nobody. Under "4. People", each approved mapping now shows "Counting activity from <date>" with two actions:
+
+- **Count all past activity.** The mapping counts from the start of the day of the first record stored for that Crocodial user.
+- **Or from a date, then "Use this date".** The mapping counts from the start of that day, in the account's time zone. A future date is refused.
+
+How it works and what is checked:
+
+- Both actions call `public.croc_mapping_count_from(mapping, from | null)`. Only the Super Admin can use it.
+- It works only on an approved mapping that is in effect.
+- The new period may not overlap another mapping of the same Crocodial user, or of the same CRM person, on that account. If it does, the
+  change is refused and the message names that mapping. This way one record never counts for two people.
+- Every change is audited as `CROCODIAL_MAPPING_COUNT_FROM_SET`, with the previous and the new date. The History list shows it as
+  "activity start date changed".
+- Nothing is fetched again: the data is already stored, and the figures change as soon as the date does.
+
+Use it only when nobody else used that Crocodial login before the person.
+
+**Periods.** Both activity views also offer "Last 90 days". Any period of up to 93 days can still be chosen with the date fields.
+
+**Department Heads and Team Leads.**
+
+- Their "Crocodial Activity" page has two tabs when they are connected themselves:
+  - "My activity": their own calls, follow-ups and remarks.
+  - "People I oversee": the management view.
+- When they are not connected themselves, the page is the management view only.
+- The menu entry shows when either tab has something to show.
+- In the management view, a Department Head (who sits above teams) is shown as "Department Head (above teams)" instead of "—".
+- In "By team", Department Heads are grouped as "Department Head(s)" instead of "No team".
+- The Super Admin's "Crocodial Activity" lists every connected person, heads included.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270115000600_crocodial_count_from.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

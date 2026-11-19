@@ -3367,6 +3367,10 @@ export const crocodialMappingSchema = z
   })
   .strict();
 export const crocodialRevokeSchema = z.object({ reason: z.string().trim().max(300).optional().nullable() }).strict();
+/** The date an approved mapping counts activity from: a day (YYYY-MM-DD), or null for "from the first stored activity". */
+export const crocodialCountFromSchema = z
+  .object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').nullable().optional() })
+  .strict();
 export const crocodialActivityQuerySchema = z
   .object({
     profileId: uuidSchema.optional(),

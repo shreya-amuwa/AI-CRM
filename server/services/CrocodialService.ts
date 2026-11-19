@@ -2,7 +2,7 @@ import type {
   CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialTeamActivity
 } from '../../shared/contracts.js';
 import {
-  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
+  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
@@ -53,6 +53,10 @@ export class CrocodialService {
     return this.repo.mappingCreate(b.connectionId, b.externalEmployeeId, b.profileId, b.departmentId);
   }
   mappingApprove(id: string): Promise<CrocodialMapping> { return this.repo.mappingApprove(parse(uuidSchema, id)); }
+  /** Count a mapping's activity from a date (null: from the first stored activity of that Crocodial user). Super Admin only, audited. */
+  mappingCountFrom(id: string, body: unknown): Promise<CrocodialMapping> {
+    return this.repo.mappingCountFrom(parse(uuidSchema, id), parse(crocodialCountFromSchema, body ?? {}).from ?? null);
+  }
   mappingRevoke(id: string, body: unknown): Promise<CrocodialMapping> {
     return this.repo.mappingRevoke(parse(uuidSchema, id), parse(crocodialRevokeSchema, body ?? {}).reason ?? null);
   }

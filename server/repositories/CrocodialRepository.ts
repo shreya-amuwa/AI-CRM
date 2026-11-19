@@ -32,6 +32,7 @@ export class CrocodialRepository {
     });
   }
   mappingApprove(id: string) { return this.rpc<CrocodialMapping>('croc_mapping_approve', { p_id: id }); }
+  mappingCountFrom(id: string, from: string | null) { return this.rpc<CrocodialMapping>('croc_mapping_count_from', { p_id: id, p_from: from }); }
   mappingRevoke(id: string, reason: string | null) { return this.rpc<CrocodialMapping>('croc_mapping_revoke', { p_id: id, p_reason: reason }); }
   myStatus() { return this.rpc<CrocodialMyStatus>('croc_my_status'); }
   activity(profileId: string | null, from: string | null, to: string | null) {

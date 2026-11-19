@@ -20,7 +20,7 @@ import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { TeamCustomers } from './TeamCustomers';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
-import { CrocodialTeamPanel, useCrocodialTeamVisible } from '../crocodial/CrocodialTeamPanel';
+import { CrocodialManagerPage, useCrocodialTeamVisible } from '../crocodial/CrocodialTeamPanel';
 
 export type TeamLeadNav = 'overview' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications' | 'crocodial';
 
@@ -67,7 +67,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
           { id: 'customers', label: 'Team Customers', icon: Users },
           { id: 'assigned-tasks', label: 'Assigned Tasks', icon: ClipboardList },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
-          // Crocodial calling activity of the connected people this Team Lead leads (only when there are any)
+          // Crocodial calling activity: the Team Lead's own (when connected) and the connected people they lead (only when there is any)
           ...(crocodialVisible ? [{ id: 'crocodial', label: 'Crocodial Activity', icon: PhoneCall }] : []),
           { ...REPORTS_NAV, badge: reportsBadge },
           { id: 'field-visits', label: 'Field Visits', icon: Navigation }
@@ -131,7 +131,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       {nav === 'raise-issue' && <IssuesRoute />}
       {nav === 'work-reports' && <ReportsRoute />}
       {nav === 'notifications' && <NotificationsPage />}
-      {nav === 'crocodial' && <CrocodialTeamPanel />}
+      {nav === 'crocodial' && <CrocodialManagerPage />}
     </DashboardShell>
   );
 };

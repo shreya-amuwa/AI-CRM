@@ -1,5 +1,6 @@
 // Browser test of the Crocodial management view (20270115000400): the pilot label and its note, totals, a person not synced shown as
-// "not available", the period filter, opening one person's activity, and no one connected, at desktop and phone width. The API is a fake.
+// "not available", the period filter, opening one person's activity, and no one connected, at desktop and phone width; a Department Head
+// shown as such (heads sit above teams), and a head's own page: "My activity" and "People I oversee" (20270115000600). The API is a fake.
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -26,7 +27,7 @@ const bundle = built.outputFiles[0].text;
 const now = new Date().toISOString();
 const SACHIN = '11111111-1111-4111-8111-111111111111';
 let state;
-const reset = () => { state = { empty: false, calls: [] }; };
+const reset = () => { state = { empty: false, head: false, self: false, calls: [] }; };
 reset();
 const ok = (res, data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, data })); };
 const person = (id, name, team, made, conn, extra = {}) => ({ profileId: id, name, role: 'TEAM_MEMBER', salesSubRole: 'TELECALLER', teamId: 't1', teamName: team,
@@ -39,9 +40,10 @@ function team(q) {
   return { connectedEmployees: 3, label: 'Crocodial Pilot — 3 connected employees', stage: 'PILOT', from: q.get('from'), to: q.get('to'), oldestSyncAt: now, anyStale: false, unavailable: 1,
     note: 'Totals cover only the connected employees listed here, not the whole department.',
     people: [person(SACHIN, 'Sachin', 'Sales', 19, 8), person('22222222-2222-4222-8222-222222222222', 'Supriya', 'Sales', 954, 534),
-             { ...person('33333333-3333-4333-8333-333333333333', 'New Person', 'Sales', 0, 0), available: false, calls: null, followups: null }],
+             { ...person('33333333-3333-4333-8333-333333333333', 'New Person', 'Sales', 0, 0), available: false, calls: null, followups: null },
+             ...(state.head ? [person('44444444-4444-4444-8444-444444444444', 'Supriya Head', null, 10, 5, { role: 'DEPARTMENT_HEAD', salesSubRole: null, teamId: null })] : [])],
     totals: { made: 973, connected: 542, connectRate: 55.7, talkSeconds: 542 * 60, uniqueLeads: 973, followupsScheduled: 4, followupsCompleted: 2, followupsOverdue: 2, demosScheduled: 3, demosCompleted: 3 },
-    teams: [{ teamId: 't1', teamName: 'Sales', people: 3, made: 973, connected: 542 }],
+    teams: [{ teamId: 't1', teamName: 'Sales', people: 3, made: 973, connected: 542 }, ...(state.head ? [{ teamId: null, teamName: null, people: 1, made: 10, connected: 5 }] : [])],
     daily: [{ day: '2026-11-18', made: 500, connected: 300 }, { day: '2026-11-19', made: 473, connected: 242 }] };
 }
 const activity = q => ({ enabled: true, available: true, stale: false, lastSyncAt: now, timezone: 'Asia/Kolkata', from: q.get('from'), to: q.get('to'),
@@ -54,6 +56,7 @@ function api(req, res) {
   state.calls.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), auth: req.headers.authorization || null });
   if (p === '/crocodial/team-activity') return ok(res, team(u.searchParams));
   if (p === '/crocodial/activity') return ok(res, activity(u.searchParams));
+  if (p === '/crocodial/me') return ok(res, state.self ? { enabled: true, connectionName: 'M Pillar', externalName: 'Supriya', departmentName: 'M Pillar', lastSuccessAt: now, health: 'OK', timezone: 'Asia/Kolkata' } : { enabled: false });
   res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'no fake' } }));
 }
 
@@ -105,6 +108,40 @@ try {
     await page.getByTestId('croc-team-table').waitFor();
     check(errors.length === 0, `${label}: no script errors`, errors);
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${label}: the page does not scroll sideways (the table scrolls in its box)`);
+    await page.getByRole('button', { name: 'Last 90 days' }).click();
+    await page.waitForTimeout(300);
+    const q90 = last('/crocodial/team-activity').query;
+    check((new Date(q90.to) - new Date(q90.from)) / 86400000 === 89, `${label}: older activity: the last 90 days`, q90);
+
+    // a Department Head is shown as such, not as "no team"
+    reset(); state.head = true;
+    await page.goto(base);
+    await page.evaluate(() => window.mount());
+    await page.getByTestId('croc-team-table').waitFor();
+    const headRow = page.getByRole('row', { name: /Supriya Head/ });
+    check(await headRow.getByText('Department Head (above teams)').isVisible() && await headRow.getByText('Department Head', { exact: true }).isVisible(),
+      `${label}: a Department Head is shown as Department Head (above teams), not "—"`);
+    check(await page.getByLabel('By team').getByText(/^Department Head: 1 connected/).isVisible() && !(await page.getByLabel('By team').getByText(/No team/).count()),
+      `${label}: and grouped as Department Head, not "No team"`);
+
+    // a head who is connected themselves: their own activity and the people they oversee
+    reset(); state.self = true;
+    await page.goto(base);
+    await page.evaluate(() => window.mountManager());
+    await page.getByRole('tab', { name: 'My activity' }).waitFor();
+    await page.getByRole('heading', { name: 'My Crocodial Activity' }).waitFor();
+    check(await page.getByRole('tab', { name: 'My activity' }).getAttribute('aria-selected') === 'true' && !last('/crocodial/activity').query.profileId,
+      `${label}: a connected head opens on their own activity (no person id sent: the server uses the session)`);
+    await page.getByRole('tab', { name: 'People I oversee' }).click();
+    await page.getByTestId('croc-team-table').waitFor();
+    check(await page.getByRole('row', { name: /Sachin/ }).isVisible(), `${label}: and can switch to the people they oversee`);
+    reset();
+    await page.goto(base);
+    await page.evaluate(() => window.mountManager());
+    await page.getByTestId('croc-team-table').waitFor();
+    check(!(await page.getByRole('tablist').count()), `${label}: a head who is not connected sees only the people they oversee (no "My activity")`);
+    check(errors.length === 0, `${label}: no script errors (head views)`, errors);
+
     reset(); state.empty = true;
     await page.goto(base);
     await page.evaluate(() => window.mount());

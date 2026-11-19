@@ -1068,6 +1068,7 @@ export const crocodialApi = {
   createMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
     api.post<CrocodialMapping>('/crocodial/mappings', body),
   approveMapping: (id: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/approve`, {}),
+  countMappingFrom: (id: string, from: string | null) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/count-from`, { from }),
   revokeMapping: (id: string, reason?: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/revoke`, { reason: reason || null }),
   me: () => api.get<CrocodialMyStatus>('/crocodial/me'),
   syncStatus: () => api.get<CrocodialSyncStatus[]>('/crocodial/sync'),
