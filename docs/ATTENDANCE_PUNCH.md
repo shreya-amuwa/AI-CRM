@@ -12,7 +12,12 @@ card at the top of their Operations Dashboard. Nothing is recorded automatically
 * **Signing in to the CRM never punches in, and signing out never punches out.** The two are recorded separately (see "CRM sign-in and
   sign-out" below).
 * **Punch In** / **Punch Out** need the device's **current location** (migration 0700). When the button is pressed the browser is asked for
-  the position (`enableHighAccuracy`, `maximumAge: 0`, up to 20 s; readings are watched for a few seconds and the most precise one is kept).
+  the position (`enableHighAccuracy`, `maximumAge: 0`). A reading within **100 m** is used at once; otherwise the readings are watched for
+  at most **3 seconds** after the first acceptable one and the most precise is kept; a first reading over the limit (a phone's coarse fix
+  from the mobile network) keeps it listening for the GPS fix, up to **20 seconds** in all. A punch is usually recorded in 1–3 s.
+  A punch less precise than 100 m (a laptop locating itself from Wi-Fi or the network) is still accepted up to the limit below, and shown as
+  **"low precision"** to the employee and in HR's register. To make 100 m strict, set `attendance_settings.max_location_accuracy_m` to 100
+  (then punches over 100 m are refused with the "not precise enough" help).
   Punch Out takes a **fresh** position of its own. If permission is denied, location services are off, no position comes in time, the browser
   has no geolocation, or the position is less precise than `attendance_settings.max_location_accuracy_m` (**1000 m** by default — an
   approximate network/IP position is typically several km), **nothing is recorded** and the card explains how to turn location on. The

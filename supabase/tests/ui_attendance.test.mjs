@@ -49,8 +49,12 @@ try {
   check(await page.getByTestId('punch-out').isDisabled() && await page.getByTestId('lunch-start').isDisabled() && !(await page.getByTestId('punch-in').isDisabled()),
     'Not Punched In: only Punch In is available');
   check((await calledRpc(page, 'attendance_punch_in')).length === 0, 'no Punch In is sent until the button is pressed');
+  const clickedAt = Date.now();
   await page.getByTestId('punch-in').click();
   await page.getByText(/^Punched in at/).waitFor();
+  const tookMs = Date.now() - clickedAt;
+  check(tookMs < 2000, 'a 12 m reading: punched within 2 seconds of the click', tookMs);
+  check(!/low precision/.test(await page.getByTestId('attendance-notice').textContent()), 'a precise punch is not marked low precision');
   const sentIn = (await calledRpc(page, 'attendance_punch_in'))[0];
   check(sentIn.p_location_status === 'CAPTURED' && Math.abs(sentIn.p_lat - 18.5204) < 1e-6 && Math.abs(sentIn.p_lng - 73.8567) < 1e-6 && sentIn.p_accuracy === 12 && typeof sentIn.p_request === 'string',
     'Punch In sends the GPS position, its accuracy and a request id', sentIn);
@@ -103,6 +107,39 @@ try {
     navigator.geolocation.clearWatch = () => {};
   }, /could not find its location.*Turn on location services/);
   await refused('an approximate 5 km (network / IP) position: not marked', { geolocation: { latitude: 18.5, longitude: 73.8, accuracy: 5000 }, permissions: ['geolocation'] }, null, /not precise enough \(within 5000 m; at most 1000 m/);
+  {
+    // a laptop on Wi-Fi: 350 m. Saved after a short wait (no 8-second wait any more) and marked "low precision".
+    const c = await browser.newContext({ geolocation: { latitude: 18.5204, longitude: 73.8567, accuracy: 350 }, permissions: ['geolocation'], viewport: { width: 1280, height: 900 } });
+    const pg = await c.newPage();
+    await pg.goto(base);
+    await pg.evaluate(() => window.mount());
+    const t0 = Date.now();
+    await pg.getByTestId('punch-in').click();
+    await pg.getByText(/^Punched in at/).waitFor({ timeout: 15000 });
+    const took = Date.now() - t0;
+    const note = await pg.getByTestId('attendance-notice').textContent();
+    check(took < 5000 && /within 350 m · low precision\)/.test(note), 'a 350 m reading: saved within 5 seconds, the notice says "low precision"', { took, note });
+    check(/low precision/.test(await pg.getByTestId('punch-in-location').textContent()), 'and the card marks the punch "low precision"');
+    await c.close();
+  }
+  // a phone whose first reading is the mobile network (1.4 km, over the limit) and whose GPS fix comes 4 s later: not refused at 3 s
+  const scripted = async (label, readings, expectRx, timeout = 25000) => {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await c.addInitScript(rs => {
+      navigator.geolocation.watchPosition = ok => { for (const [ms, acc] of rs) setTimeout(() => ok({ coords: { latitude: 18.5204, longitude: 73.8567, accuracy: acc } }), ms); return 7; };
+      navigator.geolocation.clearWatch = () => {};
+    }, readings);
+    const pg = await c.newPage();
+    await pg.goto(base);
+    await pg.evaluate(() => window.mount());
+    await pg.getByTestId('punch-in').click();
+    await pg.getByTestId('attendance-notice').waitFor({ timeout });
+    const note = await pg.getByTestId('attendance-notice').textContent();
+    check(expectRx.test(note), label, note);
+    await c.close();
+  };
+  await scripted('a first reading of 1.4 km and a GPS fix 4 s later: punched with the GPS fix (not refused at 3 s)', [[100, 1414], [4000, 30]], /^Punched in at .*within 30 m\)/);
+  await scripted('no reading for 12 s (a slow first fix or a long look at the permission prompt), then 40 m: punched', [[12000, 40]], /^Punched in at .*within 40 m\)/);
   await refused('a browser without geolocation: not marked', {}, () => { Object.defineProperty(Navigator.prototype, 'geolocation', { get: () => undefined }); }, /cannot share its location/);
 
   // 3. HR: the register of every employee for a day, CRM login / logout apart from punches, coordinates, maps, lunch, states
@@ -122,6 +159,7 @@ try {
   const ashaOut = await asha.getByTestId('hr-out-location').textContent();
   check(/18\.520431, 73\.856743/.test(ashaIn) && /within 113 m/.test(ashaIn) && /Near: Baner Road/.test(ashaIn) && /18\.559000, 73\.786800/.test(ashaOut) && /within 9 m/.test(ashaOut),
     'HR sees the Punch In and Punch Out coordinates and accuracy (and the nearest address when looked up)', { ashaIn, ashaOut });
+  check(/within 113 m · low precision/.test(ashaIn) && !/low precision/.test(ashaOut), 'HR\'s register marks a punch over 100 m "low precision" (and not a 9 m one)', { ashaIn, ashaOut });
   check((await asha.getByTestId('hr-location').getByRole('link', { name: 'Google Maps' }).getAttribute('href')) === 'https://www.google.com/maps?q=18.520431,73.856743', 'a Google Maps link for each punch');
   check((await asha.getByTestId('crm-login').textContent()) === '9:00 AM IST' && (await asha.getByTestId('crm-logout').textContent()) === 'Logout 6:15 PM IST'
     && (await asha.getByTestId('register-in').textContent()) === '9:05 AM IST' && /55 min/.test(await asha.getByTestId('register-lunch').textContent()) && /\+10 min over/.test(await asha.getByTestId('register-lunch').textContent()),
