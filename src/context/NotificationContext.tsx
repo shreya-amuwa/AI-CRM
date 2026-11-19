@@ -5,6 +5,7 @@ import { errorMessage } from '../lib/api/client';
 import { getSupabase } from '../services/supabaseClient';
 import { useAuth } from './AuthContext';
 import { useDepartments } from './DepartmentContext';
+import { notifyMeetingsChanged } from '../components/meetings/meetingEvents';
 
 /**
  * Notifications are rows in Supabase, one per recipient. The server returns
@@ -136,7 +137,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         'postgres_changes',
         // Any change (new, read on another device, deleted) keeps every device in sync.
         { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${profile.id}` },
-        () => void refresh()
+        (payload: { new?: { entity_type?: string | null } | null }) => {
+          // a meeting notification: an open Meetings page reloads at once (a new request shows without a refresh)
+          if (payload?.new?.entity_type === 'meeting') notifyMeetingsChanged();
+          void refresh();
+        }
       )
       .subscribe();
     return () => {

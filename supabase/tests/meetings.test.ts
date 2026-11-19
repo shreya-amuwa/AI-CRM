@@ -7,6 +7,7 @@ import {
   refreshAccessToken, signState, verifyState, type CalendarMeeting
 } from '../../server/meetings/google.js';
 import { manageToken, meetingIcs, renderMeetingEmail, verifyManageToken, whenText, type MailMeeting } from '../../server/meetings/mail.js';
+import { mailDecision, meetingSender, organiserOf, type ClaimedMail } from '../../server/meetings/worker.js';
 import { DEFAULT_WINDOWS, freeSlots, localDate, slotStep, zonedTimeToUtc, zoneOffsetMinutes } from '../../server/meetings/slots.js';
 import { meetingAvailabilitySchema, meetingBookingLinkSchema, meetingCreateSchema, meetingDecisionSchema, publicBookingSchema } from '../../shared/validation.js';
 
@@ -203,5 +204,42 @@ check(!ok(meetingAvailabilitySchema, { timezone: 'Asia/Kolkata', availability: [
 check(!ok(meetingAvailabilitySchema, { timezone: 'Asia/Kolkata', availability: [{ weekday: 7, start: '10:00', end: '18:00' }] }), 'weekdays are 0-6');
 check(!ok(publicBookingSchema, { startsAt: '2026-11-18T04:30:00Z', name: 'A', email: 'a@b.co' }), 'a guest gives a real name');
 check(!ok(publicBookingSchema, { startsAt: '2026-11-18T04:30:00Z', name: 'Asha', email: 'a@b.co', extra: 1 }), 'unknown fields are refused');
+
+
+// ---------------------------------------------------------------------------
+// the creator organises the event (migration 20270113000100)
+// ---------------------------------------------------------------------------
+const mailMeetingForSign = (): MailMeeting => ({ id, reference: 'MTG-1', title: 'Sync', description: null, hostName: 'Host', hostEmail: 'h@a.com',
+  startsAt: '2026-11-18T04:30:00Z', endsAt: '2026-11-18T05:00:00Z', timezone: 'Asia/Kolkata', mode: 'IN_PERSON', location: 'Pune', meetLink: null,
+  status: 'SCHEDULED', decisionNote: null, cancelReason: null, proposedStartsAt: null, proposedEndsAt: null, bookedVia: 'STAFF', version: 1 });
+{
+  // a request for the CEO's time, approved: the event is on the calendar of the one asking, the CEO is a guest
+  const req = eventBody({ ...meeting, hostEmail: 'CEO@Amuwa.com', hostName: 'The CEO', organizerEmail: 'emp@amuwa.com',
+    attendees: [{ email: 'emp@amuwa.com', name: 'Employee', role: 'REQUIRED', profileId: 'p9' }] }, 'https://crm.example.com', false) as any;
+  check(JSON.stringify(req.attendees.map((a: any) => a.email)) === JSON.stringify(['ceo@amuwa.com']) && req.attendees[0].displayName === 'The CEO',
+    'the organiser (the one asking) is not a guest; the host is', req.attendees);
+  const own = eventBody({ ...meeting, organizerEmail: 'host@amuwa.com' }, 'https://crm.example.com', false) as any;
+  check(!own.attendees.some((a: any) => a.email === 'host@amuwa.com'), 'when the host organises, the host is not a guest (as before)');
+  check(organiserOf({ googleOwnerId: null, createdBy: 'c', hostId: 'h' }) === 'c' && organiserOf({ googleOwnerId: 'h', createdBy: 'c', hostId: 'h' }) === 'h'
+    && organiserOf({ googleOwnerId: null, createdBy: null, hostId: 'h' }) === 'h', 'the worker uses the calendar the database names: owner, else creator, else host');
+
+  const mail = (over: Partial<ClaimedMail>, sync = 'SYNCED'): ClaimedMail => ({
+    id: 1, toEmail: 'col@amuwa.com', toName: 'Colleague', kind: 'CONFIRMED', meetingVersion: 1, toProfileId: 'p2',
+    organizerEmail: 'Emp@Amuwa.com', organizerName: 'Priya Shah',
+    meeting: { googleSyncStatus: sync, bookedVia: 'STAFF', updatedAt: new Date().toISOString(), createdAt: new Date().toISOString() } as any, ...over
+  });
+  check(mailDecision(mail({})) === 'SKIP', 'a colleague is not e-mailed twice when Google sent the invitation');
+  check(mailDecision(mail({ toEmail: 'emp@amuwa.com' })) === 'SEND', 'the organiser always gets the meeting e-mail (Google does not e-mail the organiser)');
+  check(mailDecision(mail({}, 'NOT_CONNECTED')) === 'SEND', 'without a Google connection everyone gets the CRM e-mail');
+  check(mailDecision(mail({}, 'PENDING')) === 'DEFER', 'while the sync runs, the CRM waits for Google');
+  check(mailDecision(mail({ kind: 'DECLINED' })) === 'SEND', 'a declined request is e-mailed by the CRM (Google has no event)');
+  const base = { email: { fromName: 'Amuwa', fromEmail: 'crm@amuwa.com', replyTo: 'crm@amuwa.com' } } as any;
+  const sender = meetingSender(base, 'Priya Shah', 'priya@gmail.com');
+  check(sender.email.fromName === 'Priya Shah via Amuwa CRM' && sender.email.replyTo === 'priya@gmail.com' && sender.email.fromEmail === 'crm@amuwa.com',
+    'the CRM e-mail names the organiser and replies go to them', sender.email);
+  check(meetingSender(base, null, null) === base, 'without an organiser the company sender is kept');
+  const signed = renderMeetingEmail('CONFIRMED', { ...mailMeetingForSign(), hostName: 'The CEO' }, 'Colleague', null, 'Priya Shah');
+  check(/Regards,<br>Priya Shah/.test(signed.html), 'a colleague\'s copy is signed by the organiser');
+}
 
 console.log(`=== ${passed} MEETINGS CHECKS PASSED ===`);
