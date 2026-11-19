@@ -1,5 +1,5 @@
 import type {
-  GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
+  CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
   MeetingSettings, PublicBookingPage, PublicBookingResult, PublicBookingView
 } from '../../../shared/contracts';
 import { api } from './client';
@@ -7,6 +7,8 @@ import { api } from './client';
 export interface NewMeeting {
   title: string;
   description?: string | null;
+  /** Extra message to the CEO with a request for their time. */
+  message?: string | null;
   kind: 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING';
   hostId?: string | null;
   startsAt: string;
@@ -36,6 +38,7 @@ export const meetingsApi = {
   answerProposal: (id: string, accept: boolean) => api.post<Meeting>(`/meetings/${id}/proposal`, { accept }),
   respond: (id: string, response: 'ACCEPTED' | 'DECLINED' | 'TENTATIVE') => api.post<Meeting>(`/meetings/${id}/response`, { response }),
   approvals: () => api.get<Meeting[]>('/meetings/approvals'),
+  ceoRequests: (section: CeoRequestSection = 'ALL', offset = 0, limit = 50) => api.get<CeoRequestList>('/meetings/ceo-requests', { section, offset, limit }),
   directory: (search?: string) => api.get<MeetingDirectoryEntry[]>('/meetings/directory', { search }),
   busy: (profileIds: string[], from: string, to: string) => api.post<MeetingBusyBlock[]>('/meetings/busy', { profileIds, from, to }),
   settings: () => api.get<MeetingSettings>('/meetings/settings'),

@@ -177,6 +177,7 @@ export const meetingsController = {
   answerProposal: (async ctx => ok(await svc(ctx).meetings.answerProposal(ctx.params.id, ctx.req.body))) as Handler,
   respond: (async ctx => ok(await svc(ctx).meetings.respond(ctx.params.id, ctx.req.body))) as Handler,
   approvals: (async ctx => ok(await svc(ctx).meetings.approvals())) as Handler,
+  ceoRequests: (async ctx => ok(await svc(ctx).meetings.ceoRequests(ctx.req.query))) as Handler,
   directory: (async ctx => ok(await svc(ctx).meetings.directory(ctx.req.query))) as Handler,
   busy: (async ctx => ok(await svc(ctx).meetings.busy(ctx.req.body))) as Handler,
   settings: (async ctx => ok(await svc(ctx).meetings.settings())) as Handler,

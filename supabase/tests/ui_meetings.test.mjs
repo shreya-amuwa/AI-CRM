@@ -35,7 +35,9 @@ const meeting = (o) => ({
   mode: 'GOOGLE_MEET', location: null, meetLink: 'https://meet.google.com/abc-defg-hij', status: 'SCHEDULED', requiresApproval: false, decidedBy: null, decidedByName: null,
   decidedAt: null, decisionNote: null, proposedStartsAt: null, proposedEndsAt: null, cancelReason: null, bookedVia: 'STAFF', sourceType: null, sourceId: null, customerId: null,
   googleSyncStatus: 'SYNCED', googleSyncError: null, googleEventId: 'e1', version: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-  canManage: true, canDecide: false, canAnswerProposal: false, myResponse: null, attendees: [], ...o
+  canManage: true, canDecide: false, canAnswerProposal: false, canWithdraw: false, canRequestChange: false, myResponse: null, requestMessage: null, createdByDepartment: null,
+  createdByDesignation: null, rejectionReason: null, previousStartsAt: null, previousEndsAt: null, rescheduledAt: null, rescheduledBy: null, rescheduledByName: null,
+  rescheduleReason: null, rescheduleCount: 0, attendees: [], ...o
 });
 const state = {
   meetings: [meeting({ id: 'aaaaaaaa-0000-4000-8000-000000000001' })],
@@ -54,7 +56,17 @@ function api(req, res, body) {
   state.calls.push({ method: req.method, path: p, body, auth: req.headers.authorization || null });
   if (p === '/meetings/google' && req.method === 'GET') return ok(res, { configured: true, connected: false, status: 'NOT_CONNECTED', googleEmail: null, connectedAt: null, lastError: null });
   if (p === '/meetings/google/connect') return ok(res, { url: '/fake-google-signin' });
-  if (p === '/meetings/approvals') return ok(res, state.approvals.filter(m => m.status === 'REQUESTED'));
+  if (p === '/meetings/approvals') return ok(res, state.viewerIsCeo ? state.approvals.filter(m => m.status === 'REQUESTED') : []);
+  if (p === '/meetings/ceo-requests') {
+    const sec = u.searchParams.get('section') || 'ALL';
+    const all = state.approvals;
+    const inSec = m => sec === 'ALL' || (sec === 'PENDING' && ['REQUESTED', 'PROPOSED'].includes(m.status)) || (sec === 'APPROVED' && m.status === 'SCHEDULED' && !m.rescheduleCount)
+      || (sec === 'REJECTED' && m.status === 'DECLINED') || (sec === 'RESCHEDULED' && m.status === 'SCHEDULED' && m.rescheduleCount > 0);
+    const count = f => all.filter(f).length;
+    return ok(res, { section: sec, isSuperAdmin: state.viewerIsCeo, limit: 50, offset: 0, items: all.filter(inSec),
+      counts: { pending: count(m => ['REQUESTED', 'PROPOSED'].includes(m.status)), approved: count(m => m.status === 'SCHEDULED' && !m.rescheduleCount), rejected: count(m => m.status === 'DECLINED'),
+        rescheduled: count(m => m.status === 'SCHEDULED' && m.rescheduleCount > 0), all: all.length } });
+  }
   if (p === '/meetings' && req.method === 'GET') return ok(res, state.meetings);
   if (p === '/meetings/directory') return ok(res, [CEO, COL]);
   if (p === '/meetings/busy') return ok(res, [{ profileId: COL.id, start: at(tomorrow, '11:00'), end: at(tomorrow, '12:00'), source: 'GOOGLE' }]);
@@ -75,7 +87,14 @@ function api(req, res, body) {
   if (det && det[3] === 'decision') {
     const m = state.approvals.find(x => x.id === det[1]);
     m.status = body.decision === 'APPROVE' ? 'SCHEDULED' : body.decision === 'DECLINE' ? 'DECLINED' : 'PROPOSED';
+    if (body.decision === 'DECLINE') m.rejectionReason = body.note;
     m.canDecide = false;
+    return ok(res, m);
+  }
+  const mv = /^\/meetings\/([0-9a-f-]{36})\/reschedule$/.exec(p);
+  if (mv) {
+    const m = state.approvals.find(x => x.id === mv[1]);
+    Object.assign(m, { previousStartsAt: m.startsAt, previousEndsAt: m.endsAt, startsAt: body.startsAt, endsAt: body.endsAt, status: 'SCHEDULED', canDecide: false, rescheduleCount: 1, rescheduleReason: body.note });
     return ok(res, m);
   }
   if (det) return ok(res, { ...([...state.meetings, ...state.approvals].find(x => x.id === det[1])), history: [{ kind: 'SCHEDULED', note: null, actorName: 'Asha Me', at: new Date().toISOString(), data: {} }] });
@@ -140,13 +159,75 @@ try {
   check(await page.getByRole('button', { name: /Reschedule/ }).isVisible() && await page.getByRole('button', { name: /Cancel/ }).first().isVisible(), 'the host can reschedule or cancel');
   await page.keyboard.press('Escape');
 
-  // 2. a request for the CEO's time
-  await page.getByRole('tab', { name: /Requests \(1\)/ }).click();
+  // 2. a request for the CEO's time: an employee sees no management buttons, the Super Admin (CEO) decides
+  state.approvals[0].canDecide = false; state.approvals[0].canManage = false; state.approvals[0].canWithdraw = true;
+  await page.getByRole('tab', { name: 'My CEO requests' }).click();
   await page.getByText('Budget for Pune').waitFor();
-  check(await page.getByText(/asked by Ravi Colleague/).isVisible(), 'the CEO sees who asks for their time');
+  check(await page.getByRole('button', { name: 'Approve' }).count() === 0 && await page.getByRole('button', { name: 'Reject' }).count() === 0
+        && await page.getByRole('button', { name: /Reschedule/ }).count() === 0, 'an employee sees no Approve, Reject or Reschedule button');
+  check(await page.getByRole('heading', { name: 'My Meeting Requests' }).isVisible(), 'they see "My Meeting Requests"');
+  state.approvals[0].canDecide = true; state.approvals[0].canManage = true; state.approvals[0].canWithdraw = false;
+  state.viewerIsCeo = true;
+  await page.goto(base);
+  await page.evaluate(() => window.mount());
+  await page.getByRole('tab', { name: /Requests \(1\)/ }).click();
+  await page.getByRole('heading', { name: 'Meeting requests from employees' }).waitFor();
+  check(await page.getByRole('tab', { name: /Pending Requests \(1\)/ }).isVisible() && await page.getByRole('tab', { name: /Approved Meetings/ }).isVisible()
+        && await page.getByRole('tab', { name: /Rejected Meetings/ }).isVisible() && await page.getByRole('tab', { name: /Rescheduled Meetings/ }).isVisible()
+        && await page.getByRole('tab', { name: /Meeting History/ }).isVisible(), 'the Super Admin has Pending, Approved, Rejected, Rescheduled and History sections');
+  await page.getByText('Budget for Pune').waitFor();
+  check(await page.getByText('Ravi Colleague').first().isVisible(), 'the CEO sees who asks for their time');
+  check(await page.getByRole('button', { name: 'Approve' }).isVisible() && await page.getByRole('button', { name: 'Reject' }).isVisible()
+        && await page.getByRole('button', { name: /Reschedule/ }).isVisible(), 'only the Super Admin has Approve, Reject and Reschedule');
+  // reject: a reason is required
+  await page.getByRole('button', { name: 'Reject' }).click();
+  await page.getByRole('dialog', { name: 'Budget for Pune' }).waitFor();
+  const rejectBtn = page.getByRole('button', { name: 'Reject the request' });
+  await rejectBtn.waitFor();
+  check(await rejectBtn.isDisabled(), 'a rejection cannot be sent without a reason');
+  await page.getByLabel('Reason for rejecting').fill('Please ask your Department Head first');
+  await rejectBtn.click();
+  await page.getByText(/Request rejected/).waitFor();
+  check(lastCall('POST', '/meetings/bbbbbbbb-0000-4000-8000-000000000002/decision').body.decision === 'DECLINE'
+        && lastCall('POST', '/meetings/bbbbbbbb-0000-4000-8000-000000000002/decision').body.note === 'Please ask your Department Head first', 'Reject sends the reason');
+  await page.getByRole('tab', { name: /Rejected Meetings \(1\)/ }).click();
+  await page.getByText(/Rejected: Please ask your Department Head first/).waitFor();
+  check(true, 'the rejected request is in the Rejected section with its reason');
+  // approve and reschedule on a second request
+  state.approvals.push(meeting({ id: 'eeeeeeee-0000-4000-8000-000000000005', title: 'Hiring plan', kind: 'CEO_MEETING', kindLabel: 'Meeting with the CEO', status: 'REQUESTED',
+    hostId: CEO.id, hostName: CEO.name, createdBy: COL.id, createdByName: COL.name, createdByDepartment: 'Wabastore', createdByDesignation: 'Team Member', description: 'Plan for Q1',
+    canDecide: true, canManage: true, startsAt: at(tomorrow, '17:00'), endsAt: at(tomorrow, '17:30') }));
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('crm:meetings-changed')));
+  await page.getByRole('tab', { name: /Pending Requests \(1\)/ }).click();
+  await page.getByText('Hiring plan').waitFor();
+  check(await page.getByText(/Wabastore · Team Member/).isVisible() && await page.getByText(/Plan for Q1/).isVisible(), 'each request shows the employee, department, designation and agenda');
+  await page.getByRole('button', { name: /Reschedule/ }).click();
+  await page.getByRole('dialog', { name: 'Hiring plan' }).waitFor();
+  const saveBtn = page.getByRole('dialog').getByRole('button', { name: 'Save' });
+  check(await saveBtn.isDisabled(), 'a reschedule cannot be saved without a reason');
+  await page.getByLabel('Reason for rescheduling').fill('The board meets that afternoon');
+  await saveBtn.click();
+  await page.getByText(/Meeting rescheduled/).waitFor();
+  check(lastCall('POST', '/meetings/eeeeeeee-0000-4000-8000-000000000005/reschedule').body.note === 'The board meets that afternoon', 'Reschedule sends the reason');
+  await page.getByRole('tab', { name: /Rescheduled Meetings \(1\)/ }).click();
+  await page.getByText(/The board meets that afternoon/).waitFor();
+  check(true, 'the moved meeting is in the Rescheduled section with the reason');
+  state.approvals.push(meeting({ id: 'ffffffff-0000-4000-8000-000000000006', title: 'Quarterly review', kind: 'CEO_MEETING', kindLabel: 'Meeting with the CEO', status: 'REQUESTED',
+    hostId: CEO.id, hostName: CEO.name, createdBy: COL.id, createdByName: COL.name, canDecide: true, canManage: true, startsAt: at(tomorrow, '18:00'), endsAt: at(tomorrow, '18:30') }));
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('crm:meetings-changed')));
+  await page.getByRole('tab', { name: /Pending Requests \(1\)/ }).click();
+  await page.getByText('Quarterly review').waitFor();
   await page.getByRole('button', { name: 'Approve' }).click();
-  await page.getByText(/Approved: Budget for Pune/).waitFor();
-  check(lastCall('POST', '/meetings/bbbbbbbb-0000-4000-8000-000000000002/decision').body.decision === 'APPROVE', 'Approve sends the decision');
+  await page.getByText(/Approved: Quarterly review/).waitFor();
+  check(lastCall('POST', '/meetings/ffffffff-0000-4000-8000-000000000006/decision').body.decision === 'APPROVE', 'Approve sends the decision');
+  state.viewerIsCeo = false;
+  // the employee reads the reason of a rejection
+  await page.goto(base);
+  await page.evaluate(() => window.mount());
+  await page.getByRole('tab', { name: 'My CEO requests' }).click();
+  await page.getByRole('tab', { name: /Rejected \(1\)/ }).click();
+  await page.getByText(/Rejected: Please ask your Department Head first/).waitFor();
+  check(await page.getByRole('button', { name: 'Approve' }).count() === 0, 'the employee reads the rejection reason and has no decision buttons');
 
   // 3. a new meeting with a colleague (busy at 11:00) and a guest
   await page.getByRole('tab', { name: 'Calendar' }).click();
@@ -175,10 +256,13 @@ try {
   const ask = page.getByRole('dialog', { name: 'Ask the CEO for time' });
   check(await ask.getByLabel('With').inputValue() === CEO.id, 'the CEO is chosen');
   await ask.getByLabel('Subject').fill('Hiring plan for Q1');
+  check(await ask.getByLabel('Agenda or purpose').getAttribute('required') !== null, 'the agenda is required');
+  await ask.getByLabel('Agenda or purpose').fill('Agree the hiring numbers for Q1');
+  await ask.getByLabel('Additional message').fill('Any slot this week works');
   await ask.getByRole('button', { name: /Send the request/ }).click();
   await page.getByText(/Request sent to Meera CEO/).waitFor();
   const asked = lastCall('POST', '/meetings').body;
-  check(asked.hostId === CEO.id && asked.kind === 'CEO_MEETING', 'the request names the CEO as host', asked);
+  check(asked.hostId === CEO.id && asked.kind === 'CEO_MEETING' && asked.description === 'Agree the hiring numbers for Q1' && asked.message === 'Any slot this week works', 'the request names the CEO as host, with the agenda and the message', asked);
 
   // 5. a booking link
   await page.getByRole('tab', { name: /Google, hours/ }).click();
@@ -215,6 +299,10 @@ try {
   state.viewerIsCeo = false;
 
   // 7c. live: a new request appears without a refresh, and a meeting notification opens the meeting
+  state.viewerIsCeo = true;
+  state.approvals.length = 0;
+  await page.goto(base);
+  await page.evaluate(() => window.mount());
   check(await page.getByRole('tab', { name: /^Requests$/ }).isVisible(), 'nothing is waiting for a decision');
   state.approvals.push(meeting({ id: 'cccccccc-0000-4000-8000-000000000003', title: 'Office lease', kind: 'CEO_MEETING', kindLabel: 'Meeting with the CEO', status: 'REQUESTED',
     hostId: CEO.id, hostName: CEO.name, createdBy: COL.id, createdByName: COL.name, canDecide: true, startsAt: at(tomorrow, '16:00'), endsAt: at(tomorrow, '16:30') }));
@@ -225,6 +313,7 @@ try {
   await page.getByRole('dialog', { name: 'Office lease' }).waitFor({ timeout: 5000 });
   check(true, 'clicking the meeting notification opens that meeting');
   await page.keyboard.press('Escape');
+  state.viewerIsCeo = false;
 
   // 8. the public booking page
   const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Asia/Kolkata' });
