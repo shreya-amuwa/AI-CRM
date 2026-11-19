@@ -11325,6 +11325,15 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 403, 'crocodial: an employee cannot start a sync', r);
   r = await api('sa', 'POST', `/crocodial/connections/${cid}/sync`);
   check(r.status === 422, 'crocodial: a connection that is off is never synced', r);
+  r = await api('a', 'GET', '/crocodial/activity');
+  check(r.status === 200 && r.json.data.enabled === false, 'crocodial: without an approved mapping the activity is switched off (not zeros)', r);
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' limit 1`)).rows[0].id;
+  r = await api('a', 'GET', `/crocodial/activity?profileId=${saId}`);
+  check(r.status === 404, 'crocodial: nobody reads another person\'s activity by sending their id', r);
+  r = await api('a', 'GET', '/crocodial/activity?from=yesterday');
+  check(r.status === 422, 'crocodial: the period is validated', r);
+  r = await api(null, 'GET', '/crocodial/activity');
+  check(r.status === 401, 'crocodial: the activity needs a login', r);
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 

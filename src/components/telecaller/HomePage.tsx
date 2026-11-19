@@ -9,6 +9,7 @@ import { Avatar, ErrorBanner, Spinner } from '../team-member/pipeline/shared';
 import { Card, CardHead } from '../tasks/head/headParts';
 import type { TelecallerNavigate } from './TelecallerDashboard';
 import { EmptyState, StatCard, TELECALLER_CHANGED, dateText, tcBtn } from './ui';
+import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -55,6 +56,8 @@ export const HomePage: React.FC<{ go: TelecallerNavigate }> = ({ go }) => {
 
       {error && <ErrorBanner message={error} onRetry={load} />}
       {loading && !data && <Spinner label="Loading your day…" />}
+      {/* Crocodial calling activity: only for a person with an approved mapping (the database decides) */}
+      <CrocodialActivityPanel showDemos={false} />
 
       {data && (
         <>
