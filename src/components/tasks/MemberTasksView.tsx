@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { summarize, useWorkTasks, workTasksApi } from '../../lib/workTasks';
 import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
+import { MyUpdateRequests, TaskWorkUpdates } from './WorkUpdates';
 
 /** Team Member: tasks from the Team Lead; send updates back to the Team Lead. */
 export const MemberTasksView: React.FC = () => {
@@ -30,6 +31,8 @@ export const MemberTasksView: React.FC = () => {
           </div>
         ))}
       </div>
+      {/* update requests from the Team Lead / Department Head: the answer form never changes a task */}
+      <MyUpdateRequests />
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
       ) : mine.length === 0 ? (
@@ -66,6 +69,7 @@ export const MemberTasksView: React.FC = () => {
                 <UpdateTimeline updates={data.updates.filter(u => u.taskId === task.id)} people={data.people} />
               </div>
             </div>
+            <TaskWorkUpdates taskId={task.id} />
           </article>
         ))
       )}

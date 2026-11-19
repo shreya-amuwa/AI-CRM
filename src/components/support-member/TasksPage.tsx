@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { summarize, workTasksApi, type TaskStatus, type WorkTaskData } from '../../lib/workTasks';
 import { fmtDay, useCustomerOptions } from '../../lib/support';
 import { DueLabel, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from '../tasks/TaskParts';
+import { MyUpdateRequests } from '../tasks/WorkUpdates';
 import { Empty, ErrorBanner, KpiCard, Loading, PageHeader } from './SupportParts';
 
 const FILTERS: { id: TaskStatus | 'ALL'; label: string }[] = [
@@ -32,6 +33,8 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
         <KpiCard label="Blocked" value={s.blocked} tone="text-amber-700" />
         <KpiCard label="Completed" value={s.completed} tone="text-emerald-700" hint={s.overdue ? `${s.overdue} overdue` : undefined} />
       </div>
+      {/* update requests from the Team Lead / Department Head; the answer never changes a task */}
+      <MyUpdateRequests />
       <div role="tablist" className="flex gap-1 overflow-x-auto">
         {FILTERS.map(f => (
           <button
