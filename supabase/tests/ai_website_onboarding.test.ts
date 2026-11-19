@@ -32,7 +32,8 @@ bad({ city: '' }, 'city is required');
 bad({ businessType: 'Spaceships' }, 'the type of business comes from the list');
 bad({ businessType: 'Other' }, '"Other" needs the type typed in');
 bad({ extra: 1 }, 'unknown fields are refused');
-check(aiWebsiteOnboardingSchema.safeParse({ ...good, email: '' }).success, 'the e-mail is optional');
+bad({ email: '' }, 'the e-mail is required');
+bad({ email: undefined }, '... also when it is left out');
 const noMaps = aiWebsiteOnboardingSchema.parse({ ...good, onGoogleMaps: false });
 check(noMaps.googleMapsLink === null, '"No" drops a link');
 check(aiWebsiteOnboardingSchema.parse({ ...good, businessTypeOther: 'x' }).businessTypeOther === null, 'a typed type is dropped unless "Other" is chosen');
@@ -48,9 +49,9 @@ check(pre.clientName === 'Kavya' && pre.businessName === 'Nair Bakes' && pre.mob
   'the form starts from the lead; the Google Maps answer is never guessed', pre);
 check(prefillAiWebsite({ ...pre, clientName: 'Typed' }, { name: 'Other' }).clientName === 'Typed', 'a field already filled is never replaced');
 check(prefillAiWebsite(emptyAiWebsiteDraft(), { businessCategory: 'Something else' }).businessType === '', 'a category not in the list is not copied');
-const c1 = checkAiWebsite({ ...pre, onGoogleMaps: 'no' });
+const c1 = checkAiWebsite({ ...pre, email: 'kavya@nairbakes.example', onGoogleMaps: 'no' });
 check(c1.ok && c1.body.onGoogleMaps === false && c1.body.googleMapsLink === '', 'the form check passes a complete block', c1);
 const c2 = checkAiWebsite(emptyAiWebsiteDraft());
-check(!c2.ok && !!c2.errors.clientName && !!c2.errors.mobile && !!c2.errors.onGoogleMaps && !!c2.errors.city && !!c2.errors.businessType && !c2.errors.email, 'an empty form names every required field, not the optional e-mail', c2);
+check(!c2.ok && !!c2.errors.clientName && !!c2.errors.mobile && !!c2.errors.onGoogleMaps && !!c2.errors.city && !!c2.errors.businessType && !!c2.errors.email, 'an empty form names every required field, the e-mail included', c2);
 
 console.log(`=== ${passed} AI WEBSITE ONBOARDING CHECKS PASSED ===`);

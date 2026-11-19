@@ -64,7 +64,7 @@ try {
       'it starts from the customer details already typed (nothing invented: the empty e-mail stays empty)');
     check(!(await page.isVisible('#aiw-googleMapsLink')), 'the Google Maps link appears only after "Yes"');
     const labels = await page.$$eval(`${section} label, ${section} legend`, ls => ls.map(l => l.textContent.trim()));
-    check(labels.includes('Client name *') && labels.includes('Mobile number *') && labels.includes('Email (optional)') && labels.includes('Business name *')
+    check(labels.includes('Client name *') && labels.includes('Mobile number *') && labels.includes('Email *') && labels.includes('Business name *')
       && labels.some(l => /Google Maps\?\s*\*/.test(l)) && labels.includes('City *') && labels.includes('Type of business *'), 'required and optional fields are marked', labels);
     check(await page.isVisible('text=Basic client details') && await page.isVisible('text=Business details'), 'the section has its two groups');
 
@@ -90,7 +90,7 @@ try {
     check((await posts(page)).length === 0, 'nothing is sent while a field is wrong');
 
     await page.fill('#aiw-mobile', '98470 12345');
-    await page.fill('#aiw-email', '');
+    await page.fill('#aiw-email', 'Kavya@NairBakes.example');
     await page.click('[data-testid="aiw-maps-yes"]');
     await page.fill('#aiw-googleMapsLink', 'https://maps.app.goo.gl/nairbakes');
     await page.selectOption('#aiw-businessType', 'Other');
@@ -103,7 +103,7 @@ try {
     const sent = (await posts(page)).find(c => c.path.endsWith('/pipeline/leads'));
     check(sent && sent.body.services.includes('AI_WEBSITE') && sent.body.aiWebsiteOnboarding?.clientName === 'Kavya N.' && sent.body.aiWebsiteOnboarding.mobile === '9847012345'
       && sent.body.aiWebsiteOnboarding.onGoogleMaps === true && sent.body.aiWebsiteOnboarding.googleMapsLink === 'https://maps.app.goo.gl/nairbakes'
-      && sent.body.aiWebsiteOnboarding.businessType === 'Other' && sent.body.aiWebsiteOnboarding.businessTypeOther === 'Home bakery' && sent.body.aiWebsiteOnboarding.email === null,
+      && sent.body.aiWebsiteOnboarding.businessType === 'Other' && sent.body.aiWebsiteOnboarding.businessTypeOther === 'Home bakery' && sent.body.aiWebsiteOnboarding.email === 'kavya@nairbakes.example',
       'the lead is sent once, with its AI Website details', sent?.body);
     check((await posts(page)).length === 1, 'one request (no separate client record)');
     await page.close();

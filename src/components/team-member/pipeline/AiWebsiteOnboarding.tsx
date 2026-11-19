@@ -125,8 +125,8 @@ export const AiWebsiteOnboardingFields: React.FC<{
           <Field label="Mobile number" required htmlFor="aiw-mobile" error={errors.mobile}>
             {text('mobile', { type: 'tel', inputMode: 'numeric', placeholder: '10-digit mobile', autoComplete: 'tel', maxLength: 16, required: true })}
           </Field>
-          <Field label="Email (optional)" htmlFor="aiw-email" error={errors.email}>
-            {text('email', { type: 'email', placeholder: 'For the client’s receipt', autoComplete: 'email', maxLength: 254 })}
+          <Field label="Email" required htmlFor="aiw-email" error={errors.email}>
+            {text('email', { type: 'email', placeholder: 'name@business.com', autoComplete: 'email', maxLength: 254, required: true })}
           </Field>
           <Field label="Business name" required htmlFor="aiw-businessName" error={errors.businessName}>
             {text('businessName', { autoComplete: 'organization', maxLength: 200, required: true })}

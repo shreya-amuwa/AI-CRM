@@ -616,7 +616,7 @@ export const aiWebsiteOnboardingSchema = z
   .object({
     clientName: trimmed(160).min(1, 'Client name is required.'),
     mobile: aiWebsiteMobile,
-    email: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? null : v), emailSchema.nullable().optional()),
+    email: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), emailSchema.optional()).refine(v => !!v, 'Email is required.'),
     businessName: trimmed(200).min(1, 'Business name is required.'),
     onGoogleMaps: z.boolean({ required_error: 'Choose whether the business is on Google Maps.', invalid_type_error: 'Choose whether the business is on Google Maps.' }),
     googleMapsLink: z.preprocess(

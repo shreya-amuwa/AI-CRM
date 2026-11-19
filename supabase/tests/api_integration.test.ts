@@ -11189,6 +11189,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422 && /AI Website client onboarding/.test(r.json.error?.message) && (await leads('AIW Nair Bakes')) === 0, 'ai website: an AI Website lead needs the onboarding details, and nothing is saved without them', r);
   r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, mobile: '12345' } });
   check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: a wrong mobile number is refused before the lead exists', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, email: '' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: the email is required', r);
   r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, businessType: 'Other' } });
   check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: "Other" needs the type typed in', r);
   const requestId = crypto.randomUUID();

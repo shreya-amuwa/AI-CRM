@@ -10,7 +10,7 @@ the client again. Migration: `supabase/migrations/20270113000200_ai_website_onbo
 | --- | --- | --- |
 | Basic client details | Client name | required, up to 160 characters |
 | | Mobile number | required, a 10-digit Indian mobile (a leading +91 / 91 / 0, spaces and dashes are removed) |
-| | Email | optional, a valid address (saved in lower case) |
+| | Email | required, a valid address (saved in lower case) |
 | | Business name | required |
 | Business details | Is the business listed on Google Maps? | required, Yes / No |
 | | Google Maps link | optional, shown only after "Yes"; a web address (`https://...`). "No" removes a link |

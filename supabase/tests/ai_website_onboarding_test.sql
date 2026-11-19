@@ -43,6 +43,8 @@ select test.must_fail($$select ai_website_onboarding_save((select id from aiw wh
 select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"mobile":"12345"}'))$$, 'a mobile number must have 10 digits', '10-digit mobile');
 select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"mobile":"1234567890"}'))$$, '... and be a mobile number (6-9 first)', '10-digit mobile');
 select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"email":"not-an-email"}'))$$, 'an e-mail must be valid', 'valid email');
+select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"email":"  "}'))$$, 'the e-mail is required', 'email address');
+select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body() - 'email')$$, '... also when it is left out', 'email address');
 select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"businessName":""}'))$$, 'the business name is required', 'business name');
 select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body() - 'onGoogleMaps')$$, 'the Google Maps answer is required', 'Google Maps');
 select test.must_fail($$select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"googleMapsLink":"maps.google.com/x"}'))$$, 'a Google Maps link is a web address', 'web address');
@@ -56,15 +58,15 @@ select test.check((select client_name = 'Meera Shah' and city = 'Surat' from tes
 set role authenticated;
 select test.login('tm_a');
 select ai_website_onboarding_save((select id from aiw where name = 'L1'),
-  test.aiw_body('{"onGoogleMaps":false,"googleMapsLink":"https://maps.app.goo.gl/should-go","email":"","businessType":"Other","businessTypeOther":"Handmade silver","city":"Vadodara","mobile":"+91 91234 56789"}'));
+  test.aiw_body('{"onGoogleMaps":false,"googleMapsLink":"https://maps.app.goo.gl/should-go","email":"Owner@ShahJewels.example","businessType":"Other","businessTypeOther":"Handmade silver","city":"Vadodara","mobile":"+91 91234 56789"}'));
 select ai_website_onboarding_save((select id from aiw where name = 'L1'),
-  test.aiw_body('{"onGoogleMaps":false,"email":"","businessType":"Other","businessTypeOther":"Handmade silver","city":"Vadodara","mobile":"+91 91234 56789"}'));   -- a retry
+  test.aiw_body('{"onGoogleMaps":false,"email":"Owner@ShahJewels.example","businessType":"Other","businessTypeOther":"Handmade silver","city":"Vadodara","mobile":"+91 91234 56789"}'));   -- a retry
 reset role;
 select test.check((select count(*) = 1 from ai_website_onboarding where customer_id = (select id from aiw where name = 'L1')), 'editing and retrying never make a second record');
-select test.check((select not on_google_maps and google_maps_link is null and email is null and business_type = 'Other' and business_type_other = 'Handmade silver'
+select test.check((select not on_google_maps and google_maps_link is null and email = 'owner@shahjewels.example' and business_type = 'Other' and business_type_other = 'Handmade silver'
                           and city = 'Vadodara' and mobile = '9123456789' and updated_by = test.id('tm_a')
                      from test.aiw_row((select id from aiw where name = 'L1'))),
-  'the changes are saved; "No" drops the link, an empty e-mail is none');
+  'the changes are saved; "No" drops the link');
 select test.check((select count(*) = 2 from audit_logs where action = 'AI_WEBSITE_ONBOARDING_UPDATED' and entity_id = (select id from aiw where name = 'L1')), 'each update is audited');
 select test.check((select metadata -> 'changed' = '[]'::jsonb from audit_logs where action = 'AI_WEBSITE_ONBOARDING_UPDATED' and entity_id = (select id from aiw where name = 'L1') order by created_at desc, id desc limit 1),
   '... with the fields that changed (none for the retry)');
@@ -86,7 +88,7 @@ select test.must_fail($$select ai_website_onboarding_save((select id from aiw wh
 select test.must_fail($$insert into ai_website_onboarding (customer_id, client_name, mobile, business_name, on_google_maps, city, business_type)
                         values ((select id from aiw where name = 'L1'), 'x', '9876543210', 'x', false, 'x', 'Retail')$$, 'nobody writes the table directly', 'permission denied');
 select test.login('sh_head');
-select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"onGoogleMaps":false,"email":"","businessType":"Other","businessTypeOther":"Handmade silver","city":"Ahmedabad","mobile":"9123456789"}'));
+select ai_website_onboarding_save((select id from aiw where name = 'L1'), test.aiw_body('{"onGoogleMaps":false,"email":"Owner@ShahJewels.example","businessType":"Other","businessTypeOther":"Handmade silver","city":"Ahmedabad","mobile":"9123456789"}'));
 reset role;
 select test.check((select city = 'Ahmedabad' and updated_by = test.id('sh_head') from test.aiw_row((select id from aiw where name = 'L1'))), 'the Department Head may correct them');
 

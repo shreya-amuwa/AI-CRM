@@ -2,7 +2,7 @@
 -- AI Website client onboarding details on a lead.
 --
 -- When a lead asks for the AI Website service (crm_services code 'AI_WEBSITE'), the sales person records what the AI Website team needs to
--- start (the same questions as the WebTara order form): the client's name, mobile, e-mail, business name, whether the business is on Google
+-- start (the same questions as the WebTara order form): the client's name, mobile, e-mail (required), business name, whether the business is on Google
 -- Maps (and its link), the city and the type of business.
 --
 --   * public.ai_website_onboarding: ONE row per customer (primary key customer_id), so editing never makes a second record and the details
@@ -88,7 +88,8 @@ begin
   if v_name is null then raise exception 'VALIDATION_ERROR: Enter the client name.' using errcode = 'P0001'; end if;
   if char_length(v_name) > 160 then raise exception 'VALIDATION_ERROR: The client name is too long (at most 160 characters).' using errcode = 'P0001'; end if;
   if v_mobile !~ '^[6-9][0-9]{9}$' then raise exception 'VALIDATION_ERROR: Enter a valid 10-digit mobile number.' using errcode = 'P0001'; end if;
-  if v_email is not null and (char_length(v_email) > 254 or v_email !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$') then
+  if v_email is null then raise exception 'VALIDATION_ERROR: Enter the email address.' using errcode = 'P0001'; end if;
+  if char_length(v_email) > 254 or v_email !~* '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
     raise exception 'VALIDATION_ERROR: Enter a valid email address.' using errcode = 'P0001';
   end if;
   if v_business is null then raise exception 'VALIDATION_ERROR: Enter the business name.' using errcode = 'P0001'; end if;

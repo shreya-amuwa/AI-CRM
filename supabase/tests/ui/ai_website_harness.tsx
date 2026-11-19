@@ -49,7 +49,7 @@ w.mountAdd = () => root().render(<div className="p-3"><AddLeadView onCancel={() 
 w.mountEdit = (withRecord: boolean) => {
   if (withRecord) {
     lead = { ...lead, services: ['AI_WEBSITE'] };
-    record = { customerId: leadId, clientName: 'Kavya Nair', mobile: '9847012345', email: null, businessName: 'Nair Bakes', onGoogleMaps: true,
+    record = { customerId: leadId, clientName: 'Kavya Nair', mobile: '9847012345', email: 'kavya@nairbakes.example', businessName: 'Nair Bakes', onGoogleMaps: true,
       googleMapsLink: 'https://maps.app.goo.gl/nairbakes', city: 'Kochi', businessType: 'Restaurant / Food', businessTypeOther: null, createdAt: '', updatedAt: '', updatedBy: null };
   }
   root().render(<div className="p-3"><EditLeadView id={leadId} onBack={() => undefined} onMovedToPotential={() => undefined} /></div>);
