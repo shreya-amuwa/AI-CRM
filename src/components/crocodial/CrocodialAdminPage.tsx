@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, PlugZap, RefreshCw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMappingCheck, CrocodialTestResult, Profile } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi, usersApi } from '../../lib/api/endpoints';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
@@ -127,6 +127,56 @@ const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string
   );
 };
 
+const RESOURCE_LABEL: Record<string, string> = { leads: 'Leads', 'call-logs': 'Call logs', followups: 'Follow-ups', remarks: 'Remarks' };
+/** 5. Sync: what was read, when, what is waiting to be mapped. Old data is labelled stale, never shown as current. */
+const SyncPanel: React.FC<{ status: CrocodialSyncStatus | undefined; busy: boolean; onSync: () => void }> = ({ status, busy, onSync }) => {
+  if (!status) return null;
+  const lastOk = status.resources.map(r => r.lastOkAt).filter(Boolean).sort()[0] ?? null;
+  const stale = !lastOk || Date.now() - new Date(lastOk).getTime() > 24 * 3600_000;
+  return (
+    <div className="space-y-2" data-testid="croc-sync">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-bold text-slate-700">5. Sync (read-only)</p>
+        <button type="button" className={btn.secondary} disabled={busy || !status.syncable} onClick={onSync} title={status.syncable ? undefined : 'Switch the connection and its department on first'}>
+          <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} aria-hidden /> {busy ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+      {!status.syncable ? <p className="text-xs text-slate-500">Not synced: the connection or its department is switched off. Crocodial is not contacted.</p> : null}
+      {status.resources.length ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-[11px] uppercase text-slate-500"><tr><th className="py-1 pr-3">Data</th><th className="py-1 pr-3">Last complete read</th><th className="py-1 pr-3">Rows</th><th className="py-1">State</th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {status.resources.map(r => (
+                <tr key={r.resource}>
+                  <td className="py-1.5 pr-3 font-semibold">{RESOURCE_LABEL[r.resource] ?? r.resource}</td>
+                  <td className="py-1.5 pr-3 whitespace-nowrap">{when(r.lastOkAt)}</td>
+                  <td className="py-1.5 pr-3">{r.rowsLastRun ?? '—'}{r.skippedLastRun ? <span className="text-amber-700"> · {r.skippedLastRun} unreadable</span> : null}</td>
+                  <td className="py-1.5">{r.lastError ? <span className="text-rose-700">{r.lastError}</span> : r.running ? 'Running' : r.inProgress ? 'First read in progress (continues on the next run)' : 'Up to date'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="text-xs text-slate-500">Not synced yet.</p>}
+      <p className="text-xs text-slate-600">
+        Stored: {status.counts.leads} leads · {status.counts.calls} calls · {status.counts.followups} follow-ups · {status.counts.remarks} remarks
+        {status.counts.missing ? ` · ${status.counts.missing} no longer in Crocodial (kept, marked missing)` : ''}
+      </p>
+      {lastOk && stale ? <p className="text-xs text-amber-800" role="status">The last complete read is more than 24 hours old: the activity shown is not current.</p> : null}
+      <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-700" data-testid="croc-unmatched">
+        <p><b>Not attributed to anyone</b> (no approved mapping): {status.unmatched.calls} calls · {status.unmatched.followups} follow-ups · {status.unmatched.leads} leads.
+          These are kept and never counted for any employee.</p>
+        {status.unmatchedByUser.length ? (
+          <ul className="mt-1 list-disc pl-4">
+            {status.unmatchedByUser.slice(0, 10).map(u => <li key={u.externalId}>Crocodial user {u.name ? `“${u.name}” ` : ''}(id {u.externalId}{u.name ? '' : ', not in the account’s user list'}): {u.calls} calls</li>)}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
 export const CrocodialAdminPage: React.FC = () => {
   const [data, setData] = useState<CrocodialAdminOverview | null>(null);
   const [error, setError] = useState('');
@@ -135,7 +185,11 @@ export const CrocodialAdminPage: React.FC = () => {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, CrocodialTestResult>>({});
-  const load = useCallback(() => { crocodialApi.overview().then(d => { setData(d); setError(''); }).catch(e => setError(errText(e))); }, []);
+  const [sync, setSync] = useState<CrocodialSyncStatus[]>([]);
+  const load = useCallback(() => {
+    crocodialApi.overview().then(d => { setData(d); setError(''); }).catch(e => setError(errText(e)));
+    crocodialApi.syncStatus().then(setSync).catch(() => setSync([]));
+  }, []);
   useEffect(load, [load]);
   const run = async (key: string, fn: () => Promise<unknown>, text?: string) => {
     setBusy(key);
@@ -257,6 +311,13 @@ export const CrocodialAdminPage: React.FC = () => {
                 {links.length ? <MappingForm data={data} connectionId={c.id} departmentId={links[0].departmentId} onSaved={text => { setFlash(text); load(); }} />
                   : <p className="text-xs text-slate-500">Link a department first; people are mapped within it.</p>}
               </div>
+
+              <SyncPanel status={sync.find(s => s.connectionId === c.id)} busy={busy === `s-${c.id}`}
+                onSync={() => void run(`s-${c.id}`, async () => {
+                  const r = await crocodialApi.syncNow(c.id);
+                  const rs = r.connections[0]?.resources ?? [];
+                  setFlash(rs.length ? `Sync: ${rs.map(x => `${RESOURCE_LABEL[x.resource]} ${x.outcome === 'DONE' ? `${x.rows} rows` : x.outcome === 'PARTIAL' ? 'continues on the next run' : x.outcome.toLowerCase()}`).join(' · ')}.` : (r.connections[0]?.error ?? r.note ?? 'Nothing to sync.'));
+                })} />
             </div>
           );
         })}

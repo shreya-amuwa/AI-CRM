@@ -11317,6 +11317,14 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 403, 'crocodial: a department that is not rolled out cannot be linked', r);
   r = await api('a', 'GET', '/crocodial/me');
   check(r.status === 200 && r.json.data.enabled === false, 'crocodial: an employee without an approved mapping has Crocodial off', r);
+  r = await api('a', 'GET', '/crocodial/sync');
+  check(r.status === 403, 'crocodial: an employee cannot read the sync status', r);
+  r = await api('sa', 'GET', '/crocodial/sync');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.some((x: any) => x.connectionId === cid && x.syncable === false), 'crocodial: the Super Admin sees the sync status (off: not syncable)', r);
+  r = await api('a', 'POST', `/crocodial/connections/${cid}/sync`);
+  check(r.status === 403, 'crocodial: an employee cannot start a sync', r);
+  r = await api('sa', 'POST', `/crocodial/connections/${cid}/sync`);
+  check(r.status === 422, 'crocodial: a connection that is off is never synced', r);
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 

@@ -10,8 +10,8 @@ It is delivered in parts:
 
 | Part | What | Status |
 | --- | --- | --- |
-| 1 | Configuration and identity (rollout, connections, department links, approved employee mappings, Super Admin page, connection test) | this pull request |
-| 2 | Read-only sync of leads, call logs, follow-ups and remarks (rate-limited, paged, checkpointed, reconciled) | next |
+| 1 | Configuration and identity (rollout, connections, department links, approved employee mappings, Super Admin page, connection test) | pull request #246 |
+| 2 | Read-only sync of leads, call logs, follow-ups and remarks (rate-limited, paged, checkpointed, reconciled) | this pull request |
 | 3 | "My Crocodial Activity" on the employee's own dashboard | next |
 | 4 | Team Lead / Department Head / Operations Head pilot views | next |
 
@@ -90,10 +90,64 @@ This is `private.croc_can_view(profile, department, division)`. The screens in p
   - missing setting: "token setting missing on the server".
 - **What the connection test keeps.** It reads `/employees` and `/branches` only, and keeps names, active flags and branch ids. Phone numbers and e-mails are dropped.
 
+## Sync (part 2, `server/crocodial/sync.ts`, migration `20270115000200_crocodial_sync.sql`)
+
+**What syncs, and when**
+- **Which connections.** Only connections that are **on** and serve an **on** link of a **rolled-out** department (`croc_sync_due`). Anything else is never contacted.
+- **When it runs.**
+  - The automation dispatch syncs each such connection at most every 15 minutes, with a 15 s budget per dispatch.
+  - The Super Admin's **Sync now** runs at most once every 5 minutes per connection, with a 20 s budget.
+
+**What one run does**
+1. Refreshes the account's user list, so new Crocodial users appear for mapping.
+2. Reads **leads, call logs, follow-ups and remarks**, each on its own: one failing resource does not stop or move the others. A refused or turned-off token stops the connection.
+
+**How each resource is read**
+- **One run at a time.** A lease (10 minutes) keeps two runs from reading the same resource.
+- **What is asked for:**
+  - a **full pull** the first time and weekly;
+  - otherwise rows changed since the **checkpoint** (`updated_since`).
+- **Storing.** Every page is stored as it arrives. A pull that runs out of time **resumes from its next page** on the next run. The first full pull of a large account therefore completes over a few runs.
+- **The checkpoint** moves only after a resource was read to the end. It moves to that pull's start time minus a 10-minute overlap.
+- **Duplicates.** Rows are upserted on (connection, Crocodial id): a row read twice is updated, never duplicated, and two accounts never mix.
+- **Deletions.** A full pull marks rows Crocodial no longer returns as **missing**. Nothing is deleted.
+
+**What is kept**
+- **Leads:** name, phone, company, city, status, source, **assigned_to id**, created_by id, called, outcome, next follow-up, last interaction, and created/updated times.
+- **Calls:** **called_by id**, lead id, phone, contact name, type, time, duration, connected.
+- **Follow-ups:** **created_by id**, lead id, phone, note, due time, done, completed time.
+- **Remarks:** **written_by id**, lead id, phone, text.
+
+**Not kept:** e-mail, budget, deal value, custom fields, raw number, SIM, location, spam flag, recordings.
+
+**Who a record belongs to.** `private.croc_person_at(connection, Crocodial user, time)` gives the CRM person whose approved mapping was in effect at the record's time. Re-mapping a Crocodial user never rewrites past calls. Records of a Crocodial user without an approved mapping are **not attributed to anyone**. They are kept, shown to the Super Admin as unmatched (by Crocodial user), and never counted.
+
+**Super Admin page, "5. Sync":**
+- for each resource: the last complete read, rows, and state (up to date / first read in progress / error);
+- what is stored, and what is missing;
+- what is not attributed;
+- a warning when the last complete read is older than 24 hours.
+
+**Live check (2026-11-19, M Pillar account, local test database only, removed afterwards):**
+- **First run:** everything was read to the end in **42 requests / 48 s**: **234 leads, 18,387 call logs, 162 follow-ups, 212 remarks**, 0 unreadable rows.
+- **Second (incremental) run:** 6 requests, nothing duplicated.
+- **Calls by Crocodial user:**
+
+  | Crocodial user | Who | Calls |
+  | --- | --- | --- |
+  | 371 | Supriya | 5,013 |
+  | 4138 | sachin | 2,066 |
+  | 4193 | Vanshika | 1,715 |
+  | 4194 | snehal | 689 |
+  | 4195 | prachii | 3,190 |
+  | **340** | not in the account's user list (probably the account owner's own login) | **5,714** |
+
+  Calls of 340, and of anyone not approved, stay unattributed until the Super Admin decides otherwise.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`
-  - Run it after every earlier migration.
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `supabase/migrations/20270115000200_crocodial_sync.sql`
+  - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.
   - Before it runs, nothing changes. After it, nothing is switched on until the Super Admin does the steps above.

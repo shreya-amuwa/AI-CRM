@@ -1,11 +1,12 @@
 import type {
-  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialTestResult
+  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult
 } from '../../shared/contracts.js';
 import {
   crocodialConnectionSaveSchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
+import { runCrocodialSync } from '../crocodial/sync.js';
 import { parse } from '../http/validate.js';
 import type { CrocodialRepository } from '../repositories/CrocodialRepository.js';
 
@@ -56,4 +57,11 @@ export class CrocodialService {
     return this.repo.mappingRevoke(parse(uuidSchema, id), parse(crocodialRevokeSchema, body ?? {}).reason ?? null);
   }
   myStatus(): Promise<CrocodialMyStatus> { return this.repo.myStatus(); }
+  syncStatus(): Promise<CrocodialSyncStatus[]> { return this.repo.syncStatus(); }
+  /** "Sync now": the database checks the caller and the limit first; the run stops starting pages after 20 s and resumes on the next one. */
+  async syncNow(id: string): Promise<CrocodialSyncRunResult> {
+    const c = await this.repo.syncRequest(parse(uuidSchema, id));
+    const r = await runCrocodialSync({ connectionId: c.id, budgetMs: 20_000, env: this.env });
+    return { connections: r.connections, requests: r.requests, note: r.note ?? null };
+  }
 }

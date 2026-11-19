@@ -170,7 +170,9 @@ export const crocodialController = {
   mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
   mappingApprove: (async ctx => ok(await svc(ctx).crocodial.mappingApprove(ctx.params.id))) as Handler,
   mappingRevoke: (async ctx => ok(await svc(ctx).crocodial.mappingRevoke(ctx.params.id, ctx.req.body))) as Handler,
-  myStatus: (async ctx => ok(await svc(ctx).crocodial.myStatus())) as Handler
+  myStatus: (async ctx => ok(await svc(ctx).crocodial.myStatus())) as Handler,
+  syncStatus: (async ctx => ok(await svc(ctx).crocodial.syncStatus())) as Handler,
+  syncNow: (async ctx => ok(await svc(ctx).crocodial.syncNow(ctx.params.id))) as Handler
 };
 
 export const leadWhatsAppController = {
