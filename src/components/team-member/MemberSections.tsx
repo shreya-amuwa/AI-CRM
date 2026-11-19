@@ -16,6 +16,7 @@ import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
+import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
 
 /** The member pages that are not the lead pipeline: one implementation, used by the Team Member dashboard and by the unified Business Associate dashboard. */
 export type MemberSection = 'home' | 'work-tasks' | 'tasks' | 'customers' | 'calendar' | 'invoices' | 'settings' | 'delivery' | 'notifications';
@@ -187,6 +188,7 @@ export const MemberSections: React.FC<Props> = ({ section, currentUserId, userNa
 
             {/* Crocodial calling activity: only for a person with an approved mapping (the database decides) */}
             <CrocodialActivityPanel />
+            <CrocodialLeadsPanel />
 
             {/* The member's own numbers */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

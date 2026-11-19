@@ -256,18 +256,43 @@ Use it only when nobody else used that Crocodial login before the person.
 
 **Department Heads and Team Leads.**
 
-- Their "Crocodial Activity" page has two tabs when they are connected themselves:
-  - "My activity": their own calls, follow-ups and remarks.
-  - "People I oversee": the management view.
-- When they are not connected themselves, the page is the management view only.
-- The menu entry shows when either tab has something to show.
+- Their side panel has a **Crocodial** section:
+  - For a Team Lead it is a labelled section.
+  - For a Department Head it is an entry that opens to its pages.
+- The section shows only what applies:
+  - **My Crocodial Activity** and **My Crocodial Leads**, when they are connected themselves.
+  - **Team Crocodial Activity**, when they oversee connected people. This is the management view.
+- It is hidden when nothing applies.
 - In the management view, a Department Head (who sits above teams) is shown as "Department Head (above teams)" instead of "—".
 - In "By team", Department Heads are grouped as "Department Head(s)" instead of "No team".
 - The Super Admin's "Crocodial Activity" lists every connected person, heads included.
 
+## My Crocodial Leads (migration `20270115000700_crocodial_leads.sql`)
+
+`public.croc_leads(profile | null, search, filter, page, page_size)` returns, one page at a time, the leads that Crocodial currently assigns to
+the person's mapped Crocodial user on that account. The data is the stored copy from the sync. Leads are never matched by name and never
+come from another account.
+
+- **Who can see them.** The same people as `croc_activity`: the person, their own Team Lead, the heads whose scope covers that department's
+  Sales, and the Super Admin. Anyone else gets "not found".
+- **Filters.** All, Follow-up due (next follow-up before now), and Never called. Each filter shows its count.
+- **Search.** By name, company, city or status, or by at least 4 digits of the phone number.
+- **Order.** Due follow-ups first, then upcoming ones, then the most recently worked leads.
+- **Each lead shows:**
+  - the masked phone number (last 4 digits);
+  - the status, with "never called" marked;
+  - how many times the person called that lead;
+  - the next follow-up, with "(due)" marked;
+  - the last activity.
+- **Where it shows.**
+  - "My Crocodial Leads" in the Crocodial section of the side panel of Team Leads and Department Heads.
+  - Below "My Crocodial Activity" on the home page of Telecallers, Business Associates and team members. There it appears only for a
+    person who is connected, and it shows nothing at all (not even an error) otherwise.
+- It is read-only. Calling and updating leads still happens in the Crocodial app.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270115000600_crocodial_count_from.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270115000600_crocodial_count_from.sql`, then `20270115000700_crocodial_leads.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

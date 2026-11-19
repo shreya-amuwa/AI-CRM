@@ -1,6 +1,7 @@
 // Browser test of the Crocodial management view (20270115000400): the pilot label and its note, totals, a person not synced shown as
 // "not available", the period filter, opening one person's activity, and no one connected, at desktop and phone width; a Department Head
-// shown as such (heads sit above teams), and a head's own page: "My activity" and "People I oversee" (20270115000600). The API is a fake.
+// shown as such (heads sit above teams) (20270115000600), and "My Crocodial Leads": filters, search, paging, masked phones, not connected
+// (20270115000700). The API is a fake.
 import { createRequire } from 'node:module';
 import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -50,12 +51,23 @@ const activity = q => ({ enabled: true, available: true, stale: false, lastSyncA
   person: { id: q.get('profileId'), name: 'Sachin', role: 'TEAM_MEMBER', salesSubRole: 'TELECALLER' }, demos: { scheduled: 0, completed: 0, cancelled: 0, upcoming: 0 },
   calls: { made: 19, connected: 8, connectRate: 42.1, talkSeconds: 424, incoming: 11, missed: 11, uniqueLeads: 3 }, followups: { scheduled: 0, completed: 0, completionRate: null, overdue: 0 },
   leads: { assigned: 0, neverCalled: 0, followUpDue: 0 }, remarks: 1, daily: [], recentCalls: [], upcomingFollowups: [] });
+const LEADS = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, name: i === 0 ? 'Ravi Patel' : `Lead ${i + 1}`, company: i === 0 ? 'Ravi Traders' : null, city: 'Surat',
+  status: 'Interested', source: 'Ads', phone: `XXXXXX${String(1000 + i)}`, called: i % 3 !== 0, dialerOutcome: null, remarkCount: 0,
+  nextFollowupAt: i === 0 ? '2026-11-18T10:00:00+05:30' : null, followUpDue: i === 0, lastInteractionAt: now, createdAt: now, calls: i === 0 ? 2 : 0 }));
+function leads(q) {
+  if (!state.self) return { enabled: false, reason: 'NOT_ENABLED' };
+  const f = q.get('filter') || 'ALL', s = (q.get('search') || '').toLowerCase(), page = Number(q.get('page') || 1), size = Number(q.get('pageSize') || 25);
+  const hit = LEADS.filter(l => (f === 'ALL' || (f === 'NEVER_CALLED' && !l.called) || (f === 'FOLLOW_UP_DUE' && l.followUpDue)) && (!s || l.name.toLowerCase().includes(s)));
+  return { enabled: true, person: { id: 'me', name: 'Sachin' }, counts: { all: 30, neverCalled: LEADS.filter(l => !l.called).length, followUpDue: 1 }, total: hit.length,
+    page, pageSize: size, lastSyncAt: now, items: hit.slice((page - 1) * size, page * size) };
+}
 function api(req, res) {
   const u = new URL(req.url, 'http://x');
   const p = u.pathname.replace(/^\/api\/v1/, '');
   state.calls.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), auth: req.headers.authorization || null });
   if (p === '/crocodial/team-activity') return ok(res, team(u.searchParams));
   if (p === '/crocodial/activity') return ok(res, activity(u.searchParams));
+  if (p === '/crocodial/leads') return ok(res, leads(u.searchParams));
   if (p === '/crocodial/me') return ok(res, state.self ? { enabled: true, connectionName: 'M Pillar', externalName: 'Supriya', departmentName: 'M Pillar', lastSuccessAt: now, health: 'OK', timezone: 'Asia/Kolkata' } : { enabled: false });
   res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'no fake' } }));
 }
@@ -124,23 +136,31 @@ try {
     check(await page.getByLabel('By team').getByText(/^Department Head: 1 connected/).isVisible() && !(await page.getByLabel('By team').getByText(/No team/).count()),
       `${label}: and grouped as Department Head, not "No team"`);
 
-    // a head who is connected themselves: their own activity and the people they oversee
+    // "My Crocodial Leads": the leads Crocodial assigns to the person, with filters, search and paging
     reset(); state.self = true;
     await page.goto(base);
-    await page.evaluate(() => window.mountManager());
-    await page.getByRole('tab', { name: 'My activity' }).waitFor();
-    await page.getByRole('heading', { name: 'My Crocodial Activity' }).waitFor();
-    check(await page.getByRole('tab', { name: 'My activity' }).getAttribute('aria-selected') === 'true' && !last('/crocodial/activity').query.profileId,
-      `${label}: a connected head opens on their own activity (no person id sent: the server uses the session)`);
-    await page.getByRole('tab', { name: 'People I oversee' }).click();
-    await page.getByTestId('croc-team-table').waitFor();
-    check(await page.getByRole('row', { name: /Sachin/ }).isVisible(), `${label}: and can switch to the people they oversee`);
+    await page.evaluate(() => window.mountLeads());
+    await page.getByTestId('croc-leads-table').waitFor();
+    check(!last('/crocodial/leads').query.profileId && last('/crocodial/leads').auth === 'Bearer test-token', `${label}: leads are read for the signed-in person (no person id sent)`);
+    check(await page.getByTestId('croc-lead-row').count() === 25 && await page.getByText('Showing 1–25 of 30').isVisible(), `${label}: one page of 25 leads`);
+    const ravi = page.getByRole('row', { name: /Ravi Patel/ });
+    check(await ravi.getByText('XXXXXX1000').isVisible() && await ravi.getByText(/\(due\)/).isVisible(), `${label}: masked phone, and a due follow-up is marked`);
+    await page.getByRole('button', { name: 'Next page' }).click();
+    await page.getByText('Showing 26–30 of 30').waitFor();
+    check(last('/crocodial/leads').query.page === '2', `${label}: the next page`);
+    await page.getByRole('button', { name: /Never called/ }).click();
+    await page.waitForTimeout(300);
+    check(last('/crocodial/leads').query.filter === 'NEVER_CALLED' && last('/crocodial/leads').query.page === '1', `${label}: filter never called (back to page 1)`);
+    await page.getByRole('button', { name: /^All/ }).click();
+    await page.getByLabel('Search Crocodial leads').fill('ravi');
+    await page.waitForTimeout(600);
+    check(last('/crocodial/leads').query.search === 'ravi' && await page.getByTestId('croc-lead-row').count() === 1, `${label}: search`);
     reset();
     await page.goto(base);
-    await page.evaluate(() => window.mountManager());
-    await page.getByTestId('croc-team-table').waitFor();
-    check(!(await page.getByRole('tablist').count()), `${label}: a head who is not connected sees only the people they oversee (no "My activity")`);
-    check(errors.length === 0, `${label}: no script errors (head views)`, errors);
+    await page.evaluate(() => window.mountLeads());
+    await page.getByTestId('croc-leads-off').waitFor();
+    check(!(await page.getByTestId('croc-leads-table').count()), `${label}: someone not connected is told so, no table`);
+    check(errors.length === 0, `${label}: no script errors (head and leads views)`, errors);
 
     reset(); state.empty = true;
     await page.goto(base);

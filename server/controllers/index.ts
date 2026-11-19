@@ -175,7 +175,8 @@ export const crocodialController = {
   syncStatus: (async ctx => ok(await svc(ctx).crocodial.syncStatus())) as Handler,
   syncNow: (async ctx => ok(await svc(ctx).crocodial.syncNow(ctx.params.id))) as Handler,
   activity: (async ctx => ok(await svc(ctx).crocodial.activity(ctx.req.query))) as Handler,
-  teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler
+  teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler,
+  leads: (async ctx => ok(await svc(ctx).crocodial.leads(ctx.req.query))) as Handler
 };
 
 export const leadWhatsAppController = {

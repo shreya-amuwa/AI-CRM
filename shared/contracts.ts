@@ -6477,6 +6477,22 @@ export interface CrocodialActivity {
 }
 
 /** The connected people a manager may see (croc_team_activity). Totals cover only these people, never the whole department. */
+/** A person's Crocodial leads (croc_leads): assigned to their mapped Crocodial user now; phones masked. */
+export interface CrocodialLeads {
+  enabled: boolean;
+  reason?: 'NOT_ENABLED';
+  person?: { id: string; name: string };
+  counts?: { all: number; neverCalled: number; followUpDue: number };
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  lastSyncAt?: string | null;
+  items?: {
+    id: number; name: string | null; company: string | null; city: string | null; status: string | null; source: string | null; phone: string | null;
+    called: boolean | null; dialerOutcome: string | null; remarkCount: number | null; nextFollowupAt: string | null; followUpDue: boolean | null;
+    lastInteractionAt: string | null; createdAt: string | null; calls: number;
+  }[];
+}
 export interface CrocodialTeamActivity {
   connectedEmployees: number;
   label: string;

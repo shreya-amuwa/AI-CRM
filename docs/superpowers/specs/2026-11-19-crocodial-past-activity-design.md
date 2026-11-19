@@ -46,8 +46,18 @@ The owner confirmed that everything on those two Crocodial logins is theirs.
 - **API.** `POST /crocodial/mappings/:id/count-from` with `{ from: 'YYYY-MM-DD' | null }`.
 - **Super Admin page.** Each approved mapping shows "Counting activity from <date>", with "Count all past activity" and "or from
   <date>, Use this date".
-- **Heads and Team Leads.** The "Crocodial Activity" page gets two tabs, "My activity" and "People I oversee", when the person is connected
-  themselves. The menu entry shows if either has something to show.
+- **Heads and Team Leads.** The side panel gets a **Crocodial** section with three entries:
+  - My Crocodial Activity (when connected);
+  - My Crocodial Leads (when connected);
+  - Team Crocodial Activity (when they oversee connected people).
+
+  This was added after Sachin, a Team Lead with no connected people under him, found no Crocodial entry at all.
+- **My Crocodial Leads.** New function `public.croc_leads`, read-only:
+  - the leads Crocodial assigns to the person's mapped user;
+  - the same visibility as `croc_activity`;
+  - filters, search, paging and masked phones;
+  - `GET /crocodial/leads`.
+  It is also shown on the home page of Telecallers, BAs and team members who are connected.
 - **Both activity views.** A "Last 90 days" preset is added.
 
 ## Calls made by the builder

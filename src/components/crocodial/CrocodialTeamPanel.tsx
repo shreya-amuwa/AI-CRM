@@ -23,8 +23,11 @@ const ROLE: Record<string, string> = { TELECALLER: 'Telecaller', BUSINESS_ASSOCI
 /** A head's or Team Lead's own role, shown where they have no team (heads sit above teams). */
 const HEAD_ROLE: Record<string, string> = { DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead' };
 
-/** Whether the signed-in manager has any connected people to see, or is connected themselves (to show the menu entry only then). */
-export function useCrocodialTeamVisible(): boolean {
+/**
+ * What the "Crocodial" section of a Team Lead's or head's side panel shows: their own activity and leads (self: they are connected
+ * themselves) and the people they oversee (team: any connected person they may see). Nothing is shown when both are false.
+ */
+export function useCrocodialNav(): { self: boolean; team: boolean } {
   const [team, setTeam] = useState(false);
   const [self, setSelf] = useState(false);
   useEffect(() => {
@@ -33,7 +36,7 @@ export function useCrocodialTeamVisible(): boolean {
     crocodialApi.me().then(d => alive && setSelf(!!d.enabled)).catch(() => alive && setSelf(false));
     return () => { alive = false; };
   }, []);
-  return team || self;
+  return { self, team };
 }
 
 const Card: React.FC<{ label: string; value: React.ReactNode; hint?: string }> = ({ label, value, hint }) => (
@@ -177,29 +180,3 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
 
 export default CrocodialTeamPanel;
 
-/**
- * The "Crocodial Activity" page of a Department Head or Team Lead: their own activity (when they are connected themselves) and the people
- * they oversee. The Super Admin's page lists everyone, heads included.
- */
-export const CrocodialManagerPage: React.FC = () => {
-  const [self, setSelf] = useState<boolean | null>(null);
-  const [tab, setTab] = useState<'me' | 'team'>('me');
-  useEffect(() => {
-    let alive = true;
-    crocodialApi.me().then(d => alive && setSelf(!!d.enabled)).catch(() => alive && setSelf(false));
-    return () => { alive = false; };
-  }, []);
-  if (self === null) return <p className="text-xs text-slate-500" role="status">Loading…</p>;
-  if (!self) return <CrocodialTeamPanel />;
-  return (
-    <div className="space-y-4" data-testid="crocodial-manager">
-      <div className="inline-flex rounded-full border border-slate-200 bg-white p-0.5" role="tablist" aria-label="Crocodial activity">
-        {([['me', 'My activity'], ['team', 'People I oversee']] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
-            className={`px-3 py-1 rounded-full text-xs font-semibold ${tab === id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>
-        ))}
-      </div>
-      {tab === 'me' ? <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} /> : <CrocodialTeamPanel />}
-    </div>
-  );
-};

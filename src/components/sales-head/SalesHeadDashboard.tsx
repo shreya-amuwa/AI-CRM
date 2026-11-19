@@ -32,7 +32,9 @@ import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
 import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
-import { CrocodialManagerPage, useCrocodialTeamVisible } from '../crocodial/CrocodialTeamPanel';
+import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamPanel';
+import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
+import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
 export { SALES_HEAD_BASE, parseSalesHeadPage };
 export type { SalesHeadNavigate, SalesHeadPage };
 
@@ -57,7 +59,7 @@ export const SalesHeadDashboard: React.FC = () => {
   const [intent, setIntent] = useState<{ filter?: string; n: number }>({ n: 0 });
   const chatUnread = useChatNavBadge();
   const reportsBadge = useReportsBadge();
-  const crocodialVisible = useCrocodialTeamVisible();
+  const crocodial = useCrocodialNav();
   const { counts: pipelineCounts } = usePipelineCounts();
 
   useEffect(() => {
@@ -95,8 +97,14 @@ export const SalesHeadDashboard: React.FC = () => {
           },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
-          // Crocodial calling activity: the head's own (when connected) and the connected people they cover (only when there is any)
-          ...(crocodialVisible ? [{ id: 'crocodial', label: 'Crocodial Activity', icon: PhoneCall }] : []),
+          // Crocodial (read-only calling app): the head's own activity and leads when they are connected, and the connected people they cover
+          ...(crocodial.self || crocodial.team ? [{
+            id: 'crocodial-group', label: 'Crocodial', icon: PhoneCall,
+            children: [
+              ...(crocodial.self ? [{ id: 'crocodial-me', label: 'My Crocodial Activity' }, { id: 'crocodial-leads', label: 'My Crocodial Leads' }] : []),
+              ...(crocodial.team ? [{ id: 'crocodial', label: 'Team Crocodial Activity' }] : [])
+            ]
+          }] : []),
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'income', label: 'Department Income', icon: TrendingUp },
           { id: 'reports', label: 'Sales Reports', icon: ReceiptIndianRupee },
@@ -112,7 +120,7 @@ export const SalesHeadDashboard: React.FC = () => {
         ]
       }
     ],
-    [chatUnread, operationsHead, reportsBadge, crocodialVisible]
+    [chatUnread, operationsHead, reportsBadge, crocodial.self, crocodial.team]
   );
 
   const roleName = operationsHead ? 'Sales Operations Head' : 'Sales Department Head';
@@ -162,7 +170,9 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
-      {page === 'crocodial' && <CrocodialManagerPage />}
+      {page === 'crocodial' && <CrocodialTeamPanel title="Team Crocodial Activity" />}
+      {page === 'crocodial-me' && <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} />}
+      {page === 'crocodial-leads' && <CrocodialLeadsPanel title="My Crocodial Leads" hideWhenOff={false} />}
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}
