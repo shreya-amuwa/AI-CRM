@@ -50,15 +50,26 @@ export interface LunchRow { profileId: string; name: string; department: string 
 
 export interface CapturedLocation { status: LocationStatus; latitude: number | null; longitude: number | null; accuracy: number | null }
 
+/** A punch location this precise (metres) is saved at once; a less precise one is still accepted (up to the server's limit) but marked. */
+export const PRECISE_M = 100;
+/** "low precision": a punch location less precise than PRECISE_M (shown to the employee and to HR). */
+export const isLowPrecision = (accuracy: number | null | undefined) => accuracy != null && accuracy > PRECISE_M;
+
 /**
  * Asks the browser for the device's current position (only when the person presses Punch In / Punch Out; never reused, never cached:
- * maximumAge 0). High accuracy is requested and readings are watched for a few seconds, keeping the most precise one, so a phone has time
- * to get a GPS fix. Never invents a position and never falls back to an address-based one.
+ * maximumAge 0). High accuracy is requested. A reading within PRECISE_M (100 m) is used at once; otherwise the readings are watched for at
+ * most 3 seconds after the first acceptable one and the most precise is kept (the server accepts up to its limit; HR sees it marked "low
+ * precision"). A reading over the limit keeps the watch going (up to 20 s in all).
+ * Never invents a position and never falls back to an address-based one.
  */
-export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number; settleMs?: number } = {}): Promise<CapturedLocation> {
+export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number; settleMs?: number; maxM?: number } = {}): Promise<CapturedLocation> {
+  // the overall limit also covers the permission prompt and a slow first fix (a GPS cold start), so it stays as before; the fast paths
+  // above finish long before it
   const timeoutMs = opts.timeoutMs ?? 20000;
-  const goodEnough = opts.goodEnoughM ?? 50;
-  const settleMs = opts.settleMs ?? 8000;
+  const goodEnough = opts.goodEnoughM ?? PRECISE_M;
+  const settleMs = opts.settleMs ?? 3000;
+  // the server's limit: a reading worse than this is never settled for early (it would be refused); keep listening for a better one
+  const maxM = opts.maxM ?? 1000;
   return new Promise(resolve => {
     const none = (status: LocationStatus): CapturedLocation => ({ status, latitude: null, longitude: null, accuracy: null });
     if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(none('UNSUPPORTED'));
@@ -82,8 +93,9 @@ export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number
         p => {
           if (!best || p.coords.accuracy < best.coords.accuracy) best = p;
           if (p.coords.accuracy <= goodEnough) finish(fromBest());
-          // a first reading arrived: wait a little for a better one, then take the best
-          else if (!settling) { settling = true; timers.push(setTimeout(() => finish(fromBest()), settleMs)); }
+          // an acceptable reading arrived: wait a little for a better one, then take the best. A reading over the server's limit (a phone's
+          // first coarse fix from the mobile network) does not start the wait: the GPS fix usually follows within seconds.
+          else if (!settling && best.coords.accuracy <= maxM) { settling = true; timers.push(setTimeout(() => finish(fromBest()), settleMs)); }
         },
         e => { if (best) finish(fromBest()); else finish(none(e.code === 1 ? 'DENIED' : e.code === 3 ? 'TIMEOUT' : 'UNAVAILABLE')); },
         { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
