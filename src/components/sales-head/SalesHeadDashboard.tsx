@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Building2, Briefcase, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Clock3, Building2, Briefcase, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -26,6 +26,8 @@ import { SalesReports } from './SalesReports';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
+import { WorkUpdatesPanel, useWorkUpdateCounts } from '../tasks/WorkUpdates';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { ActiveFieldVisits } from '../field-visit/ActiveFieldVisits';
 import { FieldVisitLeadQueuePage } from '../field-visit/FieldVisitLeadQueue';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
@@ -76,6 +78,8 @@ export const SalesHeadDashboard: React.FC = () => {
   useOpenChatRequest(React.useCallback(() => go('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenReportsRequest(React.useCallback(() => go('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  useOpenWorkUpdateRequest(React.useCallback(() => go('work-updates'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
+  const updateCounts = useWorkUpdateCounts();
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -94,6 +98,7 @@ export const SalesHeadDashboard: React.FC = () => {
             children: [...(operationsHead ? [] : [{ id: 'field-visit-leads', label: 'Field Visit Leads - Pending Assignment' }]), { id: 'field-tracking', label: 'Active Field Visits' }]
           },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
+          { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: updateCounts?.pending || 0 },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
           // Crocodial calling activity of the connected people this head covers (only when there are any)
           ...(crocodialVisible ? [{ id: 'crocodial', label: 'Crocodial Activity', icon: PhoneCall }] : []),
@@ -112,7 +117,7 @@ export const SalesHeadDashboard: React.FC = () => {
         ]
       }
     ],
-    [chatUnread, operationsHead, reportsBadge, crocodialVisible]
+    [chatUnread, operationsHead, reportsBadge, crocodialVisible, updateCounts?.pending]
   );
 
   const roleName = operationsHead ? 'Sales Operations Head' : 'Sales Department Head';
@@ -152,6 +157,7 @@ export const SalesHeadDashboard: React.FC = () => {
         <PipelineWorkspace section={MY_SECTION[page]} counts={pipelineCounts} ownOnly resetKey={intent.n} onNavigate={s => go(MY_PAGE[s])} />
       )}
       {page === 'tasks' && <SalesDailyTasks key={intent.n} initialFilter={intent.filter} />}
+      {page === 'work-updates' && <WorkUpdatesPanel />}
       {page === 'field-visit-leads' && !operationsHead && <FieldVisitLeadQueuePage />}
       {page === 'field-tracking' && <ActiveFieldVisits audience="manager" />}
       {page === 'performance' && <SalesPerformance />}

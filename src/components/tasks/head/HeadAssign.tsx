@@ -3,6 +3,7 @@ import { ChevronDown, Plus, Search } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { isOverdue, localDateKey, workTasksApi, type DirectAssignee, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, fmtDateTime, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../TaskParts';
+import { TaskWorkUpdates } from '../WorkUpdates';
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, Tabs, textareaCls } from './headParts';
 import { isOperationsHead } from '../../../lib/auth/roleMapping';
 import { DirectOptions, OperationsAssign, ReceivedTasks } from './TaskHierarchy';
@@ -224,6 +225,8 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
           <strong>Latest:</strong> {task.lastUpdateNote}
         </p>
       )}
+      {/* Work updates: ask the person this task is assigned to how it is going, and read their answers (the database checks the hierarchy) */}
+      <TaskWorkUpdates taskId={task.id} assigneeName={nameOf(data.people, task.assigneeId)} />
       {/* Department Head -> Team Lead -> Team Members: who got which part, read from the stored member tasks (never generated here) */}
       {!toMember && <section className="mt-4" aria-label={`Assigned to Team Members: ${task.title}`} data-testid="delegated-members">
         <div className="flex items-center justify-between gap-2 mb-2">
@@ -251,6 +254,7 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
                   {c.completedAt ? ` · completed ${fmtDate(c.completedAt)}` : ''}
                 </p>
                 {c.lastUpdateNote && <p className="mt-1 text-xs text-slate-600"><strong>Latest:</strong> {c.lastUpdateNote}{c.lastUpdateAt ? ` (${fmtDateTime(c.lastUpdateAt)})` : ''}</p>}
+                <TaskWorkUpdates taskId={c.id} assigneeName={nameOf(data.people, c.assigneeId)} />
               </li>
             ))}
           </ul>

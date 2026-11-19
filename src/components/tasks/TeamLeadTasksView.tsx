@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { summarize, useMyTeamMembers, useWorkTasks, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
 import { useCustomerOptions } from '../../lib/support';
 import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
+import { TaskWorkUpdates, WorkUpdatesPanel } from './WorkUpdates';
 
 /**
  * Team Lead: tasks from the Department Head. Assign each one to team members,
@@ -33,6 +34,7 @@ export const TeamLeadTasksView: React.FC = () => {
         <Mini label="In progress" value={s.open} tone="text-blue-700" />
         <Mini label="Overdue" value={s.overdue} tone="text-rose-700" />
       </div>
+      <WorkUpdatesPanel hint="Ask your team members how the work is going. Their answers and the reminders you sent are kept here, and in each task below." />
       <AssignDirectForm data={data} />
       <DirectTasks tasks={direct} data={data} />
       <h2 className="text-sm font-bold text-slate-900 pt-2">From your Department Head</h2>
@@ -202,6 +204,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
                     <div className="mt-1">
                       <ProgressBar value={c.progress} label={`Progress of ${nameOf(data.people, c.assigneeId)}`} />
                     </div>
+                    <TaskWorkUpdates taskId={c.id} assigneeName={nameOf(data.people, c.assigneeId)} />
                   </li>
                 ))}
               </ul>
@@ -367,6 +370,7 @@ const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ task
                 <DueLabel task={t} />
                 {t.lastUpdateNote && <span className="text-slate-600">“{t.lastUpdateNote}”</span>}
               </div>
+              <TaskWorkUpdates taskId={t.id} assigneeName={nameOf(data.people, t.assigneeId)} />
               {updates.length > 0 && (
                 <details className="text-xs">
                   <summary className="cursor-pointer text-blue-700 font-semibold">History ({updates.length})</summary>

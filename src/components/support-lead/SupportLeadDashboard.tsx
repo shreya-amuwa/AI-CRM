@@ -16,6 +16,7 @@ import { useSupportInvoices, useTickets } from '../../lib/support';
 import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { TeamLeaderDashboard } from '../team-lead/dashboard/TeamLeaderDashboard';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { SupportLeadCustomers } from '../support-member/SupportLeadViews';
 import { CustomerProfile } from '../support-member/CustomersPage';
@@ -129,6 +130,7 @@ export const SupportLeadDashboard: React.FC = () => {
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
+  useOpenWorkUpdateRequest(React.useCallback(() => setPage('tasks'), []));
   useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
   const reportsBadge = useReportsBadge();
   useOpenReportsRequest(React.useCallback(() => setPage('work-reports'), []));
