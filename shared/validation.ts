@@ -599,7 +599,7 @@ const leadFields = {
   notes: optionalText(5000)
 };
 
-// ---- AI Website client onboarding (migration 20270113000100) ----------------------------------------------------------------------------
+// ---- AI Website client onboarding (migration 20270113000200) ----------------------------------------------------------------------------
 /** The service whose leads carry the AI Website onboarding details. */
 export const AI_WEBSITE_SERVICE = 'AI_WEBSITE';
 /** The types of business offered (the CRM's business categories; the database holds the same list: private.ai_website_business_types). */

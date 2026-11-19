@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI Website client onboarding details (migration 20270113000100): one record per lead, validated by the database, readable exactly where the
+-- AI Website client onboarding details (migration 20270113000200): one record per lead, validated by the database, readable exactly where the
 -- lead is, written only by the people who work on it, kept through edits and stages, and audited. Own synthetic leads (company 'AIW %').
 -- Runs after the other suites on the same database.
 -- =============================================================================
@@ -8,8 +8,8 @@
 \echo '--- 132. AI Website client onboarding details'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270113000100_ai_website_onboarding.sql
-\i supabase/migrations/20270113000100_ai_website_onboarding.sql
+\i supabase/migrations/20270113000200_ai_website_onboarding.sql
+\i supabase/migrations/20270113000200_ai_website_onboarding.sql
 delete from customers where company like 'AIW %';
 create or replace function test.aiw_row(p_customer uuid) returns setof public.ai_website_onboarding language sql stable security definer set search_path = '' as $$
   select * from public.ai_website_onboarding where customer_id = p_customer $$;

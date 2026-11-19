@@ -5,7 +5,7 @@ import { AI_WEBSITE_BUSINESS_TYPES, aiWebsiteOnboardingSchema, type AiWebsiteOnb
 import { Card, Field, inputCls } from './shared';
 
 /**
- * AI Website client onboarding (migration 20270113000100): the details the AI Website team needs to start, asked when a lead chooses the
+ * AI Website client onboarding (migration 20270113000200): the details the AI Website team needs to start, asked when a lead chooses the
  * AI Website service (the same questions as the WebTara order form). One record per lead; the same Zod schema runs here and on the server,
  * and the database checks again (public.ai_website_onboarding_save).
  */

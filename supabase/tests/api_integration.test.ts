@@ -11176,7 +11176,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.ads.head.api@amuwa.com')) === 0, 'design studio roles: Amuwa Design Studio refuses a Support Department Head', r);
 }
 
-// --- AI Website client onboarding details on a lead (migration 20270113000100) ------------------------------------------------
+// --- AI Website client onboarding details on a lead (migration 20270113000200) ------------------------------------------------
 {
   const details = { clientName: 'Kavya Nair', mobile: '+91 98470 12345', email: 'Kavya@NairBakes.example', businessName: 'AIW Nair Bakes', onGoogleMaps: true,
     googleMapsLink: 'https://maps.app.goo.gl/nairbakes', city: 'Kochi', businessType: 'Restaurant / Food' };

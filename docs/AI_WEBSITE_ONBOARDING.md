@@ -2,7 +2,7 @@
 
 When a team member adds a lead and ticks the **AI Website** service (`AI_WEBSITE`), the Add Lead form shows an extra section,
 **AI Website Client Onboarding Details**: the same questions as the WebTara order form, so the AI Website team can start without asking
-the client again. Migration: `supabase/migrations/20270113000100_ai_website_onboarding.sql` (additive, safe to run twice).
+the client again. Migration: `supabase/migrations/20270113000200_ai_website_onboarding.sql` (additive, safe to run twice).
 
 ## The fields
 

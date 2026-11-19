@@ -854,11 +854,11 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
   conversations: Conversation[];
   checklist: ChecklistItem[];
   handover: HandoverInfo | null;
-  /** AI Website client onboarding details (migration 20270113000100); null when none were recorded (or the database is not updated yet). */
+  /** AI Website client onboarding details (migration 20270113000200); null when none were recorded (or the database is not updated yet). */
   aiWebsiteOnboarding?: AiWebsiteOnboarding | null;
 }
 
-// ---- AI Website client onboarding (migration 20270113000100): one record per lead, kept through every stage ----
+// ---- AI Website client onboarding (migration 20270113000200): one record per lead, kept through every stage ----
 export interface AiWebsiteOnboarding {
   customerId: string;
   clientName: string;
