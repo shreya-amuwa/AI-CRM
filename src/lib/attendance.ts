@@ -50,15 +50,21 @@ export interface LunchRow { profileId: string; name: string; department: string 
 
 export interface CapturedLocation { status: LocationStatus; latitude: number | null; longitude: number | null; accuracy: number | null }
 
+/** A punch location this precise (metres) is saved at once; a less precise one is still accepted (up to the server's limit) but marked. */
+export const PRECISE_M = 100;
+/** "low precision": a punch location less precise than PRECISE_M (shown to the employee and to HR). */
+export const isLowPrecision = (accuracy: number | null | undefined) => accuracy != null && accuracy > PRECISE_M;
+
 /**
  * Asks the browser for the device's current position (only when the person presses Punch In / Punch Out; never reused, never cached:
- * maximumAge 0). High accuracy is requested and readings are watched for a few seconds, keeping the most precise one, so a phone has time
- * to get a GPS fix. Never invents a position and never falls back to an address-based one.
+ * maximumAge 0). High accuracy is requested. A reading within PRECISE_M (100 m) is used at once; otherwise the readings are watched for at
+ * most 3 seconds after the first one and the most precise is kept (the server accepts up to its limit; HR sees it marked "low precision").
+ * Never invents a position and never falls back to an address-based one.
  */
 export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number; settleMs?: number } = {}): Promise<CapturedLocation> {
-  const timeoutMs = opts.timeoutMs ?? 20000;
-  const goodEnough = opts.goodEnoughM ?? 50;
-  const settleMs = opts.settleMs ?? 8000;
+  const timeoutMs = opts.timeoutMs ?? 10000;
+  const goodEnough = opts.goodEnoughM ?? PRECISE_M;
+  const settleMs = opts.settleMs ?? 3000;
   return new Promise(resolve => {
     const none = (status: LocationStatus): CapturedLocation => ({ status, latitude: null, longitude: null, accuracy: null });
     if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(none('UNSUPPORTED'));

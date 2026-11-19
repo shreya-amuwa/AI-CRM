@@ -64,6 +64,12 @@ Open **Attendance → Reminders**. Under **Company reminder times** you set the 
 * Nobody is reminded of something already done, on approved leave (full day, or the half that is off), or on a day that is not a reminder day.
 * Every change is recorded in the audit log.
 
+## "Low precision" punches
+
+Each punch shows how precisely the device knew where it was ("within 25 m"). A punch **less precise than 100 m** is marked
+**low precision**: usually a laptop that located itself from Wi-Fi or the network instead of GPS. It is still a valid punch (up to 1 km is
+accepted), but the location is approximate. Ask staff who are often "low precision" to punch from the Amuwa CRM app on their phone.
+
 ## The 15-Minute Discrepancy Rule
 
 The system computes the difference in minutes between the CRM login and the biometric scan:

@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { takePendingAttendance } from './attendanceEvents';
 import { isOperationsHead } from '../../lib/auth/roleMapping';
 import {
-  attendanceApi, captureLocation, coords, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
+  attendanceApi, captureLocation, coords, isLowPrecision, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
   STATUS_LABEL, STATUS_TONE, type AttendanceDayData, type AttendanceRegister, type AttendanceStatus, type LunchRow, type PunchInfo, type RegisterRow
 } from '../../lib/attendance';
 const RemindersPanel = React.lazy(() => import('./RemindersPanel'));
@@ -46,7 +46,7 @@ export const PunchLocation: React.FC<{ p: PunchInfo | null | undefined; testId?:
       <span className="inline-flex items-start gap-1 font-semibold text-slate-800"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
         <span data-testid="coords">{c.lat.toFixed(6)}, {c.lng.toFixed(6)}</span></span>
       <span className="text-[11px] text-slate-500">
-        {p.accuracy != null ? <>within {p.accuracy} m · </> : null}
+        {p.accuracy != null ? <>within {p.accuracy} m{isLowPrecision(p.accuracy) ? <> · <span className="font-semibold text-amber-700" title="Less precise than 100 m: the device located itself from Wi-Fi or the network">low precision</span></> : null} · </> : null}
         <a className="text-blue-700 font-semibold hover:underline" href={mapsUrl(c.lat, c.lng)} target="_blank" rel="noreferrer">Google Maps</a>
       </span>
       {p.place ? <span className="text-[11px] text-slate-500" data-testid="place" title="Nearest address looked up from the coordinates (approximate)">Near: {p.place}</span> : null}
@@ -83,8 +83,8 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
       const d = kind === 'in' ? await attendanceApi.punchIn(loc) : await attendanceApi.punchOut(loc);
       accept(d);
       const at = kind === 'in' ? d.punchIn?.at : d.punchOut?.at;
-      setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${istClock(at)} (location within ${loc.accuracy} m).` });
-      load();
+      setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${istClock(at)} (location within ${loc.accuracy} m${isLowPrecision(loc.accuracy) ? ' · low precision' : ''}).` });
+      // the punch's answer is already today's day; the place-name lookup refreshes the rest afterwards
       attendanceApi.resolvePlaces().then(load, () => { /* the nearest address comes later */ });
     } catch (e) {
       setNotice({ ok: false, text: e instanceof Error ? e.message : 'Could not record the punch.' });
@@ -221,7 +221,7 @@ const PunchDetail: React.FC<{ title: string; p: PunchInfo | null }> = ({ title, 
             <dl className="text-[11px] text-slate-600 grid grid-cols-[auto_1fr] gap-x-2">
               <dt>Latitude</dt><dd className="font-mono">{c.lat.toFixed(6)}</dd>
               <dt>Longitude</dt><dd className="font-mono">{c.lng.toFixed(6)}</dd>
-              <dt>Accuracy</dt><dd>{p.accuracy != null ? `${p.accuracy} m` : '-'}</dd>
+              <dt>Accuracy</dt><dd>{p.accuracy != null ? `${p.accuracy} m${isLowPrecision(p.accuracy) ? ' · low precision' : ''}` : '-'}</dd>
               {p.place ? <><dt>Near</dt><dd title="Nearest address looked up from the coordinates (approximate)">{p.place}</dd></> : null}
             </dl>
           ) : <p className="text-[11px] text-slate-500">{locationLabel(p)}</p>}
