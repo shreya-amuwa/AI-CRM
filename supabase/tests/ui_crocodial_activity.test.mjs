@@ -33,9 +33,11 @@ const activity = q => {
     person: { id: 'p1', name: 'Sachin', role: 'TEAM_MEMBER', salesSubRole: 'TELECALLER' }, demos: { scheduled: 2, completed: 1, cancelled: 1, upcoming: 1 } };
   if (state.mode === 'unavailable') return { ...base, available: false, stale: true, lastSyncAt: null };
   return { ...base, available: true, stale: state.mode === 'stale',
-    calls: { made: 4, connected: 3, connectRate: 75, talkSeconds: 130, incoming: 1, missed: 1, uniqueLeads: 2 },
+    calls: { made: 4, connected: 3, notConnected: 1, connectRate: 75, talkSeconds: 130, incoming: 1, missed: 1, uniqueLeads: 2, uniqueNumbers: 3 },
     followups: { scheduled: 2, completed: 1, completionRate: 50, overdue: 1 }, leads: { assigned: 2, neverCalled: 1, followUpDue: 1 }, remarks: 1,
-    daily: [], recentCalls: [{ callAt: now, type: 'outgoing', connected: true, durationSeconds: 60, contactName: 'Ravi', phone: 'XXXXXX0001', leadStatus: null }],
+    daily: [], recentCalls: [{ callAt: now, type: 'outgoing', connected: true, durationSeconds: 60, contactName: 'Ravi', phone: 'XXXXXX0001', leadStatus: null },
+      { callAt: now, type: 'outgoing', connected: false, durationSeconds: 0, contactName: 'Meera', phone: 'XXXXXX0002', leadStatus: null },
+      { callAt: now, type: 'outgoing', connected: null, durationSeconds: null, contactName: 'Kiran', phone: 'XXXXXX0003', leadStatus: null }],
     upcomingFollowups: [{ scheduledAt: now, note: 'Call back', leadName: 'Asha', overdue: true }] };
 };
 function api(req, res) {
@@ -86,13 +88,20 @@ try {
     await page.goto(base);
     await page.evaluate(() => window.mount({ showDemos: false }));
     await page.getByRole('heading', { name: /My Crocodial Activity/ }).waitFor();
-    await page.getByText('Calls made').waitFor();
+    await page.getByText('Total calls').waitFor();
     const last = () => [...state.calls].reverse().find(c => c.path === '/crocodial/activity');
     check(last().auth === 'Bearer test-token' && !last().query.profileId, `${label}: the person's own activity is read with their session (no id sent)`);
     check(await page.getByText(/Source: Crocodial \(read-only\) · last synced/).isVisible(), `${label}: the source and the last sync are shown`);
-    check(await page.getByText('Connect rate 75%').isVisible() && await page.getByText('2 min').first().isVisible() && await page.getByText('1 / 1').isVisible(),
-      `${label}: connected calls with the connect rate, talk time, incoming / missed`);
-    check(await page.getByText(/1 completed · 50%/).isVisible() && await page.getByText('1 never called').isVisible(), `${label}: follow-ups and Crocodial leads`);
+    const summary = page.getByLabel('Calling summary');
+    check(await summary.getByText('Connect rate 75%').isVisible() && await summary.getByText('2 min').isVisible() && await summary.getByText('Not connected').isVisible()
+      && await summary.getByText('Unique numbers').isVisible(), `${label}: the five Crocodial call figures: total, connected (with the rate), not connected, unique numbers, talk time`);
+    check((await summary.locator(':scope > div').allTextContents()).map(t => t.split(/(?=[0-9—])/)[0]).join('|').startsWith('Total calls|Connected|Not connected|Unique numbers|Talk time')
+      && await summary.locator(':scope > div').count() === 5, `${label}: exactly those five, in the shared order`);
+    check(!(await page.getByText(/1 completed · 50%/).count()) && !(await page.getByText('1 never called').count()) && !(await page.getByText('Incoming / missed').count()),
+      `${label}: the follow-up counters, the duplicate Crocodial-leads card and incoming / missed are gone`);
+    const recent = page.getByTestId('croc-recent-calls');
+    check(await recent.getByText('Connected', { exact: true }).isVisible() && await recent.getByText('Not connected', { exact: true }).isVisible()
+      && await recent.getByText('Not reported', { exact: true }).isVisible(), `${label}: each call's status as Crocodial sent it; an empty "connected" is "not reported", never "not connected"`);
     check(await page.getByText('XXXXXX0001').isVisible() && await page.getByText(/Overdue ·/).isVisible(), `${label}: recent calls (last 4 digits only) and overdue follow-ups`);
     check(!(await page.getByText('Demos scheduled').count()), `${label}: a Telecaller does not get the demo cards`);
     await page.getByRole('button', { name: 'Last 30 days' }).click();
@@ -115,12 +124,12 @@ try {
     await page.goto(base);
     await page.evaluate(() => window.mount({}));
     await page.getByTestId('croc-unavailable').waitFor();
-    check(!(await page.getByText('Calls made').count()), `${label}: before the first sync there are no figures (not zeros)`);
+    check(!(await page.getByText('Total calls').count()), `${label}: before the first sync there are no figures (not zeros)`);
     reset(); state.mode = 'stale';
     await page.goto(base);
     await page.evaluate(() => window.mount({}));
     await page.getByTestId('croc-stale').waitFor();
-    check(await page.getByText('Calls made').isVisible(), `${label}: old data is shown with a "not current" label`);
+    check(await page.getByText('Total calls').isVisible(), `${label}: old data is shown with a "not current" label`);
 
     // a manager's view of one person
     reset();

@@ -290,9 +290,87 @@ come from another account.
     person who is connected, and it shows nothing at all (not even an error) otherwise.
 - It is read-only. Calling and updating leads still happens in the Crocodial app.
 
+## Field mapping and the Sales dashboards (migration `20270117000200_crocodial_field_alignment.sql`)
+
+**The source of truth** is the sync itself (`server/crocodial/sync.ts`, which validates every row Crocodial sends) and the tables it fills.
+Crocodial is read by **polling** its Outbound API. There are **no webhooks**: nothing pushes events into the CRM. Repeated reads cannot
+duplicate a record, because every row is stored once per (connection, Crocodial id) and updated in place. A row Crocodial stops returning is
+marked missing and left out of the figures; nothing is deleted. **Crocodial has no demo data.** Demo figures always come from the CRM demo
+schedule (`ba_demos`).
+
+**One field map:** `shared/crocodialFields.ts`. It lists every field Crocodial sends, the key the sync stores it under, the CRM column, its
+type, and what it is used for. A unit test checks that the sync stores exactly these fields and that every column exists in its table.
+
+| Crocodial (call-logs) | CRM column (`crocodial_ext_calls`) | Type | Used for |
+| --- | --- | --- | --- |
+| `id` | `external_id` | id | the record; with the connection, it is the key that stops duplicates |
+| `called_by.id` | `called_by_ext` | id | **employee:** the CRM person is the one whose approved mapping (`crocodial_employee_mappings`) was in effect at `call_at`. Never matched by name. |
+| `lead.id` | `lead_ext` | id | **lead:** the Crocodial lead (`crocodial_ext_leads` of the same connection). Never matched to CRM leads. |
+| `phone_number` | `phone_number` | phone | unique numbers (digits only, the last 10); shown masked to the last 4 digits |
+| `contact_name` | `contact_name` | text | the contact shown, else the Crocodial lead's name |
+| `call_type` | `call_type` | enum: incoming, outgoing, missed, voicemail, rejected, blocked, answered_elsewhere, unknown | **status:** shown as Incoming, Outgoing, Missed, … |
+| `call_at` | `call_at` | timestamptz | **date/time:** shown in the account's time zone; periods are days of that zone |
+| `duration_seconds` | `duration_seconds` | integer | duration of a connected call; talk time |
+| `connected` | `connected` | boolean | **status:** Connected (true), Not connected (false), **Not reported** (empty: never shown as "not connected") |
+| `synced_at` | `external_synced_at` | timestamptz | stored only |
+
+Leads, follow-ups and remarks are mapped the same way: their `assigned_to.id` / `created_by.id` / `written_by.id` go through the mapping, and
+`lead.id` goes to the Crocodial lead. The full lists are in the file.
+
+**One formula.** These database helpers compute the figures:
+
+- `private.croc_person_calls`: the calls attributed to a person;
+- `private.croc_call_summary`: the call figures;
+- `private.croc_demo_summary`: the CRM demo figures;
+- `private.croc_person_state`: whether the person is connected and synced.
+
+Every Sales screen uses them: "My Crocodial Activity", the management view, and the Sales head's Telecaller and Business Associate sections.
+The same person therefore shows the same numbers everywhere.
+
+| Call figure | Counted as |
+| --- | --- |
+| Total calls | outgoing calls |
+| Connected | outgoing, connected = true |
+| Not connected | outgoing, connected = false. An outgoing call whose `connected` is empty is in neither. |
+| Unique numbers | distinct numbers called (outgoing); `+91 98…`, `098…` and `98…` are one number |
+| Talk time | duration of the connected outgoing calls |
+| (connect rate) | connected ÷ total calls, shown under Connected |
+
+**Not counted twice.** The management view's totals used to add up each person's "unique leads", so a lead two people called counted twice.
+Unique leads and unique numbers are now counted once across the people listed.
+
+**Every field on the Sales dashboards, classified.** 1 = from Crocodial, 2 = from CRM records, 3 = required by the Sales workflow,
+4 = unnecessary or unsupported (removed).
+
+| Screen | Field | Class | Now |
+| --- | --- | --- | --- |
+| Crocodial activity (Telecaller, Business Associate and Sales member Home; Team Lead and head "My Crocodial Activity") | Total calls, Connected (+ rate), Not connected, Unique numbers, Talk time | 1 | shown, the shared five |
+| | Recent calls: contact, masked number, type, status, duration, date and time | 1 | shown; an empty "connected" now reads "Not reported" (it said "not connected") |
+| | Open follow-ups (Crocodial follow-ups, with overdue marked) | 1, 3 | shown |
+| | Demos scheduled / completed / upcoming / cancelled (Business Associates) | 2 | shown, labelled "from the CRM demo schedule" |
+| | Unique leads contacted | 1 | removed from the cards (unique numbers replaces it; still in the data) |
+| | Incoming / missed | 1 | removed from the cards (the recent calls show each call's type) |
+| | Follow-ups scheduled / completed / completion %, overdue follow-ups | 1 | removed: counters on top of the open follow-up list |
+| | My Crocodial leads (assigned, never called) | 1 | removed: it duplicated the "My Crocodial Leads" section just below it |
+| Crocodial management view (Team Lead, heads, Super Admin) | Total calls, Connected, Not connected, Rate, Unique numbers, Talk time | 1 | shown, per person and in total |
+| | Demos (CRM) completed / scheduled | 2 | shown |
+| | Unique leads, follow-ups, overdue | 1 | removed from the table and the totals |
+| Sales head › Telecaller List and dashboard | the five call figures, connect rate, the call log | 1 | shown (none for a person not connected: "Not connected to Crocodial") |
+| | Leads created, Converted to a Business Associate, the leads list | 2, 3 | shown |
+| | Calls logged, contacts called, reached, not reached yet, unique numbers, reach rate (all from the CRM contact sheets) | 4 | removed: CRM sheet counters presented as call figures |
+| | Interested / not interested, follow-ups due / overdue, contacts assigned, conversion rate | 4 | removed: duplicates of the Telecaller's own workflow pages |
+| Sales head › Business Associate List and dashboard | the five call figures and the call log (when connected) | 1 | shown |
+| | Leads assigned, demos scheduled / completed / upcoming / cancelled, final quotations (once per quotation), deals closed, deal value | 2, 3 | shown; demos counted exactly as in their own view |
+| | Leads worked, open contacts, clients met in a demo, quotation value, revenue received, deals pending, conversion rate, activity timeline | 4 | removed |
+
+**Not changed:** the Telecaller's own Home counters (assigned contacts, calls pending / completed, leads, follow-ups due). These are the
+statuses of the CRM contact sheets the Telecaller works through, and they are not labelled as Crocodial. Also unchanged: lead management,
+assignments, follow-ups, field visits, the sync, mapping and permissions. **Sales Executive and Business Partner dashboards** do not exist
+yet (phase 2). When they are built, they will read calls and demos only through the same helpers.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

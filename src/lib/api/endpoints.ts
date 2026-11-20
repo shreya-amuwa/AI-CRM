@@ -21,7 +21,7 @@ import type {
   HeadDivision,
   MyDepartmentScopes,
   DepartmentAccessInfo, DepartmentHeadAccess, VerifierDepartments, OffboardingImpact, OffboardingResult, ReassignmentItem,
-  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList,
+  SalesIncome, SalesLeadAssignee, SalesRole, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
   TelecallerContactList,
@@ -658,7 +658,12 @@ export const salesHeadApi = {
   taskAssignees: () => api.get<SalesTaskAssignee[]>('/sales-head/task-assignees'),
   createTask: (body: { assigneeId: string; title: string; description?: string | null; priority: 'LOW' | 'MEDIUM' | 'HIGH'; dueDate?: string | null }) => api.post<{ id: string }>('/sales-head/tasks', body),
   reports: (q: { who?: string; from?: string; to?: string; taskStatus?: string }) => api.get<SalesReport>('/sales-head/reports', q),
-  income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q)
+  income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q),
+  // role-wise sections (migration 20270117000300): /roles/telecaller, /roles/business-associate
+  roleList: (role: SalesRole, q: { from?: string; to?: string; search?: string; teamLeadId?: string; status?: string; sort?: string; page?: number; pageSize?: number }) =>
+    api.get<SalesRoleList>(`/sales-head/roles/${role.toLowerCase().replace(/_/g, '-')}/people`, q),
+  rolePerson: (role: SalesRole, id: string, q: { from?: string; to?: string }) =>
+    api.get<SalesRolePersonDashboard>(`/sales-head/roles/${role.toLowerCase().replace(/_/g, '-')}/people/${encodeURIComponent(id)}`, q)
 };
 /** Field Visit: the Sales employee's leads and visits, and the Department Head's assignments. */
 export const fieldVisitApi = {

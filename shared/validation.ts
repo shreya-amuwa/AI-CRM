@@ -3413,3 +3413,35 @@ export const crocodialTeamActivityQuerySchema = z
     teamId: uuidSchema.optional()
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// Sales Department Head: role-wise sections (migration 20270117000300)
+// ---------------------------------------------------------------------------
+export const SALES_ROLES = ['TELECALLER', 'BUSINESS_ASSOCIATE'] as const;
+export const SALES_ROLE_SORTS = [
+  'name', 'teamLead', 'status',
+  // Crocodial
+  'calls', 'connected', 'notConnected', 'uniqueNumbers', 'talkSeconds',
+  // CRM
+  'leadsCreated', 'convertedLeads', 'leadsAssigned', 'demosScheduled', 'demosCompleted', 'quotations', 'dealsClosed', 'dealValue'
+] as const;
+export const salesRoleSchema = z.enum(SALES_ROLES, { message: 'Choose Telecaller or Business Associate.' });
+const salesRolePeriod = {
+  from: isoDate.optional(),
+  to: isoDate.optional()
+};
+export const salesRoleListQuerySchema = z
+  .object({
+    ...salesRolePeriod,
+    search: trimmed(120).optional(),
+    teamLeadId: uuidSchema.optional(),
+    status: z.enum(['ACTIVE', 'SUSPENDED', 'REVOKED']).optional(),
+    sort: z.enum(SALES_ROLE_SORTS).default('name'),
+    page: z.coerce.number().int().min(1).default(1),
+    // the export asks for up to 500 rows at once
+    pageSize: z.coerce.number().int().min(1).max(500).default(25)
+  })
+  .strict()
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'The start date is after the end date.', path: ['from'] });
+export const salesRolePersonQuerySchema = z.object(salesRolePeriod).strict()
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'The start date is after the end date.', path: ['from'] });

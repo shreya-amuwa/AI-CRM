@@ -11443,6 +11443,49 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(left === 0 && clientAfter === clientBefore, 'chat extras: no internal message is left, client chats are untouched', { left, clientBefore, clientAfter });
 }
 
+// ---------------------------------------------------------------------------
+// Sales Department Head: role-wise sections, phase 1 (migration 20270117000300)
+// ---------------------------------------------------------------------------
+{
+  tokens.set('sh', tokenFor(salesHeadId));
+  const scope = `select p.id from profiles p join teams t on t.id = p.team_id and t.division = 'SALES'
+                  where p.department_id = (select department_id from profiles where id = $1) and p.role = 'TEAM_MEMBER' and p.sales_sub_role = $2 order by p.created_at limit 1`;
+  const tc = (await db.query(scope, [salesHeadId, 'TELECALLER'])).rows[0]?.id as string | undefined;
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people?sort=calls&pageSize=50');
+  check(r.status === 200 && r.json.data.role === 'TELECALLER' && Array.isArray(r.json.data.items) && Array.isArray(r.json.data.teamLeads)
+    && (!tc || r.json.data.items.some((x: any) => x.id === tc && ['ON', 'OFF', 'NOT_SYNCED'].includes(x.metrics.crocodial) && typeof x.metrics.leadsCreated === 'number' && x.employeeCode)),
+    'sales roles API: the head lists their Telecallers with figures', r);
+  check(r.json.data.items.every((x: any) => x.metrics.demosScheduled === undefined && x.metrics.totalCalls === undefined && (x.metrics.crocodial === 'ON' || x.metrics.calls === null)),
+    'sales roles API: a Telecaller row has Telecaller figures only; no call figures without Crocodial', r);
+  r = await api('sh', 'GET', '/sales-head/roles/business-associate/people?search=a&status=ACTIVE');
+  check(r.status === 200 && r.json.data.role === 'BUSINESS_ASSOCIATE' && r.json.data.items.every((x: any) => x.status === 'ACTIVE'), 'sales roles API: the Business Associate list, filtered', r);
+  if (tc) {
+    r = await api('sh', 'GET', `/sales-head/roles/telecaller/people/${tc}?from=2026-01-01&to=2026-01-31`);
+    check(r.status === 200 && r.json.data.person.id === tc && r.json.data.daily.length === 31 && Array.isArray(r.json.data.records.calls) && r.json.data.crocodial?.state,
+      'sales roles API: one Telecaller\'s dashboard for January', r);
+    r = await api('sh', 'GET', `/sales-head/roles/business-associate/people/${tc}`);
+    check(r.status === 404, 'sales roles API: a Telecaller is not found under Business Associate', r);
+    for (const who of ['dh', 'th', 'a', 'sa']) {
+      r = await api(who, 'GET', `/sales-head/roles/telecaller/people/${tc}`);
+      check(r.status === 403, `sales roles API: ${who} cannot open a Telecaller's dashboard`, r);
+    }
+  }
+  r = await api('dh', 'GET', '/sales-head/roles/telecaller/people');
+  check(r.status === 403, 'sales roles API: the Support head cannot open the lists', r);
+  r = await api(null, 'GET', '/sales-head/roles/telecaller/people');
+  check(r.status === 401, 'sales roles API: nor a visitor', r);
+  r = await api('sh', 'GET', `/sales-head/roles/telecaller/people/${crypto.randomUUID()}`);
+  check(r.status === 404, 'sales roles API: someone outside the head\'s Sales teams is not found', r);
+  r = await api('sh', 'GET', '/sales-head/roles/influencer/people');
+  check(r.status === 422, 'sales roles API: an unknown role is refused', r);
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people?from=2026-11-20&to=2026-11-01');
+  check(r.status === 422, 'sales roles API: a start after the end is refused', r);
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people/not-an-id');
+  check(r.status === 422, 'sales roles API: a person id must be an id', r);
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people?pageSize=501');
+  check(r.status === 422, 'sales roles API: at most 500 rows at once', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

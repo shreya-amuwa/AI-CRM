@@ -115,11 +115,13 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
           </p>
           {data.anyStale ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" role="status">Some figures are more than 24 hours old and may not be current.</p> : null}
           {t ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3" aria-label="Totals">
-              <Card label="Calls made" value={t.made} hint="Outgoing calls" />
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" aria-label="Totals">
+              {/* the call figures of shared/crocodialFields.ts; unique numbers count each number once across the people listed */}
+              <Card label="Total calls" value={t.made} hint="Outgoing calls" />
               <Card label="Connected" value={t.connected} hint={`Connect rate ${pct(t.connectRate)}`} />
+              <Card label="Not connected" value={t.notConnected ?? '—'} />
+              <Card label="Unique numbers" value={t.uniqueNumbers ?? '—'} hint="Each number once, whoever called it" />
               <Card label="Talk time" value={hours(t.talkSeconds)} />
-              <Card label="Follow-ups" value={`${t.followupsCompleted} / ${t.followupsScheduled}`} hint={`completed · ${t.followupsOverdue} overdue`} />
               <Card label="Demos (CRM)" value={`${t.demosCompleted} / ${t.demosScheduled}`} hint="completed / scheduled" />
             </div>
           ) : null}
@@ -141,24 +143,23 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
           <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
             <table className="w-full text-left text-xs" data-testid="croc-team-table">
               <thead className="bg-slate-50 text-[11px] uppercase text-slate-500">
-                <tr>{['Employee', 'Team', 'Calls made', 'Connected', 'Rate', 'Talk time', 'Unique leads', 'Follow-ups', 'Overdue', 'Demos', ''].map(h => <th key={h} className="px-2.5 py-2 font-semibold whitespace-nowrap">{h}</th>)}</tr>
+                <tr>{['Employee', 'Team', 'Total calls', 'Connected', 'Not connected', 'Rate', 'Unique numbers', 'Talk time', 'Demos (CRM)', ''].map(h => <th key={h} className="px-2.5 py-2 font-semibold whitespace-nowrap">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.people.map(p => (
                   <tr key={p.profileId} data-testid="croc-team-row">
                     <td className="px-2.5 py-2 font-semibold text-slate-800 whitespace-nowrap">{p.name}<span className="block text-[11px] font-normal text-slate-500">{p.salesSubRole ? ROLE[p.salesSubRole] ?? p.salesSubRole : HEAD_ROLE[p.role] ?? 'Sales'}</span></td>
                     <td className="px-2.5 py-2 whitespace-nowrap">{p.teamName ?? (HEAD_ROLE[p.role] ? `${HEAD_ROLE[p.role]} (above teams)` : '—')}</td>
-                    {p.available && p.calls && p.followups ? (
+                    {p.available && p.calls ? (
                       <>
                         <td className="px-2.5 py-2">{p.calls.made}</td>
                         <td className="px-2.5 py-2">{p.calls.connected}</td>
+                        <td className="px-2.5 py-2">{p.calls.notConnected ?? '—'}</td>
                         <td className="px-2.5 py-2">{pct(p.calls.connectRate)}</td>
+                        <td className="px-2.5 py-2">{p.calls.uniqueNumbers ?? '—'}</td>
                         <td className="px-2.5 py-2 whitespace-nowrap">{hours(p.calls.talkSeconds)}</td>
-                        <td className="px-2.5 py-2">{p.calls.uniqueLeads}</td>
-                        <td className="px-2.5 py-2">{p.followups.completed} / {p.followups.scheduled}</td>
-                        <td className={`px-2.5 py-2 ${p.followups.overdue ? 'text-rose-700 font-semibold' : ''}`}>{p.followups.overdue}</td>
                       </>
-                    ) : <td colSpan={7} className="px-2.5 py-2 text-slate-500">Not available yet (not synced)</td>}
+                    ) : <td colSpan={6} className="px-2.5 py-2 text-slate-500">Not available yet (not synced)</td>}
                     <td className="px-2.5 py-2">{p.demos ? `${p.demos.completed} / ${p.demos.scheduled}` : '—'}</td>
                     <td className="px-2.5 py-2"><button type="button" className="text-indigo-700 font-semibold hover:underline" onClick={() => setOpen({ id: p.profileId, name: p.name })} aria-label={`Open ${p.name}'s activity`}>Open</button></td>
                   </tr>

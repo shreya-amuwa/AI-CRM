@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Clock3, Building2, Briefcase, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Clock3, Building2, Briefcase, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, Handshake, Headphones, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -33,7 +33,8 @@ import { FieldVisitLeadQueuePage } from '../field-visit/FieldVisitLeadQueue';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
-import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
+import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, parseSalesHeadPerson, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
+import { SalesRoleListPage, SalesRolePersonPage } from './roles/SalesRoleSection';
 import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamPanel';
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
@@ -57,6 +58,8 @@ export const SalesHeadDashboard: React.FC = () => {
   const operationsHead = !!profile?.isOperationsHead;
   const home: SalesHeadPage = operationsHead ? 'operations' : 'overview';
   const [page, setPage] = useState<SalesHeadPage>(() => parseSalesHeadPage(window.location.pathname, home));
+  // the person whose full-page dashboard is open in a role-wise section (".../telecallers/<id>"), from the address so it can be bookmarked
+  const [personId, setPersonId] = useState<string | null>(() => parseSalesHeadPerson(window.location.pathname));
   // a filter the page being opened should start with (the Overview cards link to the Lead List)
   const [intent, setIntent] = useState<{ filter?: string; n: number }>({ n: 0 });
   const chatUnread = useChatNavBadge();
@@ -65,7 +68,7 @@ export const SalesHeadDashboard: React.FC = () => {
   const { counts: pipelineCounts } = usePipelineCounts();
 
   useEffect(() => {
-    const onPop = () => setPage(parseSalesHeadPage(window.location.pathname, home));
+    const onPop = () => { setPage(parseSalesHeadPage(window.location.pathname, home)); setPersonId(parseSalesHeadPerson(window.location.pathname)); };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, [home]);
@@ -73,9 +76,15 @@ export const SalesHeadDashboard: React.FC = () => {
   const go: SalesHeadNavigate = (next, options) => {
     setIntent(i => ({ ...options, n: i.n + 1 }));
     setPage(next);
+    setPersonId(null);
     // the bare address is the home page; the Overview of an Operations Head therefore has its own address
     const seg = next === 'overview' && operationsHead ? 'overview' : PATHS[next];
     navigateTo(seg ? `${SALES_HEAD_BASE(userId)}/${seg}` : SALES_HEAD_BASE(userId));
+  };
+  const openPerson = (list: 'telecallers' | 'business-associates', id: string) => {
+    setPage(list);
+    setPersonId(id);
+    navigateTo(`${SALES_HEAD_BASE(userId)}/${PATHS[list]}/${id}`);
   };
   useOpenChatRequest(React.useCallback(() => go('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
@@ -102,6 +111,9 @@ export const SalesHeadDashboard: React.FC = () => {
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: updateCounts?.pending || 0 },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
+          // role-wise sections (migration 20270117000300): each role's list and one person's full-page dashboard
+          { id: 'telecaller-group', label: 'Telecaller', icon: Headphones, children: [{ id: 'telecallers', label: 'Telecaller List' }] },
+          { id: 'business-associate-group', label: 'Business Associate', icon: Handshake, children: [{ id: 'business-associates', label: 'Business Associate List' }] },
           // Crocodial (read-only calling app): the head's own activity and leads when they are connected, and the connected people they cover
           ...(crocodial.self || crocodial.team ? [{
             id: 'crocodial-group', label: 'Crocodial', icon: PhoneCall,
@@ -169,6 +181,12 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'field-visit-leads' && !operationsHead && <FieldVisitLeadQueuePage />}
       {page === 'field-tracking' && <ActiveFieldVisits audience="manager" />}
       {page === 'performance' && <SalesPerformance />}
+      {page === 'telecallers' && (personId
+        ? <SalesRolePersonPage key={personId} role="TELECALLER" id={personId} onBack={() => go('telecallers')} />
+        : <SalesRoleListPage role="TELECALLER" onOpen={id => openPerson('telecallers', id)} />)}
+      {page === 'business-associates' && (personId
+        ? <SalesRolePersonPage key={personId} role="BUSINESS_ASSOCIATE" id={personId} onBack={() => go('business-associates')} />
+        : <SalesRoleListPage role="BUSINESS_ASSOCIATE" onOpen={id => openPerson('business-associates', id)} />)}
       {page === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {page === 'income' && <SalesIncomePage />}
       {page === 'reports' && <SalesReports />}

@@ -33,7 +33,7 @@ reset();
 const ok = (res, data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, data })); };
 const person = (id, name, team, made, conn, extra = {}) => ({ profileId: id, name, role: 'TEAM_MEMBER', salesSubRole: 'TELECALLER', teamId: 't1', teamName: team,
   departmentId: 'd', departmentName: 'M Pillar', available: true, stale: false, lastSyncAt: now,
-  calls: { made, connected: conn, connectRate: made ? Math.round(1000 * conn / made) / 10 : null, talkSeconds: conn * 60, incoming: 0, missed: 0, uniqueLeads: made },
+  calls: { made, connected: conn, notConnected: made - conn, connectRate: made ? Math.round(1000 * conn / made) / 10 : null, talkSeconds: conn * 60, incoming: 0, missed: 0, uniqueLeads: made, uniqueNumbers: made },
   followups: { scheduled: 2, completed: 1, completionRate: 50, overdue: 1 }, demos: { scheduled: 1, completed: 1, cancelled: 0, upcoming: 0 }, ...extra });
 function team(q) {
   if (state.empty) return { connectedEmployees: 0, label: 'Crocodial Pilot — 0 connected employees', stage: 'PILOT', from: null, to: null, oldestSyncAt: null, anyStale: false, unavailable: 0,
@@ -43,7 +43,7 @@ function team(q) {
     people: [person(SACHIN, 'Sachin', 'Sales', 19, 8), person('22222222-2222-4222-8222-222222222222', 'Supriya', 'Sales', 954, 534),
              { ...person('33333333-3333-4333-8333-333333333333', 'New Person', 'Sales', 0, 0), available: false, calls: null, followups: null },
              ...(state.head ? [person('44444444-4444-4444-8444-444444444444', 'Supriya Head', null, 10, 5, { role: 'DEPARTMENT_HEAD', salesSubRole: null, teamId: null })] : [])],
-    totals: { made: 973, connected: 542, connectRate: 55.7, talkSeconds: 542 * 60, uniqueLeads: 973, followupsScheduled: 4, followupsCompleted: 2, followupsOverdue: 2, demosScheduled: 3, demosCompleted: 3 },
+    totals: { made: 973, connected: 542, notConnected: 400, connectRate: 55.7, talkSeconds: 542 * 60, uniqueLeads: 973, uniqueNumbers: 700, followupsScheduled: 4, followupsCompleted: 2, followupsOverdue: 2, demosScheduled: 3, demosCompleted: 3 },
     teams: [{ teamId: 't1', teamName: 'Sales', people: 3, made: 973, connected: 542 }, ...(state.head ? [{ teamId: null, teamName: null, people: 1, made: 10, connected: 5 }] : [])],
     daily: [{ day: '2026-11-18', made: 500, connected: 300 }, { day: '2026-11-19', made: 473, connected: 242 }] };
 }
@@ -107,6 +107,11 @@ try {
       && await page.getByTestId('croc-team-note').getByText(/not the whole department/).isVisible(), `${label}: labelled as a pilot of 3 connected employees, not the whole department`);
     check(await page.getByTestId('croc-team-note').getByText(/1 not synced yet \(not counted\)/).isVisible(), `${label}: a person not synced yet is said to be left out of the totals`);
     check(await page.getByText('Connect rate 55.7%').isVisible() && await page.getByText('973', { exact: true }).isVisible(), `${label}: the totals`);
+    const totals = page.getByLabel('Totals');
+    check(await totals.getByText('400', { exact: true }).isVisible() && await totals.getByText('700', { exact: true }).isVisible()
+      && !(await totals.getByText(/Follow-ups/).count()), `${label}: not connected and unique numbers (counted once across people); no follow-up counter`);
+    check((await page.getByTestId('croc-team-table').locator('thead th').allTextContents()).join('|') === 'Employee|Team|Total calls|Connected|Not connected|Rate|Unique numbers|Talk time|Demos (CRM)|',
+      `${label}: the table has the shared call figures`);
     check(await page.getByRole('row', { name: /New Person/ }).getByText('Not available yet (not synced)').isVisible(), `${label}: shown as not available, not zero`);
     check(await page.getByRole('img', { name: /Calls made per day, 2 days/ }).isVisible(), `${label}: a calls-per-day chart`);
     await page.getByRole('button', { name: 'Last 30 days' }).click();
