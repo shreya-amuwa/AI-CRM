@@ -11340,6 +11340,58 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.meetings where title like 'LAX %'`);
 }
 
+// --- Chat: @mentions in groups, reactions, Delete Inbox (migration 20270116000100) -------------------------------------------
+{
+  const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0]?.id as string;
+  const smId = await idOf('sm@amuwa.com');
+  const outsiderId = await idOf('a@amuwa.com');
+  let r = await api('tm2', 'POST', '/chat/groups', { title: 'CX API group', memberIds: [smId] });
+  check(r.status === 201 || r.status === 200, 'chat extras: a group to work in', r);
+  const group = r.json.data.id as string;
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'Please review @Support Member', clientMsgId: crypto.randomUUID(), mentions: [smId] });
+  check(r.status === 201 && r.json.data.mentions?.length === 1 && r.json.data.mentions[0].id === smId, 'chat extras: a message tags a member of the group', r);
+  const msg = r.json.data.id as string;
+  const note = (await db.query(`select entity_type, entity_id, data from public.notifications where recipient_id = $1 and type = 'CHAT_MENTION' and data ->> 'messageId' = $2`, [smId, msg])).rows[0];
+  check(note && note.entity_type === 'chat_mention' && note.entity_id === group, 'chat extras: the tagged member is notified, with the group and the message', note);
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'And @Outsider', clientMsgId: crypto.randomUUID(), mentions: [outsiderId] });
+  check(r.status === 201 && !r.json.data.mentions?.length && /only tag members of this group/.test(r.json.data.mentionWarning ?? ''), 'chat extras: someone outside the group is not tagged (the message stays sent and says why)', r);
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'x', clientMsgId: crypto.randomUUID(), mentions: ['nope'] });
+  check(r.status === 422, 'chat extras: tags must be member ids', r);
+
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '👍' });
+  check(r.status === 200 && r.json.data.reactions[0]?.emoji === '👍' && r.json.data.reactions[0].count === 1, 'chat extras: a member reacts', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '😂' });
+  check(r.status === 200 && r.json.data.reactions.length === 1 && r.json.data.reactions[0].emoji === '😂', 'chat extras: changing the reaction replaces it (no duplicate)', r);
+  r = await api('tm2', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '😂' });
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/reactions?ids=${msg}`);
+  check(r.status === 200 && r.json.data[msg]?.[0]?.count === 2 && r.json.data[msg][0].people.length === 2, 'chat extras: the counts and who reacted', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: null });
+  check(r.status === 200 && r.json.data.reactions[0]?.count === 1, 'chat extras: removing a reaction', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '🔥' });
+  check(r.status === 422, 'chat extras: only the six offered reactions', r);
+  r = await api('a', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '👍' });
+  check(r.status === 404, 'chat extras: an outsider cannot react', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/messages`);
+  check(r.status === 200 && r.json.data.messages.some((m: any) => m.id === msg && m.reactions?.[0]?.emoji === '😂' && m.mentions?.length === 1), 'chat extras: the history carries reactions and tags', r);
+
+  r = await api('sm', 'POST', '/chat/inbox/clear', {});
+  check(r.status === 200 && r.json.data.scope === 'MINE' && r.json.data.conversations >= 1, 'chat extras: a member deletes their own inbox', r);
+  r = await api('sm', 'GET', '/chat/internal');
+  check(r.status === 200 && !r.json.data.some((c: any) => c.id === group), 'chat extras: the group leaves their list', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/messages`);
+  check(r.json.data.messages.some((m: any) => m.id === msg), 'chat extras: the other member keeps the history', r);
+  r = await api('tm2', 'POST', '/chat/inbox/purge', { confirm: 'DELETE ALL CHATS' });
+  check(r.status === 403, 'chat extras: only the Super Admin can delete everybody\'s chats', r);
+  r = await api('sa', 'POST', '/chat/inbox/purge', { confirm: 'yes' });
+  check(r.status === 422, 'chat extras: the Super Admin must type the confirmation', r);
+  const clientBefore = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind = 'CLIENT'`)).rows[0].n;
+  r = await api('sa', 'POST', '/chat/inbox/purge', { confirm: 'DELETE ALL CHATS' });
+  check(r.status === 200 && r.json.data.scope === 'ALL_INTERNAL' && r.json.data.messages >= 2, 'chat extras: the Super Admin deletes all internal chat history', r);
+  const left = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind in ('DIRECT', 'GROUP') and m.kind = 'TEXT'`)).rows[0].n;
+  const clientAfter = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind = 'CLIENT'`)).rows[0].n;
+  check(left === 0 && clientAfter === clientBefore, 'chat extras: no internal message is left, client chats are untouched', { left, clientBefore, clientAfter });
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

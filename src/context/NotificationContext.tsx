@@ -27,6 +27,8 @@ export interface AppNotification {
   isRead: boolean;
   entityType: string | null;
   entityId: string | null;
+  /** The message an @mention points at (chat_mention notifications). */
+  messageId?: string;
 }
 
 export interface SendNotificationInput {
@@ -94,7 +96,8 @@ function toAppNotification(n: Notification): AppNotification {
     timestamp: formatTimestamp(n.createdAt),
     isRead: !!n.readAt,
     entityType: n.entityType,
-    entityId: n.entityId
+    entityId: n.entityId,
+    ...(typeof n.data?.messageId === 'string' ? { messageId: n.data.messageId as string } : {})
   };
 }
 

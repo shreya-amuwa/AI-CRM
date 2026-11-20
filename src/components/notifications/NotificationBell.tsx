@@ -57,7 +57,7 @@ export const NotificationBell: React.FC = () => {
                 <li key={n.id}>
                   <button
                     type="button"
-                    onClick={() => { markAsRead(n.id); if (n.entityType === 'chat' && n.entityId) { setOpen(false); openChat({ clientConversationId: n.entityId }); } else if (openFromNotification(n)) setOpen(false); }}
+                    onClick={() => { markAsRead(n.id); if (n.entityType === 'chat_mention' && n.entityId) { setOpen(false); openChat({ tab: 'messages', conversationId: n.entityId, messageId: n.messageId }); } else if (n.entityType === 'chat' && n.entityId) { setOpen(false); openChat({ clientConversationId: n.entityId }); } else if (openFromNotification(n)) setOpen(false); }}
                     aria-label={`${n.isRead ? '' : 'Unread: '}${n.title}`}
                     className={`w-full text-left px-5 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/50'}`}
                   >

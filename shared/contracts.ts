@@ -3009,7 +3009,18 @@ export interface ChatMessage {
   e2ee?: ChatE2eeForViewer | null;
   /** Set by the BROWSER after it opened (or failed to open) an encrypted message. The server never sets it. */
   secure?: ChatSecureState;
+  /** Group members this message tags (migration 20270116000100). */
+  mentions?: ChatTaggedPerson[];
+  /** Reactions with counts, whether I reacted, and who reacted (one per person). */
+  reactions?: ChatReaction[];
+  /** Set on a send whose message was stored but whose tags were refused (e.g. someone left the group meanwhile). */
+  mentionWarning?: string;
 }
+// ---- Chat: @mentions, reactions, Delete Inbox (migration 20270116000100) ----
+export interface ChatTaggedPerson { id: string; name: string; me: boolean }
+export interface ChatReaction { emoji: string; count: number; mine: boolean; people: ChatTaggedPerson[] }
+export interface ChatReactResult { messageId: string; reactions: ChatReaction[] }
+export interface ChatInboxDeleteResult { scope: 'MINE' | 'ALL_INTERNAL'; conversations: number; messages: number; filesRemoved?: number; filesPending?: number }
 /** What the server hands to ONE member of an encrypted message: the ciphertext and the key sealed for that member. */
 export interface ChatE2eeForViewer {
   v: 1;
