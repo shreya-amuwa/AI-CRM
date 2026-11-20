@@ -86,7 +86,7 @@ const ChatPage: React.FC<{ summary?: ChatUnreadSummary; refresh?: () => void }> 
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {tab === 'messages' && <InternalChats key={`m${version}`} active initialId={initial.conversationId} onUnreadChange={refresh || noop} />}
+        {tab === 'messages' && <InternalChats key={`m${version}`} active initialId={initial.conversationId} initialMessageId={initial.messageId} onUnreadChange={refresh || noop} />}
         {tab === 'clients' && resolved && <ClientChats key={`c${version}`} active initialCustomer={customerId} onUnreadChange={refresh || noop} />}
         {tab === 'review' && canReview && <ReviewChats active />}
       </div>

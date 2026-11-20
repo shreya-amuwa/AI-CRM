@@ -151,6 +151,11 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/chat/conversations/:id/keys', handler: chat.memberKeys },
   { method: 'DELETE', path: '/chat/messages/:id/for-me', handler: chat.deleteForMe },
   { method: 'DELETE', path: '/chat/messages/:id/for-everyone', handler: chat.deleteForEveryone },
+  // reactions (one per person and message) and Delete Inbox (mine; the Super Admin: every internal chat) - migration 20270116000300
+  { method: 'POST', path: '/chat/messages/:id/reaction', handler: chat.react },
+  { method: 'GET', path: '/chat/conversations/:id/reactions', handler: chat.reactions },
+  { method: 'POST', path: '/chat/inbox/clear', handler: chat.inboxClear, options: S },
+  { method: 'POST', path: '/chat/inbox/purge', handler: chat.inboxPurge, options: S },
   { method: 'GET', path: '/chat/keys/status', handler: chat.keyStatus },
   { method: 'GET', path: '/chat/settings', handler: chat.internalMode },
   { method: 'POST', path: '/chat/settings', handler: chat.setInternalMode, options: S },
@@ -467,6 +472,10 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/meetings', handler: meetings.list },
   { method: 'POST', path: '/meetings', handler: meetings.create, options: S },
   { method: 'GET', path: '/meetings/approvals', handler: meetings.approvals },
+  // live availability of the CEO: Enter / Exit Meeting (before /meetings/:id)
+  { method: 'GET', path: '/meetings/presence', handler: meetings.presence },
+  { method: 'POST', path: '/meetings/presence/enter', handler: meetings.presenceEnter, options: S },
+  { method: 'POST', path: '/meetings/presence/exit', handler: meetings.presenceExit, options: S },
   { method: 'GET', path: '/meetings/ceo-requests', handler: meetings.ceoRequests },
   { method: 'GET', path: '/meetings/directory', handler: meetings.directory },
   { method: 'POST', path: '/meetings/busy', handler: meetings.busy },

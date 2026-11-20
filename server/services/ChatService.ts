@@ -1,5 +1,6 @@
-import type { ChatClientView, ChatConversation, ChatDeleteResult, ChatMessage, ChatMessagePage, ChatUploadTicket, ClientDocumentUrl } from '../../shared/contracts.js';
+import type { ChatClientView, ChatConversation, ChatDeleteResult, ChatInboxDeleteResult, ChatMessage, ChatMessagePage, ChatReaction, ChatReactResult, ChatUploadTicket, ClientDocumentUrl } from '../../shared/contracts.js';
 import {
+  chatPurgeSchema, chatReactSchema, chatReactionsQuerySchema,
   chatReceiptsQuerySchema,
   clientSupportGroupSaveSchema,
   chatAdminSchema,
@@ -98,9 +99,60 @@ export class ChatService {
     return null;
   }
   messages(id: string, query: unknown): Promise<ChatMessagePage> { return this.repo.messages(parse(uuidSchema, id), parse(chatMessagesQuerySchema, query ?? {})); }
-  send(id: string, body: unknown): Promise<ChatMessage> { return this.repo.send(parse(uuidSchema, id), parse(chatSendSchema, body)); }
+  async send(id: string, body: unknown): Promise<ChatMessage> {
+    const input = parse(chatSendSchema, body);
+    return this.withMentions(await this.repo.send(parse(uuidSchema, id), input), input.mentions);
+  }
   /** The server stores the envelope as it is: it checks who it is sealed for, never what it says. */
-  sendEncrypted(id: string, body: unknown): Promise<ChatMessage> { return this.repo.sendEncrypted(parse(uuidSchema, id), parse(chatSendEncryptedSchema, body)); }
+  async sendEncrypted(id: string, body: unknown): Promise<ChatMessage> {
+    const input = parse(chatSendEncryptedSchema, body);
+    return this.withMentions(await this.repo.sendEncrypted(parse(uuidSchema, id), input), input.mentions);
+  }
+  /**
+   * @mentions: right after the message is stored, the database records who it tags (only current members of that group) and notifies them.
+   * A retry of the same send (same clientMsgId) tags nobody twice. If the tags are refused, the message stays sent and says why.
+   */
+  private async withMentions(m: ChatMessage, mentions: string[]): Promise<ChatMessage> {
+    const ids = [...new Set(mentions)];
+    if (!ids.length) return m;
+    try {
+      const r = await this.repo.mention(m.id, ids);
+      return { ...m, mentions: r.mentions };
+    } catch (err) {
+      if (err instanceof AppError && (err.code === 'VALIDATION_ERROR' || err.code === 'FORBIDDEN')) return { ...m, mentionWarning: err.message };
+      throw err;
+    }
+  }
+
+  // ---------------------------------------------------------------- reactions (one per person and message; the database checks access)
+  react(messageId: string, body: unknown): Promise<ChatReactResult> {
+    return this.repo.react(parse(uuidSchema, messageId), parse(chatReactSchema, body).emoji);
+  }
+  reactions(conversationId: string, query: unknown): Promise<Record<string, ChatReaction[]>> {
+    return this.repo.reactions(parse(uuidSchema, conversationId), parse(chatReactionsQuerySchema, query ?? {}).ids);
+  }
+
+  // ---------------------------------------------------------------- Delete Inbox
+  /** Clear my inbox: every direct chat and group of mine is emptied for me only. */
+  inboxClear(): Promise<ChatInboxDeleteResult> { return this.repo.inboxClear(); }
+  /**
+   * The Super Admin deletes every internal chat message for everybody (the database checks the role and the typed confirmation). The stored
+   * files are then removed from storage here; the database is told which are gone. A file that could not be removed stays listed for a retry.
+   */
+  async inboxPurge(body: unknown): Promise<ChatInboxDeleteResult> {
+    const done = await this.repo.inboxPurge(parse(chatPurgeSchema, body).confirm);
+    const removed: string[] = [];
+    for (const f of done.files) {
+      try {
+        await this.storage.remove(f.bucket, [f.path], f.provider);
+        removed.push(f.id);
+      } catch (err) {
+        console.error('[chat] could not remove a purged file from storage', { file: f.id, message: (err as Error).message });
+      }
+    }
+    for (let i = 0; i < removed.length; i += 500) await this.repo.purgedFilesRemoved(removed.slice(i, i + 500)).catch(() => undefined);
+    return { scope: 'ALL_INTERNAL', conversations: done.conversations, messages: done.messages, filesRemoved: removed.length, filesPending: done.files.length - removed.length };
+  }
   deleteForMe(messageId: string): Promise<ChatDeleteResult> { return this.repo.deleteForMe(parse(uuidSchema, messageId)); }
   /** The database wipes the message and says which stored files must go; they are removed here, and the database is told when they are gone. */
   async deleteForEveryone(messageId: string): Promise<ChatDeleteResult> {

@@ -158,3 +158,56 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
   - `supabase/tests/meetings.test.ts` (unit, 73)
   - `supabase/tests/ui_meetings.test.mjs` (browser, 26)
   - the meetings block of `supabase/tests/api_integration.test.ts`
+
+## Live availability of the CEO: Enter / Exit Meeting
+
+Migration `supabase/migrations/20270116000400_meeting_live_availability.sql` (run after `20270116000300`; additive, safe to run twice).
+
+### What people see
+
+- **The CEO (Super Admin)**, at the top of Meetings: **Enter Meeting** when not in a meeting (optionally choosing which of today's meetings),
+  **Exit Meeting** while in one. The panel shows the live status, since when, the current meeting (with its Meet link), and the requests
+  waiting for the CEO to be free, oldest first.
+- **Everybody else**: the CEO's live **BUSY** / **AVAILABLE** status at the top of Meetings and as a small badge next to the bell on every
+  dashboard. It changes at once (Supabase Realtime on `meeting_presence`); nobody needs to refresh.
+- **Asking the CEO for time while BUSY**: the form says *"Superadmin is currently attending another meeting."* The time is not confirmed. The
+  request can still be sent (**Submit the request (pending availability)**). It is saved as **Pending availability** with the requested date,
+  time, length, purpose and who asked, and listed under Requests → Your requests. While the CEO is AVAILABLE, asking works as before (the CEO
+  approves, proposes another time or declines).
+
+### Exit Meeting schedules the waiting requests
+
+On Exit, in one transaction under the CEO's booking lock (the same lock every booking uses, so two people can never take the same slot):
+
+1. The status becomes AVAILABLE and the end time is recorded.
+2. Each person with a waiting request is told the CEO is available again.
+3. The waiting requests are taken in the order they were made. Each gets the first free slot at or after the time asked for (never in the
+   past), inside the CEO's working hours (default Monday–Saturday 10:00–18:00), not overlapping any requested, proposed or scheduled meeting
+   of the CEO (including the ones just booked), and not overlapping the CEO's Google Calendar busy times (the server reads them for the next
+   31 days and passes them in).
+4. Each becomes **Scheduled**. The Google event and guest e-mails follow through the existing sync.
+5. The one who asked is notified of the confirmed date and time, and separately when it is not the time they asked for. The CEO and invited
+   colleagues are told it was booked.
+
+A request with no free slot in the next 30 days keeps waiting. Every automation dispatch also schedules waiting requests of a CEO who is
+AVAILABLE (a safety net), so nothing is lost when a browser closes or the CEO signs out. A confirmed meeting is never moved by any of this. A
+waiting request can be cancelled like any request.
+
+### Rules the database enforces
+
+- Only a Super Admin can Enter or Exit, and only for themself (`mtg_presence_enter`, `mtg_presence_exit`). Team members can only read the
+  status, which holds no meeting details. Nobody writes `meeting_presence` directly.
+- A second Enter (or Exit) changes nothing.
+- History: `meeting_presence_log` (every Enter and Exit with both times and how many requests were scheduled), the meeting's own history
+  (`HOST_ENTERED`, `HOST_EXITED`, `REQUESTED_WHILE_BUSY`, `AUTO_SCHEDULED`), and the audit log (`MEETING_PRESENCE_ENTERED`,
+  `MEETING_PRESENCE_EXITED`, `MEETING_PENDING_AVAILABILITY`, `MEETING_AUTO_SCHEDULED`).
+
+### API
+
+`GET /meetings/presence`, `POST /meetings/presence/enter` (`{ meetingId? }`) and `POST /meetings/presence/exit`.
+
+### Tests
+
+`supabase/tests/meeting_live_availability_test.sql` (database), `supabase/tests/ui_meeting_presence.test.mjs` (browser: Enter / Exit, the
+indicator, the busy message, the pending request and a Realtime update), and the "Live meeting availability" block of
+`supabase/tests/api_integration.test.ts`.

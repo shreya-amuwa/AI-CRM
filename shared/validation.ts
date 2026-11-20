@@ -1619,7 +1619,9 @@ export const chatSendSchema = z
     body: z.string().max(CHAT_MAX_BODY, `A message can have at most ${CHAT_MAX_BODY} characters.`).default(''),
     clientMsgId: uuidSchema,
     replyTo: uuidSchema.optional(),
-    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([])
+    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([]),
+    /** @mentions in a group (migration 20270116000300): the members tagged; the database refuses anyone outside the group. */
+    mentions: z.array(uuidSchema).max(50, 'Tag at most 50 people in one message.').default([])
   })
   .strict()
   .refine(v => v.body.trim().length > 0 || v.attachmentIds.length > 0, { message: 'Write a message first.', path: ['body'] });
@@ -1643,9 +1645,22 @@ export const chatSendEncryptedSchema = z
     clientMsgId: uuidSchema,
     replyTo: uuidSchema.optional(),
     attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([]),
-    e2ee: chatE2eeSchema
+    e2ee: chatE2eeSchema,
+    mentions: z.array(uuidSchema).max(50, 'Tag at most 50 people in one message.').default([])
   })
   .strict();
+
+// ---- Chat: Delete Inbox, reactions (migration 20270116000300) ----
+export const CHAT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
+export type ChatReactionEmoji = (typeof CHAT_REACTIONS)[number];
+/** Add / change (another emoji) / remove (null) my reaction to a message: one per person and message. */
+export const chatReactSchema = z.object({ emoji: z.enum(CHAT_REACTIONS, { errorMap: () => ({ message: 'Choose one of the offered reactions.' }) }).nullable() }).strict();
+export const chatReactionsQuerySchema = z.object({
+  ids: z.string().max(12000).transform(v => v.split(',').map(x => x.trim()).filter(Boolean)).pipe(z.array(uuidSchema).max(300))
+}).strict();
+/** The Super Admin types this to delete every internal chat (the database checks it again). */
+export const CHAT_PURGE_CONFIRMATION = 'DELETE ALL CHATS';
+export const chatPurgeSchema = z.object({ confirm: z.literal(CHAT_PURGE_CONFIRMATION, { errorMap: () => ({ message: `Type ${CHAT_PURGE_CONFIRMATION} to confirm.` }) }) }).strict();
 const chatKeyBackupBlobSchema = z
   .object({
     v: z.literal(1),
@@ -2998,6 +3013,8 @@ export const ceoRequestsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0)
 }).strict();
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
+// ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
+export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
 export const meetingBusySchema = z.object({
   profileIds: z.array(uuidSchema).min(1).max(30),
   from: isoInstant,

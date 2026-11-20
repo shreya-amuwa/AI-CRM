@@ -9,6 +9,8 @@ export interface OpenChatDetail {
   customerId?: string;
   /** A client chat known only by its conversation id (a notification): the chat finds the customer. */
   clientConversationId?: string;
+  /** Open the conversation on this message (an @mention notification). */
+  messageId?: string;
 }
 
 let pending: OpenChatDetail | null = null;

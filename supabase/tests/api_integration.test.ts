@@ -11343,6 +11343,106 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
+// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270116000400) ---------------
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
+  // a weekday (Monday-Saturday, the default working days) 40+ days ahead, 11:00 India time
+  const day = new Date(Date.now() + 40 * 86_400_000);
+  while (day.getUTCDay() === 0) day.setUTCDate(day.getUTCDate() + 1);
+  const at = (hh: number, mm = 0) => new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hh - 5, mm - 30)).toISOString();
+  const statusOf = async (id: string) => (await db.query(`select status, starts_at from public.meetings where id = $1`, [id])).rows[0];
+
+  let r = await api('a', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data.some((p: any) => p.hostId === saId && p.status === 'AVAILABLE'), 'live availability: a member sees the CEO AVAILABLE', r);
+  r = await api('a', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 403, 'live availability: a member cannot Enter a meeting for the CEO', r);
+  r = await api('sa', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'live availability: the CEO enters a meeting: BUSY', r);
+  r = await api('a', 'GET', '/meetings/presence');
+  check(r.json.data.find((p: any) => p.hostId === saId)?.status === 'BUSY' && r.json.data.find((p: any) => p.hostId === saId)?.pending === null,
+    'live availability: the member now sees BUSY (and not the CEO\'s queue)', r);
+  r = await api('a', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 403, 'live availability: a member cannot Exit for the CEO', r);
+
+  r = await api('a', 'POST', '/meetings', { title: 'LAX Budget review', description: 'Pune office budget', hostId: saId, startsAt: at(11), endsAt: at(12), mode: 'GOOGLE_MEET' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a request while BUSY is saved as PENDING AVAILABILITY', r);
+  const reqA = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings', { title: 'LAX Second request', description: 'Hiring plan for Q1', hostId: saId, startsAt: at(11), endsAt: at(11, 30), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a second request for the same time is saved too (not refused)', r);
+  const reqB = r.json.data.id as string;
+  r = await api('sa', 'GET', '/meetings/presence');
+  check(r.json.data.find((p: any) => p.hostId === saId)?.pending?.length >= 2, 'live availability: the CEO sees the waiting queue', r);
+
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.some((x: any) => x.id === reqA) && r.json.data.scheduled.some((x: any) => x.id === reqB),
+    'live availability: Exit Meeting: AVAILABLE, and both waiting requests are scheduled', r);
+  const a = await statusOf(reqA);
+  const b = await statusOf(reqB);
+  check(a.status === 'SCHEDULED' && b.status === 'SCHEDULED' && new Date(a.starts_at).toISOString() === at(11) && new Date(b.starts_at).toISOString() === at(12),
+    'live availability: in queue order and without overlap (A 11:00-12:00, B moved to 12:00)', { a, b });
+  r = await api('a', 'GET', `/meetings/${reqB}`);
+  check(r.status === 200 && r.json.data.status === 'SCHEDULED', 'live availability: the member sees the confirmed meeting', r);
+  const notes = (await db.query(`select type from public.notifications where recipient_id = $1 and entity_id = any($2::uuid[])`, [memberId, [reqA, reqB]])).rows.map((x: any) => x.type);
+  check(notes.filter((t: string) => t === 'MEETING_SCHEDULED').length === 2 && notes.includes('MEETING_MOVED'),
+    'live availability: the member is notified of each confirmed time, and of the moved one', notes);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.length === 0, 'live availability: a second Exit changes nothing', r);
+  await db.query(`delete from public.meetings where title like 'LAX %'`);
+}
+
+// --- Chat: @mentions in groups, reactions, Delete Inbox (migration 20270116000300) -------------------------------------------
+{
+  const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0]?.id as string;
+  const smId = await idOf('sm@amuwa.com');
+  const outsiderId = await idOf('a@amuwa.com');
+  let r = await api('tm2', 'POST', '/chat/groups', { title: 'CX API group', memberIds: [smId] });
+  check(r.status === 201 || r.status === 200, 'chat extras: a group to work in', r);
+  const group = r.json.data.id as string;
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'Please review @Support Member', clientMsgId: crypto.randomUUID(), mentions: [smId] });
+  check(r.status === 201 && r.json.data.mentions?.length === 1 && r.json.data.mentions[0].id === smId, 'chat extras: a message tags a member of the group', r);
+  const msg = r.json.data.id as string;
+  const note = (await db.query(`select entity_type, entity_id, data from public.notifications where recipient_id = $1 and type = 'CHAT_MENTION' and data ->> 'messageId' = $2`, [smId, msg])).rows[0];
+  check(note && note.entity_type === 'chat_mention' && note.entity_id === group, 'chat extras: the tagged member is notified, with the group and the message', note);
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'And @Outsider', clientMsgId: crypto.randomUUID(), mentions: [outsiderId] });
+  check(r.status === 201 && !r.json.data.mentions?.length && /only tag members of this group/.test(r.json.data.mentionWarning ?? ''), 'chat extras: someone outside the group is not tagged (the message stays sent and says why)', r);
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'x', clientMsgId: crypto.randomUUID(), mentions: ['nope'] });
+  check(r.status === 422, 'chat extras: tags must be member ids', r);
+
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '👍' });
+  check(r.status === 200 && r.json.data.reactions[0]?.emoji === '👍' && r.json.data.reactions[0].count === 1, 'chat extras: a member reacts', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '😂' });
+  check(r.status === 200 && r.json.data.reactions.length === 1 && r.json.data.reactions[0].emoji === '😂', 'chat extras: changing the reaction replaces it (no duplicate)', r);
+  r = await api('tm2', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '😂' });
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/reactions?ids=${msg}`);
+  check(r.status === 200 && r.json.data[msg]?.[0]?.count === 2 && r.json.data[msg][0].people.length === 2, 'chat extras: the counts and who reacted', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: null });
+  check(r.status === 200 && r.json.data.reactions[0]?.count === 1, 'chat extras: removing a reaction', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '🔥' });
+  check(r.status === 422, 'chat extras: only the six offered reactions', r);
+  r = await api('a', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '👍' });
+  check(r.status === 404, 'chat extras: an outsider cannot react', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/messages`);
+  check(r.status === 200 && r.json.data.messages.some((m: any) => m.id === msg && m.reactions?.[0]?.emoji === '😂' && m.mentions?.length === 1), 'chat extras: the history carries reactions and tags', r);
+
+  r = await api('sm', 'POST', '/chat/inbox/clear', {});
+  check(r.status === 200 && r.json.data.scope === 'MINE' && r.json.data.conversations >= 1, 'chat extras: a member deletes their own inbox', r);
+  r = await api('sm', 'GET', '/chat/internal');
+  check(r.status === 200 && !r.json.data.some((c: any) => c.id === group), 'chat extras: the group leaves their list', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/messages`);
+  check(r.json.data.messages.some((m: any) => m.id === msg), 'chat extras: the other member keeps the history', r);
+  r = await api('tm2', 'POST', '/chat/inbox/purge', { confirm: 'DELETE ALL CHATS' });
+  check(r.status === 403, 'chat extras: only the Super Admin can delete everybody\'s chats', r);
+  r = await api('sa', 'POST', '/chat/inbox/purge', { confirm: 'yes' });
+  check(r.status === 422, 'chat extras: the Super Admin must type the confirmation', r);
+  const clientBefore = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind = 'CLIENT'`)).rows[0].n;
+  r = await api('sa', 'POST', '/chat/inbox/purge', { confirm: 'DELETE ALL CHATS' });
+  check(r.status === 200 && r.json.data.scope === 'ALL_INTERNAL' && r.json.data.messages >= 2, 'chat extras: the Super Admin deletes all internal chat history', r);
+  const left = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind in ('DIRECT', 'GROUP') and m.kind = 'TEXT'`)).rows[0].n;
+  const clientAfter = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind = 'CLIENT'`)).rows[0].n;
+  check(left === 0 && clientAfter === clientBefore, 'chat extras: no internal message is left, client chats are untouched', { left, clientBefore, clientAfter });
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

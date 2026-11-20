@@ -21,6 +21,8 @@ import { GOOGLE_SENDS, ICS_KINDS, linkSecret, manageToken, meetingIcs, renderMee
  */
 
 export interface MeetingsRunSummary {
+  /** Requests that waited for the CEO and were scheduled in this run. */
+  autoScheduled?: number;
   reminders: number;
   synced: number;
   syncFailed: number;
@@ -195,6 +197,17 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
   try {
     const rem = await db.rpc('mtg_enqueue_reminders');
     summary.reminders = Number(rem.data) || 0;
+
+    // requests that waited for the CEO to be free and are still waiting (no free slot at Exit, or an Exit that stopped half-way):
+    // scheduled now, with the CEO's Google busy times (migration 20270116000400; skipped quietly on a database without it)
+    const { data: hosts } = await db.rpc('mtg_pending_hosts');
+    for (const host of (Array.isArray(hosts) ? hosts : []) as string[]) {
+      if (Date.now() > deadline) break;
+      const from = new Date();
+      const busy = (await googleBusy([host], from, new Date(from.getTime() + 31 * 86_400_000), db).catch(() => ({} as Record<string, BusyBlock[]>)))[host] ?? [];
+      const done = await db.rpc('mtg_pending_process', { p_host: host, p_busy: busy.map(b => ({ start: b.start, end: b.end })) });
+      summary.autoScheduled = (summary.autoScheduled ?? 0) + (Array.isArray(done.data) ? done.data.length : 0);
+    }
 
     const cfg = googleConfig(process.env, appUrl());
     if (cfg) {

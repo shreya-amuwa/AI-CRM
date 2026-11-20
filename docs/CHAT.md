@@ -294,3 +294,54 @@ turned notifications on (the same devices and the same "Turn on notifications" a
 * **Limits:** at most 40 devices per message (the Worker's request limit) and 2 per person (their newest), the recipients in a random
   order each time so in a big group the same people are never always left out; 6 at a time, 10 seconds each. A failed push is not retried; the
   message, the unread count and the bell are unaffected.
+
+## Delete Inbox, @mentions and reactions (migration 20270116000300)
+
+Run `supabase/migrations/20270116000300_chat_inbox_mentions_reactions.sql` in the Supabase SQL editor. It is additive and safe to run twice.
+All three features are for **internal chats** (direct messages and groups). Client conversations are not touched.
+
+### Delete Inbox (the ⋮ menu next to **New** in Chat → Messages)
+
+| Option | Who | What happens |
+| --- | --- | --- |
+| **Delete inbox** | every employee | Every direct chat and group in their inbox is emptied **for them only**, on all their devices: messages, files and unread counts. The others keep their copies. A chat leaves the list and comes back when someone writes in it again (with only the new messages). |
+| **Delete all chat history (everyone)** | the Super Admin only | Every message and file of every direct chat and group in the company is **permanently deleted for everybody**. Groups and their members stay, empty, with one line: "The chat history was deleted by the Super Admin." The stored files are removed from storage by the API. |
+
+* Both ask for confirmation first and say that the entire inbox history is removed. The company-wide delete also needs `DELETE ALL CHATS`
+  typed, and the database checks that text again (`chat_inbox_purge`), so a stray API call cannot do it.
+* **How "for me only" works:** the person's membership row moves its existing "visible from" position (the one a member added later already
+  has) to the end of each conversation, and `inbox_cleared_seq` keeps the chat out of their list until a newer message arrives. Nothing shared
+  is deleted.
+* **Logs:** `chat_inbox_deletions` (who, when, which kind, counts) and the audit log (`CHAT_INBOX_CLEARED`, `CHAT_INBOX_PURGED`). The logs hold
+  counts only, never content.
+* API: `POST /chat/inbox/clear`; `POST /chat/inbox/purge` `{ "confirm": "DELETE ALL CHATS" }`. Anyone but the Super Admin gets 403.
+
+### @mentions (groups)
+
+* Typing `@` in a group's message box lists the group's members (not the person typing, not anyone outside the group). Arrows and Enter (or a
+  click) pick one; several people can be tagged in one message. The tagged names are highlighted in the sent message (your own name in yellow).
+* The message is sent with `mentions` (member ids). Right after storing it, the server calls `chat_message_mention`, which:
+  * refuses anyone who is not a current, active member of that group;
+  * accepts tags only from the sender, in a group, within 10 minutes of sending;
+  * stores the tags in `chat_message_mentions` once (a retried send tags nobody twice);
+  * notifies each tagged member: `CHAT_MENTION`, entity `chat_mention`, with the conversation, message and position.
+* If a tag is refused (for example, the person left the group meanwhile), the message stays sent and the screen says why.
+* Clicking the notification opens Chat on that group, loads earlier messages until it finds the message, and highlights it.
+* End-to-end encrypted messages can be tagged too: the server stores who is tagged, never the text.
+
+### Reactions (direct messages and groups)
+
+* Hovering over a message (or tapping it on a phone) shows a smiley button with 👍 ❤️ 😂 😮 😢 🙏.
+* Each person has **one** reaction per message (the primary key of `chat_message_reactions`). Choosing another emoji replaces it; pressing
+  your own reaction chip removes it.
+* Reactions show under the message with counts (yours outlined). A chip's tooltip and the people button list who reacted.
+* `chat_message_reactions` is in the Realtime publication with the same read rule as messages, so other screens refresh the reactions of
+  the messages they show (`GET /chat/conversations/:id/reactions?ids=`) without a page refresh.
+* API: `POST /chat/messages/:id/reaction` `{ "emoji": "👍" | null }`. Only members of the chat can react to a message they can read; any other
+  emoji is refused.
+
+### Tests
+
+`supabase/tests/chat_inbox_mentions_reactions_test.sql` (database), `supabase/tests/chat_mentions.test.ts` (unit),
+`supabase/tests/ui_chat_extras.test.mjs` (browser), and the "Chat: @mentions in groups, reactions, Delete Inbox" block of
+`supabase/tests/api_integration.test.ts`.

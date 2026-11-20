@@ -1,9 +1,9 @@
 import type {
-  CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoPresence, CeoPresenceExit, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
 } from '../../shared/contracts.js';
 import {
   calendarMeetingCancelSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
-  meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingProposalAnswerSchema,
+  meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingProposalAnswerSchema,
   meetingRescheduleSchema, meetingResponseSchema, uuidSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
@@ -39,6 +39,22 @@ export class MeetingService {
   }
   detail(id: string): Promise<MeetingDetail> { return this.repo.detail(parse(uuidSchema, id)); }
   approvals(): Promise<Meeting[]> { return this.repo.pendingApprovals(); }
+
+  // ---- Live availability of the CEO: Enter / Exit Meeting (the database lets only the Super Admin change their own)
+  presence(): Promise<CeoPresence[]> { return this.repo.presence(); }
+  presenceEnter(body: unknown): Promise<CeoPresence> {
+    return this.repo.presenceEnter(parse(meetingPresenceEnterSchema, body ?? {}).meetingId ?? null);
+  }
+  /**
+   * Exit Meeting: AVAILABLE, and the requests that waited are scheduled by the database (queue order, working hours, held meetings).
+   * The CEO's Google busy times for the next 31 days are passed in so no request lands on them; without Google, the CRM calendar alone decides.
+   */
+  async presenceExit(actor: Actor): Promise<CeoPresenceExit> {
+    const from = new Date();
+    const to = new Date(from.getTime() + 31 * 86_400_000);
+    const busy = actor.role === 'SUPER_ADMIN' ? (await googleBusy([actor.id], from, to).catch(() => ({} as Record<string, { start: string; end: string }[]>)))[actor.id] ?? [] : [];
+    return this.after(this.repo.presenceExit(busy.map(b => ({ start: b.start, end: b.end }))));
+  }
   /** The meeting requests with the CEO: the Super Admin sees everyone's, an employee only their own. */
   ceoRequests(query: unknown): Promise<CeoRequestList> {
     const q = parse(ceoRequestsQuerySchema, query ?? {});

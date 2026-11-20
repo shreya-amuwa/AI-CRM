@@ -10,6 +10,7 @@ import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type BookingLinkInput, type NewMeeting } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
 import { takePendingMeeting, useMeetingsChanged, useOpenMeetingRequest } from './meetingEvents';
+import { CeoPresencePanel, useCeoPresence } from './CeoPresence';
 
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
@@ -42,13 +43,15 @@ const STATUS_STYLE: Record<string, string> = {
   SCHEDULED: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   DECLINED: 'bg-rose-50 text-rose-700 border-rose-200',
   CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200',
-  COMPLETED: 'bg-sky-50 text-sky-800 border-sky-200'
+  COMPLETED: 'bg-sky-50 text-sky-800 border-sky-200',
+  PENDING_AVAILABILITY: 'bg-orange-50 text-orange-800 border-orange-200'
 };
 const STATUS_LABEL: Record<string, string> = {
-  REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done'
+  REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done',
+  PENDING_AVAILABILITY: 'Pending availability (the CEO is in a meeting)'
 };
 /** How a request for the CEO's time reads to the people involved. */
-const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
+const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PENDING_AVAILABILITY' ? 'Pending availability (CEO in a meeting)' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
   : m.status === 'SCHEDULED' ? (m.rescheduleCount > 0 ? 'Rescheduled' : 'Approved') : m.status === 'COMPLETED' ? 'Completed' : 'Cancelled');
 const SYNC_LABEL: Record<string, string> = {
   SYNCED: 'On Google Calendar', PENDING: 'Sending to Google…', FAILED: 'Google sync failed (retrying)', NOT_CONNECTED: 'Host has not connected Google', SKIPPED: 'Not on Google'
@@ -106,6 +109,8 @@ export const MeetingsPage: React.FC = () => {
   const [approvals, setApprovals] = useState<Meeting[]>([]);
   // The CEO (Super Admin) does not ask themselves for time: their "New meeting" goes straight onto their own calendar.
   const [isCeo, setIsCeo] = useState(false);
+  // the CEO's own meetings today: the one being entered can be chosen in the Enter Meeting panel
+  const [today, setToday] = useState<Meeting[]>([]);
   const [flash, setFlash] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null);
   const [composer, setComposer] = useState<null | 'meeting' | 'ceo'>(null);
   // a meeting notification clicked before this page opened: show that meeting
@@ -143,6 +148,12 @@ export const MeetingsPage: React.FC = () => {
     meetingsApi.approvals().then(setApprovals).catch(() => setApprovals([]));
     meetingsApi.settings().then(x => setIsCeo(x.isCeo)).catch(() => setIsCeo(false));
   }, [reloadKey]);
+  useEffect(() => {
+    if (!isCeo) return setToday([]);
+    const d = new Date();
+    const from = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    meetingsApi.list(from.toISOString(), addDays(from, 1).toISOString()).then(setToday).catch(() => setToday([]));
+  }, [isCeo, reloadKey]);
 
   const done = (text: string) => {
     setFlash({ tone: 'ok', text });
@@ -163,6 +174,7 @@ export const MeetingsPage: React.FC = () => {
       </div>
 
       {flash && <Notice tone={flash.tone} onClose={() => setFlash(null)}>{flash.text}</Notice>}
+      <CeoPresencePanel isCeo={isCeo} today={today} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} onOpen={setOpenId} reloadKey={reloadKey} />
       {google && tab !== 'settings' && <GoogleBanner status={google} onOpenSettings={() => setTab('settings')} />}
 
       <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200">
@@ -180,7 +192,9 @@ export const MeetingsPage: React.FC = () => {
 
       {composer && <MeetingComposer mode={composer} onClose={() => setComposer(null)} onSaved={m => {
         setComposer(null);
-        done(m.status === 'REQUESTED'
+        done(m.status === 'PENDING_AVAILABILITY'
+          ? `${m.hostName} is currently attending another meeting. Your request is saved as PENDING AVAILABILITY and will be scheduled automatically when they are free; you will be told the confirmed time.`
+          : m.status === 'REQUESTED'
           ? `Request sent to ${m.hostName}. You will be told when it is approved.`
           : `${m.kindLabel} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
       }} />}
@@ -569,6 +583,9 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
 
   useEffect(() => { meetingsApi.directory().then(setPeople).catch(() => setPeople([])); }, []);
   const ceos = people.filter(p => p.isCeo);
+  // the chosen CEO's live availability: while BUSY the request is saved and waits (it is not confirmed now)
+  const { list: presence } = useCeoPresence(mode === 'ceo');
+  const ceoBusy = mode === 'ceo' && !!presence?.find(p => p.hostId === f.hostId && p.status === 'BUSY');
   useEffect(() => { if (mode === 'ceo' && !f.hostId && ceos[0]) setF(x => ({ ...x, hostId: ceos[0].id })); }, [mode, ceos, f.hostId]);
 
   // the chosen day's busy times of the CEO / the invited colleagues (CRM + their Google Calendar)
@@ -620,6 +637,12 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
               </select>
             </div>
           ) : <Notice tone="warn">No CEO account was found.</Notice>
+        )}
+        {ceoBusy && (
+          <div role="status" aria-live="polite" data-testid="ceo-busy-notice" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+            <p className="font-bold">Superadmin is currently attending another meeting.</p>
+            <p className="mt-0.5">Your time is not confirmed now. Send the request: it is saved as PENDING AVAILABILITY and scheduled automatically, in the order requests were made, at the first free time from the one you choose, as soon as the CEO exits the meeting. You are notified of the confirmed date and time.</p>
+          </div>
         )}
         <div>
           <label className={labelCls} htmlFor="mtg-title">{mode === 'ceo' ? 'Subject' : 'Title'}</label>
@@ -715,7 +738,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
         <div className="flex gap-2 pt-1">
           <button type="submit" disabled={saving || (mode === 'ceo' && !f.hostId)} className={btnPrimary}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : mode === 'ceo' ? <Crown className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
-            {mode === 'ceo' ? 'Send the request' : 'Book the meeting'}
+            {mode === 'ceo' ? (ceoBusy ? 'Submit the request (pending availability)' : 'Send the request') : 'Book the meeting'}
           </button>
           <button type="button" className={btnGhost} onClick={onClose}>Cancel</button>
         </div>

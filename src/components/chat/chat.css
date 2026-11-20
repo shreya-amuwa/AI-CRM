@@ -234,3 +234,36 @@ button.ch-person:hover { background: var(--ch-surface); }
 .ch-field input:focus { outline: 2px solid color-mix(in oklab, var(--ch-accent), transparent 55%); }
 .ch-note { margin: 0; font-size: 13px; color: var(--ch-muted); }
 .ch-note.warn { color: #7a4b00; background: #fff7e0; padding: 8px 10px; border-radius: 8px; }
+
+/* ---- reactions, @mentions, Delete Inbox (migration 20270116000300) ---- */
+.ch-react-wrap { position: relative; display: inline-flex; }
+.ch-react-btn { opacity: 0; border: 0; background: rgba(255, 255, 255, 0.85); color: var(--ch-muted); width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; margin-bottom: 4px; }
+.ch-row:hover .ch-react-btn, .ch-react-btn:focus-visible, .ch-react-btn[aria-expanded='true'] { opacity: 1; }
+@media (hover: none) { .ch-react-btn { opacity: 1; } }
+.ch-react-menu { position: absolute; z-index: 40; bottom: 32px; display: flex; gap: 2px; padding: 4px 6px; background: #fff; border: 1px solid var(--ch-border); border-radius: 999px; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22); }
+.ch-row.mine .ch-react-menu { right: 0; }
+.ch-row.theirs .ch-react-menu { left: 0; }
+.ch-react-menu button { border: 0; background: transparent; font-size: 20px; line-height: 1; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; }
+.ch-react-menu button:hover, .ch-react-menu button.on { background: #e7f8f3; }
+.ch-reactions { clear: both; display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
+.ch-reaction { display: inline-flex; align-items: center; gap: 3px; font: inherit; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--ch-border); background: #fff; color: var(--ch-text); cursor: pointer; min-height: 24px; }
+.ch-reaction.mine { border-color: var(--ch-accent); background: #e7f8f3; color: var(--ch-accent-dark); }
+.ch-reaction:disabled { cursor: default; }
+.ch-reaction.who { color: var(--ch-muted); padding: 1px 6px; }
+.ch-mention { background: #dff3ec; color: var(--ch-accent-dark); font-weight: 700; border-radius: 4px; padding: 0 2px; }
+.ch-mention.me { background: #fff1c2; color: #8a5a00; }
+.ch-mentions { list-style: none; margin: 0 0 6px; padding: 4px; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid var(--ch-border); border-radius: 12px; box-shadow: 0 8px 22px rgba(15, 23, 42, 0.16); }
+.ch-mentions button { display: block; width: 100%; text-align: left; font: inherit; font-size: 14px; padding: 8px 10px; border: 0; background: transparent; border-radius: 8px; cursor: pointer; color: var(--ch-text); }
+.ch-mentions button:hover, .ch-mentions button.on { background: #e7f8f3; color: var(--ch-accent-dark); }
+.ch-row.ch-focus .ch-bubble { box-shadow: 0 0 0 3px #f5c542; transition: box-shadow 0.3s; }
+.ch-who { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+.ch-who-emoji { font-size: 18px; }
+.ch-inbox-wrap { position: relative; display: inline-flex; }
+.ch-inbox-menu { position: absolute; right: 0; top: 40px; z-index: 50; min-width: 240px; background: #fff; border: 1px solid var(--ch-border); border-radius: 12px; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.22); padding: 4px; display: flex; flex-direction: column; }
+.ch-inbox-menu button { display: flex; align-items: center; gap: 8px; font: inherit; font-size: 14px; text-align: left; padding: 9px 10px; border: 0; background: transparent; border-radius: 8px; cursor: pointer; color: var(--ch-danger); }
+.ch-inbox-menu button:hover { background: #fdecec; }
+.ch-confirm-input { width: 100%; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid var(--ch-border); border-radius: 8px; margin-top: 6px; }
+/* on a phone the picker would run past the edge next to a wide message: it sits centred above the message box instead */
+@media (max-width: 640px) {
+  .ch-row.mine .ch-react-menu, .ch-row.theirs .ch-react-menu { position: fixed; left: 50%; right: auto; bottom: 96px; transform: translateX(-50%); }
+}
