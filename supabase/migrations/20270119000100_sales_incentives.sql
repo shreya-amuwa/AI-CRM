@@ -76,6 +76,14 @@ create table if not exists public.incentive_splits (
 alter table public.incentive_splits enable row level security;
 revoke all on public.incentive_splits from public, anon, authenticated;
 
+-- The department's Sales head: the Department Head labelled Sales, else its head with no Sales / Support label (many departments have one
+-- head and never chose a label).
+create or replace function private.incentive_sales_head(p_department uuid)
+returns uuid language sql stable security definer set search_path = '' as $$
+  select coalesce((private.department_head_of(p_department, null, 'SALES')).id, (private.department_head_of(p_department, null, null)).id)
+$$;
+revoke all on function private.incentive_sales_head(uuid) from public, anon, authenticated;
+
 -- The person and everyone above them in Sales, nearest first: Team Member -> Team Lead -> Department Head -> Operations Head.
 -- Missing levels are left out (nobody is invented).
 create or replace function private.incentive_chain(p_profile uuid)
@@ -96,7 +104,7 @@ begin
   if p.role = 'DEPARTMENT_HEAD' then
     v_dh := p.id;
   else
-    select (private.department_head_of(p.department_id, null, 'SALES')).id into v_dh;
+    v_dh := private.incentive_sales_head(p.department_id);
     if v_dh is not null and v_dh = v_oh then v_dh := null; end if;
   end if;
   if p.role = 'TEAM_MEMBER' then
@@ -122,24 +130,34 @@ returns numeric language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.incentive_amount(uuid, uuid) from public, anon, authenticated;
 
--- The people one level below someone, to whom they pass an amount down.
+-- The people one level below someone, to whom they pass an amount down (the same "next level up" incentive_chain uses): a department's
+-- Sales head below its Operations Head (or, when the Operations Head runs the department themselves, its Team Leads), a department's
+-- Team Leads below its head, a team's members below its Team Lead, and the members of a team without an active Team Lead below the
+-- department's head.
 create or replace function private.incentive_reports(p_profile uuid)
 returns table (profile_id uuid, full_name text, level text)
 language sql stable security definer set search_path = '' as $$
-  with me as (select * from public.profiles where id = p_profile)
-  -- an Operations Head: the Department Heads of the departments they own
-  select (private.department_head_of(o.department_id, null, 'SALES')).id, (private.department_head_of(o.department_id, null, 'SALES')).full_name, 'DEPARTMENT_HEAD'
+  with me as (select * from public.profiles where id = p_profile),
+  -- the departments where this person is the level above the Team Leads
+  led as (
+    select me.department_id as department_id from me where me.role = 'DEPARTMENT_HEAD' and not me.is_operations_head
+    union
+    select o.department_id from me join public.department_operations_owner o on o.operations_head_id = me.id
+     where me.is_operations_head and (private.incentive_sales_head(o.department_id) is null or private.incentive_sales_head(o.department_id) = me.id)
+  ),
+  sales_teams as (select t.id, t.department_id from public.teams t join led on led.department_id = t.department_id where t.division = 'SALES')
+  select h.id, h.full_name, 'DEPARTMENT_HEAD'
     from me join public.department_operations_owner o on o.operations_head_id = me.id
-   where me.is_operations_head and (private.department_head_of(o.department_id, null, 'SALES')).id is not null
-     and (private.department_head_of(o.department_id, null, 'SALES')).id <> me.id
+    join public.profiles h on h.id = private.incentive_sales_head(o.department_id)
+   where me.is_operations_head and h.id <> me.id
   union
-  -- a Department Head: the Team Leads of their department's Sales teams
   select p.id, p.full_name, 'TEAM_HEAD'
-    from me join public.profiles p on p.department_id = me.department_id and p.role = 'TEAM_HEAD' and p.status = 'ACTIVE'
-    join public.teams t on t.id = p.team_id and t.division = 'SALES'
-   where me.role = 'DEPARTMENT_HEAD' and not me.is_operations_head
+    from sales_teams st join public.profiles p on p.team_id = st.id and p.role = 'TEAM_HEAD' and p.status = 'ACTIVE'
   union
-  -- a Team Lead: their team's members
+  select p.id, p.full_name, 'TEAM_MEMBER'
+    from sales_teams st join public.profiles p on p.team_id = st.id and p.role = 'TEAM_MEMBER' and p.status = 'ACTIVE'
+   where not exists (select 1 from public.profiles l where l.team_id = st.id and l.role = 'TEAM_HEAD' and l.status = 'ACTIVE')
+  union
   select p.id, p.full_name, 'TEAM_MEMBER'
     from me join public.profiles p on p.team_id = me.team_id and p.role = 'TEAM_MEMBER' and p.status = 'ACTIVE'
    where me.role = 'TEAM_HEAD'
@@ -168,7 +186,9 @@ begin
 end $$;
 revoke all on function private.require_incentive_admin() from public, anon, authenticated;
 
--- The Super Admin creates a rule. p: name, eventType, serviceCode, amount, targetUnits, scopeType, scopeValue, monthlyCap, activeFrom.
+-- The Super Admin creates a rule. p: name, eventType, serviceCode, amount, targetUnits, scopeType, scopeValue, monthlyCap, activeFrom,
+-- replacesRuleId. Only one sales rule per Operations Head and product is in force at a time (two would pay every sale twice): to change
+-- one, pass replacesRuleId: the old rule ends now and the amounts already passed down are carried over (never above the new amount).
 create or replace function public.incentive_rule_create(p jsonb)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare
@@ -179,6 +199,7 @@ declare
   v_service text := nullif(btrim(p ->> 'serviceCode'), '');
   v_amount numeric;
   v_id uuid;
+  v_old public.incentive_rules;
 begin
   begin
     v_amount := round((p ->> 'amount')::numeric, 2);
@@ -210,12 +231,31 @@ begin
     end if;
     v_service := null;
   end if;
+  if v_event = 'SALE_PAID' then
+    if nullif(p ->> 'replacesRuleId', '') is not null then
+      select * into v_old from public.incentive_rules where id::text = p ->> 'replacesRuleId';
+      if v_old.id is null or v_old.event_type <> 'SALE_PAID' or v_old.scope_value <> v_value or v_old.service_code <> v_service
+         or not private.incentive_rule_active(v_old, now()) then
+        raise exception 'VALIDATION_ERROR: The rule to replace must be the sales rule in force for this Operations Head and product.' using errcode = 'P0001';
+      end if;
+      update public.incentive_rules set ended_at = now() where id = v_old.id;
+    end if;
+    if exists (select 1 from public.incentive_rules x where x.event_type = 'SALE_PAID' and x.scope_value = v_value and x.service_code = v_service
+                and x.ended_at is null and (x.active_to is null or x.active_to >= private.office_today())) then
+      raise exception 'CONFLICT: A sales incentive for this product is already in force for this Operations Head. Replace it instead of adding a second one.' using errcode = 'P0001';
+    end if;
+  end if;
   insert into public.incentive_rules (name, event_type, service_code, amount, target_units, scope_type, scope_value, monthly_cap, active_from, created_by)
   values (btrim(p ->> 'name'), v_event, v_service, v_amount, nullif(p ->> 'targetUnits', '')::integer, v_scope, v_value,
           nullif(p ->> 'monthlyCap', '')::numeric, coalesce(nullif(p ->> 'activeFrom', '')::date, private.office_today()), me.id)
   returning id into v_id;
+  if v_old.id is not null then
+    insert into public.incentive_allocations (rule_id, recipient_id, amount, set_by, set_at)
+    select v_id, a.recipient_id, least(a.amount, v_amount), a.set_by, now() from public.incentive_allocations a where a.rule_id = v_old.id;
+  end if;
   perform private.write_audit('INCENTIVE_RULE_CREATED', 'incentive_rule', v_id, null, null,
-    jsonb_build_object('name', btrim(p ->> 'name'), 'eventType', v_event, 'amount', v_amount, 'scopeType', v_scope, 'scopeValue', v_value));
+    jsonb_build_object('name', btrim(p ->> 'name'), 'eventType', v_event, 'amount', v_amount, 'scopeType', v_scope, 'scopeValue', v_value,
+                       'replacesRuleId', v_old.id));
   return v_id;
 end $$;
 revoke all on function public.incentive_rule_create(jsonb) from public, anon;
@@ -288,7 +328,7 @@ declare
   me public.profiles;
 begin
   select * into me from public.profiles where id = auth.uid() and status = 'ACTIVE';
-  if me.id is null or not (me.role = 'SUPER_ADMIN' or (private.department_head_of(p_department, null, 'SALES')).id = me.id) then
+  if me.id is null or not (me.role = 'SUPER_ADMIN' or private.incentive_sales_head(p_department) = me.id) then
     raise exception 'FORBIDDEN: Only this department''s head sets the split.' using errcode = '42501';
   end if;
   if p_telecaller_pct is null or p_telecaller_pct not between 0 and 100 then
@@ -346,7 +386,7 @@ begin
                            from private.incentive_reports(me.id) t), '[]'::jsonb),
     'split', (select jsonb_build_object('departmentId', me.department_id, 'telecallerPct', coalesce(s.telecaller_pct, 50))
                 from (select 1) one left join public.incentive_splits s on s.department_id = me.department_id),
-    'canSplit', v_admin or (me.role = 'DEPARTMENT_HEAD' and (private.department_head_of(me.department_id, null, 'SALES')).id = me.id),
+    'canSplit', v_admin or (me.role = 'DEPARTMENT_HEAD' and private.incentive_sales_head(me.department_id) = me.id),
     'isAdmin', v_admin,
     'startAfterDays', (select start_after_days from public.incentive_settings where id));
 end $$;
@@ -399,7 +439,9 @@ create or replace function private.earn(p_profile uuid, p_rule uuid, p_event_typ
                                         p_service text, p_fraction numeric, p_amount numeric, p_on date)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
-  if p_profile is null or round(p_amount, 2) <= 0 or not private.incentive_eligible(p_profile, p_on) then return; end if;
+  -- only active staff earn (someone who has left keeps their customers for a while, not their incentives)
+  if p_profile is null or round(p_amount, 2) <= 0 or not private.incentive_eligible(p_profile, p_on)
+     or not exists (select 1 from public.profiles where id = p_profile and status = 'ACTIVE') then return; end if;
   insert into public.earnings (profile_id, rule_id, event_type, event_ref, role, customer_id, service_code, fraction, amount)
   values (p_profile, p_rule, p_event_type, p_event_ref, p_role, p_customer, p_service, p_fraction, round(p_amount, 2))
   on conflict (profile_id, rule_id, event_ref, role) do update
@@ -441,7 +483,8 @@ begin
   select * into pay from public.customer_payments where id = p_payment;
   if pay.id is null or pay.status <> 'VERIFIED' then return; end if;
   select * into c from public.customers where id = pay.customer_id;
-  v_total := coalesce(c.agreed_amount, c.deal_amount);
+  -- the order's full payable amount (GST included when it is added on top), the same total Accounts verifies payments against
+  v_total := coalesce(c.deal_amount, c.agreed_amount);
   if c.id is null or c.owner_id is null or v_total is null or v_total <= 0 then return; end if;
   select bc.telecaller_id into v_tc from public.ba_contacts bc where bc.lead_id = c.id and bc.assigned_to = c.owner_id and bc.telecaller_id is not null;
   select coalesce(s.telecaller_pct, 50) into v_pct from (select 1) one left join public.incentive_splits s on s.department_id = c.department_id;

@@ -19,10 +19,14 @@ do $$ begin if to_regclass('public.earnings') is not null then
 delete from incentive_allocations where rule_id in (select id from incentive_rules where name like 'Test %');
 delete from incentive_rules where name like 'Test %';
 select code as svc from crm_services where is_active order by sort_order limit 1 \gset
+select code as svc2 from crm_services where is_active order by sort_order offset 1 limit 1 \gset
 -- everyone in this suite joined long ago (the 15-day start is tested on its own)
 insert into employee_personal_details (profile_id, joining_date)
   select test.id(n), date '2026-01-01' from unnest(array['inc_oh','sh_head','th_wab','tm_a','tc_a','ba_a']) n
   on conflict (profile_id) do update set joining_date = excluded.joining_date;
+-- fixture states a previous, aborted run may have left changed
+update profiles set status = 'ACTIVE' where id in (test.id('th_wab'), test.id('tm_a')) or (team_id = test.team('wabastore', 'Sales') and role = 'TEAM_HEAD' and status = 'SUSPENDED');
+update profiles set head_division = 'SALES' where id = test.id('sh_head');
 create temp table inc (k text primary key, v text);
 grant all on inc to authenticated;
 
@@ -64,7 +68,7 @@ select test.must_fail($$select incentive_split_set(test.dept('wabastore'), 10)$$
 select test.login('sa');
 select test.check((select (incentive_settings_set(20) ->> 'startAfterDays')::int = 20), 'the Super Admin changes the start to 20 days');
 select incentive_settings_set(15);
-insert into inc select 'ended', incentive_rule_create(jsonb_build_object('name', 'Test ended', 'eventType', 'SALE_PAID', 'serviceCode', :'svc', 'amount', 100,
+insert into inc select 'ended', incentive_rule_create(jsonb_build_object('name', 'Test ended', 'eventType', 'SALE_PAID', 'serviceCode', :'svc2', 'amount', 100,
   'scopeType', 'OPERATIONS_HEAD', 'scopeValue', :'oh'))::text;
 select incentive_rule_end((select v from inc where k = 'ended')::uuid);
 select test.login('inc_oh');
@@ -252,3 +256,59 @@ select test.check((select not (d ->> 'eligible')::boolean and (d ->> 'startsOn')
 reset role;
 update employee_personal_details set joining_date = date '2026-01-01' where profile_id = test.id('ba_a');
 select test.must_fail($$select income_summary()$$, 'nobody signed in: refused', 'FORBIDDEN') from (select set_config('request.jwt.claims', '{}', false)) x;
+
+\echo '   review fixes: GST-exclusive orders, an unlabelled head, overlapping rules, people who left, a team without a Team Lead'
+reset role;
+select test.inc_customer('Inc Test Gst', 'tm_a', 10000, :'svc') as cg \gset
+update customers set deal_amount = 11800 where id = :'cg';
+select test.inc_pay(:'cg', 10000);
+select test.check(test.earned('tm_a', :'cg') = round(100 * 10000 / 11800.0, 2),
+  'an order priced before GST (10000 + 18%): paying 10000 releases 10000/11800 of the incentive, not all of it');
+
+update profiles set head_division = null where id = test.id('sh_head');
+select test.check(exists (select 1 from private.incentive_chain(test.id('tm_a')) c where c.level = 'DEPARTMENT_HEAD' and c.profile_id = test.id('sh_head')),
+  'a Department Head without a Sales / Support label is still in the chain');
+set role authenticated;
+select test.login('sh_head');
+select incentive_allocation_set((select v from inc where k = 'rule')::uuid, test.id('th_wab'), 150);
+select test.check(true, 'and can still set their Team Lead''s amount');
+reset role;
+update profiles set head_division = 'SALES' where id = test.id('sh_head');
+
+set role authenticated;
+select test.login('sa');
+select test.must_fail(format($$select incentive_rule_create('{"name":"Test overlap","eventType":"SALE_PAID","serviceCode":"%s","amount":600,"scopeType":"OPERATIONS_HEAD","scopeValue":"%s"}')$$, :'svc', :'oh'),
+  'a second active sales rule for the same Operations Head and product is refused (it would pay twice)', 'CONFLICT');
+insert into inc select 'rule2', incentive_rule_create(jsonb_build_object('name', 'Test 400 replaces', 'eventType', 'SALE_PAID', 'serviceCode', :'svc', 'amount', 400,
+  'targetUnits', 1000, 'scopeType', 'OPERATIONS_HEAD', 'scopeValue', :'oh', 'replacesRuleId', (select v from inc where k = 'rule')))::text;
+reset role;
+select test.check((select ended_at is not null from incentive_rules where id = (select v from inc where k = 'rule')::uuid)
+                  and private.incentive_amount((select v from inc where k = 'rule2')::uuid, test.id('sh_head')) = 300
+                  and private.incentive_amount((select v from inc where k = 'rule2')::uuid, test.id('tm_a')) = 100,
+  'replacing a rule ends the old one and carries the amounts passed down (never above the new amount)');
+
+update profiles set status = 'SUSPENDED' where id = test.id('th_wab');
+select test.inc_customer('Inc Test Left', 'tm_a', 2000, :'svc') as cl \gset
+select test.inc_pay(:'cl', 2000);
+select test.check(test.earned('th_wab', :'cl') = 0 and test.earned('tm_a', :'cl') = 100 and test.earned('sh_head', :'cl') = 200,
+  'a Team Lead who is no longer active is not in the chain and earns nothing; their Department Head holds that share');
+update profiles set status = 'ACTIVE' where id = test.id('th_wab');
+select test.inc_customer('Inc Test Left2', 'tm_a', 2000, :'svc') as cl2 \gset
+update profiles set status = 'SUSPENDED' where id = test.id('tm_a');
+select test.inc_pay(:'cl2', 2000);
+select test.check(test.earned('tm_a', :'cl2') = 0, 'a closer who has left (suspended) earns nothing on their old customer');
+update profiles set status = 'ACTIVE' where id = test.id('tm_a');
+update profiles set status = 'SUSPENDED' where id = test.id('th_wab');
+update profiles set status = 'ACTIVE' where id = test.id('th_wab');
+insert into inc select 'tl:' || id, id::text from profiles where team_id = test.team('wabastore', 'Sales') and role = 'TEAM_HEAD' and status = 'ACTIVE';
+update profiles set status = 'SUSPENDED' where id in (select v::uuid from inc where k like 'tl:%');
+select test.check(exists (select 1 from private.incentive_reports(test.id('sh_head')) r where r.profile_id = test.id('tm_a'))
+                  and not exists (select 1 from private.incentive_reports(test.id('sh_head')) r where r.profile_id = test.id('tc_a') and r.level <> 'TEAM_MEMBER'),
+  'a team without an active Team Lead: its members are listed to the Department Head, who can set their amount');
+set role authenticated;
+select test.login('sh_head');
+select test.check((incentive_allocation_set((select v from inc where k = 'rule2')::uuid, test.id('tm_a'), 120) ->> 'amount')::numeric = 120,
+  'and the Department Head sets that member''s amount directly');
+reset role;
+update profiles set status = 'ACTIVE' where id in (select v::uuid from inc where k like 'tl:%');
+update incentive_allocations set amount = 100 where rule_id = (select v from inc where k = 'rule2')::uuid and recipient_id = test.id('tm_a');

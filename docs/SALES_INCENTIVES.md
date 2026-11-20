@@ -23,8 +23,8 @@ closer's part (e.g. 60% telecaller, 40% BA).
 each verified payment releases 50% → TM 50, TL 25, DH 75, OH 100, twice.
 
 ## When an earning is recorded (instantly, in the database)
-- **Sale paid:** a `customer_payments` row becomes `VERIFIED` (Accounts). It releases payment ÷ order total (`agreed_amount`, else
-  `deal_amount`), never more than 100% in all, for every sales rule of a product the customer bought. Leaving `VERIFIED` (reversed, rejected,
+- **Sale paid:** a `customer_payments` row becomes `VERIFIED` (Accounts). It releases payment ÷ order total (the full payable `deal_amount`,
+  GST included; else `agreed_amount`), never more than 100% in all, for every sales rule of a product the customer bought. Leaving `VERIFIED` (reversed, rejected,
   back to pending) reverses it; verifying again pays once.
 - **Demo completed:** a Business Associate demo `COMPLETED` **and** "authorised person attended" ticked (`ba_demo_set_authorised`); paid to
   the demo's BA and the lead's telecaller when a rule applies to them. Unticking or leaving Completed reverses it.
