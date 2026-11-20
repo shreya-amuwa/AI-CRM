@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
+  SalesIncome, SalesLeadAssignee, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import {
   TELECALLER_SHEET_MAX_BYTES, salesInboundAssignSchema, salesIncomeQuerySchema, salesLeadSheetSchema, salesLeadsQuerySchema, salesReportsQuerySchema,
+  salesRoleListQuerySchema, salesRolePersonQuerySchema, salesRoleSchema,
   salesTaskCreateSchema, salesTasksQuerySchema, telecallerSheetSourceSchema, uuidSchema
 } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
@@ -74,4 +75,12 @@ export class SalesHeadService {
 
   reports(query: unknown): Promise<SalesReport> { return this.repo.reports(parse(salesReportsQuerySchema, query)); }
   income(query: unknown): Promise<SalesIncome> { return this.repo.income(parse(salesIncomeQuerySchema, query)); }
+
+  /** Role-wise sections: the people of one Sales role and one person's dashboard (the database checks the head and the scope). */
+  roleList(role: string, query: unknown): Promise<SalesRoleList> {
+    return this.repo.roleList(parse(salesRoleSchema, role), parse(salesRoleListQuerySchema, query));
+  }
+  rolePerson(role: string, profileId: string, query: unknown): Promise<SalesRolePersonDashboard> {
+    return this.repo.rolePerson(parse(salesRoleSchema, role), parse(uuidSchema, profileId), parse(salesRolePersonQuerySchema, query));
+  }
 }

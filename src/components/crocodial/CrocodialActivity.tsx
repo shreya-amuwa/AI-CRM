@@ -3,6 +3,7 @@ import { PhoneCall } from 'lucide-react';
 import type { CrocodialActivity as Activity, CrocodialMyStatus } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi } from '../../lib/api/endpoints';
+import { CROCODIAL_CALL_FIGURES, callDuration, callTypeLabel, connectedLabel } from '../../../shared/crocodialFields';
 
 /**
  * "My Crocodial Activity": a person's calling and follow-up work in Crocodial (read-only, part 3 of docs/CROCODIAL_INTEGRATION.md), on the
@@ -18,7 +19,6 @@ const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleSt
 const duration = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`);
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}%`);
 const PRESETS: [string, string, number][] = [['today', 'Today', 0], ['7', 'Last 7 days', 6], ['30', 'Last 30 days', 29], ['90', 'Last 90 days', 89]];
-const TYPE_LABEL: Record<string, string> = { outgoing: 'Outgoing', incoming: 'Incoming', missed: 'Missed', rejected: 'Rejected', voicemail: 'Voicemail', blocked: 'Blocked', answered_elsewhere: 'Answered elsewhere', unknown: '—' };
 
 const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string; tone?: string }> = ({ label, value, hint, tone = 'text-slate-900' }) => (
   <div className="rounded-xl border border-slate-200 bg-white p-3">
@@ -54,7 +54,6 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
   const choose = (id: string, back: number) => { setPreset(id); setFrom(daysAgo(back)); setTo(daysAgo(0)); };
   const demos = showDemos ?? data?.person?.salesSubRole === 'BUSINESS_ASSOCIATE';
   const c = data?.calls;
-  const f = data?.followups;
 
   return (
     <section aria-label={title} className="space-y-3" data-testid="crocodial-activity">
@@ -86,17 +85,18 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
         </p>
       ) : null}
 
-      {data?.available && c && f ? (
+      {data?.available && c ? (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3" aria-label="Calling summary">
-            <Stat label="Calls made" value={c.made} hint="Outgoing calls you made" />
-            <Stat label="Connected calls" value={c.connected} hint={`Connect rate ${pct(c.connectRate)}`} tone="text-emerald-700" />
-            <Stat label="Talk time" value={duration(c.talkSeconds)} hint="Connected outgoing calls" />
-            <Stat label="Unique leads contacted" value={c.uniqueLeads} />
-            <Stat label="Incoming / missed" value={`${c.incoming} / ${c.missed}`} />
-            <Stat label="Follow-ups scheduled" value={f.scheduled} hint={`${f.completed} completed · ${pct(f.completionRate)}`} />
-            <Stat label="Overdue follow-ups" value={f.overdue} tone={f.overdue ? 'text-rose-700' : 'text-slate-900'} hint="Not done, past their time" />
-            <Stat label="My Crocodial leads" value={data.leads?.assigned ?? '—'} hint={data.leads ? `${data.leads.neverCalled} never called` : undefined} />
+          {/* the call figures of shared/crocodialFields.ts: the same five, in the same order, on every Sales screen */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3" aria-label="Calling summary">
+            {CROCODIAL_CALL_FIGURES.map(fig => {
+              const v = c[fig.key];
+              return (
+                <Stat key={fig.key} label={fig.label} hint={fig.key === 'connected' ? `Connect rate ${pct(c.connectRate)}` : fig.hint}
+                  value={v === undefined || v === null ? '—' : fig.key === 'talkSeconds' ? duration(v) : v}
+                  tone={fig.key === 'connected' ? 'text-emerald-700' : 'text-slate-900'} />
+              );
+            })}
           </div>
           {demos && data.demos ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3" aria-label="Demos">
@@ -112,9 +112,12 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
               {!data.recentCalls?.length ? <p className="text-xs text-slate-500">No calls in this period.</p> : (
                 <ul className="divide-y divide-slate-100 text-xs" data-testid="croc-recent-calls">
                   {data.recentCalls.map((r, i) => (
-                    <li key={i} className="py-1.5 flex items-center justify-between gap-2">
+                    <li key={i} className="py-1.5 flex flex-wrap items-center justify-between gap-x-2">
                       <span className="min-w-0 truncate"><b>{r.contactName || 'Unknown'}</b>{r.phone ? <span className="text-slate-500"> · {r.phone}</span> : null}</span>
-                      <span className="whitespace-nowrap text-slate-600">{TYPE_LABEL[r.type] ?? r.type} · {r.connected ? duration(r.durationSeconds ?? 0) : 'not connected'} · {when(r.callAt)}</span>
+                      <span className="text-slate-600">
+                        {callTypeLabel(r.type)} · <span className={r.connected === true ? 'text-emerald-700 font-semibold' : r.connected === false ? 'text-rose-700' : ''}>{connectedLabel(r.connected)}</span>
+                        {r.connected ? ` · ${callDuration(r.durationSeconds, r.connected)}` : ''} · {when(r.callAt)}
+                      </span>
                     </li>
                   ))}
                 </ul>

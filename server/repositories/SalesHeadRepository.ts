@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
+  SalesIncome, SalesLeadAssignee, SalesRole, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import { getServiceClient } from '../db/supabase.js';
 import { unwrap } from './base.js';
@@ -52,4 +52,15 @@ export class SalesHeadRepository {
     return this.rpc<SalesReport>('sales_head_reports', { p_who: i.who, p_from: i.from ?? null, p_to: i.to ?? null, p_task_status: i.taskStatus ?? null });
   }
   income(i: { from?: string; to?: string }) { return this.rpc<SalesIncome>('sales_head_income', { p_from: i.from ?? null, p_to: i.to ?? null }); }
+
+  // Role-wise sections (migration 20270117000300)
+  roleList(role: SalesRole, i: { from?: string; to?: string; search?: string; teamLeadId?: string; status?: string; sort: string; page: number; pageSize: number }) {
+    return this.rpc<SalesRoleList>('sales_role_list', {
+      p_role: role, p_from: i.from ?? null, p_to: i.to ?? null, p_search: i.search || null, p_team_lead: i.teamLeadId ?? null,
+      p_status: i.status ?? null, p_sort: i.sort, p_page: i.page, p_page_size: i.pageSize
+    });
+  }
+  rolePerson(role: SalesRole, profileId: string, i: { from?: string; to?: string }) {
+    return this.rpc<SalesRolePersonDashboard>('sales_role_person', { p_role: role, p_profile: profileId, p_from: i.from ?? null, p_to: i.to ?? null });
+  }
 }

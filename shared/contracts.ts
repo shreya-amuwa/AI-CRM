@@ -6501,7 +6501,7 @@ export interface CrocodialActivity {
   to?: string;
   person?: { id: string; name: string; role: string; salesSubRole: string | null };
   demos?: { scheduled: number; completed: number; cancelled: number; upcoming: number };
-  calls?: { made: number; connected: number; connectRate: number | null; talkSeconds: number; incoming: number; missed: number; uniqueLeads: number };
+  calls?: { made: number; connected: number; notConnected?: number; connectRate: number | null; talkSeconds: number; incoming: number; missed: number; uniqueLeads: number; uniqueNumbers?: number };
   followups?: { scheduled: number; completed: number; completionRate: number | null; overdue: number };
   leads?: { assigned: number; neverCalled: number; followUpDue: number };
   remarks?: number;
@@ -6542,8 +6542,54 @@ export interface CrocodialTeamActivity {
     departmentId: string; departmentName: string | null; available: boolean; stale: boolean; lastSyncAt: string | null;
     calls: CrocodialActivity['calls'] | null; followups: CrocodialActivity['followups'] | null; demos: CrocodialActivity['demos'] | null;
   }[];
-  totals: { made: number; connected: number; connectRate: number | null; talkSeconds: number; uniqueLeads: number; followupsScheduled: number;
+  totals: { made: number; connected: number; notConnected?: number; connectRate: number | null; talkSeconds: number; uniqueLeads: number; uniqueNumbers?: number; followupsScheduled: number;
     followupsCompleted: number; followupsOverdue: number; demosScheduled: number; demosCompleted: number };
   teams: { teamId: string | null; teamName: string | null; people: number; made: number | null; connected: number | null }[];
   daily: { day: string; made: number; connected: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Sales Department Head: role-wise sections (migration 20270117000300). Read-only figures counted from existing records.
+// ---------------------------------------------------------------------------
+export type SalesRole = 'TELECALLER' | 'BUSINESS_ASSOCIATE';
+/** OFF: no approved Crocodial mapping; NOT_SYNCED: connected, first sync not finished; ON: call figures available. */
+export type SalesRoleCrocodialState = 'OFF' | 'NOT_SYNCED' | 'ON';
+/** Call figures come from Crocodial only (null unless crocodial = ON); demo figures from the CRM demo schedule; the rest are CRM records. */
+export interface SalesRoleMetrics {
+  crocodial: SalesRoleCrocodialState;
+  calls: number | null; connected: number | null; notConnected: number | null; connectRate: number | null; uniqueNumbers: number | null; talkSeconds: number | null;
+  // Telecaller (CRM)
+  leadsCreated?: number; convertedLeads?: number;
+  // Business Associate (CRM)
+  leadsAssigned?: number; demosScheduled?: number; demosCompleted?: number; demosCancelled?: number; demosUpcoming?: number;
+  quotations?: number; dealsClosed?: number; dealValue?: number;
+}
+export interface SalesRolePersonRow {
+  id: string; name: string; email: string | null; phone: string | null; employeeCode: string; status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED';
+  teamId: string | null; teamName: string | null; teamLeadId: string | null; teamLeadName: string | null;
+}
+export interface SalesRoleList {
+  role: SalesRole; from: string; to: string; total: number; page: number; pageSize: number;
+  teamLeads: { id: string; name: string }[];
+  items: (SalesRolePersonRow & { metrics: SalesRoleMetrics })[];
+}
+/** One Crocodial call as the screens show it (number masked to its last 4 digits). */
+export interface SalesRoleCall {
+  id: number; callAt: string; type: string | null; connected: boolean | null; durationSeconds: number | null; contactName: string | null; phone: string | null; leadStatus: string | null;
+}
+export interface SalesRolePersonDashboard {
+  role: SalesRole; from: string; to: string;
+  person: SalesRolePersonRow & { joinedAt: string };
+  metrics: SalesRoleMetrics;
+  crocodial: { state: SalesRoleCrocodialState; lastSyncAt: string | null; stale: boolean };
+  /** one row per day of the period (India time); calls / connected are null when the person is not connected to Crocodial */
+  daily: ({ day: string } & Record<string, number | string | null>)[];
+  records: {
+    calls: SalesRoleCall[];
+    leads?: { id: string; name: string; company: string | null; stage: string; leadStatus: string | null; convertedTo: string | null; createdAt: string }[];
+    contacts?: { id: string; name: string; company: string | null; stage: string; assignedAt: string; telecaller: string | null }[];
+    demos?: { id: string; title: string; client: string; startsAt: string; mode: string; status: string }[];
+    quotations?: { id: string; number: string; revision: number; client: string; total: number; finalizedAt: string }[];
+    deals?: { id: string; name: string; company: string | null; stage: string; dealAmount: number | null; closedAt: string }[];
+  };
 }

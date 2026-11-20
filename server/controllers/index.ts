@@ -730,8 +730,12 @@ export const salesHeadController = {
   taskAssignees: (async ctx => ok(await svc(ctx).salesHead.taskAssignees())) as Handler,
   createTask: (async ctx => ok(await svc(ctx).salesHead.createTask(ctx.req.body), 201)) as Handler,
   reports: (async ctx => ok(await svc(ctx).salesHead.reports(ctx.req.query))) as Handler,
-  income: (async ctx => ok(await svc(ctx).salesHead.income(ctx.req.query))) as Handler
+  income: (async ctx => ok(await svc(ctx).salesHead.income(ctx.req.query))) as Handler,
+  roleList: (async ctx => ok(await svc(ctx).salesHead.roleList(roleParam(ctx.params.role), ctx.req.query))) as Handler,
+  rolePerson: (async ctx => ok(await svc(ctx).salesHead.rolePerson(roleParam(ctx.params.role), ctx.params.id, ctx.req.query))) as Handler
 };
+/** /sales-head/roles/telecaller -> TELECALLER, /business-associate -> BUSINESS_ASSOCIATE (anything else fails validation in the service). */
+function roleParam(v: string | undefined): string { return (v ?? '').toUpperCase().replace(/-/g, '_'); }
 
 export const businessAssociateController = {
   home: (async ctx => ok(await svc(ctx).ba.home())) as Handler,

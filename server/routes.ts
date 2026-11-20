@@ -669,6 +669,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/sales-head/tasks', handler: salesHead.createTask, options: S },
   { method: 'GET', path: '/sales-head/reports', handler: salesHead.reports },
   { method: 'GET', path: '/sales-head/income', handler: salesHead.income },
+  { method: 'GET', path: '/sales-head/roles/:role/people', handler: salesHead.roleList },
+  { method: 'GET', path: '/sales-head/roles/:role/people/:id', handler: salesHead.rolePerson },
   { method: 'GET', path: '/telecaller/home', handler: telecaller.home },
   { method: 'GET', path: '/telecaller/assignable', handler: telecaller.assignable },
   { method: 'GET', path: '/telecaller/lists', handler: telecaller.lists },
