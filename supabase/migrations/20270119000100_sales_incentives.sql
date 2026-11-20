@@ -352,3 +352,153 @@ begin
 end $$;
 revoke all on function public.incentive_setup() from public, anon;
 grant execute on function public.incentive_setup() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. The earnings ledger
+-- ---------------------------------------------------------------------------
+create table if not exists public.earnings (
+  id bigint generated always as identity primary key,
+  profile_id uuid not null references public.profiles (id) on delete cascade,
+  rule_id uuid not null references public.incentive_rules (id) on delete restrict,
+  event_type text not null check (event_type in ('SALE_PAID', 'DEMO_COMPLETED', 'VISIT_COMPLETED')),
+  event_ref text not null check (length(event_ref) between 3 and 80),          -- 'PAY:<payment>', 'DEMO:<demo>', 'VISIT:<visit>'
+  role text not null check (role in ('CLOSER', 'TELECALLER', 'BUSINESS_ASSOCIATE', 'TEAM_LEAD', 'DEPARTMENT_HEAD', 'OPERATIONS_HEAD', 'PARTICIPANT')),
+  customer_id uuid references public.customers (id) on delete set null,
+  service_code text,
+  fraction numeric(9, 6),                                                       -- sales: the share of the order this payment released
+  amount numeric(14, 2) not null check (amount > 0),
+  status text not null default 'EARNED' check (status in ('EARNED', 'REVERSED')),
+  earned_at timestamptz not null default now(),
+  reversed_at timestamptz,
+  unique (profile_id, rule_id, event_ref, role)
+);
+create index if not exists earnings_person_idx on public.earnings (profile_id, earned_at desc);
+create index if not exists earnings_event_idx on public.earnings (event_ref);
+create index if not exists earnings_customer_rule_idx on public.earnings (customer_id, rule_id) where status = 'EARNED';
+alter table public.earnings enable row level security;
+revoke all on public.earnings from public, anon, authenticated;
+
+-- The day someone's incentives start: their joining date (HR's record, else the day the account was approved or created) plus the start
+-- period (15 days by default).
+create or replace function private.incentive_start_date(p_profile uuid)
+returns date language sql stable security definer set search_path = '' as $$
+  select coalesce(d.joining_date, p.approved_at::date, p.created_at::date) + (select start_after_days from public.incentive_settings where id)
+    from public.profiles p left join public.employee_personal_details d on d.profile_id = p.id
+   where p.id = p_profile
+$$;
+revoke all on function private.incentive_start_date(uuid) from public, anon, authenticated;
+
+create or replace function private.incentive_eligible(p_profile uuid, p_on date)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select coalesce(p_on >= private.incentive_start_date(p_profile), false)
+$$;
+revoke all on function private.incentive_eligible(uuid, date) from public, anon, authenticated;
+
+-- One earning row (once per person, rule, event and role; a row reversed earlier becomes earned again).
+create or replace function private.earn(p_profile uuid, p_rule uuid, p_event_type text, p_event_ref text, p_role text, p_customer uuid,
+                                        p_service text, p_fraction numeric, p_amount numeric, p_on date)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if p_profile is null or round(p_amount, 2) <= 0 or not private.incentive_eligible(p_profile, p_on) then return; end if;
+  insert into public.earnings (profile_id, rule_id, event_type, event_ref, role, customer_id, service_code, fraction, amount)
+  values (p_profile, p_rule, p_event_type, p_event_ref, p_role, p_customer, p_service, p_fraction, round(p_amount, 2))
+  on conflict (profile_id, rule_id, event_ref, role) do update
+    set status = 'EARNED', amount = excluded.amount, fraction = excluded.fraction, earned_at = now(), reversed_at = null
+    where public.earnings.status = 'REVERSED';
+end $$;
+revoke all on function private.earn(uuid, uuid, text, text, text, uuid, text, numeric, numeric, date) from public, anon, authenticated;
+
+create or replace function private.reverse_event(p_event_ref text)
+returns void language sql security definer set search_path = '' as $$
+  update public.earnings set status = 'REVERSED', reversed_at = now() where event_ref = p_event_ref and status = 'EARNED'
+$$;
+revoke all on function private.reverse_event(text) from public, anon, authenticated;
+
+-- A customer payment verified by Accounts: each sales rule for one of the customer's products releases its share in proportion to the
+-- order (payment / order total, never more than what is left of 100%), to the closer (the customer's owner now) and up their chain,
+-- each level keeping the difference between what it holds and what it passed down. A telecaller's lead closed by its Business Associate
+-- splits the closer's part by the department's split.
+create or replace function private.earn_sale_payment(p_payment uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  pay public.customer_payments;
+  c public.customers;
+  r public.incentive_rules;
+  v_ref text := 'PAY:' || p_payment;
+  v_total numeric;
+  v_f numeric;
+  v_done numeric;
+  v_on date := private.office_today();
+  v_below numeric;
+  v_amt numeric;
+  v_part numeric;
+  v_pct integer;
+  v_tc uuid;
+  v_first boolean;
+  v_top uuid;
+  ch record;
+begin
+  select * into pay from public.customer_payments where id = p_payment;
+  if pay.id is null or pay.status <> 'VERIFIED' then return; end if;
+  select * into c from public.customers where id = pay.customer_id;
+  v_total := coalesce(c.agreed_amount, c.deal_amount);
+  if c.id is null or c.owner_id is null or v_total is null or v_total <= 0 then return; end if;
+  select bc.telecaller_id into v_tc from public.ba_contacts bc where bc.lead_id = c.id and bc.assigned_to = c.owner_id and bc.telecaller_id is not null;
+  select coalesce(s.telecaller_pct, 50) into v_pct from (select 1) one left join public.incentive_splits s on s.department_id = c.department_id;
+  select ch2.profile_id into v_top from private.incentive_chain(c.owner_id) ch2 order by ch2.ord desc limit 1;
+  for r in
+    select x.* from public.incentive_rules x
+     where x.event_type = 'SALE_PAID' and private.incentive_rule_active(x, now()) and x.scope_value = v_top::text
+       and exists (select 1 from public.customer_services cs where cs.customer_id = c.id and cs.service_code = x.service_code)
+  loop
+    select coalesce(sum(e.f), 0) into v_done from (
+      select max(fraction) as f from public.earnings
+       where customer_id = c.id and rule_id = r.id and status = 'EARNED' and event_ref <> v_ref group by event_ref) e;
+    v_f := least(pay.amount / v_total, 1 - v_done);
+    continue when v_f <= 0;
+    v_below := 0;
+    v_first := true;
+    for ch in select * from private.incentive_chain(c.owner_id) order by ord loop
+      v_amt := private.incentive_amount(r.id, ch.profile_id);
+      if v_first then
+        v_part := v_amt * v_f;
+        if v_tc is not null then
+          perform private.earn(v_tc, r.id, 'SALE_PAID', v_ref, 'TELECALLER', c.id, r.service_code, v_f, round(v_part * v_pct / 100.0, 2), v_on);
+          perform private.earn(ch.profile_id, r.id, 'SALE_PAID', v_ref, 'BUSINESS_ASSOCIATE', c.id, r.service_code, v_f,
+                               v_part - round(v_part * v_pct / 100.0, 2), v_on);
+        else
+          perform private.earn(ch.profile_id, r.id, 'SALE_PAID', v_ref, 'CLOSER', c.id, r.service_code, v_f, v_part, v_on);
+        end if;
+        v_first := false;
+      else
+        perform private.earn(ch.profile_id, r.id, 'SALE_PAID', v_ref,
+                             case ch.level when 'TEAM_HEAD' then 'TEAM_LEAD' else ch.level end, c.id, r.service_code, v_f,
+                             greatest(v_amt - v_below, 0) * v_f, v_on);
+      end if;
+      v_below := greatest(v_amt, v_below);
+    end loop;
+  end loop;
+end $$;
+revoke all on function private.earn_sale_payment(uuid) from public, anon, authenticated;
+
+-- Payments: verified -> earn; leaving verified (reversed, rejected, back to pending) -> reverse. A problem here never blocks Accounts: it
+-- is written to the audit log instead.
+create or replace function private.customer_payments_incentives()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  begin
+    if new.status = 'VERIFIED' and (tg_op = 'INSERT' or old.status is distinct from 'VERIFIED') then
+      perform private.earn_sale_payment(new.id);
+    elsif tg_op = 'UPDATE' and old.status = 'VERIFIED' and new.status <> 'VERIFIED' then
+      perform private.reverse_event('PAY:' || new.id);
+    end if;
+  exception when others then
+    insert into public.audit_logs (action, entity_type, entity_id, metadata)
+    values ('INCENTIVE_ERROR', 'customer_payment', new.id, jsonb_build_object('error', left(sqlerrm, 300)));
+  end;
+  return new;
+end $$;
+revoke all on function private.customer_payments_incentives() from public, anon, authenticated;
+drop trigger if exists customer_payments_incentives on public.customer_payments;
+create trigger customer_payments_incentives after insert or update of status on public.customer_payments
+  for each row execute function private.customer_payments_incentives();
