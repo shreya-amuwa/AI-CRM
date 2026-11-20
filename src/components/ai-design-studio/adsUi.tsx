@@ -21,7 +21,7 @@ const SessionContext = createContext<AdsSession | null>(null);
 export const AdsSessionProvider = SessionContext.Provider;
 export function useAdsSession(): AdsSession {
   const s = useContext(SessionContext);
-  if (!s) throw new Error('useAdsSession must be used inside the Amuwa Design Studio dashboard');
+  if (!s) throw new Error('useAdsSession must be used inside the AI Design Studio dashboard');
   return s;
 }
 export const isHead = (c: AdsContext) => c.role === 'DEPARTMENT_HEAD';

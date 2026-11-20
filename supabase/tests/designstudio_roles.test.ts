@@ -2,9 +2,9 @@
  * Amuwa Design Studio roles (no database): what the Add Team Member form and the HR employee request form offer for each department.
  * The database refuses the same combinations (private.designstudio_role_problem, migration 20270112000100). Run: npm run test:unit
  */
-import { AI_DESIGN_STUDIO_SLUG, RETIRED_DESIGN_STUDIO_SLUG } from '../../shared/contracts.js';
+import { AI_DESIGN_STUDIO_SLUG, AMUWA_DESIGN_STUDIO_SLUG } from '../../shared/contracts.js';
 import { DESIGNATIONS, EMPLOYEE_REQUEST_ROLES } from '../../shared/validation.js';
-import { designationsForDepartment, hasNoSalesSupport, isRetiredDepartment, requestSidesForDepartment, staffChoicesForDepartment, staffTeamsForDepartment } from '../../src/lib/auth/departmentRoles.js';
+import { designationsForDepartment, hasNoSalesSupport, requestSidesForDepartment, staffChoicesForDepartment, staffTeamsForDepartment } from '../../src/lib/auth/departmentRoles.js';
 
 let passed = 0;
 function check(cond: unknown, label: string, extra?: unknown) {
@@ -22,13 +22,13 @@ const teams = [
   { id: 'g', division: 'GENERAL' as const }, { id: 's', division: 'SALES' as const }, { id: 'p', division: 'SUPPORT' as const }
 ];
 
-check(AI_DESIGN_STUDIO_SLUG === 'ai-design-studio' && hasNoSalesSupport(AI_DESIGN_STUDIO_SLUG), 'Amuwa Design Studio (slug ai-design-studio) has no Sales or Support');
-check(RETIRED_DESIGN_STUDIO_SLUG === 'designstudio' && hasNoSalesSupport('designstudio') && isRetiredDepartment('designstudio') && !isRetiredDepartment(AI_DESIGN_STUDIO_SLUG),
-  'the retired department (slug designstudio) has none either, and is the only retired one');
+check(AI_DESIGN_STUDIO_SLUG === 'ai-design-studio' && hasNoSalesSupport(AI_DESIGN_STUDIO_SLUG), 'AI Design Studio (slug ai-design-studio) has no Sales or Support');
+check(AMUWA_DESIGN_STUDIO_SLUG === 'designstudio' && hasNoSalesSupport('designstudio'),
+  'Amuwa Design Studio (slug designstudio) has none either, and is an active department (nothing in the helpers marks any department retired)');
 check(!hasNoSalesSupport('wabastore') && !hasNoSalesSupport('ai-studio') && !hasNoSalesSupport('') && !hasNoSalesSupport(null) && !hasNoSalesSupport(undefined),
   'other departments (AI Studio included) are unchanged');
-check(staffChoicesForDepartment(AI_DESIGN_STUDIO_SLUG, all).join() === 'DEPARTMENT_HEAD,TEAM_HEAD,TEAM_MEMBER', 'Amuwa Design Studio (ai-design-studio): only Department Head, Team Lead, Team Member');
-check(requestSidesForDepartment(AI_DESIGN_STUDIO_SLUG).join() === 'GENERAL', 'Amuwa Design Studio (ai-design-studio): General side only');
+check(staffChoicesForDepartment(AI_DESIGN_STUDIO_SLUG, all).join() === 'DEPARTMENT_HEAD,TEAM_HEAD,TEAM_MEMBER', 'AI Design Studio (ai-design-studio): only Department Head, Team Lead, Team Member');
+check(requestSidesForDepartment(AI_DESIGN_STUDIO_SLUG).join() === 'GENERAL', 'AI Design Studio (ai-design-studio): General side only');
 
 check(staffChoicesForDepartment('designstudio', all).join() === 'DEPARTMENT_HEAD,TEAM_HEAD,TEAM_MEMBER', 'Amuwa Design Studio: only Department Head, Team Lead, Team Member', staffChoicesForDepartment('designstudio', all));
 check(staffChoicesForDepartment('wabastore', all).join() === all.join(), 'Wabastore keeps every choice, in the same order');

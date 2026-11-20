@@ -169,6 +169,7 @@ select test.check((select department_id = test.dept('dtalk') from revenue_attrib
 \i supabase/migrations/20261205000100_operations_head.sql
 -- ... and the Amuwa Design Studio access rule (no Sales / Support function there) on top of department_access_problem
 \i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
+\i supabase/migrations/20270118000100_amuwa_design_studio_restore.sql
 select test.check((select department_id = test.wtid() from revenue_attributions where order_key = 'ADDON:' || pg_temp.g('A')), 'running the migration again moves the old Support order to Wabatalk');
 select test.check((select department_id = test.dept('dtalk') from revenue_attributions where order_key = 'SALE:' || pg_temp.g('S')), '... and leaves Sales'' order with D Talk');
 select test.check((select count(*) = 1 from departments where slug = 'wabatalk' or lower(name) = 'wabatalk'), 'and does not create Wabatalk a second time');

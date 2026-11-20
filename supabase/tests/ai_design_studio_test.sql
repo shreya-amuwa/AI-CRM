@@ -38,10 +38,10 @@ create temp table ads_ids (name text primary key, id uuid);
 grant all on ads_ids to anon, authenticated, service_role;
 
 \echo '   the department exists, is separate, and every existing department is untouched'
-select test.check((select count(*) = 1 from departments where slug = 'ai-design-studio' and name = 'Amuwa Design Studio'), 'the department (slug ai-design-studio) is named Amuwa Design Studio (migration 20270112000200)');
+select test.check((select count(*) = 1 from departments where slug = 'ai-design-studio' and name = 'AI Design Studio'), 'the department (slug ai-design-studio) is named AI Design Studio (migration 20270118000100)');
 select test.check((select count(*) = 1 from teams t join departments d on d.id = t.department_id where d.slug = 'ai-design-studio'), 'it has one General team');
-select test.check(not exists (select 1 from departments where slug in ('ai-studio', 'designstudio') and name = 'Amuwa Design Studio'), 'it is not AI Studio and not the retired department');
-select test.check((select name from departments where slug = 'designstudio') = 'Amuwa Design Studio (Retired)', 'the old department keeps its slug and is named Amuwa Design Studio (Retired)');
+select test.check(not exists (select 1 from departments where slug in ('ai-studio', 'designstudio') and name = 'AI Design Studio'), 'it is not AI Studio and not Amuwa Design Studio');
+select test.check((select name from departments where slug = 'designstudio') = 'Amuwa Design Studio', 'Amuwa Design Studio keeps its slug and its name (not retired)');
 
 \echo '   people: a Team Member is created BEFORE any Team Lead exists'
 select test.service(); select test.adsmk('ads_dh', 'DEPARTMENT_HEAD');

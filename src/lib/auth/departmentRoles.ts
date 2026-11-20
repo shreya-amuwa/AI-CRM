@@ -1,7 +1,7 @@
-import { NO_SALES_SUPPORT_DEPARTMENT_SLUGS, RETIRED_DESIGN_STUDIO_SLUG, type TeamDivision } from '../../../shared/contracts';
+import { NO_SALES_SUPPORT_DEPARTMENT_SLUGS, type TeamDivision } from '../../../shared/contracts';
 
 /**
- * Amuwa Design Studio (slug ai-design-studio, and the retired department of that name) has only Department Head -> Team Lead -> Team Member: no Sales or Support roles (Sales Team Member, Telecaller, Business
+ * Amuwa Design Studio (slug designstudio) and AI Design Studio (slug ai-design-studio) have only Department Head -> Team Lead -> Team Member: no Sales or Support roles (Sales Team Member, Telecaller, Business
  * Associate, Support Team Member, Technical Consultant, Meta Verifier, ...), no Sales / Support team and no Sales / Support side for its head.
  * The member forms use these helpers to offer only what the department has; the database refuses the rest anyway
  * (private.designstudio_role_problem, migrations 20270112000100 / 20270112000200), so this is a convenience, not the security boundary.
@@ -30,6 +30,3 @@ export function designationsForDepartment<T extends string>(slug: string | null 
   const plain = ['Department Head', 'Team Lead', 'Team Member'];
   return hasNoSalesSupport(slug) ? designations.filter(d => plain.includes(d)) : [...designations];
 }
-
-/** The retired department once named Amuwa Design Studio: its people keep working, but the add forms never offer it for new people. */
-export const isRetiredDepartment = (slug?: string | null): boolean => slug === RETIRED_DESIGN_STUDIO_SLUG;

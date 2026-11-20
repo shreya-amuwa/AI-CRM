@@ -1,5 +1,5 @@
-// Browser test of the Add Team Member form and HR's employee request form for Amuwa Design Studio (slug ai-design-studio since migration
-// 20270112000200; the old department of that name is retired): choosing the department leaves only
+// Browser test of the Add Team Member form and HR's employee request form for Amuwa Design Studio (slug designstudio, an ACTIVE department:
+// migration 20270118000100 removed the "(Retired)" label) and AI Design Studio (slug ai-design-studio): choosing the department leaves only
 // Department Head, Team Lead and Team Member (no Sales / Support role, team, side or Sales role), an earlier Sales / Support choice is cleared,
 // what is sent places the person in Amuwa Design Studio, and other departments keep their Sales and Support options. Real React components
 // (the HR designations harness) + the app's stylesheet (npm run build first); the API is an in-page stand-in. Skipped, loudly, when Playwright,
@@ -40,11 +40,11 @@ try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 
 const DS = '55555555-5555-4555-8555-555555555555';
 const OLD = '77777777-7777-4777-8777-777777777777';
-const T = { dsGeneral: '66666666-6666-4666-8666-666666666661', dsSales: '66666666-6666-4666-8666-666666666662', dsSupport: '66666666-6666-4666-8666-666666666663', wsSales: '66666666-6666-4666-8666-666666666664', wsSupport: '66666666-6666-4666-8666-666666666665' };
+const T = { dsGeneral: '66666666-6666-4666-8666-666666666661', dsSales: '66666666-6666-4666-8666-666666666662', dsSupport: '66666666-6666-4666-8666-666666666663', wsSales: '66666666-6666-4666-8666-666666666664', wsSupport: '66666666-6666-4666-8666-666666666665', amGeneral: '66666666-6666-4666-8666-666666666666', amSales: '66666666-6666-4666-8666-666666666667', amSupport: '66666666-6666-4666-8666-666666666668' };
 const apiScript = ([DS, OLD, T]) => {
   const U = { hr: '22222222-2222-4222-8222-222222222222', wabastore: '11111111-1111-4111-8111-111111111111', 'ai-design-studio': DS, designstudio: OLD };
   const dep = (id, name) => ({ id, dbId: U[id], name, description: '', category: 'x', facetOf: null, facetDivision: null });
-  window.__departments = [dep('hr', 'HR Department'), dep('wabastore', 'Wabastore'), dep('ai-design-studio', 'Amuwa Design Studio'), dep('designstudio', 'Amuwa Design Studio (Retired)')];
+  window.__departments = [dep('hr', 'HR Department'), dep('wabastore', 'Wabastore'), dep('ai-design-studio', 'AI Design Studio'), dep('designstudio', 'Amuwa Design Studio')];
   window.__profile = { id: 'sa1', fullName: 'Super Admin', email: 'sa@x.example', role: 'SUPER_ADMIN', status: 'ACTIVE', departmentId: null, teamId: null, department: null, team: null };
   window.__posts = [];
   const teamsOf = {
@@ -52,7 +52,8 @@ const apiScript = ([DS, OLD, T]) => {
     wabastore: [{ id: T.wsSales, departmentId: U.wabastore, name: 'Sales', division: 'SALES' }, { id: T.wsSupport, departmentId: U.wabastore, name: 'Support', division: 'SUPPORT' }],
     // Amuwa Design Studio: its General team (plus, defensively, a Sales and a Support team that must never be offered)
     'ai-design-studio': [{ id: T.dsGeneral, departmentId: DS, name: 'General', division: 'GENERAL' }, { id: T.dsSales, departmentId: DS, name: 'Sales', division: 'SALES' }, { id: T.dsSupport, departmentId: DS, name: 'Support', division: 'SUPPORT' }],
-    designstudio: [{ id: '66666666-6666-4666-8666-666666666666', departmentId: OLD, name: 'General', division: 'GENERAL' }]
+    // Amuwa Design Studio keeps the Sales and Support teams its existing people are in (they are never offered for new people)
+    designstudio: [{ id: T.amGeneral, departmentId: OLD, name: 'General', division: 'GENERAL' }, { id: T.amSales, departmentId: OLD, name: 'Sales', division: 'SALES' }, { id: T.amSupport, departmentId: OLD, name: 'Support', division: 'SUPPORT' }]
   };
   const json = (data, status = 200) => new Response(JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data }), { status, headers: { 'Content-Type': 'application/json' } });
   window.fetch = async (url, init = {}) => {
@@ -158,7 +159,7 @@ const submitted = async page => {
   await page.selectOption('select:has(option:text("Not specified"))', 'SALES');
   await page.selectOption('select:has(option:text("Operations Head"))', 'OPERATIONS_HEAD');
   const listed = await page.$$eval('select:has(option:text("Choose a department")) option', os => os.map(o => o.textContent.trim()));
-  check(listed.includes('Amuwa Design Studio') && !listed.some(t => /Retired/.test(t)), 'request form: Amuwa Design Studio is listed, the retired department is not', listed);
+  check(listed.includes('Amuwa Design Studio') && listed.includes('AI Design Studio') && !listed.some(t => /Retired/i.test(t)), 'request form: Amuwa Design Studio and AI Design Studio are both listed, neither is Retired', listed);
   await page.selectOption('select:has(option:text("Choose a department"))', DS);
   const sides = await page.$$eval('select:has(option:text("Not specified")) option', os => os.map(o => o.textContent.trim()));
   check(sides.join('|') === 'Not specified|General', 'request form: Amuwa Design Studio offers the General side only', sides);
@@ -168,14 +169,23 @@ const submitted = async page => {
   await page.close();
 }
 {
-  // the retired department: its people stay, but the form adds nobody to it
-  const page = await open();
-  await page.selectOption('#dept', 'designstudio');
-  await page.waitForSelector('[data-testid="retired-department"]');
-  check(/retired/.test(await page.innerText('[data-testid="retired-department"]')), 'retired department: the form says nobody new is added to it');
-  check(await page.$eval('button[type="submit"]', b => b.disabled), 'retired department: the Create button is disabled');
-  check((await roleOptions(page)).join('|') === 'Department Head|Team Lead|Team Member', 'retired department: no Sales or Support role either');
-  await page.close();
+  // Amuwa Design Studio (slug designstudio) is an ordinary, active department: the Super Admin adds a Team Member, a Team Lead and a Department Head
+  for (const [role, label] of [['TEAM_MEMBER', 'Team Member'], ['TEAM_HEAD', 'Team Lead'], ['DEPARTMENT_HEAD', 'Department Head']]) {
+    const page = await open();
+    check((await page.$$eval('#dept option', os => os.map(o => o.textContent.trim()))).filter(t => /Design Studio/.test(t)).join('|') === 'AI Design Studio|Amuwa Design Studio', 'the department list shows AI Design Studio and Amuwa Design Studio, never Retired');
+    await page.selectOption('#dept', 'designstudio');
+    await page.waitForFunction(T => [...document.querySelectorAll('select option')].some(o => o.value === T), T.amGeneral);
+    check((await page.$$('[data-testid="retired-department"]')).length === 0 && !/retired/i.test(await page.innerText('body')), `${label}: no Retired notice anywhere in the form`);
+    check((await roleOptions(page)).join('|') === 'Department Head|Team Lead|Team Member', `${label}: Department Head, Team Lead, Team Member are offered (no Sales or Support role)`);
+    check((await teamOptions(page)).join() === T.amGeneral, `${label}: the team list is its General team only`, await teamOptions(page));
+    await page.selectOption('#staff-role', role);
+    await fill(page, 'Amu ' + label);
+    check(!(await page.$eval('button[type="submit"]', b => b.disabled)), `${label}: the Create button is enabled`);
+    const sent = await submitted(page);
+    check(sent.role === role && !sent.salesSubRole && !sent.headDivision && (role === 'DEPARTMENT_HEAD' ? sent.departmentId === OLD && !sent.teamId : sent.teamId === T.amGeneral),
+      `${label}: sent for Amuwa Design Studio (slug designstudio) with no Sales / Support side`, sent);
+    await page.close();
+  }
 }
 for (const [name, vp] of [['phone', { width: 360, height: 740 }], ['desktop', { width: 1440, height: 900 }]]) {
   const page = await open(false, vp);
