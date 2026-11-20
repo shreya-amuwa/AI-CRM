@@ -162,3 +162,62 @@ select test.inc_pay(:'c9', 2000);
 select test.check((select count(*) = 0 from earnings where customer_id = :'c9'), 'a product without a sales incentive earns nothing');
 select test.check(not exists (select 1 from audit_logs a join customer_payments p on p.id = a.entity_id join customers c on c.id = p.customer_id
                                where a.action = 'INCENTIVE_ERROR' and c.name like 'Inc Test %'), 'no incentive calculation failed (errors are logged, never hidden)');
+
+\echo '   demos completed with the authorised person, field visits with GPS'
+reset role;
+delete from earnings where rule_id in (select id from incentive_rules where name like 'Test %' and event_type <> 'SALE_PAID');
+set role authenticated;
+select test.login('sa');
+insert into inc select 'demo', incentive_rule_create(jsonb_build_object('name', 'Test demo 50', 'eventType', 'DEMO_COMPLETED', 'amount', 50,
+  'scopeType', 'SUB_ROLE', 'scopeValue', 'TELECALLER', 'monthlyCap', 100))::text;
+insert into inc select 'visit', incentive_rule_create(jsonb_build_object('name', 'Test visit 30', 'eventType', 'VISIT_COMPLETED', 'amount', 30,
+  'scopeType', 'LEVEL', 'scopeValue', 'TEAM_MEMBER'))::text;
+reset role;
+create or replace function test.inc_demo(p_status text) returns uuid language sql as $$
+  insert into public.ba_demos (contact_id, title, starts_at, ends_at, mode, assigned_to, status)
+  values ((select id from public.ba_contacts where lead_id = (select id from public.customers where name = 'Inc Test Split')), 'Inc Test demo',
+          now() - interval '2 hours', now() - interval '1 hour', 'ONLINE', test.id('ba_a'), p_status) returning id $$;
+create or replace function test.demo_earned() returns numeric language sql as $$
+  select coalesce(sum(amount), 0) from public.earnings where profile_id = test.id('tc_a') and event_type = 'DEMO_COMPLETED' and status = 'EARNED' $$;
+grant execute on all functions in schema test to anon, authenticated, service_role;
+select test.inc_demo('SCHEDULED') as d1 \gset
+update ba_demos set status = 'COMPLETED' where id = :'d1';
+select test.check(test.demo_earned() = 0, 'a completed demo without the tick pays nothing');
+set role authenticated;
+select test.login('ba_a');
+select ba_demo_set_authorised(:'d1', true);
+reset role;
+select test.check(test.demo_earned() = 50 and (select role = 'PARTICIPANT' from earnings where event_ref = 'DEMO:' || :'d1'),
+  'ticking it pays the telecaller 50 (rule scoped to SUB_ROLE TELECALLER); the BA, not a telecaller, gets nothing');
+set role authenticated;
+select test.login('ba_a');
+select ba_demo_set_authorised(:'d1', false);
+reset role;
+select test.check(test.demo_earned() = 0, 'unticking reverses');
+set role authenticated;
+select test.login('ba_a');
+select ba_demo_set_authorised(:'d1', true);
+select test.login('tm_a');
+select test.must_fail(format($$select ba_demo_set_authorised(%L, false)$$, :'d1'), 'someone else''s demo cannot be ticked', 'FORBIDDEN');
+reset role;
+select test.inc_demo('SCHEDULED') as d2 \gset
+update ba_demos set status = 'CANCELLED', authorised_person_attended = true where id = :'d2';
+select test.check(test.demo_earned() = 50, 'a cancelled demo pays nothing');
+select test.inc_demo('SCHEDULED') as d3 \gset
+update ba_demos set authorised_person_attended = true, status = 'COMPLETED' where id = :'d3';
+select test.inc_demo('SCHEDULED') as d4 \gset
+update ba_demos set authorised_person_attended = true, status = 'COMPLETED' where id = :'d4';
+select test.check(test.demo_earned() = 100, 'the monthly cap (100) stops payment once reached');
+update ba_demos set status = 'RESCHEDULED' where id = :'d3';
+select test.check(test.demo_earned() = 50, 'a demo that is no longer completed is reversed');
+
+insert into lead_visits (lead_id, employee_id, visit_date, purpose, status)
+  values ((select id from customers where name = 'Inc Test One'), test.id('tm_a'), private.office_today(), 'Inc Test visit', 'SCHEDULED') returning id as v1 \gset
+update lead_visits set status = 'COMPLETED', completed_at = now(), gps_captured = true where id = :'v1';
+select test.check((select coalesce(sum(amount), 0) = 30 from earnings where event_ref = 'VISIT:' || :'v1' and profile_id = test.id('tm_a') and status = 'EARNED'),
+  'a completed visit with GPS pays the employee');
+insert into lead_visits (lead_id, employee_id, visit_date, purpose, status)
+  values ((select id from customers where name = 'Inc Test One'), test.id('tm_a'), private.office_today(), 'Inc Test visit', 'SCHEDULED') returning id as v2 \gset
+update lead_visits set status = 'COMPLETED', completed_at = now(), gps_captured = false where id = :'v2';
+select test.check((select count(*) = 0 from earnings where event_ref = 'VISIT:' || :'v2'), 'without GPS it does not');
+delete from lead_visits where purpose = 'Inc Test visit';

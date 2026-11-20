@@ -502,3 +502,123 @@ revoke all on function private.customer_payments_incentives() from public, anon,
 drop trigger if exists customer_payments_incentives on public.customer_payments;
 create trigger customer_payments_incentives after insert or update of status on public.customer_payments
   for each row execute function private.customer_payments_incentives();
+
+-- ---------------------------------------------------------------------------
+-- 3. Demos completed with the authorised person present; field visits completed with GPS
+-- ---------------------------------------------------------------------------
+alter table public.ba_demos add column if not exists authorised_person_attended boolean not null default false;
+
+-- Does a rule (DEMO_COMPLETED / VISIT_COMPLETED) apply to this person?
+create or replace function private.incentive_rule_applies(r public.incentive_rules, p_profile uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.profiles p where p.id = p_profile and p.status = 'ACTIVE' and (
+    (r.scope_type = 'LEVEL' and p.role::text = r.scope_value)
+    or (r.scope_type = 'SUB_ROLE' and p.sales_sub_role = r.scope_value)
+    or (r.scope_type = 'DEPARTMENT' and p.department_id::text = r.scope_value)
+    or (r.scope_type = 'TEAM' and p.team_id::text = r.scope_value)
+    or (r.scope_type = 'PERSON' and p.id::text = r.scope_value)))
+$$;
+revoke all on function private.incentive_rule_applies(public.incentive_rules, uuid) from public, anon, authenticated;
+
+-- An event reward: every active rule of the type pays its amount to each participant it applies to, once per event, within the rule's
+-- monthly cap per person (office month).
+create or replace function private.earn_event(p_event_type text, p_event_ref text, p_participants uuid[], p_customer uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  r public.incentive_rules;
+  v_person uuid;
+  v_on date := private.office_today();
+  v_used numeric;
+  v_amount numeric;
+begin
+  for r in select * from public.incentive_rules x where x.event_type = p_event_type and private.incentive_rule_active(x, now()) loop
+    foreach v_person in array p_participants loop
+      continue when v_person is null or not private.incentive_rule_applies(r, v_person);
+      v_amount := r.amount;
+      if r.monthly_cap is not null then
+        select coalesce(sum(amount), 0) into v_used from public.earnings
+         where profile_id = v_person and rule_id = r.id and status = 'EARNED' and event_ref <> p_event_ref
+           and date_trunc('month', earned_at at time zone 'Asia/Kolkata') = date_trunc('month', now() at time zone 'Asia/Kolkata');
+        v_amount := least(v_amount, r.monthly_cap - v_used);
+      end if;
+      perform private.earn(v_person, r.id, p_event_type, p_event_ref, 'PARTICIPANT', p_customer, null, null, v_amount, v_on);
+    end loop;
+  end loop;
+end $$;
+revoke all on function private.earn_event(text, text, uuid[], uuid) from public, anon, authenticated;
+
+create or replace function private.ba_demos_incentives()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_ref text := 'DEMO:' || new.id;
+  v_done boolean := new.status = 'COMPLETED' and new.authorised_person_attended;
+  v_was boolean := tg_op = 'UPDATE' and old.status = 'COMPLETED' and old.authorised_person_attended;
+  bc public.ba_contacts;
+begin
+  begin
+    if v_done and not v_was then
+      select * into bc from public.ba_contacts where id = new.contact_id;
+      perform private.earn_event('DEMO_COMPLETED', v_ref, array[new.assigned_to, bc.telecaller_id], bc.lead_id);
+    elsif v_was and not v_done then
+      perform private.reverse_event(v_ref);
+    end if;
+  exception when others then
+    insert into public.audit_logs (action, entity_type, entity_id, metadata)
+    values ('INCENTIVE_ERROR', 'ba_demo', new.id, jsonb_build_object('error', left(sqlerrm, 300)));
+  end;
+  return new;
+end $$;
+revoke all on function private.ba_demos_incentives() from public, anon, authenticated;
+drop trigger if exists ba_demos_incentives on public.ba_demos;
+create trigger ba_demos_incentives after insert or update of status, authorised_person_attended on public.ba_demos
+  for each row execute function private.ba_demos_incentives();
+
+create or replace function private.lead_visits_incentives()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_ref text := 'VISIT:' || new.id;
+  v_done boolean := new.status = 'COMPLETED' and new.gps_captured;
+  v_was boolean := tg_op = 'UPDATE' and old.status = 'COMPLETED' and old.gps_captured;
+begin
+  begin
+    if v_done and not v_was then
+      perform private.earn_event('VISIT_COMPLETED', v_ref, array[new.employee_id], new.lead_id);
+    elsif v_was and not v_done then
+      perform private.reverse_event(v_ref);
+    end if;
+  exception when others then
+    insert into public.audit_logs (action, entity_type, entity_id, metadata)
+    values ('INCENTIVE_ERROR', 'lead_visit', new.id, jsonb_build_object('error', left(sqlerrm, 300)));
+  end;
+  return new;
+end $$;
+revoke all on function private.lead_visits_incentives() from public, anon, authenticated;
+drop trigger if exists lead_visits_incentives on public.lead_visits;
+create trigger lead_visits_incentives after insert or update of status, gps_captured on public.lead_visits
+  for each row execute function private.lead_visits_incentives();
+
+-- The Business Associate (or their Team Lead / Department Head) records whether the authorised person attended the demo.
+create or replace function public.ba_demo_set_authorised(p_demo uuid, p_attended boolean)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me public.profiles;
+  d public.ba_demos;
+  owner_p public.profiles;
+begin
+  select * into me from public.profiles where id = auth.uid() and status = 'ACTIVE';
+  select * into d from public.ba_demos where id = p_demo;
+  if d.id is null then
+    raise exception 'NOT_FOUND: This demo does not exist.' using errcode = 'P0001';
+  end if;
+  select * into owner_p from public.profiles where id = d.assigned_to;
+  if me.id is null or not (me.id = d.assigned_to or me.role = 'SUPER_ADMIN'
+     or (me.role = 'TEAM_HEAD' and me.team_id = owner_p.team_id)
+     or (me.role = 'DEPARTMENT_HEAD' and me.department_id = owner_p.department_id)) then
+    raise exception 'FORBIDDEN: Only the demo''s Business Associate or their leads can record this.' using errcode = '42501';
+  end if;
+  update public.ba_demos set authorised_person_attended = coalesce(p_attended, false) where id = p_demo returning * into d;
+  perform private.write_audit('BA_DEMO_AUTHORISED_SET', 'ba_demo', d.id, owner_p.department_id, owner_p.team_id, jsonb_build_object('attended', d.authorised_person_attended));
+  return jsonb_build_object('id', d.id, 'status', d.status, 'authorisedPersonAttended', d.authorised_person_attended);
+end $$;
+revoke all on function public.ba_demo_set_authorised(uuid, boolean) from public, anon;
+grant execute on function public.ba_demo_set_authorised(uuid, boolean) to authenticated;
