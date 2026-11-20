@@ -209,6 +209,37 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
   }
 };
 
+// The last dashboard address of this browser. The installed app always opens at "/", and a person's dashboard address holds their own id
+// (/ai-studio/dashboard/<id>/projects), so one entry is enough: another person's address never matches their dashboard.
+const LAST_PATH_KEY = 'amuwa.lastPath';
+
+export const rememberPath = (userId: string) => {
+  try {
+    const path = window.location.pathname;
+    if (path.includes(userId)) window.localStorage.setItem(LAST_PATH_KEY, path);
+  } catch {
+    /* private window: the page is just not remembered */
+  }
+};
+
+export const forgetLastPath = () => {
+  try {
+    window.localStorage.removeItem(LAST_PATH_KEY);
+  } catch {
+    /* nothing to forget */
+  }
+};
+
+/** The page the person was last on inside their dashboard (`base`), or null when there is none to return to. */
+export const lastPathUnder = (base: string): string | null => {
+  try {
+    const last = window.localStorage.getItem(LAST_PATH_KEY);
+    return last && (last === base || last.startsWith(`${base}/`)) ? last : null;
+  } catch {
+    return null;
+  }
+};
+
 export const navigateTo = (url: string) => {
   if (typeof window === 'undefined') return;
   if (window.location.pathname !== url) {

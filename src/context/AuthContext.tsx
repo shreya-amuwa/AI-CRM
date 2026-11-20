@@ -8,6 +8,10 @@ import { getSupabase } from '../services/supabaseClient';
 import { hrApi, meApi, signInReportApi } from '../lib/api/endpoints';
 import { officeToday } from '../lib/officeTime';
 import { errorMessage } from '../lib/api/client';
+import { isTransient } from '../lib/auth/transientError';
+import { forgetRememberedPages } from '../lib/rememberedPage';
+import { forgetLastPath } from '../utils/router';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { toAuthUser } from '../lib/auth/roleMapping';
 import { purgeInsecureLegacyKeys } from '../lib/legacyStorage';
 import {
@@ -50,6 +54,9 @@ interface AuthContextType {
   chooseDepartment: (departmentId: string) => void;
   chooseDivision: (division: HeadDivision) => void;
   authLoading: boolean;
+  /** The CRM could not be reached while the person IS signed in (the server is busy or the network is down): the session is kept, nobody is signed out. */
+  connectionProblem: boolean;
+  retryConnection: () => Promise<void>;
   /** Shown on the login screen, e.g. "Your account is awaiting approval." */
   accountNotice: string | null;
   activeDepartmentId: DepartmentId | null;
@@ -101,6 +108,8 @@ async function sendClientToDashboard(): Promise<boolean> {
   return true;
 }
 
+const RETRY_DELAYS_MS = [1500, 4000, 9000];
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { getDepartment } = useDepartments();
 
@@ -109,10 +118,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [scope, setScope] = useState<ActiveScope>(NO_SCOPE);
   const [scopeChosen, setScopeChosen] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [connectionProblem, setConnectionProblemState] = useState(false);
+  const connectionProblemRef = useRef(false);
+  const setConnectionProblem = useCallback((v: boolean) => { connectionProblemRef.current = v; setConnectionProblemState(v); }, []);
   const [accountNotice, setAccountNotice] = useState<string | null>(null);
   const [activeDepartmentId, setActiveDepartmentId] = useState<DepartmentId | null>(null);
   const [currentSession, setCurrentSession] = useState<UserSession | null>(null);
   const loadedUserId = useRef<string | null>(null);
+  const lastRenewal = useRef(0);
 
   const [isEvictionModalOpen, setIsEvictionModalOpen] = useState(false);
   const [pendingDepartment, setPendingDepartment] = useState<Department | null>(null);
@@ -129,6 +142,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearState = useCallback(() => {
     loadedUserId.current = null;
+    setConnectionProblem(false);
     setRawProfile(null);
     setScopes(null);
     setScope(NO_SCOPE);
@@ -136,7 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setRequestScope(NO_SCOPE);
     setActiveDepartmentId(null);
     setCurrentSession(null);
-  }, []);
+  }, [setConnectionProblem]);
 
   /** Load the trusted profile. Non-active accounts are signed out with a notice. */
   const attendanceRecordedFor = useRef<string | null>(null);
@@ -174,12 +188,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setScopeChosen(readChosen(me.id));
       setRawProfile(me);
       setAccountNotice(null);
+      setConnectionProblem(false);
       return { ok: true, profile: me };
     } catch (err) {
+      // The server is busy or unreachable: that says nothing about the person's session. Keep it (never show the sign-in page for a slow server).
+      if (isTransient(err)) {
+        setConnectionProblem(true);
+        return { ok: false, message: errorMessage(err) };
+      }
       clearState();
       return { ok: false, message: errorMessage(err) };
     }
-  }, [clearState]);
+  }, [clearState, setConnectionProblem]);
 
   // Session bootstrap + auth state changes (sign-in in another tab, token refresh, sign-out)
   useEffect(() => {
@@ -193,7 +213,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     supabase.auth.getSession().then(async ({ data }) => {
       if (data.session && (await sendClientToDashboard())) return;
-      if (data.session) await loadProfile();
+      if (data.session) {
+        // keep this browser's stored sign-in from being cleared when the device is short of space (browsers may otherwise drop it)
+        void navigator.storage?.persist?.().catch(() => undefined);
+        let result = await loadProfile();
+        // a busy server gets a few more tries before the person is told: the screen stays on "Loading" meanwhile
+        for (const wait of RETRY_DELAYS_MS) {
+          if (result.ok || !connectionProblemRef.current) break;
+          await new Promise(r => setTimeout(r, wait));
+          result = await loadProfile();
+        }
+      }
       setAuthLoading(false);
     });
 
@@ -217,7 +247,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const onUnauthenticated = () => void (async () => {
       if (await sendClientToDashboard()) return; // a customer's token is not valid for staff routes; do not sign them out
-      await getSupabase()?.auth.signOut();
+      const supabase = getSupabase();
+      if (!supabase) return;
+      // A refused token is usually just a stale one (the tab slept, or a second tab renewed it first). Ask for a fresh one before giving up, at most
+      // once a minute so a server that keeps refusing cannot loop. Signed out only when the sign-in service itself says the session is over.
+      if (Date.now() - lastRenewal.current > 60_000) {
+        lastRenewal.current = Date.now();
+        const { data, error } = await supabase.auth.refreshSession();
+        if (data.session) { void loadProfile(); return; }
+        if (error && isAuthRetryableFetchError(error)) return; // the sign-in service is busy: keep the session, try on the next request
+      }
+      await supabase.auth.signOut();
     })();
     const onInactive = () => void loadProfile();
     window.addEventListener('crm:unauthenticated', onUnauthenticated);
@@ -299,7 +339,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ]);
     }
     clearState();
+    forgetRememberedPages(); // the next person (or the next sign-in) starts at the Overview
+    forgetLastPath();
     await getSupabase()?.auth.signOut();
+  };
+
+  /** The "Try again" button of the connection-problem screen. */
+  const retryConnection = async () => {
+    setAuthLoading(true);
+    await loadProfile();
+    setAuthLoading(false);
   };
 
   const needsDepartmentChoice = !!rawProfile && hasSeveralDepartments(scopes) && !scopeChosen;
@@ -379,6 +428,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         chooseDepartment,
         chooseDivision,
         authLoading,
+        connectionProblem,
+        retryConnection,
         accountNotice,
         activeDepartmentId,
         currentSession,
