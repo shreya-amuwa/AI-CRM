@@ -236,8 +236,8 @@ function requireDispatchSecret(header: string | undefined): void {
 
 // Attendance reminders, every 5 minutes from the Worker's scheduled run (migration 20270109000200): the database decides what is due and
 // puts it in the bell; this pushes it to the person's devices. Same secret and the same Vercel stand-down as the dispatch below.
-// Crocodial (read-only): continues the sync of the connections that are switched on - every 5 minutes with the attendance reminders' cron,
-// so a large first read finishes in minutes, not at the next twice-daily automation run. Each connection is synced at most every 15 minutes
+// Crocodial (read-only): continues the sync of the connections that are switched on - with the attendance reminders' 5-minute cron, every
+// CROCODIAL_SYNC_EVERY_MINUTES (default 15; worker/index.ts crocodialSyncDue), so a large first read still finishes the same day. Each connection is synced at most every 15 minutes
 // once it is up to date (croc_sync_due); a read in progress continues at once. Never throws.
 app.post('/internal/crocodial/sync', async c => {
   requireDispatchSecret(c.req.header('authorization'));

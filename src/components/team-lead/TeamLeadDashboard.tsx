@@ -17,6 +17,7 @@ import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { TeamCustomers } from './TeamCustomers';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
@@ -53,6 +54,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
   const reportsBadge = useReportsBadge();
   const crocodial = useCrocodialNav();
   useOpenReportsRequest(React.useCallback(() => setNav('work-reports'), []));
+  useOpenWorkUpdateRequest(React.useCallback(() => setNav('assigned-tasks'), []));
 
   const groups: ShellNavGroup[] = useMemo(
     () => [

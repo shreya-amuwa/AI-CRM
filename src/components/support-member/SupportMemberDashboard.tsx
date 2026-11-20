@@ -6,6 +6,7 @@ import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/she
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
@@ -97,6 +98,7 @@ export const SupportMemberDashboard: React.FC = () => {
   useOpenChatRequest(React.useCallback(() => { setProfileId(null); setPage('chat'); }, []));
   useOpenIssuesRequest(React.useCallback(() => { setProfileId(null); setPage('raise-issue'); }, []));
   useOpenReportsRequest(React.useCallback(() => { setProfileId(null); setPage('work-reports'); }, []));
+  useOpenWorkUpdateRequest(React.useCallback(() => { setProfileId(null); setPage('tasks'); }, []));
 
   const go = (next: SupportPage) => {
     setProfileId(null);

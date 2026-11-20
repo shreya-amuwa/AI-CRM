@@ -1,5 +1,5 @@
 -- =============================================================================
--- Crocodial (migration 20270115000600): the date a mapping counts activity from. Activity before the approval counts once the Super Admin
+-- Crocodial (migration 20270116000300): the date a mapping counts activity from. Activity before the approval counts once the Super Admin
 -- moves the start back (to the first stored activity, or a chosen date); never in the future; never overlapping another mapping of the same
 -- Crocodial user or the same person; Super Admin only; audited. Runs after crocodial_activity_test.sql (reuses its people).
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 143. Crocodial: count activity from a date'
 reset role;
-\i supabase/migrations/20270115000600_crocodial_count_from.sql
-\i supabase/migrations/20270115000600_crocodial_count_from.sql
+\i supabase/migrations/20270116000300_crocodial_count_from.sql
+\i supabase/migrations/20270116000300_crocodial_count_from.sql
 
 delete from crocodial_connections where credential_ref like 'CROCODIAL_TOKEN_FROMTEST%';
 create temp table cf (k text primary key, id uuid);

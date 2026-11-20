@@ -232,7 +232,7 @@ For Team Leads and heads, the entry appears only when they have at least one con
 - **Not synced yet:** a person who has never been fully synced is listed as "not available yet" and **left out of the totals**, never counted as zero.
 - **Stale data:** data older than 24 hours is labelled.
 
-## Earlier activity and the heads' view (migration `20270115000600_crocodial_count_from.sql`)
+## Earlier activity and the heads' view (migration `20270116000300_crocodial_count_from.sql`)
 
 **Counting earlier activity.** Approving a mapping counts activity from that moment. Everything the sync stored before it (calls,
 follow-ups, remarks) counted for nobody. Under "4. People", each approved mapping now shows "Counting activity from <date>" with two actions:
@@ -267,7 +267,7 @@ Use it only when nobody else used that Crocodial login before the person.
 - In "By team", Department Heads are grouped as "Department Head(s)" instead of "No team".
 - The Super Admin's "Crocodial Activity" lists every connected person, heads included.
 
-## My Crocodial Leads (migration `20270115000700_crocodial_leads.sql`)
+## My Crocodial Leads (migration `20270116000400_crocodial_leads.sql`)
 
 `public.croc_leads(profile | null, search, filter, page, page_size)` returns, one page at a time, the leads that Crocodial currently assigns to
 the person's mapped Crocodial user on that account. The data is the stored copy from the sync. Leads are never matched by name and never
@@ -292,7 +292,7 @@ come from another account.
 
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270115000600_crocodial_count_from.sql`, then `20270115000700_crocodial_leads.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

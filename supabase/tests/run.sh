@@ -171,6 +171,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/superadmin_overview_test.sql 2>&1 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meetings_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meetings_organiser_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meetings_ceo_approval_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/work_update_requests_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/lead_upload_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/bolify_recharge_reminders_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/lead_whatsapp_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
@@ -186,3 +187,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_team_test.sql 2>&1 | sed
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_sync_now_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_count_from_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_leads_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/realtime_publication_trim_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

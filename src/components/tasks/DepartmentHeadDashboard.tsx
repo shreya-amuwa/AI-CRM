@@ -17,7 +17,8 @@ import {
   Sparkles,
   UserCheck,
   UserPlus,
-  Users
+  Users,
+  Clock3
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
@@ -51,6 +52,8 @@ import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
+import { WorkUpdatesPanel, useWorkUpdateCounts } from './WorkUpdates';
+import { useOpenWorkUpdateRequest } from './workUpdateEvents';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -78,10 +81,13 @@ export const DepartmentHeadDashboard: React.FC = () => {
   useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
   const reportsBadge = useReportsBadge();
   useOpenReportsRequest(React.useCallback(() => setNav('work-reports'), []));
+  useOpenWorkUpdateRequest(React.useCallback(() => setNav('work-updates'), []));
+  const updateCounts = useWorkUpdateCounts();
 
   const groups: ShellNavGroup[] = useMemo(() => {
     const work = [
       { id: 'assign', label: 'Assign', icon: ClipboardList },
+      { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: updateCounts?.pending || 0 },
       { id: 'reports', label: 'Task Reports', icon: BarChart3 },
       { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
       { id: 'performance', label: 'Performance Management', icon: LineChart },
@@ -132,7 +138,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         ]
       }
     ];
-  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread, reportsBadge]);
+  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread, reportsBadge, updateCounts?.pending]);
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
@@ -186,6 +192,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'overview' && <HeadOverview data={data} go={go} />}
       {nav === 'operations' && operationsHead && <OperationsDashboard />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
+      {nav === 'work-updates' && <WorkUpdatesPanel />}
       {nav === 'reports' && <HeadReports data={data} />}
       {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}
       {nav === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
