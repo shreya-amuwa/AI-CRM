@@ -3013,7 +3013,7 @@ export const ceoRequestsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0)
 }).strict();
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
-// ---- Live meeting availability (migration 20270114000200): Enter Meeting may name the meeting being entered ----
+// ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
 export const meetingBusySchema = z.object({
   profileIds: z.array(uuidSchema).min(1).max(30),

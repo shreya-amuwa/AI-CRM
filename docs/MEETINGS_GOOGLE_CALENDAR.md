@@ -161,7 +161,7 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
 
 ## Live availability of the CEO: Enter / Exit Meeting
 
-Migration `supabase/migrations/20270114000200_meeting_live_availability.sql` (run after `20270113000100`; additive, safe to run twice).
+Migration `supabase/migrations/20270116000400_meeting_live_availability.sql` (run after `20270116000300`; additive, safe to run twice).
 
 ### What people see
 

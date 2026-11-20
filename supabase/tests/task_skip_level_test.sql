@@ -1,5 +1,5 @@
 -- =============================================================================
--- Skip a level (migration 20270114000200): a Department Head / Operations Head gives a task straight to a Team Lead or Team Member of their own
+-- Skip a level (migration 20270114000100): a Department Head / Operations Head gives a task straight to a Team Lead or Team Member of their own
 -- teams; nobody reaches people outside their scope; a Team Lead still reaches only their own members. And the Support desk switch: two Team Leads
 -- of one Support team no longer see each other's customers.
 -- Reuses task_hierarchy_test.sql (wkr-a: Support head wkr_dhp, Sales head wkr_dhs, Support Operations Head wkr_ohp, Sales Operations Head wkr_ohs;

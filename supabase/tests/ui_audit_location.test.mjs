@@ -111,7 +111,8 @@ for (const [name, vp] of [['desktop', { width: 1440, height: 900 }], ['phone', {
   check(/Bengaluru/.test(await page.textContent('tbody tr')), `${name}: searching a place finds the event`);
   await page.fill('input[placeholder*="place"]', '');
   await page.selectOption('select >> nth=0', 'LOGIN_ATTEMPT_FAILED');
-  await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1);
+  // the cleared place search applies after its typing pause: wait for the filtered table itself, not for any single row (the "no events" row is one too)
+  await page.waitForFunction(() => document.querySelectorAll('tbody tr').length === 1 && /Failed/.test(document.querySelector('tbody tr')?.textContent || ''), null, { timeout: 5000 }).catch(() => undefined);
   check(/Failed/.test(await page.textContent('tbody tr')), `${name}: the event-type filter still works`);
   await page.selectOption('select >> nth=0', '');
   await page.selectOption('select >> nth=1', 'FAILURE');

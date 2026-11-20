@@ -1,5 +1,5 @@
 -- =============================================================================
--- Live meeting availability of the CEO (migration 20270114000200): Enter / Exit Meeting, requests saved while the CEO is BUSY, and the
+-- Live meeting availability of the CEO (migration 20270116000400): Enter / Exit Meeting, requests saved while the CEO is BUSY, and the
 -- automatic scheduling on Exit (queue order, working hours, held meetings, Google busy times, no overlaps), notifications to the one who
 -- asked only, audit history and who may do what. Own synthetic meetings (title 'LA %'). Runs after the other suites on the same database.
 -- =============================================================================
@@ -9,8 +9,8 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 -- the earlier meetings suite re-runs 20270101000500 (an older mtg_create): put the newest definitions back, twice (safe to run again)
-\i supabase/migrations/20270114000200_meeting_live_availability.sql
-\i supabase/migrations/20270114000200_meeting_live_availability.sql
+\i supabase/migrations/20270116000400_meeting_live_availability.sql
+\i supabase/migrations/20270116000400_meeting_live_availability.sql
 delete from meetings where title like 'LA %';
 delete from meeting_presence;
 delete from meeting_presence_log;

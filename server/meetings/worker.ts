@@ -199,7 +199,7 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
     summary.reminders = Number(rem.data) || 0;
 
     // requests that waited for the CEO to be free and are still waiting (no free slot at Exit, or an Exit that stopped half-way):
-    // scheduled now, with the CEO's Google busy times (migration 20270114000200; skipped quietly on a database without it)
+    // scheduled now, with the CEO's Google busy times (migration 20270116000400; skipped quietly on a database without it)
     const { data: hosts } = await db.rpc('mtg_pending_hosts');
     for (const host of (Array.isArray(hosts) ? hosts : []) as string[]) {
       if (Date.now() > deadline) break;
