@@ -221,3 +221,34 @@ insert into lead_visits (lead_id, employee_id, visit_date, purpose, status)
 update lead_visits set status = 'COMPLETED', completed_at = now(), gps_captured = false where id = :'v2';
 select test.check((select count(*) = 0 from earnings where event_ref = 'VISIT:' || :'v2'), 'without GPS it does not');
 delete from lead_visits where purpose = 'Inc Test visit';
+
+\echo '   the Income page'
+reset role;
+select coalesce(sum(amount), 0) as th_total from earnings where profile_id = test.id('th_wab') and status = 'EARNED' \gset
+select coalesce(sum(amount), 0) as tc_total from earnings where profile_id = test.id('tc_a') and status = 'EARNED' \gset
+set role authenticated;
+select test.login('th_wab');
+select test.check((select (d ->> 'eligible')::boolean and (d ->> 'total')::numeric = :'th_total'::numeric
+                          and (d ->> 'today')::numeric = (d ->> 'total')::numeric and (d ->> 'balance')::numeric = (d ->> 'total')::numeric
+                     from (select income_summary() d) x), 'the Team Lead''s summary: today, total and balance from their own earned rows');
+select test.check((select exists (select 1 from jsonb_array_elements(income_summary() -> 'targets') t
+                                   where t ->> 'name' = 'Test 500 per unit' and (t ->> 'targetUnits')::int = 1000 and (t ->> 'unitsDone')::numeric > 0)),
+  'target progress counts the units paid in this person''s chain');
+select test.login('tm_a');
+select test.check((select count(*) filter (where e ->> 'status' = 'REVERSED') = 0 and count(*) > 0
+                          and bool_and(e ->> 'customerName' like 'Inc Test %' or e ->> 'eventType' <> 'SALE_PAID')
+                     from jsonb_array_elements(income_earnings(private.office_today() - 30, private.office_today())) e),
+  'the Team Member lists their earnings with the customer and what each was for');
+select test.login('tc_a');
+select test.check((select bool_and(e ->> 'profileId' is null) and count(*) > 0 from jsonb_array_elements(income_earnings(private.office_today() - 30, private.office_today())) e)
+                  and (select (income_summary() ->> 'total')::numeric = :'tc_total'::numeric),
+  'a person sees only their own earnings');
+reset role;
+update employee_personal_details set joining_date = private.office_today() - 3 where profile_id = test.id('ba_a');
+set role authenticated;
+select test.login('ba_a');
+select test.check((select not (d ->> 'eligible')::boolean and (d ->> 'startsOn')::date = private.office_today() + 12 from (select income_summary() d) x),
+  'before eligibility startsOn is the start date and eligible is false');
+reset role;
+update employee_personal_details set joining_date = date '2026-01-01' where profile_id = test.id('ba_a');
+select test.must_fail($$select income_summary()$$, 'nobody signed in: refused', 'FORBIDDEN') from (select set_config('request.jwt.claims', '{}', false)) x;
