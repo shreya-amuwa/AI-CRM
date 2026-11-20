@@ -6,7 +6,7 @@
 import { CrocodialClient, CrocodialError, crocodialEmployeeSchema, crocodialToken, safeNextUrl } from '../../server/crocodial/client.js';
 import { testCrocodialConnection } from '../../server/crocodial/directory.js';
 import { CrocodialService } from '../../server/services/CrocodialService.js';
-import { crocodialConnectionSaveSchema, crocodialMappingSchema } from '../../shared/validation.js';
+import { crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialMappingSchema } from '../../shared/validation.js';
 
 let passed = 0;
 function check(ok: unknown, label: string, extra?: unknown) {
@@ -140,5 +140,12 @@ check(crocodialConnectionSaveSchema.safeParse({ name: 'M Pillar', credentialRef:
 check(!crocodialConnectionSaveSchema.safeParse({ name: 'M Pillar', credentialRef: 'rmd_abcdefghijklmnop' }).success, 'a pasted token is refused as a credential name');
 check(!crocodialConnectionSaveSchema.safeParse({ name: 'M Pillar', credentialRef: 'CROCODIAL_TOKEN_MP', token: 'x' }).success, 'unknown fields (a token) are refused');
 check(!crocodialMappingSchema.safeParse({ connectionId: 'x', externalEmployeeId: 1, profileId: 'y', departmentId: 'z' }).success, 'a mapping needs real ids');
+check(crocodialCountFromSchema.safeParse({ from: null }).success && crocodialCountFromSchema.safeParse({ from: '2026-09-01' }).success,
+  'count activity from: the first stored record (null) or a day');
+check(!crocodialCountFromSchema.safeParse({ from: '01/09/2026' }).success && !crocodialCountFromSchema.safeParse({ from: '2026-09-01', profileId: 'x' }).success,
+  'count activity from: only a YYYY-MM-DD day, nothing else');
+check(crocodialLeadsQuerySchema.safeParse({ search: 'ravi', filter: 'FOLLOW_UP_DUE', page: '2', pageSize: '25' }).success, 'leads: search, filter and a page');
+check(!crocodialLeadsQuerySchema.safeParse({ filter: 'EVERYTHING' }).success && !crocodialLeadsQuerySchema.safeParse({ pageSize: '500' }).success
+  && !crocodialLeadsQuerySchema.safeParse({ token: 'x' }).success, 'leads: an unknown filter, a page over 100 or unknown fields are refused');
 
 console.log(`=== ${passed} CROCODIAL CHECKS PASSED ===`);

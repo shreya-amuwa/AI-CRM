@@ -17,7 +17,7 @@ const daysAgo = (n: number) => ymd(new Date(Date.now() - n * 86_400_000));
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const duration = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`);
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}%`);
-const PRESETS: [string, string, number][] = [['today', 'Today', 0], ['7', 'Last 7 days', 6], ['30', 'Last 30 days', 29]];
+const PRESETS: [string, string, number][] = [['today', 'Today', 0], ['7', 'Last 7 days', 6], ['30', 'Last 30 days', 29], ['90', 'Last 90 days', 89]];
 const TYPE_LABEL: Record<string, string> = { outgoing: 'Outgoing', incoming: 'Incoming', missed: 'Missed', rejected: 'Rejected', voicemail: 'Voicemail', blocked: 'Blocked', answered_elsewhere: 'Answered elsewhere', unknown: '—' };
 
 const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string; tone?: string }> = ({ label, value, hint, tone = 'text-slate-900' }) => (

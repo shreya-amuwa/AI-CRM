@@ -169,12 +169,14 @@ export const crocodialController = {
   mappingCheck: (async ctx => ok(await svc(ctx).crocodial.mappingCheck(ctx.req.body))) as Handler,
   mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
   mappingApprove: (async ctx => ok(await svc(ctx).crocodial.mappingApprove(ctx.params.id))) as Handler,
+  mappingCountFrom: (async ctx => ok(await svc(ctx).crocodial.mappingCountFrom(ctx.params.id, ctx.req.body))) as Handler,
   mappingRevoke: (async ctx => ok(await svc(ctx).crocodial.mappingRevoke(ctx.params.id, ctx.req.body))) as Handler,
   myStatus: (async ctx => ok(await svc(ctx).crocodial.myStatus())) as Handler,
   syncStatus: (async ctx => ok(await svc(ctx).crocodial.syncStatus())) as Handler,
   syncNow: (async ctx => ok(await svc(ctx).crocodial.syncNow(ctx.params.id))) as Handler,
   activity: (async ctx => ok(await svc(ctx).crocodial.activity(ctx.req.query))) as Handler,
-  teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler
+  teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler,
+  leads: (async ctx => ok(await svc(ctx).crocodial.leads(ctx.req.query))) as Handler
 };
 
 export const leadWhatsAppController = {

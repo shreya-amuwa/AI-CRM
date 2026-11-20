@@ -232,9 +232,67 @@ For Team Leads and heads, the entry appears only when they have at least one con
 - **Not synced yet:** a person who has never been fully synced is listed as "not available yet" and **left out of the totals**, never counted as zero.
 - **Stale data:** data older than 24 hours is labelled.
 
+## Earlier activity and the heads' view (migration `20270116000300_crocodial_count_from.sql`)
+
+**Counting earlier activity.** Approving a mapping counts activity from that moment. Everything the sync stored before it (calls,
+follow-ups, remarks) counted for nobody. Under "4. People", each approved mapping now shows "Counting activity from <date>" with two actions:
+
+- **Count all past activity.** The mapping counts from the start of the day of the first record stored for that Crocodial user.
+- **Or from a date, then "Use this date".** The mapping counts from the start of that day, in the account's time zone. A future date is refused.
+
+How it works and what is checked:
+
+- Both actions call `public.croc_mapping_count_from(mapping, from | null)`. Only the Super Admin can use it.
+- It works only on an approved mapping that is in effect.
+- The new period may not overlap another mapping of the same Crocodial user, or of the same CRM person, on that account. If it does, the
+  change is refused and the message names that mapping. This way one record never counts for two people.
+- Every change is audited as `CROCODIAL_MAPPING_COUNT_FROM_SET`, with the previous and the new date. The History list shows it as
+  "activity start date changed".
+- Nothing is fetched again: the data is already stored, and the figures change as soon as the date does.
+
+Use it only when nobody else used that Crocodial login before the person.
+
+**Periods.** Both activity views also offer "Last 90 days". Any period of up to 93 days can still be chosen with the date fields.
+
+**Department Heads and Team Leads.**
+
+- Their side panel has a **Crocodial** section:
+  - For a Team Lead it is a labelled section.
+  - For a Department Head it is an entry that opens to its pages.
+- The section shows only what applies:
+  - **My Crocodial Activity** and **My Crocodial Leads**, when they are connected themselves.
+  - **Team Crocodial Activity**, when they oversee connected people. This is the management view.
+- It is hidden when nothing applies.
+- In the management view, a Department Head (who sits above teams) is shown as "Department Head (above teams)" instead of "—".
+- In "By team", Department Heads are grouped as "Department Head(s)" instead of "No team".
+- The Super Admin's "Crocodial Activity" lists every connected person, heads included.
+
+## My Crocodial Leads (migration `20270116000400_crocodial_leads.sql`)
+
+`public.croc_leads(profile | null, search, filter, page, page_size)` returns, one page at a time, the leads that Crocodial currently assigns to
+the person's mapped Crocodial user on that account. The data is the stored copy from the sync. Leads are never matched by name and never
+come from another account.
+
+- **Who can see them.** The same people as `croc_activity`: the person, their own Team Lead, the heads whose scope covers that department's
+  Sales, and the Super Admin. Anyone else gets "not found".
+- **Filters.** All, Follow-up due (next follow-up before now), and Never called. Each filter shows its count.
+- **Search.** By name, company, city or status, or by at least 4 digits of the phone number.
+- **Order.** Due follow-ups first, then upcoming ones, then the most recently worked leads.
+- **Each lead shows:**
+  - the masked phone number (last 4 digits);
+  - the status, with "never called" marked;
+  - how many times the person called that lead;
+  - the next follow-up, with "(due)" marked;
+  - the last activity.
+- **Where it shows.**
+  - "My Crocodial Leads" in the Crocodial section of the side panel of Team Leads and Department Heads.
+  - Below "My Crocodial Activity" on the home page of Telecallers, Business Associates and team members. There it appears only for a
+    person who is connected, and it shows nothing at all (not even an error) otherwise.
+- It is read-only. Calling and updating leads still happens in the Crocodial app.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

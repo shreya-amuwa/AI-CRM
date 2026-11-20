@@ -1,8 +1,8 @@
 import type {
-  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialTeamActivity
+  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity
 } from '../../shared/contracts.js';
 import {
-  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
+  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
@@ -53,6 +53,10 @@ export class CrocodialService {
     return this.repo.mappingCreate(b.connectionId, b.externalEmployeeId, b.profileId, b.departmentId);
   }
   mappingApprove(id: string): Promise<CrocodialMapping> { return this.repo.mappingApprove(parse(uuidSchema, id)); }
+  /** Count a mapping's activity from a date (null: from the first stored activity of that Crocodial user). Super Admin only, audited. */
+  mappingCountFrom(id: string, body: unknown): Promise<CrocodialMapping> {
+    return this.repo.mappingCountFrom(parse(uuidSchema, id), parse(crocodialCountFromSchema, body ?? {}).from ?? null);
+  }
   mappingRevoke(id: string, body: unknown): Promise<CrocodialMapping> {
     return this.repo.mappingRevoke(parse(uuidSchema, id), parse(crocodialRevokeSchema, body ?? {}).reason ?? null);
   }
@@ -62,6 +66,11 @@ export class CrocodialService {
   teamActivity(query: unknown): Promise<CrocodialTeamActivity> {
     const q = parse(crocodialTeamActivityQuerySchema, query ?? {});
     return this.repo.teamActivity(q.from ?? null, q.to ?? null, q.departmentId ?? null, q.teamId ?? null);
+  }
+  /** One person's Crocodial leads: the caller's own, or (profileId) someone the database lets the caller see. */
+  leads(query: unknown): Promise<CrocodialLeads> {
+    const q = parse(crocodialLeadsQuerySchema, query ?? {});
+    return this.repo.leads(q.profileId ?? null, q.search || null, q.filter ?? 'ALL', q.page ?? 1, q.pageSize ?? 25);
   }
   /** One person's activity: the caller's own, or (profileId) someone the database lets the caller see. */
   activity(query: unknown): Promise<CrocodialActivity> {

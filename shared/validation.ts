@@ -3367,11 +3367,25 @@ export const crocodialMappingSchema = z
   })
   .strict();
 export const crocodialRevokeSchema = z.object({ reason: z.string().trim().max(300).optional().nullable() }).strict();
+/** The date an approved mapping counts activity from: a day (YYYY-MM-DD), or null for "from the first stored activity". */
+export const crocodialCountFromSchema = z
+  .object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').nullable().optional() })
+  .strict();
 export const crocodialActivityQuerySchema = z
   .object({
     profileId: uuidSchema.optional(),
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional()
+  })
+  .strict();
+/** A person's Crocodial leads: search, filter and a page (the database decides whose leads the caller may see). */
+export const crocodialLeadsQuerySchema = z
+  .object({
+    profileId: uuidSchema.optional(),
+    search: z.string().trim().max(100).optional(),
+    filter: z.enum(['ALL', 'NEVER_CALLED', 'FOLLOW_UP_DUE']).optional(),
+    page: z.coerce.number().int().min(1).max(10000).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional()
   })
   .strict();
 export const crocodialTeamActivityQuerySchema = z

@@ -94,6 +94,13 @@ function api(req, res, body) {
   }
   const a = p.match(/^\/crocodial\/mappings\/([^/]+)\/approve$/);
   if (a) { const m = o.mappings.find(x => x.id === a[1]); Object.assign(m, { status: 'APPROVED', approvedByName: 'Root', approvedAt: now, effectiveFrom: now, live: true }); return ok(res, m); }
+  const cf = p.match(/^\/crocodial\/mappings\/([^/]+)\/count-from$/);
+  if (cf) {
+    const m = o.mappings.find(x => x.id === cf[1]);
+    m.effectiveFrom = body.from ? `${body.from}T00:00:00+05:30` : '2026-06-01T00:00:00+05:30';
+    o.audit.unshift({ at: now, action: 'CROCODIAL_MAPPING_COUNT_FROM_SET', actorName: 'Root', entityId: m.id, metadata: {} });
+    return ok(res, m);
+  }
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: `No fake for ${req.method} ${p}` } }));
 }
@@ -171,6 +178,19 @@ try {
     await page.getByText(/Approved by Root/).waitFor();
     check(lastCall('POST', '/crocodial/mappings/mmmmmmmm-0000-4000-8000-000000000001/approve'), `${label}: Approve asks the server`);
     check(await page.getByTestId('croc-audit').isVisible(), `${label}: the history is listed`);
+
+    // earlier activity: count from the first stored record, or from a chosen day (audited)
+    await page.getByTestId('croc-count-from').getByRole('button', { name: 'Count all past activity' }).click();
+    await page.getByText(/past activity now counts/).waitFor();
+    const all = lastCall('POST', '/crocodial/mappings/mmmmmmmm-0000-4000-8000-000000000001/count-from');
+    check(all && all.body.from === null, `${label}: "Count all past activity" asks the server to count from the first stored record`, all?.body);
+    check(await page.getByTestId('croc-count-from').getByText(/1 Jun 2026/).isVisible(), `${label}: the new start is shown`);
+    check(await page.getByTestId('croc-audit').getByText(/activity start date changed · Root/).isVisible(), `${label}: and the change is in the history`);
+    check(await page.getByTestId('croc-count-from').getByRole('button', { name: 'Use this date' }).isDisabled(), `${label}: a date must be chosen first`);
+    await page.getByLabel("Count Sachin Kumar's activity from").fill('2026-09-01');
+    await page.getByTestId('croc-count-from').getByRole('button', { name: 'Use this date' }).click();
+    await page.getByText(/now counts from 2026-09-01/).waitFor();
+    check(lastCall('POST', '/crocodial/mappings/mmmmmmmm-0000-4000-8000-000000000001/count-from').body.from === '2026-09-01', `${label}: or from a chosen day`);
 
     // sync: off until the connection is switched on; then Sync now, the counts and what is not attributed to anyone
     check(await page.getByText(/Not synced: the connection or its department is switched off/).isVisible() && await page.getByRole('button', { name: 'Sync now' }).isDisabled(),

@@ -20,15 +20,23 @@ const hours = (s: number) => (s >= 3600 ? `${(s / 3600).toFixed(1)} h` : `${Math
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}%`);
 const ROLE: Record<string, string> = { TELECALLER: 'Telecaller', BUSINESS_ASSOCIATE: 'Business Associate', INFLUENCER: 'Influencer', VISIT_SALES: 'Visit Sales', BUSINESS_PARTNER: 'Business Partner' };
 
-/** Whether the signed-in manager has any connected people to see (to show the menu entry only then). */
-export function useCrocodialTeamVisible(): boolean {
-  const [visible, setVisible] = useState(false);
+/** A head's or Team Lead's own role, shown where they have no team (heads sit above teams). */
+const HEAD_ROLE: Record<string, string> = { DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead' };
+
+/**
+ * What the "Crocodial" section of a Team Lead's or head's side panel shows: their own activity and leads (self: they are connected
+ * themselves) and the people they oversee (team: any connected person they may see). Nothing is shown when both are false.
+ */
+export function useCrocodialNav(): { self: boolean; team: boolean } {
+  const [team, setTeam] = useState(false);
+  const [self, setSelf] = useState(false);
   useEffect(() => {
     let alive = true;
-    crocodialApi.teamActivity({ from: daysAgo(0), to: daysAgo(0) }).then(d => alive && setVisible(d.connectedEmployees > 0)).catch(() => alive && setVisible(false));
+    crocodialApi.teamActivity({ from: daysAgo(0), to: daysAgo(0) }).then(d => alive && setTeam(d.connectedEmployees > 0)).catch(() => alive && setTeam(false));
+    crocodialApi.me().then(d => alive && setSelf(!!d.enabled)).catch(() => alive && setSelf(false));
     return () => { alive = false; };
   }, []);
-  return visible;
+  return { self, team };
 }
 
 const Card: React.FC<{ label: string; value: React.ReactNode; hint?: string }> = ({ label, value, hint }) => (
@@ -58,6 +66,9 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
     return [...m.entries()];
   }, [data]);
   const maxDay = Math.max(1, ...(data?.daily ?? []).map(d => d.made));
+  // people without a team: Department Heads sit above teams, so name them rather than calling them "No team"
+  const noTeam = (data?.people ?? []).filter(p => !p.teamId);
+  const noTeamLabel = noTeam.length && noTeam.every(p => p.role === 'DEPARTMENT_HEAD') ? (noTeam.length === 1 ? 'Department Head' : 'Department Heads') : 'No team';
 
   if (open) {
     return (
@@ -78,7 +89,7 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
           <p className="text-sm text-slate-500">{data ? data.label : 'Crocodial Pilot'} · Source: Crocodial (read-only){data?.oldestSyncAt ? ` · synced ${when(data.oldestSyncAt)}` : ''}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Period">
-          {([['today', 'Today', 0], ['7', 'Last 7 days', 6], ['30', 'Last 30 days', 29]] as [string, string, number][]).map(([id, label, back]) => (
+          {([['today', 'Today', 0], ['7', 'Last 7 days', 6], ['30', 'Last 30 days', 29], ['90', 'Last 90 days', 89]] as [string, string, number][]).map(([id, label, back]) => (
             <button key={id} type="button" aria-pressed={range[0] === id} onClick={() => { setRange([id, back]); setFrom(daysAgo(back)); setTo(daysAgo(0)); }}
               className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${range[0] === id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{label}</button>
           ))}
@@ -135,8 +146,8 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
               <tbody className="divide-y divide-slate-100">
                 {data.people.map(p => (
                   <tr key={p.profileId} data-testid="croc-team-row">
-                    <td className="px-2.5 py-2 font-semibold text-slate-800 whitespace-nowrap">{p.name}<span className="block text-[11px] font-normal text-slate-500">{p.salesSubRole ? ROLE[p.salesSubRole] ?? p.salesSubRole : 'Sales'}</span></td>
-                    <td className="px-2.5 py-2 whitespace-nowrap">{p.teamName ?? '—'}</td>
+                    <td className="px-2.5 py-2 font-semibold text-slate-800 whitespace-nowrap">{p.name}<span className="block text-[11px] font-normal text-slate-500">{p.salesSubRole ? ROLE[p.salesSubRole] ?? p.salesSubRole : HEAD_ROLE[p.role] ?? 'Sales'}</span></td>
+                    <td className="px-2.5 py-2 whitespace-nowrap">{p.teamName ?? (HEAD_ROLE[p.role] ? `${HEAD_ROLE[p.role]} (above teams)` : '—')}</td>
                     {p.available && p.calls && p.followups ? (
                       <>
                         <td className="px-2.5 py-2">{p.calls.made}</td>
@@ -158,7 +169,7 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
           {data.teams.length > 1 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs" aria-label="By team">
               <h2 className="text-sm font-bold text-slate-800 mb-1">By team</h2>
-              <ul className="space-y-0.5">{data.teams.map(tm => <li key={tm.teamId ?? 'none'}>{tm.teamName ?? 'No team'}: {tm.people} connected · {tm.made ?? 0} calls made · {tm.connected ?? 0} connected</li>)}</ul>
+              <ul className="space-y-0.5">{data.teams.map(tm => <li key={tm.teamId ?? 'none'}>{tm.teamName ?? noTeamLabel}: {tm.people} connected · {tm.made ?? 0} calls made · {tm.connected ?? 0} connected</li>)}</ul>
             </div>
           ) : null}
         </>
@@ -168,3 +179,4 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
 };
 
 export default CrocodialTeamPanel;
+

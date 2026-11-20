@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialTeamActivity } from '../../shared/contracts.js';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Crocodial integration's database functions, called with the signed-in user's own login (the database decides who may do what). */
@@ -32,10 +32,14 @@ export class CrocodialRepository {
     });
   }
   mappingApprove(id: string) { return this.rpc<CrocodialMapping>('croc_mapping_approve', { p_id: id }); }
+  mappingCountFrom(id: string, from: string | null) { return this.rpc<CrocodialMapping>('croc_mapping_count_from', { p_id: id, p_from: from }); }
   mappingRevoke(id: string, reason: string | null) { return this.rpc<CrocodialMapping>('croc_mapping_revoke', { p_id: id, p_reason: reason }); }
   myStatus() { return this.rpc<CrocodialMyStatus>('croc_my_status'); }
   activity(profileId: string | null, from: string | null, to: string | null) {
     return this.rpc<CrocodialActivity>('croc_activity', { p_profile: profileId, p_from: from, p_to: to });
+  }
+  leads(profileId: string | null, search: string | null, filter: string, page: number, pageSize: number) {
+    return this.rpc<CrocodialLeads>('croc_leads', { p_profile: profileId, p_search: search, p_filter: filter, p_page: page, p_page_size: pageSize });
   }
   teamActivity(from: string | null, to: string | null, departmentId: string | null, teamId: string | null) {
     return this.rpc<CrocodialTeamActivity>('croc_team_activity', { p_from: from, p_to: to, p_department: departmentId, p_team: teamId });

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, PlugZap, RefreshCw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi, usersApi } from '../../lib/api/endpoints';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
@@ -189,6 +189,33 @@ const SyncPanel: React.FC<{ status: CrocodialSyncStatus | undefined; busy: boole
   );
 };
 
+/**
+ * When an approved mapping starts counting activity. Approval counts from that moment; the Super Admin may move the start back to the first
+ * activity stored for that Crocodial user, or to a chosen day, so earlier calls, follow-ups and remarks count for the person. The database
+ * refuses a date that overlaps another mapping of the same Crocodial user or person, and audits every change.
+ */
+const CountFrom: React.FC<{ mapping: CrocodialMapping; disabled: boolean; onSet: (from: string | null) => void }> = ({ mapping, disabled, onSet }) => {
+  const [day, setDay] = useState('');
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600" data-testid="croc-count-from">
+      <span>Counting activity from <b>{mapping.effectiveFrom ? new Date(mapping.effectiveFrom).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—'}</b>.</span>
+      <button type="button" className="font-semibold text-indigo-700 hover:underline disabled:opacity-50" disabled={disabled}
+        onClick={() => { if (window.confirm(`Count all of Crocodial user “${mapping.externalName}”'s stored activity (from their first record) for ${mapping.profileName}? Only do this if nobody else used this Crocodial login.`)) onSet(null); }}>
+        Count all past activity
+      </button>
+      <span aria-hidden>·</span>
+      <label className="flex items-center gap-1">or from
+        <input type="date" className="border border-slate-200 rounded-md px-1.5 py-0.5 text-xs" value={day} max={today} onChange={e => setDay(e.target.value)} aria-label={`Count ${mapping.profileName}'s activity from`} />
+      </label>
+      <button type="button" className="font-semibold text-indigo-700 hover:underline disabled:opacity-50" disabled={disabled || !day}
+        onClick={() => { if (window.confirm(`Count ${mapping.profileName}'s Crocodial activity from ${day}?`)) onSet(day); }}>
+        Use this date
+      </button>
+    </span>
+  );
+};
+
 export const CrocodialAdminPage: React.FC = () => {
   const [data, setData] = useState<CrocodialAdminOverview | null>(null);
   const [error, setError] = useState('');
@@ -309,6 +336,11 @@ export const CrocodialAdminPage: React.FC = () => {
                       <b>{m.profileName}</b> ↔ Crocodial “{m.externalName || '—'}” (id {m.externalEmployeeId}) · {m.departmentName} Sales
                       {m.roleSnapshot.salesSubRole ? ` · ${m.roleSnapshot.salesSubRole}` : ''}
                       <span className="block text-xs text-slate-500">{m.status === 'APPROVED' ? `Approved by ${m.approvedByName ?? '—'} on ${when(m.approvedAt)} · ${m.live ? 'in effect' : 'not in effect (connection or department off)'}` : 'Waiting for approval'}</span>
+                      {m.status === 'APPROVED' ? (
+                        <CountFrom mapping={m} disabled={busy !== null}
+                          onSet={from => void run(`f-${m.id}`, () => crocodialApi.countMappingFrom(m.id, from),
+                            from ? `${m.profileName}'s activity now counts from ${from}.` : `${m.profileName}'s past activity now counts.`)} />
+                      ) : null}
                     </span>
                     <span className="flex gap-2">
                       {m.status === 'PENDING' ? <button type="button" className={btn.green} disabled={busy !== null}
@@ -339,7 +371,7 @@ export const CrocodialAdminPage: React.FC = () => {
         <h2 className="text-sm font-bold text-slate-900">History</h2>
         {!data.audit.length ? <p className="text-xs text-slate-500">No changes yet.</p> : (
           <ul className="text-xs divide-y divide-slate-100" data-testid="croc-audit">
-            {data.audit.map((a, i) => <li key={i} className="py-1.5"><span className="text-slate-500">{when(a.at)}</span> · {a.action.replace(/^CROCODIAL_/, '').replace(/_/g, ' ').toLowerCase()} · {a.actorName ?? 'system'}</li>)}
+            {data.audit.map((a, i) => <li key={i} className="py-1.5"><span className="text-slate-500">{when(a.at)}</span> · {a.action === 'CROCODIAL_MAPPING_COUNT_FROM_SET' ? 'activity start date changed' : a.action.replace(/^CROCODIAL_/, '').replace(/_/g, ' ').toLowerCase()} · {a.actorName ?? 'system'}</li>)}
           </ul>
         )}
       </Card>
