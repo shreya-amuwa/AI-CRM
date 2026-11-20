@@ -295,9 +295,9 @@ turned notifications on (the same devices and the same "Turn on notifications" a
   order each time so in a big group the same people are never always left out; 6 at a time, 10 seconds each. A failed push is not retried; the
   message, the unread count and the bell are unaffected.
 
-## Delete Inbox, @mentions and reactions (migration 20270116000100)
+## Delete Inbox, @mentions and reactions (migration 20270116000300)
 
-Run `supabase/migrations/20270116000100_chat_inbox_mentions_reactions.sql` in the Supabase SQL editor. It is additive and safe to run twice.
+Run `supabase/migrations/20270116000300_chat_inbox_mentions_reactions.sql` in the Supabase SQL editor. It is additive and safe to run twice.
 All three features are for **internal chats** (direct messages and groups). Client conversations are not touched.
 
 ### Delete Inbox (the ⋮ menu next to **New** in Chat → Messages)

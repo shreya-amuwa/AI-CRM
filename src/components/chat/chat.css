@@ -235,7 +235,7 @@ button.ch-person:hover { background: var(--ch-surface); }
 .ch-note { margin: 0; font-size: 13px; color: var(--ch-muted); }
 .ch-note.warn { color: #7a4b00; background: #fff7e0; padding: 8px 10px; border-radius: 8px; }
 
-/* ---- reactions, @mentions, Delete Inbox (migration 20270116000100) ---- */
+/* ---- reactions, @mentions, Delete Inbox (migration 20270116000300) ---- */
 .ch-react-wrap { position: relative; display: inline-flex; }
 .ch-react-btn { opacity: 0; border: 0; background: rgba(255, 255, 255, 0.85); color: var(--ch-muted); width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; margin-bottom: 4px; }
 .ch-row:hover .ch-react-btn, .ch-react-btn:focus-visible, .ch-react-btn[aria-expanded='true'] { opacity: 1; }

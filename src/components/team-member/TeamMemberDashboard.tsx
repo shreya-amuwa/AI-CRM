@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { TeamMemberLayout, TeamMemberNav } from './TeamMemberLayout';
 import { MemberSections, useMemberWorkspace, type MemberSection } from './MemberSections';
 import { PipelineWorkspace } from './pipeline/PipelineWorkspace';
@@ -23,6 +24,7 @@ export const TeamMemberDashboard: React.FC<TeamMemberDashboardProps> = ({ curren
     setActiveNavState(nav);
     setNavNonce(n => n + 1);
   };
+  useOpenWorkUpdateRequest(React.useCallback(() => setActiveNav('work-tasks'), []));
   const { counts: pipelineCounts } = usePipelineCounts();
   const workspace = useMemberWorkspace(currentUserId);
 

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Chat: Delete Inbox, @mentions in groups and message reactions (migration 20270116000100). Reuses the staff of rls_test.sql / chat_test.sql
+-- Chat: Delete Inbox, @mentions in groups and message reactions (migration 20270116000300). Reuses the staff of rls_test.sql / chat_test.sql
 -- (sup_plain, sup_b, sup_th, tm_c, dh_wab, sa). Runs LAST on the shared database: the Super Admin's purge deletes every internal chat message.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -7,8 +7,8 @@
 \echo '--- 134. Chat: Delete Inbox, @mentions, reactions'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270116000100_chat_inbox_mentions_reactions.sql
-\i supabase/migrations/20270116000100_chat_inbox_mentions_reactions.sql
+\i supabase/migrations/20270116000300_chat_inbox_mentions_reactions.sql
+\i supabase/migrations/20270116000300_chat_inbox_mentions_reactions.sql
 update public.chat_settings set internal_mode = 'STANDARD';
 create temp table cx (k text primary key, v text);
 grant all on cx to authenticated;

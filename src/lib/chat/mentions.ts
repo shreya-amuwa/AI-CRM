@@ -1,5 +1,5 @@
 /**
- * @mentions in group chats (migration 20270116000100): the composer's "@" suggestions and the highlighting of tagged names. Pure functions, so the
+ * @mentions in group chats (migration 20270116000300): the composer's "@" suggestions and the highlighting of tagged names. Pure functions, so the
  * rules are tested without a browser. Who may be tagged is decided by the server (current members of that group only); this only helps typing.
  */
 export interface MentionPerson { id: string; name: string }

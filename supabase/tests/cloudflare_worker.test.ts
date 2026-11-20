@@ -42,7 +42,7 @@ function check(cond: unknown, label: string, extra?: unknown) {
 // ---- the caller's address and place: only Cloudflare's own values ------------------------------------------------------------
 // worker/index.ts imports the whole API; give it the configuration it reads when loaded.
 Object.assign(process.env, { SUPABASE_URL: 'https://project.supabase.example', SUPABASE_ANON_KEY: 'anon', API_ACCESS_LOG: 'off' });
-const { withPlatformHeaders, handleRequest, runScheduledDispatch, default: worker } = await import('../../worker/index.js');
+const { withPlatformHeaders, handleRequest, runScheduledDispatch, crocodialSyncDue, default: worker } = await import('../../worker/index.js');
 {
   const forged = new Request('https://crm.example/api/v1/me', {
     headers: {
@@ -140,11 +140,12 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch, default: worke
   const env = { ASSETS: { fetch: async () => new Response('') } };
   const logs: string[] = [];
   const realLog = console.log;
-  const run = async (cron: string) => {
+  // the 5-minute ticks are at a fixed time so the Crocodial sync (every 15 minutes by default) runs on the one checked here: 10:15 UTC
+  const run = async (cron: string, scheduledTime = Date.UTC(2026, 10, 19, 10, 15)) => {
     logs.length = 0;
     console.log = (...a: unknown[]) => { logs.push(a.join(' ')); };
     let error = '';
-    try { await worker.scheduled({ cron }, env); } catch (e) { error = (e as Error).message; } finally { console.log = realLog; }
+    try { await worker.scheduled({ cron, scheduledTime }, env); } catch (e) { error = (e as Error).message; } finally { console.log = realLog; }
     return { logs: logs.join('\n'), error };
   };
   delete process.env.SCHEDULED_ENABLED;
@@ -157,6 +158,10 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch, default: worke
   r = await run('*/5 * * * *');
   check(!r.error && /\[cron\] attendance reminders: HTTP 200/.test(r.logs) && !/automations dispatched/.test(r.logs),
     'the 5-minute cron calls the reminders endpoint (with the secret), not the daily dispatch', r);
+  check(/\[cron\] crocodial sync: HTTP 200/.test(r.logs), 'the 5-minute cron also continues the Crocodial sync on its 15-minute ticks (hh:15 here)', r);
+  r = await run('*/5 * * * *', Date.UTC(2026, 10, 19, 10, 20));
+  check(!r.error && /\[cron\] attendance reminders: HTTP 200/.test(r.logs) && !/crocodial sync/.test(r.logs),
+    'on the other 5-minute ticks (hh:20 here) only the attendance reminders run, not the Crocodial sync', r);
   delete process.env.CRON_SECRET;
   r = await run('30 3 * * *');
   check(/set the CRON_SECRET/.test(r.error) && !/reminders/.test(r.logs), 'the daily crons still call the dispatch', r);
@@ -210,6 +215,19 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch, default: worke
   for (let i = 0; i < 3; i++) await sendEmail(settings, { email: `d${i}@example.com`, name: 'D' }, mail);
   check(hits[2] - hits[0] < 150, 'RESEND_MAX_PER_SECOND raises the pace for a plan that allows more', hits.map(h => h - hits[0]));
   mock.close();
+}
+
+// ---- the Crocodial sync rides on the 5-minute cron only every CROCODIAL_SYNC_EVERY_MINUTES (default 15) --------------------------------------
+{
+  const at = (hh: number, mm: number, ss = 0) => new Date(Date.UTC(2026, 10, 19, hh, mm, ss));
+  const ticks = (env: Record<string, string>) => Array.from({ length: 12 }, (_, i) => crocodialSyncDue(at(10, i * 5), env as NodeJS.ProcessEnv)).filter(Boolean).length;
+  check(ticks({}) === 4 && crocodialSyncDue(at(10, 0), {} as NodeJS.ProcessEnv) && crocodialSyncDue(at(10, 45), {} as NodeJS.ProcessEnv)
+        && !crocodialSyncDue(at(10, 5), {} as NodeJS.ProcessEnv), 'crocodial sync: by default 4 of the 12 five-minute ticks an hour (:00, :15, :30, :45)');
+  check(crocodialSyncDue(at(10, 15, 40), {} as NodeJS.ProcessEnv) && crocodialSyncDue(at(10, 17), {} as NodeJS.ProcessEnv), 'crocodial sync: a tick that starts a little late is still its tick');
+  check(ticks({ CROCODIAL_SYNC_EVERY_MINUTES: '5' }) === 12 && ticks({ CROCODIAL_SYNC_EVERY_MINUTES: '30' }) === 2 && ticks({ CROCODIAL_SYNC_EVERY_MINUTES: '60' }) === 1,
+    'crocodial sync: the interval is a setting (5, 30, 60)');
+  check(ticks({ CROCODIAL_SYNC_EVERY_MINUTES: '0' }) === 0 && ticks({ CROCODIAL_SYNC_EVERY_MINUTES: 'off' }) === 0, 'crocodial sync: 0 / off never runs it from the cron');
+  check(ticks({ CROCODIAL_SYNC_EVERY_MINUTES: '7' }) === 4 && ticks({ CROCODIAL_SYNC_EVERY_MINUTES: 'soon' }) === 4, 'crocodial sync: an unusable value falls back to every 15 minutes');
 }
 
 console.log(`\n${passed} CLOUDFLARE WORKER CHECKS PASSED`);

@@ -6,6 +6,7 @@ import { getSupabase } from '../services/supabaseClient';
 import { useAuth } from './AuthContext';
 import { useDepartments } from './DepartmentContext';
 import { notifyMeetingsChanged } from '../components/meetings/meetingEvents';
+import { notifyWorkUpdatesChanged } from '../lib/workUpdates';
 
 /**
  * Notifications are rows in Supabase, one per recipient. The server returns
@@ -140,9 +141,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         'postgres_changes',
         // Any change (new, read on another device, deleted) keeps every device in sync.
         { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${profile.id}` },
-        (payload: { new?: { entity_type?: string | null } | null }) => {
+        (payload: { new?: { entity_type?: string | null; type?: string | null } | null }) => {
           // a meeting notification: an open Meetings page reloads at once (a new request shows without a refresh)
           if (payload?.new?.entity_type === 'meeting') notifyMeetingsChanged();
+          // a work update notification (requested, reminder, submitted): open Work Updates / Update Requests reload at once
+          if (payload?.new?.entity_type === 'work_task' && String(payload.new.type ?? '').startsWith('WORK_UPDATE')) notifyWorkUpdatesChanged();
           void refresh();
         }
       )

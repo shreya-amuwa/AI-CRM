@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bell, Briefcase, ClipboardList, LayoutDashboard, LineChart, Navigation, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, ClipboardList, LayoutDashboard, LineChart, Navigation, PhoneCall, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { ActiveFieldVisits } from '../field-visit/ActiveFieldVisits';
@@ -17,11 +17,13 @@ import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { TeamCustomers } from './TeamCustomers';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
+import { CrocodialTeamPanel, useCrocodialTeamVisible } from '../crocodial/CrocodialTeamPanel';
 
-export type TeamLeadNav = 'overview' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+export type TeamLeadNav = 'overview' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications' | 'crocodial';
 
 const MY_SECTION: Record<'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments', PipelineSection> = {
   'my-leads': 'leads', 'my-potential': 'potential', 'my-onboarding': 'onboarding', 'my-part-payments': 'part-payments'
@@ -48,7 +50,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
   useOpenChatRequest(React.useCallback(() => setNav('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
   const reportsBadge = useReportsBadge();
+  const crocodialVisible = useCrocodialTeamVisible();
   useOpenReportsRequest(React.useCallback(() => setNav('work-reports'), []));
+  useOpenWorkUpdateRequest(React.useCallback(() => setNav('assigned-tasks'), []));
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -65,6 +69,8 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
           { id: 'customers', label: 'Team Customers', icon: Users },
           { id: 'assigned-tasks', label: 'Assigned Tasks', icon: ClipboardList },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
+          // Crocodial calling activity of the connected people this Team Lead leads (only when there are any)
+          ...(crocodialVisible ? [{ id: 'crocodial', label: 'Crocodial Activity', icon: PhoneCall }] : []),
           { ...REPORTS_NAV, badge: reportsBadge },
           { id: 'field-visits', label: 'Field Visits', icon: Navigation }
         ]
@@ -79,7 +85,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         ]
       }
     ],
-    [chatUnread, reportsBadge]
+    [chatUnread, reportsBadge, crocodialVisible]
   );
 
   return (
@@ -127,6 +133,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       {nav === 'raise-issue' && <IssuesRoute />}
       {nav === 'work-reports' && <ReportsRoute />}
       {nav === 'notifications' && <NotificationsPage />}
+      {nav === 'crocodial' && <CrocodialTeamPanel />}
     </DashboardShell>
   );
 };

@@ -76,7 +76,7 @@ export class ChatRepository {
   }
   async attachmentsRemoved(ids: string[]) { await this.rpc<null>('chat_attachments_removed', { p_ids: ids }); }
 
-  // ---- @mentions, reactions, Delete Inbox (migration 20270116000100; the database decides who may)
+  // ---- @mentions, reactions, Delete Inbox (migration 20270116000300; the database decides who may)
   mention(messageId: string, profileIds: string[]) {
     return this.rpc<{ messageId: string; mentions: ChatTaggedPerson[] }>('chat_message_mention', { p_message: messageId, p_profiles: profileIds });
   }

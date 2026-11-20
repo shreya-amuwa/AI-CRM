@@ -26,6 +26,7 @@ import {
   employeeCasesController as employeeCases,
   meetingsController as meetings,
   leadWhatsAppController as leadWhatsApp,
+  crocodialController as crocodial,
   workReportsController as workReports,
   aiDesignStudioController as ads,
   hrReviewsController as hrReviews,
@@ -150,7 +151,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/chat/conversations/:id/keys', handler: chat.memberKeys },
   { method: 'DELETE', path: '/chat/messages/:id/for-me', handler: chat.deleteForMe },
   { method: 'DELETE', path: '/chat/messages/:id/for-everyone', handler: chat.deleteForEveryone },
-  // reactions (one per person and message) and Delete Inbox (mine; the Super Admin: every internal chat) - migration 20270116000100
+  // reactions (one per person and message) and Delete Inbox (mine; the Super Admin: every internal chat) - migration 20270116000300
   { method: 'POST', path: '/chat/messages/:id/reaction', handler: chat.react },
   { method: 'GET', path: '/chat/conversations/:id/reactions', handler: chat.reactions },
   { method: 'POST', path: '/chat/inbox/clear', handler: chat.inboxClear, options: S },
@@ -447,6 +448,21 @@ export const routes: RouteDef[] = [
   // Meetings: one calendar for appointments, demos, interviews, meetings and CEO meetings, synced to each person's own Google Calendar
   // Lead welcome WhatsApp ("our services", once when a lead first reaches a sales person): settings for the Super Admin / Sales Department Head,
   // a lead's message and "Send again" for anyone who can open the lead (the database checks both)
+  // Crocodial integration (read-only connector; configuration by the Super Admin, enforced in the database)
+  { method: 'GET', path: '/crocodial/admin', handler: crocodial.overview },
+  { method: 'POST', path: '/crocodial/rollout', handler: crocodial.rolloutSet, options: S },
+  { method: 'POST', path: '/crocodial/connections', handler: crocodial.connectionSave, options: S },
+  { method: 'POST', path: '/crocodial/connections/:id/test', handler: crocodial.testConnection, options: S },
+  { method: 'POST', path: '/crocodial/department-links', handler: crocodial.departmentLinkSave, options: S },
+  { method: 'POST', path: '/crocodial/mappings/check', handler: crocodial.mappingCheck },
+  { method: 'POST', path: '/crocodial/mappings', handler: crocodial.mappingCreate, options: S },
+  { method: 'POST', path: '/crocodial/mappings/:id/approve', handler: crocodial.mappingApprove, options: S },
+  { method: 'POST', path: '/crocodial/mappings/:id/revoke', handler: crocodial.mappingRevoke, options: S },
+  { method: 'GET', path: '/crocodial/me', handler: crocodial.myStatus },
+  { method: 'GET', path: '/crocodial/sync', handler: crocodial.syncStatus },
+  { method: 'GET', path: '/crocodial/activity', handler: crocodial.activity },
+  { method: 'GET', path: '/crocodial/team-activity', handler: crocodial.teamActivity },
+  { method: 'POST', path: '/crocodial/connections/:id/sync', handler: crocodial.syncNow, options: S },
   { method: 'GET', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.settings },
   { method: 'POST', path: '/sales/lead-whatsapp/settings', handler: leadWhatsApp.setSettings, options: S },
   { method: 'GET', path: '/leads/:id/whatsapp', handler: leadWhatsApp.history },
