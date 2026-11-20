@@ -122,9 +122,9 @@ select test.nohdr();
 select test.login('sa');
 -- M Pillar (existing head), Amuwa Design Studio, D Talk (Sales + its Support, Wabatalk), Digitree (Sales head given Support too)
 select department_access_apply(test.id('gb_h'), jsonb_build_array(test.pair('mpillar', 'SALES'), test.pair('mpillar', 'SUPPORT')));
--- Amuwa Design Studio has no Sales or Support function to give (migration 20270112000200), for the retired department as well
+-- Amuwa Design Studio has no Sales or Support function to give (migration 20270112000200), for both departments
 select test.must_fail($$select department_access_apply(test.id('ds_head'), jsonb_build_array(test.pair('designstudio', 'SALES'), test.pair('designstudio', 'SUPPORT')))$$,
-  'the retired Amuwa Design Studio cannot be given Sales or Support', 'no Sales or Support function');
+  'Amuwa Design Studio cannot be given Sales or Support', 'no Sales or Support function');
 select department_access_apply(test.id('ac_dt'), jsonb_build_array(test.pair('dtalk', 'SALES'), test.pair('wabatalk', 'SUPPORT')));
 select department_access_apply(test.id('ac_dg'), jsonb_build_array(test.pair('digitree', 'SALES'), test.pair('digitree', 'SUPPORT')));
 select test.check((select count(*) = 1 from profiles where email = 'ds.head@amuwa.com' ) and (select count(*) = 1 from profiles where email = 'ac.dt@amuwa.com') and (select count(*) = 1 from profiles where email = 'ac.dg@amuwa.com'), 'one account each');

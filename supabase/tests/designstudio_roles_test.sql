@@ -11,6 +11,11 @@ select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270112000100_designstudio_department_roles.sql
 \i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
 \i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
+-- the rename migration labels the old department "(Retired)" again; the restore migration undoes that, and running it twice changes nothing more
+\i supabase/migrations/20270118000100_amuwa_design_studio_restore.sql
+\i supabase/migrations/20270118000100_amuwa_design_studio_restore.sql
+select test.check((select name from departments where slug = 'designstudio') = 'Amuwa Design Studio' and (select name from departments where slug = 'ai-design-studio') = 'AI Design Studio',
+  'the restore migration gives each department its name back, and is safe to run twice');
 delete from auth.users where email like 'dsr.%@example.com';
 delete from test.users where name like 'dsr\_%';
 create or replace function test.dsr_dep(p text) returns uuid language sql stable as $$ select id from public.departments where slug = p $$;
@@ -103,15 +108,18 @@ select test.must_fail($$select assert_can_create_user('TEAM_MEMBER', null, test.
 reset role;
 select set_config('request.jwt.claims', '', false);
 
-\echo '   one Amuwa Design Studio (migration 20270112000200): the former AI Design Studio, the old department retired'
+\echo '   Amuwa Design Studio is an active department again (migration 20270118000100); AI Design Studio keeps its own name'
 reset role;
-select test.check((select name from departments where slug = 'ai-design-studio') = 'Amuwa Design Studio'
-                  and (select name from departments where slug = 'designstudio') = 'Amuwa Design Studio (Retired)'
-                  and (select count(*) = 1 from departments where lower(name) = 'amuwa design studio'),
-  'ONE department is named Amuwa Design Studio (slug ai-design-studio); the old one is Amuwa Design Studio (Retired)');
+select test.check((select name from departments where slug = 'designstudio') = 'Amuwa Design Studio'
+                  and (select name from departments where slug = 'ai-design-studio') = 'AI Design Studio'
+                  and (select count(*) = 1 from departments where lower(name) = 'amuwa design studio')
+                  and (select count(*) = 1 from departments where lower(name) = 'ai design studio')
+                  and not exists (select 1 from departments where name ilike '%retired%'),
+  'Amuwa Design Studio (slug designstudio) and AI Design Studio (slug ai-design-studio) are two separate departments, neither labelled Retired');
 select test.check(not (select is_locked from departments where slug = 'designstudio') and exists (select 1 from profiles where email = 'dsr.tl@example.com' and status = 'ACTIVE'),
-  'the retired department is not locked and its people are untouched');
-select test.check((select count(*) = 1 and bool_and(division = 'GENERAL') from teams where department_id = test.dsr_dep('ai-design-studio')), 'Amuwa Design Studio has its one General team and nothing Sales or Support');
+  'Amuwa Design Studio is not locked and its people are untouched');
+select test.check((select count(*) = 1 and bool_and(division = 'GENERAL') from teams where department_id = test.dsr_dep('ai-design-studio')), 'AI Design Studio has its one General team and nothing Sales or Support');
+select test.check(exists (select 1 from teams where department_id = test.dsr_dep('designstudio') and division = 'GENERAL'), 'Amuwa Design Studio has a General team for new people');
 set role authenticated;
 select test.login('sa');
 select test.must_fail($$select assert_can_create_user('DEPARTMENT_HEAD', test.dsr_dep('ai-design-studio'), null, 'SALES')$$, 'Amuwa Design Studio: a Sales Department Head is refused', 'no Sales or Support Department Head');
@@ -137,7 +145,12 @@ alter table department_access disable trigger department_access_operations_head;
 insert into department_access (profile_id, department_id, division) values (test.id('dsr_ops'), test.dsr_dep('designstudio'), 'SALES') on conflict do nothing;
 alter table department_access enable trigger department_access_operations_head;
 \i supabase/migrations/20270112000200_amuwa_design_studio_rename.sql
-select test.check(not exists (select 1 from department_access where profile_id = test.id('dsr_ops')), 'the migration withdraws an existing Sales grant for the retired department');
+-- the rename migration labels the old department "(Retired)" again; the restore migration undoes that, and running it twice changes nothing more
+\i supabase/migrations/20270118000100_amuwa_design_studio_restore.sql
+\i supabase/migrations/20270118000100_amuwa_design_studio_restore.sql
+select test.check((select name from departments where slug = 'designstudio') = 'Amuwa Design Studio' and (select name from departments where slug = 'ai-design-studio') = 'AI Design Studio',
+  'the restore migration gives each department its name back, and is safe to run twice');
+select test.check(not exists (select 1 from department_access where profile_id = test.id('dsr_ops')), 'the migration withdraws an existing Sales grant for Amuwa Design Studio');
 select test.check((select count(*) = 1 from audit_logs where action = 'DEPARTMENT_ACCESS_REVOKED' and entity_id = test.id('dsr_ops') and department_id = test.dsr_dep('designstudio')), '... and audits it');
 select test.check((select count(*) = 1 from profiles where email = 'dsr.ops@example.com'), '... without touching the person');
 select test.check(private.department_access_problem(test.dsr_dep('designstudio'), 'SALES') ~ 'no Sales or Support function'

@@ -103,7 +103,7 @@ export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivisi
 
 /**
  * The Department Head, Team Leads and Team Members of AI Design Studio (slug ai-design-studio) open the AI Design Studio dashboard. It is a
- * different department from AI Studio and from Amuwa Design Studio. The Super Admin has no workspace in it.
+ * different department from AI Studio and from Amuwa Design Studio (slug designstudio). The Super Admin has no workspace in it.
  */
 export function isAiDesignStudio(p: Pick<Profile, 'role' | 'department'>): boolean {
   return p.department?.slug === AI_DESIGN_STUDIO_SLUG && (p.role === 'DEPARTMENT_HEAD' || p.role === 'TEAM_HEAD' || p.role === 'TEAM_MEMBER');
@@ -256,7 +256,7 @@ export function defaultDashboardLabel(
   if (departmentSlug === 'hr' && role === 'DEPARTMENT_HEAD') return `HR Department Head Dashboard${dept}`;
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   // AI Design Studio staff open the AI Design Studio dashboard (its own sidebar, the same for its Team Lead and Team Member)
-  if (departmentSlug === AI_DESIGN_STUDIO_SLUG && role !== 'SUPER_ADMIN') return `Amuwa Design Studio ${ROLE_LABELS[role]} Dashboard`;
+  if (departmentSlug === AI_DESIGN_STUDIO_SLUG && role !== 'SUPER_ADMIN') return `AI Design Studio ${ROLE_LABELS[role]} Dashboard`;
   switch (role) {
     case 'SUPER_ADMIN':
       return 'Super Admin Department Hub';

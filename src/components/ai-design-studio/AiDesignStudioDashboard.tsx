@@ -81,12 +81,12 @@ export const AiDesignStudioDashboard: React.FC = () => {
     { label: 'Account', items: [{ id: 'settings', label: 'Settings', icon: Settings }] }
   ], [head, chatUnread, unreadCount]);
 
-  const displayName = profile?.fullName || user?.name || 'Amuwa Design Studio';
-  const roleTitle = ctx ? ROLE_TITLE[ctx.role] : 'Amuwa Design Studio';
+  const displayName = profile?.fullName || user?.name || 'AI Design Studio';
+  const roleTitle = ctx ? ROLE_TITLE[ctx.role] : 'AI Design Studio';
 
   let body: React.ReactNode;
   if (session.loading && !session.data) body = <LoadingLine />;
-  else if (!ctx) body = <ErrorLine message={session.error || 'Your Amuwa Design Studio workspace could not be opened.'} onRetry={session.reload} />;
+  else if (!ctx) body = <ErrorLine message={session.error || 'Your AI Design Studio workspace could not be opened.'} onRetry={session.reload} />;
   else {
     body = (
       <AdsSessionProvider value={{ ctx, people: people.data ?? [], reloadPeople: people.reload }}>
@@ -106,9 +106,9 @@ export const AiDesignStudioDashboard: React.FC = () => {
 
   return (
     <DashboardShell
-      title="Amuwa Design Studio"
+      title="AI Design Studio"
       subtitle={roleTitle}
-      ariaLabel="Amuwa Design Studio navigation"
+      ariaLabel="AI Design Studio navigation"
       groups={groups}
       active={page}
       onSelect={id => go(id as AdsPage)}
@@ -117,7 +117,7 @@ export const AiDesignStudioDashboard: React.FC = () => {
       meetingsLabel="Meeting Request"
       topLeft={
         <div className="hidden lg:block text-sm text-slate-500" title={profile?.email}>
-          {profile?.department?.name || 'Amuwa Design Studio'}
+          {profile?.department?.name || 'AI Design Studio'}
           {ctx?.role === 'TEAM_MEMBER' ? ` · ${ctx.leadName ? `Team Lead: ${ctx.leadName}` : 'No Team Lead yet'}` : ''}
         </div>
       }

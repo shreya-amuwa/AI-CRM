@@ -1,14 +1,24 @@
-# Amuwa Design Studio: one department, three roles
+# Amuwa Design Studio and AI Design Studio: two active departments, three roles each
 
-There is **one** Amuwa Design Studio: the department built as "AI Design Studio" (slug `ai-design-studio`, see
-[AI_DESIGN_STUDIO.md](AI_DESIGN_STUDIO.md)), renamed by migration `20270112000200_amuwa_design_studio_rename.sql`. It keeps all of its
-features: the Department Head, Team Lead and Team Member dashboards (clients, client notices, assignments, daily reports, issues), the
-reporting hierarchy **Department Head -> Team Lead -> Team Member**, and its one General team. It has nothing Sales or Support: no Sales /
-Support team, role, dashboard, side or Access Control function.
+| Department | Slug | Dashboards | Super Admin workspace |
+| --- | --- | --- | --- |
+| **Amuwa Design Studio** | `designstudio` | the existing Department Head, Team Lead and Team Member dashboards of the CRM | yes (Departments page) |
+| **AI Design Studio** | `ai-design-studio` | its own dashboard: clients, notices, assignments, daily reports, issues (see [AI_DESIGN_STUDIO.md](AI_DESIGN_STUDIO.md)) | no |
 
-The old department that had this name (slug `designstudio`) is **retired**: it is now called "Amuwa Design Studio (Retired)".
-Nothing in it is moved, locked or deleted. Its people keep signing in to their existing dashboards, and the services it delivers keep it as
-their delivery department until the Super Admin changes that in the service settings. The add forms no longer offer it for new people.
+Both are normal, **active** departments with the hierarchy **Department Head -> Team Lead -> Team Member**, and neither has anything Sales or
+Support for new people: no Sales / Support team, role, side or Access Control function. They are separate from AI Studio (slug `ai-studio`),
+Sales, Support, HR and Accounts. Nobody is moved between departments.
+
+## History: why "(Retired)" was removed
+
+Migration `20270112000200_amuwa_design_studio_rename.sql` renamed the department that holds the Design Studio people (`designstudio`) to
+"Amuwa Design Studio (Retired)" and the Add Team Member form refused to add anyone to it. **Only the name and that form check said so**: the
+database never locked or deactivated the department (`is_locked` untouched), and `POST /users` accepted new people there. Migration
+`20270118000100_amuwa_design_studio_restore.sql` gives `ai-design-studio` its own name "AI Design Studio" (department names are unique) and
+restores "Amuwa Design Studio" for `designstudio`; the form check, its warning and the helper behind it are removed. No profile, team,
+customer, service, assignment, report, attendance record or audit entry is moved, changed or deleted, and no password is reset. The migration
+also adds a General team to Amuwa Design Studio if it has none (new people are placed in it; the Sales / Support teams the existing people
+are in stay).
 
 ## What the forms offer
 
@@ -17,17 +27,16 @@ their delivery department until the Super Admin changes that in the service sett
 | Department chosen | Role | Sub-department / Team | Department Head side | Designation |
 | --- | --- | --- | --- | --- |
 | Amuwa Design Studio | Department Head, Team Lead, Team Member | its General team | none | Department Head, Team Lead, Team Member |
-| Amuwa Design Studio (Retired) | (shown, but Create is disabled: "this department is retired") | | | |
+| AI Design Studio | Department Head, Team Lead, Team Member | its General team | none | Department Head, Team Lead, Team Member |
 | Any other department | unchanged | unchanged | unchanged | unchanged |
 
 * Choosing a department refreshes the Role and Team lists at once. A choice the new department does not have (a Support role, a Sales or
   Support team, a Sales role such as Telecaller or Business Associate) is cleared, never carried over.
-* **HR -> New employee request**: Amuwa Design Studio offers Department Head, Team Lead, Team Member and the General side only; the retired
-  department is not listed.
+* **HR -> New employee request**: Amuwa Design Studio and AI Design Studio offer Department Head, Team Lead, Team Member and the General side only.
 
 ## What the database enforces
 
-Migrations `20270112000100_designstudio_department_roles.sql` and `20270112000200_amuwa_design_studio_rename.sql`, for both departments:
+Migrations `20270112000100_designstudio_department_roles.sql`, `20270112000200_amuwa_design_studio_rename.sql` and `20270118000100_amuwa_design_studio_restore.sql`, for both departments:
 
 * `private.designstudio_role_problem(...)`: nobody is placed in a Sales or Support team, given a Sales role, or made a Sales / Support
   Department Head. It is used by `public.assert_can_create_user` (`POST /users` answers `VALIDATION_ERROR: Amuwa Design Studio has no Sales or

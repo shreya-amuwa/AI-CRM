@@ -232,7 +232,7 @@ export const AdsClientAdd: React.FC = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-[22px] font-extrabold text-slate-900">Client Add</h1>
-        <p className="text-[13px] text-slate-500 mt-0.5">Add a client of Amuwa Design Studio. The client is saved to the department&apos;s own client records and kept with your name.</p>
+        <p className="text-[13px] text-slate-500 mt-0.5">Add a client of AI Design Studio. The client is saved to the department&apos;s own client records and kept with your name.</p>
       </div>
 
       <Card label="Add a client">
