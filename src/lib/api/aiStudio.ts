@@ -1,5 +1,5 @@
 import type {
-  AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
 } from '../../../shared/contracts';
 import { api } from './client';
 
@@ -25,8 +25,9 @@ export const aiStudioApi = {
   assignLead: (memberIds: string[], leadId: string) => api.post<{ leadId: string; assigned: number; alreadyAssigned: number }>('/ai-studio/people/assign-lead', { memberIds, leadId }),
   setLead: (memberId: string, leadId: string) => api.post<{ memberId: string; leadId: string }>(`/ai-studio/people/${memberId}/lead`, { leadId }),
   projects: () => api.get<AiStudioProject[]>('/ai-studio/projects'),
-  createProject: (p: { name: string; description?: string }) => api.post<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt'>>('/ai-studio/projects', p),
-  updateProject: (id: string, p: { name: string; description?: string; status?: string }) => api.patch<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt'>>(`/ai-studio/projects/${id}`, p),
+  deadlines: () => api.get<AiStudioDeadlines>('/ai-studio/deadlines'),
+  createProject: (p: { name: string; description?: string; deadlineAt?: string | null }) => api.post<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt' | 'deadlineAt'>>('/ai-studio/projects', p),
+  updateProject: (id: string, p: { name: string; description?: string; status?: string; deadlineAt?: string | null }) => api.patch<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt' | 'deadlineAt'>>(`/ai-studio/projects/${id}`, p),
   assignProject: (id: string, profileId: string, assign: boolean) => api.post<{ projectId: string; profileId: string; assigned: boolean }>(`/ai-studio/projects/${id}/assign`, { profileId, assign }),
   tasks: (f: AiStudioTasksFilter) => api.get<AiStudioTaskPage>('/ai-studio/tasks', { ...f }),
   task: (id: string) => api.get<AiStudioTaskDetail>(`/ai-studio/tasks/${id}`),
