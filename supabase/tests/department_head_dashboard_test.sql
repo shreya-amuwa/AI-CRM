@@ -292,6 +292,6 @@ select test.check((select count(*) = 0 from pg_proc p join pg_namespace n on n.o
 
 -- ---------------------------------------------------------------------------
 \echo '   7. nothing existing changed'
-select test.check((select count(*) = 3 from customers where name like 'DHD Alpha%' or name like 'DHD Beta%'), 'the customers made for this suite are all still there');
+select test.check((select count(*) = 3 from customers where name in ('DHD Alpha One', 'DHD Alpha Two', 'DHD Beta One')), 'the customers made for this suite are all still there');
 select test.check((select count(*) = 5 from member_invoices where invoice_number like 'DHD-%'), 'and so are the invoices (nothing was written by the dashboard functions)');
 \echo '   done'
