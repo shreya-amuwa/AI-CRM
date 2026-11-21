@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 131. AI Studio: project deadlines and the clock'
 reset role;
-\i supabase/migrations/20270119000100_ai_studio_project_deadlines.sql
-\i supabase/migrations/20270119000100_ai_studio_project_deadlines.sql
+\i supabase/migrations/20270120000100_ai_studio_project_deadlines.sql
+\i supabase/migrations/20270120000100_ai_studio_project_deadlines.sql
 
 create or replace function test.sq2(p_sql text) returns text language plpgsql security definer as $$
 declare v text; begin execute p_sql into v; return v; end $$;

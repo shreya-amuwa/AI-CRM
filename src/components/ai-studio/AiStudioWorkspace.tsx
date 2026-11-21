@@ -15,10 +15,12 @@ import { AiStudioPeoplePage } from './AiStudioPeople';
 import { DepartmentTasks, ProjectManagement } from './AiStudioProjects';
 import { DepartmentReports } from './AiStudioReports';
 import { AI_STUDIO_CHANGED_EVENT, useOpenAiStudioRequest } from './aiStudioEvents';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 
-type Page = 'overview' | 'projects' | 'leads' | 'members' | 'tasks' | 'reports' | 'chat' | 'notifications';
+const AI_STUDIO_WORKSPACE_PAGES = ['overview', 'projects', 'leads', 'members', 'tasks', 'reports', 'chat', 'notifications'] as const;
+type Page = (typeof AI_STUDIO_WORKSPACE_PAGES)[number];
 
 /** Reports waiting for the Super Admin's final decision (the badge of Daily Reports). */
 function useAwaitingFinal(): number {
@@ -47,7 +49,7 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
   const awaiting = useAwaitingFinal();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useRememberedPage<Page>('ai-studio-workspace', 'overview', AI_STUDIO_WORKSPACE_PAGES);
   const [nonce, setNonce] = useState(0);
   const dept = departments.find(d => d.id === 'ai-studio');
   useOpenChatRequest(useCallback(() => setPage('chat'), []));

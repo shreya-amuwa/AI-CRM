@@ -9,7 +9,8 @@ import { Avatar, Card, CardHead, healthOf, HealthBadge, LoadingLine, primaryBtn,
 import { dayLabelsOfWeek } from './weekChart';
 import { ScopeOverviewPanel } from '../../common/ScopeOverviewPanel';
 
-export type HeadPage = 'overview' | 'raise-issue' | 'assign' | 'reports' | 'work-reports' | 'daily' | 'activity' | 'clients' | 'customers' | 'import' | 'support' | 'notices' | 'team' | 'notifications' | 'payments' | 'plans' | 'chat' | 'income' | 'performance' | 'top-performers' | 'telecaller-sheets' | 'service-prices' | 'operations' | 'work-updates';
+export const HEAD_PAGES = ['overview', 'raise-issue', 'assign', 'reports', 'work-reports', 'daily', 'activity', 'clients', 'customers', 'import', 'support', 'notices', 'team', 'notifications', 'payments', 'plans', 'chat', 'income', 'performance', 'top-performers', 'telecaller-sheets', 'service-prices', 'operations', 'work-updates'] as const;
+export type HeadPage = (typeof HEAD_PAGES)[number];
 
 const greeting = () => {
   const h = new Date().getHours();

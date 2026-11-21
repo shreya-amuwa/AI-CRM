@@ -29,8 +29,10 @@ import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'client-logins' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'customer-revenue' | 'finance-mails' | 'business-reports' | 'expenses' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+const ACCOUNTS_PAGES = ['overview', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+type Page = (typeof ACCOUNTS_PAGES)[number];
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -41,7 +43,7 @@ export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useRememberedPage<Page>('accounts', 'overview', ACCOUNTS_PAGES);
   // choosing the page you are already on starts it afresh (Department Income goes back to its department cards)
   const [pageKey, setPageKey] = useState(0);
   const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);

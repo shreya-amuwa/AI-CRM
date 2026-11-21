@@ -1,7 +1,7 @@
 # AI Studio department
 
 A project-based department inside the existing CRM: **AI CRM, AI Website, AIQR** and any project the Department Head adds. Migrations
-`supabase/migrations/20270105000100_ai_studio.sql`, `20270106000100_ai_studio_superadmin_head.sql` and `20270107000100_ai_studio_members_without_team_lead.sql`, `20270108000100_ai_studio_dashboard_routing.sql` and `20270119000100_ai_studio_project_deadlines.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
+`supabase/migrations/20270105000100_ai_studio.sql`, `20270106000100_ai_studio_superadmin_head.sql` and `20270107000100_ai_studio_members_without_team_lead.sql`, `20270108000100_ai_studio_dashboard_routing.sql` and `20270120000100_ai_studio_project_deadlines.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
 Tests: `supabase/tests/ai_studio_test.sql` (database, permission-denied cases included), the *AI Studio* block of `api_integration.test.ts`,
 `supabase/tests/ai_studio.test.ts` (routing, form rules) and the browser test `supabase/tests/e2e/run-ai-studio.sh` (the Super Admin, two Team Leads and two Team Members in real browsers: the unchanged Super Admin dashboard, the workspace, creating a Team Lead and a Team Member through the forms, tasks, the Team Member -> Team Lead -> Super Admin approval, phone and tablet widths).
 

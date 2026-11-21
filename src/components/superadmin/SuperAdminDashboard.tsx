@@ -19,11 +19,13 @@ import { SecurityAuditLogs } from './SecurityAuditLogs';
 import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
 import { CrocodialAdminPage } from '../crocodial/CrocodialAdminPage';
 import { CrocodialTeamPanel } from '../crocodial/CrocodialTeamPanel';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'crocodial' | 'crocodial-activity' | 'ai-studio' | 'chat' | 'notifications';
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'top-performers', 'report-performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications'] as const;
+type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -37,7 +39,7 @@ type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-pe
 export const SuperAdminDashboard: React.FC = () => {
   const { user, logout, selectDepartment } = useAuth();
   const { refreshDepartments } = useDepartments();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useRememberedPage<Page>('super-admin', 'overview', SUPER_ADMIN_PAGES);
   // the header's "Add Team Member" opens Team Member Management on its Add tab
   const [teamTab, setTeamTab] = useState<{ tab: TeamMemberTab; n: number }>({ tab: 'members', n: 0 });
   const openTeam = (tab: TeamMemberTab) => {
