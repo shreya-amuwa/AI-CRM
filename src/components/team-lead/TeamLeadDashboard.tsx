@@ -66,9 +66,10 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
+      { items: [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }] },
       {
+        label: 'Sales',
         items: [
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
           // the Team Lead's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
           { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] }
         ]

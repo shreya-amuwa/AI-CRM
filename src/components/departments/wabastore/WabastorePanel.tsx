@@ -18,6 +18,8 @@ import { WabastoreSupportOS } from './WabastoreSupportOS';
 import { WabastoreWebhookLiveBar } from './WabastoreWebhookLiveBar';
 import { fetchFromAnyWebhookUrl } from '../../../services/webhookFetcher';
 import { dashboardApi } from '../../../lib/api/endpoints';
+import { downloadLeadImportSample, leadImportSampleRows } from '../../../lib/sampleSheetDownload';
+import { isLeadImportSampleRow } from '../../../../shared/sampleSheets';
 
 interface WabastorePanelProps {
   activeTab: ActiveTab;
@@ -745,6 +747,7 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
 
         for (let i = startIndex; i < lines.length; i++) {
           const cols = lines[i].split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
+          if (isLeadImportSampleRow(cols[colMap.name] ?? '', cols[colMap.phone] ?? '')) continue; // the sample row of the sample sheet
           const name = cols[colMap.name] || `Customer ${i}`;
           const phone = cols[colMap.phone] || cols[1] || 'No Phone';
           const email = cols[colMap.email] || '';
@@ -2108,21 +2111,21 @@ export const WabastorePanel: React.FC<WabastorePanelProps> = ({
                     type="button"
                     onClick={() => {
                       setImportFormat('csv');
-                      setImportRawText(`Name,Phone,Email,Company,Channel,Value
-Rajesh Sharma,+91 98201 12345,rajesh@store.in,Sharma Retail,WhatsApp API,₹45,000
-Pooja Varma,+91 98110 54321,pooja@boutique.com,Varma Boutique,Meta Ads,₹60,000
-Amit Kumar,+91 99300 11223,amit@techsolutions.io,Tech Solutions,Telecaller,₹1,20,000`);
+                      setImportRawText(leadImportSampleRows().map(r => r.join(',')).join('\n'));
                     }}
                     className="text-emerald-600 hover:underline cursor-pointer"
                   >
                     Load Sample Format
+                  </button>
+                  <button type="button" onClick={downloadLeadImportSample} className="text-emerald-600 hover:underline cursor-pointer">
+                    Download Sample CSV
                   </button>
                 </div>
               </div>
               <textarea
                 value={importRawText}
                 onChange={(e) => setImportRawText(e.target.value)}
-                placeholder={`Name,Phone,Email,Company,Channel,Value\nRajesh Sharma,+91 98201 12345,rajesh@store.in,Sharma Retail,WhatsApp API,₹45,000\n...`}
+                placeholder={`${leadImportSampleRows().map(r => r.join(',')).join('\n')}\n...`}
                 rows={6}
                 className="w-full p-3 font-mono text-xs bg-slate-50 border border-slate-300 rounded-2xl focus:outline-emerald-500 text-slate-900"
               />

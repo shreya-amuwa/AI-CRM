@@ -166,22 +166,22 @@ def build():
 
     # ---- examples -----------------------------------------------------------------------------------------------------------------------
     M = '9820011111'
-    customer = {'Customer Name *': 'Siddhesh Patil', 'Business Name *': 'Galaxy Jewellers', 'E-mail': 'galaxy@example.com', 'City': 'Thane', 'Business Address': 'Shop 4, Station Road, Thane',
-                'Business Category': 'Jewellery', 'Customer Since': '15-04-2025', 'Handled by - Support Team Member *': '(pick from the list)', 'Brought by (Sales / Support)': 'Sales',
-                'Brought by - Name': 'Rahul Mehta', 'Client Login E-mail': 'galaxy@example.com', 'Client Password': '(optional)', 'Customer Notes': 'EXAMPLE - delete'}
+    customer = {'Customer Name *': 'Customer_Name', 'Business Name *': 'Business_Name', 'E-mail': 'customer@example.com', 'City': 'City_Name', 'Business Address': 'Business_Address',
+                'Business Category': 'Business_Category', 'Customer Since': '15-04-2025', 'Handled by - Support Team Member *': '(pick from the list)', 'Brought by (Sales / Support)': 'Sales',
+                'Brought by - Name': 'Referrer_Name', 'Client Login E-mail': 'customer@example.com', 'Client Password': '(optional)', 'Customer Notes': 'EXAMPLE - delete'}
     EX = [
         {**customer, 'Mobile Number *': M, 'Service *': WA_SERVICE, 'Plan / Package Name': '1 Lakh messages', 'Price Paid (₹, excl. GST)': 15000, 'Billing Cycle': 'Yearly',
          'Start Date *': '15-04-2025', 'Renewal / Expiry Date': '14-04-2026', 'Status *': 'Live', 'Panel / Platform': 'Wabastore (chat.wabastore.shop)',
-         'WhatsApp API Number': '9820011112', 'WABA ID': '123456789012345', 'Display Name': 'Galaxy Jewellers', 'Blue Tick': 'Yes', 'Quality Rating': 'High (Green)',
+         'WhatsApp API Number': '9820011112', 'WABA ID': '123456789012345', 'Display Name': 'Business_Name', 'Blue Tick': 'Yes', 'Quality Rating': 'High (Green)',
          'Messaging Limit': '1K / day', 'Message Package': '1 Lakh', 'Messages in Package *': 100000, 'Messages Sent (total) *': 28000, 'Messages Delivered (total)': 25800,
          'Messages Read (total)': 11760, 'Replies (total)': 840, 'Failed (total)': 2200, 'Subscription Ends': '14-04-2026', 'WhatsApp Data as of *': '16-10-2026'},
         {'Mobile Number *': M, 'Service *': WA_SERVICE, 'Campaign Name *': 'Diwali offer', 'Template Name': 'diwali_offer', 'Sent On *': '20-10-2026', 'Audience Type': 'Segmented',
          'Audience Size *': 4000, 'Campaign Sent *': 3500, 'Campaign Delivered *': 3200, 'Campaign Read': 2500, 'Campaign Replied': 100, 'Campaign Failed': 300,
          'Campaign Status': 'Completed', 'Service Notes': 'EXAMPLE - delete'},
         {'Mobile Number *': M, 'Service *': 'AI Calling', 'Billing Cycle': 'Quarterly', 'Start Date *': '01-09-2026', 'Renewal / Expiry Date': '30-11-2026', 'Status *': 'Live',
-         'Panel / Platform': 'Bolify AI', 'AI Platform': 'Bolify AI', 'Calling Plan *': 'Credit-based', 'AI Agent Name': 'Riya', 'Credits Bought (₹)': 5000, 'Credits Left (₹)': 3200,
+         'Panel / Platform': 'Bolify AI', 'AI Platform': 'Bolify AI', 'Calling Plan *': 'Credit-based', 'AI Agent Name': 'Agent_Name', 'Credits Bought (₹)': 5000, 'Credits Left (₹)': 3200,
          'Minutes Bought': 1000, 'Minutes Left': 640, 'Total Calls': 410, 'Connected Calls': 260, 'Not Answered': 150, 'Interested / Leads': 31, 'AI Data as of *': '16-10-2026'},
-        {'Mobile Number *': M, 'Service *': 'RCS Registration + Platform', 'Billing Cycle': 'Yearly', 'Start Date *': '01-06-2026', 'Status *': 'Live', 'Sender ID / Brand Name': 'Galaxy Jewellers',
+        {'Mobile Number *': M, 'Service *': 'RCS Registration + Platform', 'Billing Cycle': 'Yearly', 'Start Date *': '01-06-2026', 'Status *': 'Live', 'Sender ID / Brand Name': 'Business_Name',
          'RCS / Voice Messages in Package *': 50000, 'RCS / Voice Sent *': 12000, 'RCS / Voice Delivered': 11300, 'RCS Read / Voice Answered': 6100,
          'RCS Clicks / Voice Key-press Replies': 420, 'RCS / Voice Failed': 700, 'RCS / Voice Data as of': '16-10-2026'},
         {'Mobile Number *': M, 'Service *': 'Social Media Management', 'Billing Cycle': 'Monthly', 'Start Date *': '01-07-2026', 'Status *': 'Live', 'Month *': 'Oct-2026',

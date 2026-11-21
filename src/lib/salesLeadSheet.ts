@@ -1,3 +1,4 @@
+import { isContactSampleRow } from '../../shared/sampleSheets';
 import { cellText } from './telecallerSheet';
 import type { Cell } from './xlsxReader';
 
@@ -32,6 +33,8 @@ export interface LeadSheetRead {
   mapping: LeadMapping;
   /** the rows below the heading row, as read from the file */
   body: { row: number; cells: Cell[] }[];
+  /** the sample row of the downloadable sample sheet (Contact_Name, 9000000000) was in the file and was left out */
+  sampleSkipped?: boolean;
   problem?: string;
 }
 
@@ -50,15 +53,21 @@ export function readLeadSheet(sheetRows: Cell[][]): LeadSheetRead {
       taken.add(at);
     }
   }
-  const body = sheetRows
+  const filled = sheetRows
     .slice(headerIndex + 1)
     .map((cells, i) => ({ row: headerIndex + i + 2, cells }))
     .filter(r => r.cells.some(c => cellText(c) !== ''));
-  if (body.length === 0) return { headers, headerRow: headerIndex + 1, mapping, body, problem: 'The sheet has no lead rows below the headings.' };
+  // the sample row of the downloadable sample sheet is never a lead
+  const isSample = (cells: Cell[]) => mapping.name !== undefined && mapping.phone !== undefined && isContactSampleRow(cellText(cells[mapping.name] ?? null), cellText(cells[mapping.phone] ?? null));
+  const body = filled.filter(r => !isSample(r.cells));
+  const sampleSkipped = body.length !== filled.length;
+  if (body.length === 0) {
+    return { headers, headerRow: headerIndex + 1, mapping, body, sampleSkipped, problem: sampleSkipped ? 'The sheet only has the sample row. Replace it with your contacts, or add them below it.' : 'The sheet has no lead rows below the headings.' };
+  }
   if (body.length > MAX_LEAD_ROWS) {
     return { headers, headerRow: headerIndex + 1, mapping, body: [], problem: `A sheet can have at most ${MAX_LEAD_ROWS.toLocaleString('en-IN')} leads; this one has ${body.length.toLocaleString('en-IN')}. Split it into smaller sheets.` };
   }
-  return { headers, headerRow: headerIndex + 1, mapping, body };
+  return { headers, headerRow: headerIndex + 1, mapping, body, sampleSkipped };
 }
 
 export const missingFields = (m: LeadMapping) => LEAD_FIELDS.filter(f => f.required && m[f.key] === undefined).map(f => f.label);
@@ -68,12 +77,14 @@ export interface LeadRowBody { row: number; name: string; company: string; phone
 /** Apply a mapping: one row body per non-empty row. */
 export function buildLeadRows(read: LeadSheetRead, mapping: LeadMapping): LeadRowBody[] {
   const get = (cells: Cell[], k: LeadField) => (mapping[k] === undefined ? '' : cellText(cells[mapping[k]!] ?? null));
-  return read.body.map(({ row, cells }) => ({
-    row,
-    name: get(cells, 'name'),
-    company: get(cells, 'company'),
-    phone: get(cells, 'phone'),
-    email: get(cells, 'email'),
-    remarks: get(cells, 'remarks')
-  }));
+  return read.body
+    .map(({ row, cells }) => ({
+      row,
+      name: get(cells, 'name'),
+      company: get(cells, 'company'),
+      phone: get(cells, 'phone'),
+      email: get(cells, 'email'),
+      remarks: get(cells, 'remarks')
+    }))
+    .filter(r => !isContactSampleRow(r.name, r.phone)); // also after the head corrected the column match
 }

@@ -1,3 +1,4 @@
+import { CUSTOMER_SAMPLE_COMPANY, CUSTOMER_SAMPLE_NAME, SAMPLE_EMAIL, SAMPLE_PHONE, isCustomerSampleRow } from '../../shared/sampleSheets';
 import { csvCell, parseCsv } from './csv';
 import {
   CUSTOMER_STATUS_LABELS,
@@ -67,7 +68,11 @@ export function parseCustomerSheet(text: string, services: ServiceOption[], assi
   };
 
   const seen = new Set<string>();
-  const rows: ImportRow[] = table.slice(1).map((cells, i) => {
+  // the sample row of the downloadable template is never a customer (the line numbers stay the file's own)
+  const nameAt = header.indexOf('Name');
+  const phoneAt = header.indexOf('Phone');
+  const sample = (cells: string[]) => isCustomerSampleRow(cells[nameAt] ?? '', phoneAt >= 0 ? cells[phoneAt] ?? '' : '');
+  const rows: ImportRow[] = table.slice(1).map((cells, i) => ({ cells, i })).filter(r => !sample(r.cells)).map(({ cells, i }) => {
     const get = (col: (typeof IMPORT_COLUMNS)[number]) => (cells[header.indexOf(col)] ?? '').trim();
     const errors: string[] = [];
     const name = get('Name');
@@ -118,11 +123,13 @@ export function parseCustomerSheet(text: string, services: ServiceOption[], assi
         };
     return { line: i + 2, input, errors, name: name || '(no name)', contact: [phone, email].filter(Boolean).join(' · ') };
   });
+  if (rows.length === 0) return { rows, fileError: 'The file only has the sample row. Replace it with your customers, or add them below it.' };
   return { rows, fileError: null };
 }
 
 /** The downloadable template: the column titles and one example row. */
 export function importTemplate(services: ServiceOption[]): string {
-  const example = ['Asha Verma', 'Verma Traders', '9820012345', 'asha@example.com', 'Retail', 'Active', services[0]?.name ?? '', 'Wants a WhatsApp API', 'Phone', ''];
+  // dummy details (docs: shared/sampleSheets.ts): placeholders, never a real person; the upload skips this row
+  const example = [CUSTOMER_SAMPLE_NAME, CUSTOMER_SAMPLE_COMPANY, SAMPLE_PHONE, SAMPLE_EMAIL, 'Retail', 'Active', services[0]?.name ?? '', 'Requirement_Details', 'Phone', ''];
   return [IMPORT_COLUMNS.join(','), example.map(csvCell).join(',')].join('\r\n') + '\r\n';
 }

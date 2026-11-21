@@ -70,7 +70,13 @@ export const TelecallerDashboard: React.FC = () => {
   useOpenReportsRequest(React.useCallback(() => go('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   const reportsBadge = useReportsBadge();
   const displayName = profile?.fullName || user?.name || 'Telecaller';
-  const groups = groupNavItems(NAV.map(n => (n.id === REPORTS_NAV.id ? { ...n, badge: reportsBadge } : n)), [{ ids: ['home', 'tasks', 'leads', FIELD_VISIT_GROUP_ID, REPORTS_NAV.id, ISSUES_NAV.id] }]);
+  // the menu reads in sections, like the Team Member's: Home on top, then Sales, Work and Team
+  const groups = groupNavItems(NAV.map(n => (n.id === REPORTS_NAV.id ? { ...n, badge: reportsBadge } : n)), [
+    { ids: ['home'] },
+    { label: 'Sales', ids: ['leads', FIELD_VISIT_GROUP_ID, 'income'] },
+    { label: 'Work', ids: ['tasks', REPORTS_NAV.id] },
+    { label: 'Team', ids: [ISSUES_NAV.id] }
+  ]);
 
   return (
     <DashboardShell
