@@ -3,7 +3,7 @@ import { openReports } from '../reports/reportEvents';
 import { openAiStudio } from '../ai-studio/aiStudioEvents';
 import { openAttendance } from '../attendance/attendanceEvents';
 import { openAds } from '../ai-design-studio/adsEvents';
-import { openMeeting } from '../meetings/meetingEvents';
+import { openMeeting, openMeetingReport } from '../meetings/meetingEvents';
 import { openWorkUpdate } from '../tasks/workUpdateEvents';
 import { openBugs } from '../bugs/bugEvents';
 
@@ -77,6 +77,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.entityType === 'work_task') { openWorkUpdate({ taskId: n.entityId ?? undefined }); return true; }
   // a meeting (a request, an approval, a move, a cancellation, a reminder) opens Meetings on it
   if (n.entityType === 'meeting') { openMeeting(n.entityId ?? undefined); return true; }
+  // a meeting summary report (submitted, revised, an action item given, an answer) opens it in Meetings
+  if (n.entityType === 'meeting_summary') { openMeetingReport(n.entityId ?? undefined); return true; }
   // a bug (20270122000300): the reporter's status change opens their bug reports; a developer's opens the Bugs section
   if (n.entityType === 'dev_bug') {
     if (n.type === 'DEV_BUG_STATUS') openIssues({ kind: 'BUG', id: n.entityId ?? undefined });

@@ -217,7 +217,23 @@ export const meetingsController = {
   setDelegates: (async ctx => ok(await svc(ctx).meetings.setDelegates(ctx.req.body))) as Handler,
   googleStatus: (async ctx => ok(await svc(ctx).meetings.googleStatus())) as Handler,
   googleConnect: (async ctx => ok(svc(ctx).meetings.googleConnect(ctx.actor))) as Handler,
-  googleDisconnect: (async ctx => ok(await svc(ctx).meetings.googleDisconnect(ctx.actor))) as Handler
+  googleDisconnect: (async ctx => ok(await svc(ctx).meetings.googleDisconnect(ctx.actor))) as Handler,
+  // post-meeting summaries and the CEO's Meeting Decisions (20270124000200)
+  summary: (async ctx => ok(await svc(ctx).meetings.summary(ctx.params.id))) as Handler,
+  summaryAttendance: (async ctx => ok(await svc(ctx).meetings.confirmAttendance(ctx.params.id, ctx.req.body))) as Handler,
+  summaryOwner: (async ctx => ok(await svc(ctx).meetings.assignSummaryOwner(ctx.params.id, ctx.req.body))) as Handler,
+  summaryDraft: (async ctx => ok(await svc(ctx).meetings.saveSummaryDraft(ctx.params.id, ctx.req.body))) as Handler,
+  summarySubmit: (async ctx => ok(await svc(ctx).meetings.submitSummary(ctx.params.id, ctx.req.body))) as Handler,
+  summaryClarify: (async ctx => ok(await svc(ctx).meetings.clarifySummary(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
+  summaryReply: (async ctx => ok(await svc(ctx).meetings.replySummary(ctx.params.id, ctx.req.body), 201)) as Handler,
+  summaryFlag: (async ctx => ok(await svc(ctx).meetings.flagSummaryItem(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  summaryActionUpdate: (async ctx => ok(await svc(ctx).meetings.updateSummaryAction(ctx.params.id, ctx.req.body))) as Handler,
+  summaries: (async ctx => ok(await svc(ctx).meetings.summaries(ctx.req.query))) as Handler,
+  myActions: (async ctx => ok(await svc(ctx).meetings.myActions())) as Handler,
+  reportsOverview: (async ctx => ok(await svc(ctx).meetings.reportsOverview(ctx.actor, ctx.req.query))) as Handler,
+  reports: (async ctx => ok(await svc(ctx).meetings.reports(ctx.actor, ctx.req.query))) as Handler,
+  report: (async ctx => ok(await svc(ctx).meetings.report(ctx.actor, ctx.params.id))) as Handler,
+  reportActions: (async ctx => ok(await svc(ctx).meetings.reportActions(ctx.actor, ctx.req.query))) as Handler
 };
 
 /** Bugs for the Developers team (20270122000300). */

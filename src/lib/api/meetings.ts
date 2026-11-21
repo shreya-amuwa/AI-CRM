@@ -1,6 +1,8 @@
 import type {
   CeoPresence, CeoPresenceExit, ClientMeetingInput, ClientMeetingResult, MeetingMail, CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
-  MeetingSettings, PublicBookingPage, PublicBookingResult, PublicBookingView
+  MeetingSettings, PublicBookingPage, PublicBookingResult, PublicBookingView,
+  MeetingActionStatus, MeetingReportActionList, MeetingReportList, MeetingReportsOverview, MeetingSummaryContent, MeetingSummaryList, MeetingSummaryTab,
+  MeetingSummaryView, MyMeetingAction
 } from '../../../shared/contracts';
 import { api } from './client';
 
@@ -56,7 +58,49 @@ export const meetingsApi = {
   setDelegates: (delegateIds: string[]) => api.post<MeetingSettings>('/meetings/settings/delegates', { delegateIds }),
   google: () => api.get<GoogleCalendarStatus>('/meetings/google'),
   googleConnect: () => api.post<{ url: string }>('/meetings/google/connect'),
-  googleDisconnect: () => api.delete<GoogleCalendarStatus>('/meetings/google')
+  googleDisconnect: () => api.delete<GoogleCalendarStatus>('/meetings/google'),
+
+  // post-meeting summaries and the CEO's Meeting Decisions (20270124000200)
+  summary: (id: string) => api.get<MeetingSummaryView>(`/meetings/${id}/summary`),
+  confirmAttendance: (id: string, attendedIds: string[], version?: number) =>
+    api.post<MeetingSummaryView>(`/meetings/${id}/summary/attendance`, { attendedIds, version }),
+  assignSummaryOwner: (id: string, ownerId: string, reason?: string, version?: number) =>
+    api.post<MeetingSummaryView>(`/meetings/${id}/summary/owner`, { ownerId, reason: reason || undefined, version }),
+  saveSummaryDraft: (id: string, summary: SummaryInput, version: number) =>
+    api.patch<MeetingSummaryView>(`/meetings/${id}/summary/draft`, { summary, version }),
+  submitSummary: (id: string, summary: SummaryInput, version: number, changeNote?: string) =>
+    api.post<MeetingSummaryView>(`/meetings/${id}/summary/submit`, { summary, version, changeNote: changeNote || undefined }),
+  clarifySummary: (id: string, message: string) => api.post<MeetingSummaryView>(`/meetings/${id}/summary/clarifications`, { message }),
+  replySummary: (id: string, message: string) => api.post<MeetingSummaryView>(`/meetings/${id}/summary/replies`, { message }),
+  flagSummaryItem: (id: string, itemType: 'DECISION' | 'BLOCKER', itemId: string, flag: boolean, note?: string) =>
+    api.post<MeetingSummaryView>(`/meetings/${id}/summary/follow-ups`, { itemType, itemId, flag, note: note || undefined }),
+  updateSummaryAction: (actionId: string, status: MeetingActionStatus, note?: string) =>
+    api.post<{ id: string; status: string }>(`/meetings/summary-actions/${actionId}`, { status, note: note || undefined }),
+  summaries: (scope: 'MINE' | 'TEAM', tab: MeetingSummaryTab, offset = 0, limit = 50) =>
+    api.get<MeetingSummaryList>('/meetings/summaries', { scope, tab, offset, limit }),
+  myActions: () => api.get<MyMeetingAction[]>('/meetings/summaries/actions'),
+  reportsOverview: (f: MeetingReportFilters) => api.get<MeetingReportsOverview>('/meetings/reports/overview', f),
+  reports: (f: MeetingReportFilters & { status?: string; attention?: boolean; offset?: number; limit?: number }) =>
+    api.get<MeetingReportList>('/meetings/reports', { ...f, attention: f.attention ? 'true' : undefined }),
+  report: (id: string) => api.get<MeetingSummaryView>(`/meetings/reports/${id}`),
+  reportActions: (f: MeetingReportFilters & { status?: 'OPEN' | 'OVERDUE' | 'DONE' | 'ALL'; offset?: number; limit?: number }) =>
+    api.get<MeetingReportActionList>('/meetings/reports/actions', f)
+};
+
+/** What the summary form sends (the same shape the server validates). */
+export type SummaryInput = Omit<MeetingSummaryContent, 'followUp' | 'decisions' | 'actions' | 'blockers'> & {
+  followUp: { required: boolean; date: string | null; outcome: string | null };
+  decisions: Omit<MeetingSummaryContent['decisions'][number], 'id' | 'department' | 'team' | 'decidedByName' | 'ceoFollowUp' | 'ceoFollowUpNote'>[];
+  actions: Omit<MeetingSummaryContent['actions'][number], 'id' | 'assigneeName' | 'overdue' | 'completedAt' | 'updatedAt'>[];
+  blockers: Omit<MeetingSummaryContent['blockers'][number], 'id' | 'ceoFollowUp' | 'ceoFollowUpNote'>[];
+};
+export type MeetingReportFilters = {
+  from?: string;
+  to?: string;
+  departmentId?: string;
+  teamId?: string;
+  leaderId?: string;
+  leaderRank?: number;
 };
 
 // ---------------------------------------------------------------------------

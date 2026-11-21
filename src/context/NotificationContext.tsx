@@ -143,7 +143,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         { event: '*', schema: 'public', table: 'notifications', filter: `recipient_id=eq.${profile.id}` },
         (payload: { new?: { entity_type?: string | null; type?: string | null } | null }) => {
           // a meeting notification: an open Meetings page reloads at once (a new request shows without a refresh)
-          if (payload?.new?.entity_type === 'meeting') notifyMeetingsChanged();
+          if (payload?.new?.entity_type === 'meeting' || payload?.new?.entity_type === 'meeting_summary') notifyMeetingsChanged();
           // a work update notification (requested, reminder, submitted): open Work Updates / Update Requests reload at once
           if (payload?.new?.entity_type === 'work_task') notifyWorkUpdatesChanged();
           void refresh();

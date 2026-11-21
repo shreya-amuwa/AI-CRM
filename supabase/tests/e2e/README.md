@@ -144,3 +144,11 @@ that the Super Admin gives the final approval (no stage after it), a notificatio
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest E2E_CHROMIUM=/path/to/chrome supabase/tests/e2e/run-ai-studio.sh ./ai-studio-screenshots
 ```
+
+`run-meeting-summaries.sh` (same throw-away stack and ports as `run-dashboards.sh`) checks post-meeting summaries and the CEO's
+Meeting Decisions (migration 20270124000200). A Team Lead confirms attendance and submits a summary from the meeting drawer, a member sees
+their action item, and the Super Admin reviews the report and asks for a clarification, also on a 390px phone:
+
+```bash
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-meeting-summaries.sh ./meeting-summary-screenshots
+```
