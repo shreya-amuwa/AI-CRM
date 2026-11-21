@@ -1,8 +1,10 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { summarize, useWorkTasks, workTasksApi } from '../../lib/workTasks';
-import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
+import { summarize, useWorkTasks } from '../../lib/workTasks';
+import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
 import { MyUpdateRequests, TaskWorkUpdates } from './WorkUpdates';
+import { TaskTracker } from './TaskTracker';
+import { SubmitWorkUpdate } from './WorkUpdateForm';
 
 /** Team Member: tasks from the Team Lead; send updates back to the Team Lead. */
 export const MemberTasksView: React.FC = () => {
@@ -33,6 +35,8 @@ export const MemberTasksView: React.FC = () => {
       </div>
       {/* update requests from the Team Lead / Department Head: the answer form never changes a task */}
       <MyUpdateRequests />
+      <TaskTracker tasks={mine} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+        filters={['ALL', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING']} title="My task tracker" emptyHint="When your Team Lead assigns you a task it appears here." />
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
       ) : mine.length === 0 ? (
@@ -56,14 +60,7 @@ export const MemberTasksView: React.FC = () => {
             </div>
             <ProgressBar value={task.progress} label={`Progress of ${task.title}`} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <UpdateForm
-                task={task}
-                sendTo="Team Lead"
-                onSubmit={async input => {
-                  await workTasksApi.submitUpdate(task.id, input);
-                  await data.reload();
-                }}
-              />
+              <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/60"><SubmitWorkUpdate taskId={task.id} status={task.status} progress={task.progress} onSent={() => void data.reload()} /></div>
               <div className="p-3 rounded-xl border border-slate-200">
                 <div className="text-xs font-bold text-slate-800 mb-2">Updates you sent</div>
                 <UpdateTimeline updates={data.updates.filter(u => u.taskId === task.id)} people={data.people} />

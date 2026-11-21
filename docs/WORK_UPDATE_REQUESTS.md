@@ -10,7 +10,7 @@ status, progress or assignee.
 1. A Department Head / Team Lead opens a task they can already see and chooses **Request update** (optional message, optional reply-by time).
 2. The employee the task is assigned to is notified ("Work update requested") and sees it under **Update Requests** (Team Member: My Tasks / Assigned
    Tasks; Team Lead: its own requests appear in the same section).
-3. The employee submits: current progress (required), work completed, remaining work, blockers, expected completion date. The task is **not** changed.
+3. The employee submits a work update (since `20270117000100`: see `TASK_MANAGEMENT_V2.md`): status, progress %, work completed, remaining work, blockers, next steps, expected date. It is kept in the task's history, answers that request, and the task shows the latest status and progress. (`work_update_respond`, the first form of the answer, still exists and still never changes the task.)
 4. Everyone who asked (the requester and whoever sent a reminder) is notified ("sent a work update"; urgent when there is a blocker).
 5. The requester reads it in the task's **Work updates & history** and in **Work Updates** (filters: All Updates, Pending, Responded, Overdue).
 6. If nobody answers, the requester sends a **reminder** on the same request (at most one an hour, five at most). There is never a second open request.

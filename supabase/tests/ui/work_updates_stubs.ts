@@ -29,6 +29,7 @@ const counts = () => {
   return { all: r.length, pending: r.filter(x => x.status === 'PENDING').length, responded: r.filter(x => x.status === 'RESPONDED').length,
            overdue: r.filter(x => x.status === 'PENDING' && x.overdue).length };
 };
+const calls_: any[] = [];
 const answers: Record<string, (a: any) => any> = {
   work_update_list: a => {
     const f = a.p_filter;
@@ -62,6 +63,16 @@ const answers: Record<string, (a: any) => any> = {
     const r = state.requests.find(x => x.id === a.p_request);
     r.followupCount++; r.canFollowUp = false; r.lastNotifiedAt = iso(0); r.followUpAvailableAt = iso(60);
     return r;
+  },
+  // 20270117000100: the employee's structured update; with p_request it answers that request, and it is the one thing that moves the task
+  submit_work_update: a => {
+    calls_.push(a);
+    const r = a.p_request ? state.requests.find(x => x.id === a.p_request) : null;
+    if (r) {
+      r.status = 'RESPONDED'; r.canRespond = false; r.respondedAt = iso(0); r.taskStatus = a.p_status; r.taskProgress = a.p_progress;
+      r.response = { id: 'xr', progress: `${a.p_progress}% - ${a.p_completed ?? a.p_blockers}`, workCompleted: a.p_completed, remainingWork: a.p_remaining, blockers: a.p_blockers, expectedCompletion: a.p_expected, submittedAt: iso(0) };
+    }
+    return { id: 'u1', taskId: a.p_task, status: a.p_status, progress: a.p_progress, at: iso(0), requestId: a.p_request ?? null };
   },
   work_update_respond: a => {
     const r = state.requests.find(x => x.id === a.p_request);

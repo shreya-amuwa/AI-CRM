@@ -11,6 +11,7 @@ export const STATUS_UI: Record<TaskStatus, { label: string; cls: string }> = {
 };
 
 const PRIORITY_UI: Record<TaskPriority, string> = {
+  URGENT: 'bg-rose-600 text-white border-rose-600',
   HIGH: 'bg-rose-50 text-rose-700 border-rose-200',
   MEDIUM: 'bg-amber-50 text-amber-700 border-amber-200',
   LOW: 'bg-slate-50 text-slate-600 border-slate-200'

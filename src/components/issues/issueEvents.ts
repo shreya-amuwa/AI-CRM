@@ -72,8 +72,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   // AI Studio: a task or a daily report opens its page of the AI Studio dashboard, on that item
   // an attendance reminder (Punch In, lunch, Punch Out) opens the person's own attendance
   if (n.entityType === 'attendance') { openAttendance(); return true; }
-  // a work update (requested, a reminder, submitted) opens the Task page that shows it, on that task
-  if (n.entityType === 'work_task' && n.type.startsWith('WORK_UPDATE')) { openWorkUpdate({ taskId: n.entityId ?? undefined }); return true; }
+  // any task notification (assigned, an update requested / submitted, blocked, completed) opens the Task page that shows it, on that task
+  if (n.entityType === 'work_task') { openWorkUpdate({ taskId: n.entityId ?? undefined }); return true; }
   // a meeting (a request, an approval, a move, a cancellation, a reminder) opens Meetings on it
   if (n.entityType === 'meeting') { openMeeting(n.entityId ?? undefined); return true; }
   if (n.entityType === 'ai_studio_task') { openAiStudio({ kind: 'task', id: n.entityId ?? undefined }); return true; }

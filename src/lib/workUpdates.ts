@@ -29,7 +29,7 @@ export interface WorkUpdateRequest {
   taskStatus: 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'NOT_COMPLETED' | 'BLOCKED';
   taskProgress: number;
   taskDueDate: string | null;
-  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   requestedBy: string | null;
   requestedByName: string | null;
   requestedFrom: string;
