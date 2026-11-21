@@ -64,8 +64,15 @@ export function useBugAccess(): DevBugAccess | null {
   const [access, setAccess] = useState<DevBugAccess | null>(null);
   useEffect(() => {
     let alive = true;
-    bugsApi.access().then(a => { if (alive) setAccess(a); }, () => { if (alive) setAccess({ isDeveloper: false, isLead: false, developers: [] }); });
-    return () => { alive = false; };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // a network or server hiccup must not hide the Bugs section until the next reload: ask again (3 tries) before saying "not a developer"
+    const ask = (retriesLeft: number) => bugsApi.access().then(a => { if (alive) setAccess(a); }, () => {
+      if (!alive) return;
+      if (retriesLeft > 0) timer = setTimeout(() => ask(retriesLeft - 1), 2500);
+      else setAccess({ isDeveloper: false, isLead: false, developers: [] });
+    });
+    ask(2);
+    return () => { alive = false; if (timer) clearTimeout(timer); };
   }, []);
   return access;
 }

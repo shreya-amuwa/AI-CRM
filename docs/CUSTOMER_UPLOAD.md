@@ -37,7 +37,7 @@ check and save as **Import Customers** (`POST /customers/import-existing`, `impo
 * **Client logins** are created by the API after the save. With a Client Password the client is e-mailed the dashboard address, the login e-mail and that
   password; without one they get a link to choose their own. The password is taken out of the rows before the database sees them, hashed by Supabase Auth,
   and never stored or logged as text. Delete the Client Password column from the sheet after the upload.
-* The grey example row (mobile 9820011111 / "EXAMPLE") is never imported. Rows with nothing typed are skipped.
+* The grey example row (mobile 9820011111 / "EXAMPLE"; its name and business are placeholders such as `Customer_Name`, see `docs/SAMPLE_SHEETS.md`) is never imported. Rows with nothing typed are skipped.
 
 The older CSV (`Name, Company, Phone, Email, Type, Status, Service, Requirement, Channel, Notes`) is still accepted exactly as before (the "CSV template" link).
 Reader: `parseExistingCustomers` in `src/lib/existingCustomerImport.ts` (format `customer-rows`); tests in `supabase/tests/import_template.test.ts`.

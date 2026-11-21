@@ -212,6 +212,88 @@ select test.login('sa');
 select dev_team_set(test.id('dv_siddhesh'), true);
 select test.login('dv_shreya');
 select test.must_fail($$select dev_team_set(test.id('dv_other'), true)$$, 'the lead does not change the list', 'Only the Super Admin');
+-- ---------------------------------------------------------------------------
+-- 20270124000100: Siddhesh's real account (siddhesh.amuwa@gmail.com), recognised by EMAIL. His profile name ("S. Shinde") matches no
+-- name rule, which is what left him without the Bugs section while Shreya and Ashish had it.
+-- ---------------------------------------------------------------------------
+\echo '   developer access by email (siddhesh.amuwa@gmail.com)'
+reset role;
+select set_config('request.jwt.claims', '', false);
+select test.create_auth_user('dv_sid_mail', 'Siddhesh.Amuwa@Gmail.com', jsonb_build_object('full_name', 'S. Shinde'),
+  jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER',
+    'provisioned_team_id', (select t.id from teams t join departments d on d.id = t.department_id where d.slug = 'ai-studio' order by t.created_at limit 1)));
+select test.check(exists (select 1 from dev_team_emails where email = 'siddhesh.amuwa@gmail.com'), 'the developer email list holds siddhesh.amuwa@gmail.com');
+select test.check(not exists (select 1 from profiles where id = test.id('dv_sid_mail') and role = 'SUPER_ADMIN'), 'his profile is not a Super Admin');
+-- a profile that is not ACTIVE is never given access; approving it (any time later) gives it
+delete from dev_team_members where profile_id = test.id('dv_sid_mail');
+-- (deleting a member also forgets its email, by design; put it back to model an account that never got its membership row)
+insert into dev_team_emails (email) values ('siddhesh.amuwa@gmail.com') on conflict do nothing;
+update profiles set status = 'SUSPENDED' where id = test.id('dv_sid_mail') and status = 'ACTIVE';
+select test.check((select status = 'SUSPENDED' from profiles where id = test.id('dv_sid_mail'))
+                  and private.dev_team_sync_emails(test.id('dv_sid_mail')) = 0 and not private.is_developer(test.id('dv_sid_mail')), 'a suspended profile is not made a developer');
+update profiles set status = 'ACTIVE' where id = test.id('dv_sid_mail') and status = 'SUSPENDED';
+select test.check(private.is_developer(test.id('dv_sid_mail')) and not private.is_bug_lead(test.id('dv_sid_mail')),
+  'once ACTIVE the profile is picked up by its email: a developer, not the Team Lead');
+-- running the migration's sync again changes nothing (safe to run twice)
+select test.check(private.dev_team_sync_emails() = 0 and (select count(*) = 1 from dev_team_members where profile_id = test.id('dv_sid_mail')), 'running it again adds nothing');
+
+set role authenticated;
+select test.login('dv_sid_mail');
+select test.check((a ->> 'isDeveloper')::boolean and not (a ->> 'isLead')::boolean and jsonb_array_length(a -> 'developers') = 0, 'his account has the Bugs section (bug_access)')
+  from (select bug_access() as a) x;
+select test.must_fail($$select dev_team_list()$$, 'but no Super Admin function', 'Only the Super Admin');
+select test.must_fail($$select dev_team_set(auth.uid(), true, true)$$, 'cannot make himself the lead or manage the team', 'Only the Super Admin');
+select test.must_fail($$select bug_dev_assign(test.bug('BG Report export fails'), auth.uid())$$, 'and cannot assign bugs', 'Only the Team Lead');
+
+\echo '   a new bug from an employee: Shreya, Ashish and Siddhesh (real account) all see it'
+select test.login('th_wab');
+select bug_submit('BG Email path login fails', 'Logging in on a slow network shows a blank screen for ten seconds.', null, null, 'bg-key-0101');
+select bug_submit('BG Email path report empty', 'The weekly report opens with no rows for every team.', null, null, 'bg-key-0102');
+select test.login('dv_shreya');
+select test.check(test.sees('BG Email path login fails') and test.sees('BG Email path report empty'), 'Shreya sees both new bugs');
+select test.login('dv_ashish');
+select test.check(test.sees('BG Email path login fails') and test.sees('BG Email path report empty'), 'Ashish sees both new bugs');
+select test.login('dv_sid_mail');
+select test.check(test.sees('BG Email path login fails') and test.sees('BG Email path report empty'), 'Siddhesh sees both new bugs');
+select test.check(test.sees('BG Email path login fails', 'UNASSIGNED') and (select count(*) = 2 from dev_bugs where title like 'BG Email path%'), '... under Unassigned, one record each (no duplicates)');
+reset role;
+select test.check((select count(*) = 6 from notifications where type = 'DEV_BUG_REPORTED' and recipient_id in (test.id('dv_shreya'), test.id('dv_ashish'), test.id('dv_sid_mail'))
+                     and entity_id in (test.bug('BG Email path login fails'), test.bug('BG Email path report empty'))), 'each of the three is notified of each bug');
+
+\echo '   Shreya assigns one to Siddhesh and one to Ashish'
+set role authenticated;
+select test.login('dv_shreya');
+select bug_dev_assign(test.bug('BG Email path login fails'), test.id('dv_sid_mail'));
+select bug_dev_assign(test.bug('BG Email path report empty'), test.id('dv_ashish'));
+select test.check(test.sees('BG Email path login fails') and test.sees('BG Email path report empty'), 'Shreya still sees (monitors) both');
+select test.login('dv_ashish');
+select test.check(not test.sees('BG Email path login fails') and test.sees('BG Email path report empty', 'ME'), 'Ashish: not the one assigned to Siddhesh, has his own');
+select test.login('dv_sid_mail');
+select test.check(test.sees('BG Email path login fails', 'ME') and not test.sees('BG Email path report empty'), 'Siddhesh: has his own, not the one assigned to Ashish');
+select test.check((bug_dev_detail(test.bug('BG Email path login fails')) ->> 'assigneeName') = 'S. Shinde', 'he opens his bug');
+select test.must_fail($$select bug_dev_detail(test.bug('BG Email path report empty'))$$, 'and not Ashish''s', 'not found');
+select test.check((bug_dev_set_status(test.bug('BG Email path login fails'), 'IN_PROGRESS', null) ->> 'status') = 'IN_PROGRESS', 'he sets it In Progress');
+select test.check(jsonb_array_length(bug_dev_comment(test.bug('BG Email path login fails'), 'Reproduced on a throttled connection') -> 'history') >= 2, 'he comments');
+select test.check((bug_dev_set_status(test.bug('BG Email path login fails'), 'RESOLVED', 'Added a loading state and a timeout message.') ->> 'status') = 'RESOLVED', 'and resolves it');
+select test.must_fail($$select bug_dev_set_status(test.bug('BG Email path report empty'), 'RESOLVED', 'Not mine to resolve')$$, 'he cannot touch Ashish''s bug', 'not found');
+select test.login('dv_ashish');
+select test.check((bug_dev_set_status(test.bug('BG Email path report empty'), 'RESOLVED', 'The team filter was missing; fixed.') ->> 'status') = 'RESOLVED', 'Ashish resolves his');
+select test.login('dv_shreya');
+select test.check((select count(*) = 2 from jsonb_array_elements(bug_dev_list(p_status => 'RESOLVED') -> 'items') x where x ->> 'title' like 'BG Email path%'),
+  'Shreya sees both resolutions');
+
+\echo '   removing him from the team in Settings is not silently undone'
+select test.login('sa');
+select dev_team_set(test.id('dv_sid_mail'), false);
+reset role;
+select test.check(not exists (select 1 from dev_team_emails where email = 'siddhesh.amuwa@gmail.com') and not private.is_developer(test.id('dv_sid_mail')),
+  'removed: his email leaves the list and a profile update does not bring him back');
+update profiles set full_name = 'Siddhesh S. Shinde' where id = test.id('dv_sid_mail');
+select test.check(not private.is_developer(test.id('dv_sid_mail')), '... even after his profile changes');
+insert into dev_team_emails (email) values ('siddhesh.amuwa@gmail.com') on conflict do nothing;
+select private.dev_team_sync_emails();
+select test.check(private.is_developer(test.id('dv_sid_mail')), 'listing the email again restores him');
+delete from dev_bugs where title like 'BG Email path%';
 reset role;
 delete from dev_bugs where title like 'BG %';
 delete from employee_issue_attachments where file_name = 'screen.png';

@@ -3,7 +3,7 @@ import { getSupabase } from '../services/supabaseClient';
 import { cleanDbError } from './support';
 
 /**
- * Department Head dashboard data (migration 20270124000100_department_head_dashboard.sql). Every call is a read-only database function that works out the
+ * Department Head dashboard data (migration 20270125000100_department_head_dashboard.sql). Every call is a read-only database function that works out the
  * head's own department from the signed-in session; no department id, role or user id is ever sent from here, and the database refuses anyone who is not a
  * Department Head. Nothing in this file writes.
  */

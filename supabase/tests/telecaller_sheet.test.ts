@@ -37,6 +37,10 @@ check(r.problem && /no contact rows/.test(r.problem), 'headings only is explaine
 r = parseContactSheet([['Name', 'Phone'], ...Array.from({ length: MAX_SHEET_ROWS + 1 }, (_v, i) => [`P${i}`, `98000${String(i).padStart(5, '0')}`])]);
 check(r.problem && /at most 2,000/.test(r.problem), 'more than 2,000 contacts is refused', r.problem);
 
+// the sample sheet's own row (Contact_Name, 9000000000) is never a contact (docs/SAMPLE_SHEETS.md; more in sample_sheets.test.ts)
+r = parseContactSheet([['Contact Name', 'Company Name', 'Phone Number', 'Email', 'Remarks'], ['Contact_Name', 'Company_Name', '9000000000', 'name@example.com', 'Remarks'], ['Dev', 'Dev Co', '9811234563']]);
+check(!r.problem && r.rows.length === 1 && r.rows[0].name === 'Dev' && r.sampleSkipped === true, 'the sample row of the downloadable sample sheet is left out');
+
 const hash = 'a'.repeat(64);
 const id = '11111111-1111-4111-8111-111111111111';
 check(telecallerSheetSchema.safeParse({ assigneeId: id, fileName: 'x.xlsx', hash, rows: [{ row: 2, name: 'A', phone: '9811234561' }], commit: false }).success, 'a sheet request is accepted');

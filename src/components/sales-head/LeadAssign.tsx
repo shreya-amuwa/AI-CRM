@@ -5,10 +5,12 @@ import { TELECALLER_SHEET_MAX_BYTES } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { salesHeadApi } from '../../lib/api/endpoints';
 import { buildLeadRows, LEAD_FIELDS, missingFields, readLeadSheet, type LeadMapping, type LeadSheetRead } from '../../lib/salesLeadSheet';
+import { downloadContactSample } from '../../lib/sampleSheetDownload';
 import { sha256Hex, toBase64 } from '../../lib/telecallerSheet';
 import { readCsv } from '../../lib/csvReader';
 import { isXlsFile, readXls } from '../../lib/xlsReader';
 import { readXlsx, type Workbook } from '../../lib/xlsxReader';
+import { SampleSheetDownload } from '../common/SampleSheetDownload';
 import { PageTitle } from '../layout/shell';
 import { Card } from '../tasks/head/headParts';
 import { Dialog, ErrorBanner, Spinner } from '../team-member/pipeline/shared';
@@ -210,6 +212,7 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
               <input id="la-note" className={tcInput} maxLength={500} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Trade fair leads, November" />
             </div>
           </div>
+          <SampleSheetDownload formats={['xlsx', 'csv']} onDownload={downloadContactSample} what="sheet" />
           <div>
             <label htmlFor="la-file" className="block text-xs font-medium text-slate-600 mb-1">Sheet file (.xlsx, .xls or .csv, up to {Math.round(TELECALLER_SHEET_MAX_BYTES / 1024)} KB) <span aria-hidden="true">*</span></label>
             <input
@@ -261,6 +264,7 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
                 <span data-testid="preview-rows" className="text-slate-700"><b>{check.summary.rows}</b> rows</span>
                 <span className="text-emerald-700"><b data-testid="preview-valid">{check.summary.valid}</b> valid</span>
                 <span className={check.summary.invalid ? 'text-rose-700' : 'text-slate-500'}><b data-testid="preview-invalid">{check.summary.invalid}</b> invalid</span>
+                {picked.read.sampleSkipped && <span className="text-slate-500" data-testid="sample-skipped">the sample row was skipped</span>}
                 <span className={check.summary.duplicates ? 'text-amber-700' : 'text-slate-500'}><b data-testid="preview-duplicates">{check.summary.duplicates}</b> duplicates</span>
               </div>
               {check.alreadyAssigned && <ErrorBanner message="This same sheet has already been uploaded and assigned. Choose another sheet." />}

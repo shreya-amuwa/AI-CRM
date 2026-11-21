@@ -22,7 +22,7 @@ refuses them anyway (`private.can_upload_leads()`: an active Team Member or Team
 
 1. **Download Sample Excel Template** / **Download Sample CSV Template** (made in the browser). Columns:
    Customer Name\*, Contact Person, Mobile Number\*, Email Address, Company Name\*, Business Type, Location, Interested Service\*, Lead Source,
-   Lead Description, Follow-up Date, Assigned Employee. The example row of the template is skipped if it is left in the file.
+   Lead Description, Follow-up Date, Assigned Employee. The example row of the template (placeholders such as `Customer_Name`, never a real person) is skipped if it is left in the file; so is the example row of earlier templates. See `docs/SAMPLE_SHEETS.md`.
 2. **Drag and drop** the file or **Browse Files** (up to 5,000 leads and 5 MB). The first non-empty row is the heading row; each column is matched to
    a lead field by its heading (common other names such as *Mobile No*, *Business Name*, *City*, *Remarks* work) and the match can be changed.
 3. **Preview**: the number of records detected and, for each row, **New lead**, **Duplicate lead** or **Invalid lead** with the reason and the row

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Clock3, Building2, Briefcase, IndianRupee, SlidersHorizontal, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, Handshake, Headphones, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { ClipboardList } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
+import { salesHeadNavGroups } from './salesHeadNav';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
@@ -94,54 +95,12 @@ export const SalesHeadDashboard: React.FC = () => {
   useOpenWorkUpdateRequest(React.useCallback(() => go('work-updates'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   const updateCounts = useWorkUpdateCounts();
 
+  // the menu reads in sections, like the Department Head's (see salesHeadNav.ts)
   const groups: ShellNavGroup[] = useMemo(
-    () => [
-      {
-        items: [
-          ...(operationsHead ? [{ id: 'operations', label: 'Operations Dashboard', icon: Building2 }] : []),
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-          { id: 'leads', label: 'Leads', icon: Target, children: [{ id: 'leads-list', label: 'Lead List' }, { id: 'leads-assign', label: 'Lead Assign' }] },
-          // upload a lead sheet (.xlsx / .xls / .csv) to a Sales person of the department, with its history and failed rows (the same page as Lead Assign)
-          { id: 'sheet-upload', label: 'Sheet Upload', icon: FileUp },
-          // the head's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
-          { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] },
-          // Field visits: the Department Head assigns the leads found on visits; both the head and the Sales Operations Head see visits live
-          {
-            id: 'field-visits-group', label: 'Field Visits', icon: MapPin,
-            children: [...(operationsHead ? [] : [{ id: 'field-visit-leads', label: 'Field Visit Leads - Pending Assignment' }]), { id: 'field-tracking', label: 'Active Field Visits' }]
-          },
-          { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
-          { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: updateCounts?.pending || 0 },
-          { id: 'performance', label: 'Performance Management', icon: LineChart },
-          // role-wise sections (migration 20270117000300): each role's list and one person's full-page dashboard
-          { id: 'telecaller-group', label: 'Telecaller', icon: Headphones, children: [{ id: 'telecallers', label: 'Telecaller List' }] },
-          { id: 'business-associate-group', label: 'Business Associate', icon: Handshake, children: [{ id: 'business-associates', label: 'Business Associate List' }] },
-          // Crocodial (read-only calling app): the head's own activity and leads when they are connected, and the connected people they cover
-          ...(crocodial.self || crocodial.team ? [{
-            id: 'crocodial-group', label: 'Crocodial', icon: PhoneCall,
-            children: [
-              ...(crocodial.self ? [{ id: 'crocodial-me', label: 'My Crocodial Activity' }, { id: 'crocodial-leads', label: 'My Crocodial Leads' }] : []),
-              ...(crocodial.team ? [{ id: 'crocodial', label: 'Team Crocodial Activity' }] : [])
-            ]
-          }] : []),
-          { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
-          { id: 'income', label: 'Department Income', icon: TrendingUp },
-          // sales incentives: what the head earns, and the amounts they pass to the people below them
-          { id: 'my-income', label: 'My Income', icon: IndianRupee },
-          { id: 'incentive-setup', label: 'Incentive setup', icon: SlidersHorizontal },
-          { id: 'reports', label: 'Sales Reports', icon: ReceiptIndianRupee },
-          { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
-          { id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet },
-          { id: 'service-prices', label: 'Service Prices', icon: ReceiptIndianRupee },
-          ...(operationsHead ? [] : [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }]),
-          { id: 'notices', label: 'Client Notices', icon: Megaphone },
-          { id: 'team', label: 'Team Members & Access', icon: UserPlus },
-          { ...ISSUES_NAV },
-          { ...CHAT_NAV, badge: chatUnread },
-          { id: 'notifications', label: 'Notification Center', icon: Bell }
-        ]
-      }
-    ],
+    () => salesHeadNavGroups({
+      operationsHead, crocodialSelf: crocodial.self, crocodialTeam: crocodial.team, pendingUpdates: updateCounts?.pending || 0,
+      reportsBadge, chatUnread, reportsNav: REPORTS_NAV, issuesNav: ISSUES_NAV, chatNav: CHAT_NAV
+    }),
     [chatUnread, operationsHead, reportsBadge, crocodial.self, crocodial.team, updateCounts?.pending]
   );
 

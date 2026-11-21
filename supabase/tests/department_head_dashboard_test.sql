@@ -8,8 +8,8 @@
 \set QUIET 1
 \echo '--- 143. Department Head dashboard: attendance, leads, customers and invoices of the head''s own department'
 reset role;
-\i supabase/migrations/20270124000100_department_head_dashboard.sql
-\i supabase/migrations/20270124000100_department_head_dashboard.sql
+\i supabase/migrations/20270125000100_department_head_dashboard.sql
+\i supabase/migrations/20270125000100_department_head_dashboard.sql
 
 -- a clean slate for this suite (re-runnable): only the rows this suite makes
 delete from member_invoices where invoice_number like 'DHD-%';

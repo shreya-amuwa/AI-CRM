@@ -4,7 +4,9 @@ import type { TelecallerAssignee, TelecallerSheet, TelecallerSheetCheck } from '
 import { TELECALLER_SHEET_MAX_BYTES } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { telecallerApi } from '../../lib/api/endpoints';
+import { downloadContactSample } from '../../lib/sampleSheetDownload';
 import { parseContactSheet, sha256Hex, SHEET_COLUMNS, toBase64, type SheetRow } from '../../lib/telecallerSheet';
+import { SampleSheetDownload } from '../common/SampleSheetDownload';
 import { readXlsx } from '../../lib/xlsxReader';
 import { PageTitle } from '../layout/shell';
 import { Card } from '../tasks/head/headParts';
@@ -20,6 +22,7 @@ interface Picked {
   sheetName: string;
   rows: SheetRow[];
   skipped: number;
+  sampleSkipped: boolean;
   check: TelecallerSheetCheck;
 }
 
@@ -79,7 +82,7 @@ export const ContactSheets: React.FC = () => {
       if (parsed.problem) return setProblem(parsed.problem);
       const hash = await sha256Hex(bytes);
       const check = await telecallerApi.checkSheet({ assigneeId, fileName: file.name, note: note.trim() || null, hash, rows: parsed.rows, commit: false });
-      setPicked({ fileName: file.name, hash, bytes, sheetName: sheet.name, rows: parsed.rows, skipped: parsed.skipped, check });
+      setPicked({ fileName: file.name, hash, bytes, sheetName: sheet.name, rows: parsed.rows, skipped: parsed.skipped, sampleSkipped: !!parsed.sampleSkipped, check });
     } catch (err) {
       setProblem(errorMessage(err));
     } finally {
@@ -149,6 +152,7 @@ export const ContactSheets: React.FC = () => {
               <input id="cs-note" className={tcInput} maxLength={500} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Cold calls for November" />
             </div>
           </div>
+          <SampleSheetDownload formats={['xlsx']} onDownload={downloadContactSample} what="contact sheet" />
           <div>
             <label htmlFor="cs-file" className="block text-xs font-medium text-slate-600 mb-1">Excel file (.xlsx, up to {Math.round(TELECALLER_SHEET_MAX_BYTES / 1024)} KB) <span aria-hidden="true">*</span></label>
             <input
@@ -175,6 +179,7 @@ export const ContactSheets: React.FC = () => {
                 <span className="text-emerald-700"><b>{check.summary.valid}</b> valid</span>
                 <span className={check.summary.invalid ? 'text-rose-700' : 'text-slate-500'}><b>{check.summary.invalid}</b> with problems</span>
                 {picked.skipped > 0 && <span className="text-slate-500">{picked.skipped} blank rows skipped</span>}
+                {picked.sampleSkipped && <span className="text-slate-500" data-testid="sample-skipped">the sample row was skipped</span>}
               </div>
               {check.alreadyAssigned && <ErrorBanner message="This same sheet has already been assigned to this Telecaller. Choose another sheet or another Telecaller." />}
               {check.errors.length > 0 && (

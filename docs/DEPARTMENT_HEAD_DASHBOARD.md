@@ -1,6 +1,6 @@
 # Department Head dashboard: department overview, team attendance, leads, customers and invoices
 
-Migration `supabase/migrations/20270124000100_department_head_dashboard.sql`. It adds **read-only** database functions for the Department Head's own
+Migration `supabase/migrations/20270125000100_department_head_dashboard.sql`. It adds **read-only** database functions for the Department Head's own
 department. No table, column, policy or existing function was changed, and nothing else (Super Admin, Admin, Accounts, HR, Team Lead, Team Member and the
 other departments' dashboards) was touched.
 
