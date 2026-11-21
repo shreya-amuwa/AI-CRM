@@ -11928,6 +11928,122 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   rs = await api('th', 'GET', `/meetings/${appt}/summary`);
   check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
 }
+// Notification reliability (20270126000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
+// retries, a 410 switching a device off, the self and admin test notifications, the scheduler run record and Notification Health.
+{
+  console.log('--- notification reliability: outbox, retries, tests, Notification Health');
+  const { rows: [emp] } = await db.query(`select id from public.profiles where status = 'ACTIVE' and role = 'TEAM_MEMBER' order by created_at limit 1`);
+  tokens.set('nr', tokenFor(emp.id));
+  let rn = await api(null, 'GET', '/notifications/health');
+  check(rn.status === 401, 'health: 401 signed out', rn);
+  rn = await api('nr', 'GET', '/notifications/health');
+  check(rn.status === 403, 'health: a team member is refused (FORBIDDEN from the database)', rn);
+  rn = await api('sa', 'GET', '/notifications/health?issue=NOPE');
+  check(rn.status === 422, 'health: an unknown issue is a validation error', rn);
+  rn = await api('sa', 'GET', '/notifications/health');
+  check(rn.status === 200 && rn.json.data.pushConfigured === false && Array.isArray(rn.json.data.employees) && rn.json.data.employees.length > 0
+        && rn.json.data.employees.every((e: any) => e.status === 'PUSH_UNAVAILABLE' || e.status === 'REMINDERS_DISABLED' || e.status === 'COMPANY_PAUSED'),
+    'health: without VAPID keys nobody is shown as ready (PUSH_UNAVAILABLE)', rn.json?.data?.summary);
+  rn = await api('hr', 'GET', '/notifications/health?role=TEAM_MEMBER');
+  check(rn.status === 200 && rn.json.data.employees.every((e: any) => e.role === 'TEAM_MEMBER'), 'health: HR opens it with a role filter', rn.status);
+
+  // push switched on for this block: a generated VAPID key and a fake push service that answers what `plan` says
+  const subtle = globalThis.crypto.subtle;
+  const vk = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  process.env.VAPID_PRIVATE_KEY = JSON.stringify(await subtle.exportKey('jwk', vk.privateKey));
+  process.env.VAPID_SUBJECT = 'mailto:hr@example.com';
+  const savedPublic = process.env.VAPID_PUBLIC_KEY;
+  delete process.env.VAPID_PUBLIC_KEY;
+  const b64u = (b: ArrayBuffer | Uint8Array) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString('base64url');
+  const dev = async () => b64u(await subtle.exportKey('raw', (await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey));
+  const realFetch = globalThis.fetch;
+  const pushed: string[] = [];
+  const plan: number[] = [];
+  // answers for one device (the pushes run concurrently, so they reach the push service in any order)
+  const planFor: Record<string, number[]> = {};
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://push.example.com/')) {
+      pushed.push(url);
+      const device = url.split('/').pop() ?? '';
+      return new Response(null, { status: planFor[device]?.shift() ?? plan.shift() ?? 201 });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  // no real reminder may be due during this block (it would take answers from the plan)
+  const { rows: [saved] } = await db.query(`select reminders_paused_on from public.attendance_settings where id`);
+  await db.query(`update public.attendance_settings set reminders_paused_on = private.office_today() where id`);
+  try {
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
+    await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) values
+                      ($1, 'https://push.example.com/nr-phone', $2, $3, 'Chrome on Android'), ($1, 'https://push.example.com/nr-laptop', $4, $5, 'Edge on Windows')`,
+      [emp.id, await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16))), await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16)))]);
+    rn = await api('nr', 'GET', '/attendance/push-key');
+    check(rn.status === 200 && typeof rn.json.data.publicKey === 'string' && rn.json.data.publicKey.length > 80, 'push-key: the public key once VAPID is configured');
+    plan.push(201, 201);
+    rn = await api('nr', 'POST', '/attendance/push-test', {});
+    check(rn.status === 200 && rn.json.data.sent === 2 && rn.json.data.devices === 2 && pushed.length === 2, 'self test: both devices accepted by the push service', rn);
+    check((await db.query(`select 1 from public.notification_deliveries where profile_id = $1 and kind = 'TEST' and status = 'ACCEPTED_BY_PUSH_SERVICE'`, [emp.id])).rowCount === 2,
+      'self test: two deliveries ACCEPTED_BY_PUSH_SERVICE');
+
+    // a queued delivery per device: one push service is busy (503), the other says the device is gone (410)
+    await db.query(`insert into public.notification_deliveries (kind, profile_id, subscription_id, device_label, title, body, tag, url, expires_at)
+                    select 'TEST', profile_id, id, label, 'Queued', 'x', 'crm-test', '/?open=attendance', now() + interval '1 hour'
+                      from public.push_subscriptions where endpoint in ('https://push.example.com/nr-phone', 'https://push.example.com/nr-laptop') order by endpoint desc`);
+    pushed.length = 0;
+    planFor['nr-phone'] = [503];
+    planFor['nr-laptop'] = [410];
+    const reminders = () => fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: { authorization: 'Bearer dispatch-secret-0123456789' } })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    let run = await reminders();
+    check(run.status === 200 && run.json.data.mode === 'outbox' && run.json.data.push === 'on' && run.json.data.deliveries.attempted === 2
+          && run.json.data.deliveries.retry === 1 && run.json.data.deliveries.gone === 1, 'scheduled run: the outbox is sent (one retry, one gone)', run.json);
+    const states = async () => Object.fromEntries((await db.query(`select s.endpoint, n.status, s.active, s.deactivated_reason from public.notification_deliveries n
+      join public.push_subscriptions s on s.id = n.subscription_id where n.title = 'Queued' and n.profile_id = $1`, [emp.id])).rows.map((x: any) => [x.endpoint.split('/').pop(), x]));
+    let st = await states();
+    check(st['nr-phone'].status === 'RETRY_PENDING' && st['nr-laptop'].status === 'FAILED' && st['nr-laptop'].active === false
+          && st['nr-laptop'].deactivated_reason === 'EXPIRED_AT_PUSH_SERVICE', 'scheduled run: 503 waits for a retry, 410 switches the device off', st);
+    run = await reminders();
+    check(run.status === 200 && run.json.data.deliveries.attempted === 0, 'scheduled run: a retry is not sent before its time (no hammering)', run.json);
+    await db.query(`update public.notification_deliveries set next_attempt_at = now() - interval '1 second' where status = 'RETRY_PENDING' and profile_id = $1`, [emp.id]);
+    run = await reminders();
+    st = await states();
+    check(run.json.data.deliveries.accepted === 1 && st['nr-phone'].status === 'ACCEPTED_BY_PUSH_SERVICE', 'scheduled run: the retry is accepted on the next run', run.json);
+    const { rows: runs } = await db.query(`select ok, push_configured, attempted, accepted, retry, gone from public.notification_scheduler_runs order by id desc limit 3`);
+    check(runs.length === 3 && runs.every((x: any) => x.ok && x.push_configured) && runs[2].retry === 1 && runs[2].gone === 1 && runs[0].accepted === 1,
+      'every scheduled run is recorded with its counts', runs);
+
+    // HR / the Super Admin: a controlled test to one employee, and the health report now that push works
+    rn = await api('nr', 'POST', `/notifications/health/${emp.id}/test`, {});
+    check(rn.status === 403, 'admin test: an employee cannot test someone else (or themselves this way)', rn);
+    pushed.length = 0;
+    plan.push(201);
+    rn = await api('sa', 'POST', `/notifications/health/${emp.id}/test`, {});
+    check(rn.status === 200 && rn.json.data.devices === 1 && rn.json.data.sent === 1 && rn.json.data.pushConfigured === true && pushed.length === 1,
+      'admin test: sent to the one active device and accepted', rn);
+    check((await db.query(`select 1 from public.audit_logs where action = 'NOTIFICATION_TEST_SENT' and entity_id = $1`, [emp.id])).rowCount >= 1, 'admin test: audited');
+    // (the company pause of this block would rightly show everyone as COMPANY_PAUSED)
+    await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
+    rn = await api('sa', 'GET', '/notifications/health');
+    const me = rn.json.data.employees.find((e: any) => e.profileId === emp.id);
+    check(rn.status === 200 && rn.json.data.pushConfigured === true && me && me.status === 'READY' && me.activeDevices === 1 && me.expiredDevices === 1 && me.lastAcceptedAt,
+      'health: the employee is READY (a recent push-service acceptance), with the expired device counted', me);
+    check(rn.json.data.scheduler.health === 'HEALTHY' && rn.json.data.scheduler.lastSuccessAt, 'health: the scheduler is HEALTHY', rn.json.data.scheduler);
+    check(!JSON.stringify(rn.json).includes('push.example.com') && !/p256dh/.test(JSON.stringify(rn.json)), 'health: no device address or key in the answer');
+    rn = await api('hr', 'GET', `/notifications/health/${emp.id}`);
+    check(rn.status === 200 && rn.json.data.devices.length === 2 && rn.json.data.deliveries.length >= 5 && !JSON.stringify(rn.json).includes('push.example.com'),
+      'health detail: devices and deliveries without addresses', rn.status);
+    rn = await api('sa', 'GET', '/notifications/health/not-a-uuid');
+    check(rn.status === 422, 'health detail: an invalid id is a validation error', rn);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.VAPID_PRIVATE_KEY;
+    delete process.env.VAPID_SUBJECT;
+    if (savedPublic !== undefined) process.env.VAPID_PUBLIC_KEY = savedPublic;
+    await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
+  }
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

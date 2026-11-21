@@ -3619,3 +3619,16 @@ export const meetingReportActionsQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0)
 }).strict().refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
 export type MeetingSummaryContentInput = z.infer<typeof meetingSummaryContentSchema>;
+
+// ---------------------------------------------------------------------------
+// Notification Health (migration 20270126000200): Super Admin and HR staff; the database checks the caller again.
+// ---------------------------------------------------------------------------
+export const NOTIFICATION_HEALTH_STATUSES = ['READY', 'SETUP_REQUIRED', 'NOTIFICATIONS_BLOCKED', 'DEVICE_NOT_REGISTERED', 'PUSH_UNAVAILABLE',
+  'DELIVERY_FAILED', 'RETRY_PENDING', 'REMINDERS_DISABLED', 'COMPANY_PAUSED'] as const;
+export const NOTIFICATION_HEALTH_ISSUES = [...NOTIFICATION_HEALTH_STATUSES, 'REMINDER_MISSING', 'SOUND_UNKNOWN'] as const;
+export const notificationHealthQuerySchema = z.object({
+  departmentId: uuidSchema.optional(),
+  role: z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']).optional(),
+  issue: z.enum(NOTIFICATION_HEALTH_ISSUES).optional()
+}).strip();
+export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;

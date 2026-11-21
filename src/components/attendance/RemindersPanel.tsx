@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { BellRing, Smartphone } from 'lucide-react';
 import { attendanceApi, type PushDevice, type ReminderCompany, type ReminderSettings } from '../../lib/attendance';
 import { claimThisDevice, detectPushState, loadPushKey, subscribeThisDevice, type PushState } from '../../lib/push/pushSupport';
+import { DeviceGuide, DeviceStatusCheck, NotificationSoundSettings, TestConfirm } from '../notifications/DeviceSetup';
+import { playTestSound } from '../../lib/notifications/notificationSound';
 
 const card = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4';
 const field = 'h-10 px-3 rounded-xl border border-slate-200 text-sm bg-white w-full max-w-[10rem]';
@@ -97,9 +99,18 @@ const MyDevices: React.FC = () => {
   const [devices, setDevices] = useState<PushDevice[] | null>(null);
   const [busy, setBusy] = useState('');
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const [askConfirm, setAskConfirm] = useState(false);
+  const [registered, setRegistered] = useState<boolean | null>(null);
   const load = useCallback(async () => {
     try { setDevices(await attendanceApi.devices()); } catch (e) { setNote({ ok: false, text: message(e) }); }
   }, []);
+  // is THIS browser's subscription known to the server for the signed-in person? (the same check the banner makes at every load)
+  useEffect(() => {
+    if (state !== 'on') { setRegistered(state === null ? null : false); return; }
+    let live = true;
+    void claimThisDevice().then(r => { if (live) setRegistered(r === 'claimed'); });
+    return () => { live = false; };
+  }, [state]);
   useEffect(() => { void detectPushState().then(s => { if (s === 'off') void loadPushKey(); setState(s); }); void load(); }, [load]);
   const run = async (key: string, work: () => Promise<string | void>) => {
     setBusy(key);
@@ -115,8 +126,8 @@ const MyDevices: React.FC = () => {
   };
   const stateText: Record<PushState, string> = {
     on: 'Notifications are on for this device.',
-    off: 'This device does not get notifications yet.',
-    blocked: "Notifications are blocked for this site. Allow them in your browser's site settings, then reload.",
+    off: 'Enable notifications to receive Punch In, Lunch, Resume Work and Punch Out reminders.',
+    blocked: "Notifications are blocked for this site. Allow them in your browser's site settings (see Notification troubleshooting below), then reload.",
     'ios-needs-install': 'To get notifications on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.',
     unsupported: 'This browser cannot show notifications. Use Chrome, Edge, Firefox or Safari.'
   };
@@ -141,7 +152,12 @@ const MyDevices: React.FC = () => {
                 <Smartphone className="w-4 h-4 text-slate-500" aria-hidden="true" />
                 <div className="flex-1 min-w-[10rem]">
                   <p className="font-semibold">{d.label || 'A device'}{d.active ? '' : ' (switched off)'}</p>
-                  <p className="text-xs text-slate-500">Added {when(d.createdAt)} · last reminder delivered {when(d.lastSuccessAt)}</p>
+                  <p className="text-xs text-slate-500">Added {when(d.createdAt)} · last accepted by the push service {when(d.lastSuccessAt)}
+                    {d.testConfirmedAt ? ` · test confirmed ${when(d.testConfirmedAt)}` : ''}</p>
+                  {!d.active && d.deactivatedReason === 'EXPIRED_AT_PUSH_SERVICE' && <p className="text-xs text-amber-700">The browser ended this subscription. Turn notifications on again on that device.</p>}
+                  {d.active && d.lastFailureAt && (!d.lastSuccessAt || d.lastFailureAt > d.lastSuccessAt) && (
+                    <p className="text-xs text-red-700">Last attempt failed {when(d.lastFailureAt)}{d.lastFailureCode ? ` (${d.lastFailureCode})` : ''}. It is retried automatically; if it keeps failing, remove the device and turn notifications on again.</p>
+                  )}
                 </div>
                 <button type="button" className={secondary} disabled={!!busy} aria-label={`Remove ${d.label || 'device'}`}
                   onClick={() => void run(d.id, async () => {
@@ -159,15 +175,47 @@ const MyDevices: React.FC = () => {
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" className={secondary} disabled={!!busy || !devices?.length}
           onClick={() => void run('test', async () => {
+            setAskConfirm(false);
             const r = await attendanceApi.testPush();
             await load();
-            return r.sent ? `Sent to ${r.sent} device${r.sent === 1 ? '' : 's'}.` : 'Nothing was delivered. Turn reminders on again on your device.';
+            if (r.pushConfigured === false) return 'Push notifications are not set up on the server yet. Ask your administrator; reminders still appear in the bell.';
+            if (r.sent) setAskConfirm(true);
+            return r.sent ? `Accepted by the push service for ${r.sent} device${r.sent === 1 ? '' : 's'}. It should appear in a few seconds.`
+              : r.retry ? 'The push service is busy; the test will be retried shortly.' : 'Nothing was accepted. Turn notifications on again on your device.';
           })}>
           Send test notification
         </button>
+        <button type="button" className={secondary} onClick={() => { playTestSound('attendance'); }}>Test sound</button>
         {note && <p role={note.ok ? 'status' : 'alert'} className={`text-sm ${note.ok ? 'text-emerald-700' : 'text-red-700'}`}>{note.text}</p>}
       </div>
+      {askConfirm && <TestConfirm onDone={text => { setAskConfirm(false); setNote({ ok: true, text }); void load(); }} />}
+      <DeviceStatusCheck registeredOnServer={registered} />
+      <DeviceGuide />
     </section>
+  );
+};
+
+/** HR: the Resume Work follow-up (when the database has it, 20270126000200). Saved on its own; audited. */
+const ResumeFollowUp: React.FC<{ settings: ReminderSettings; onSaved: (s: ReminderSettings) => void }> = ({ settings, onSaved }) => {
+  const [minutes, setMinutes] = useState(settings.company.resumeFollowUpMinutes ?? 10);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  if (settings.company.resumeFollowUpMinutes === undefined) return null;
+  const save = async () => {
+    setBusy(true);
+    setNote(null);
+    try { onSaved(await attendanceApi.saveResumeFollowUp(minutes)); setNote({ ok: true, text: 'Saved.' }); } catch (e) { setNote({ ok: false, text: message(e) }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-1" data-testid="resume-follow-up">
+      <label htmlFor="co-resume" className="block text-sm font-semibold">Resume Work follow-up (minutes, 0 = none)</label>
+      <div className="flex flex-wrap items-center gap-3">
+        <input id="co-resume" type="number" min={0} max={60} className={field} value={minutes} onChange={e => setMinutes(Number(e.target.value))} />
+        <button type="button" className={secondary} disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save follow-up'}</button>
+        {note && <p role={note.ok ? 'status' : 'alert'} className={`text-sm ${note.ok ? 'text-emerald-700' : 'text-red-700'}`}>{note.text}</p>}
+      </div>
+      <p className="text-xs text-slate-500">"Time to Resume Work" is sent when an open lunch reaches the {settings.company.lunchAllowanceMinutes ?? 45}-minute allowance left for the day; this is the one reminder after it.</p>
+    </div>
   );
 };
 
@@ -210,6 +258,7 @@ const CompanyReminders: React.FC<{ settings: ReminderSettings; onSaved: (s: Remi
           <input id="co-warn" type="number" min={2} max={15} className={field} value={c.lunchWarningMinutes} onChange={e => setC(x => ({ ...x, lunchWarningMinutes: Number(e.target.value) }))} />
         </div>
       </div>
+      <ResumeFollowUp settings={settings} onSaved={onSaved} />
       <fieldset>
         <legend className="text-sm font-semibold mb-2">Reminder days</legend>
         <div className="flex flex-wrap gap-3">
@@ -247,6 +296,7 @@ export const RemindersPanel: React.FC = () => {
       {!settings && !error && <p role="status" className="text-sm text-slate-500">Loading reminders…</p>}
       {settings?.mine && <MyReminders settings={settings} onSaved={setSettings} />}
       {settings?.mine && <MyDevices />}
+      {settings && <NotificationSoundSettings confirmedAt={settings.sound?.confirmedAt ?? null} />}
       {settings?.canManage && <CompanyReminders settings={settings} onSaved={setSettings} />}
     </div>
   );
