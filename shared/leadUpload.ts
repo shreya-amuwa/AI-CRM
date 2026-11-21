@@ -9,19 +9,22 @@ import { leadUploadLeadSchema, type LeadUploadLeadInput } from './validation.js'
 export type LeadUploadField = Exclude<keyof LeadUploadRawRow, 'row'>;
 
 export const LEAD_UPLOAD_COLUMNS: { key: LeadUploadField; label: string; required: boolean; example: string; hint: string }[] = [
-  { key: 'name', label: 'Customer Name', required: true, example: 'Ravi Kumar', hint: 'Required' },
-  { key: 'contactPerson', label: 'Contact Person', required: false, example: 'Ravi Kumar', hint: 'Saved in the lead notes' },
-  { key: 'phone', label: 'Mobile Number', required: true, example: '9876543210', hint: 'Required. 10 digits, +91 allowed' },
-  { key: 'email', label: 'Email Address', required: false, example: 'ravi@example.com', hint: '' },
-  { key: 'company', label: 'Company Name', required: true, example: 'Ravi Jewellers', hint: 'Required (business name)' },
-  { key: 'businessType', label: 'Business Type', required: false, example: 'Jewellery / Gold', hint: '' },
-  { key: 'location', label: 'Location', required: false, example: 'Surat', hint: 'City' },
+  { key: 'name', label: 'Customer Name', required: true, example: 'Customer_Name', hint: 'Required' },
+  { key: 'contactPerson', label: 'Contact Person', required: false, example: 'Contact_Person_Name', hint: 'Saved in the lead notes' },
+  { key: 'phone', label: 'Mobile Number', required: true, example: '9000000000', hint: 'Required. 10 digits, +91 allowed' },
+  { key: 'email', label: 'Email Address', required: false, example: 'name@example.com', hint: '' },
+  { key: 'company', label: 'Company Name', required: true, example: 'Company_Name', hint: 'Required (business name)' },
+  { key: 'businessType', label: 'Business Type', required: false, example: 'Business_Type', hint: '' },
+  { key: 'location', label: 'Location', required: false, example: 'City_Name', hint: 'City' },
   { key: 'services', label: 'Interested Service', required: true, example: 'WhatsApp API', hint: 'Required. Several: separate with ;' },
   { key: 'leadSource', label: 'Lead Source', required: false, example: 'Referral', hint: 'Empty = Other' },
-  { key: 'description', label: 'Lead Description', required: false, example: 'Wants a demo next week', hint: '' },
+  { key: 'description', label: 'Lead Description', required: false, example: 'Lead_Description', hint: '' },
   { key: 'followUpDate', label: 'Follow-up Date', required: false, example: '25-12-2026', hint: 'DD-MM-YYYY or YYYY-MM-DD' },
   { key: 'assignee', label: 'Assigned Employee', required: false, example: '', hint: 'E-mail of the employee; empty = you' }
 ];
+
+/** The example row of earlier templates (real-sounding names). Old downloads still hold it, so it is still recognised as an example and skipped. */
+export const LEAD_UPLOAD_LEGACY_EXAMPLE = ['Ravi Kumar', 'Ravi Kumar', '9876543210', 'ravi@example.com', 'Ravi Jewellers', 'Jewellery / Gold', 'Surat', 'WhatsApp API', 'Referral', 'Wants a demo next week', '25-12-2026', ''];
 
 const ALIASES: Record<LeadUploadField, string[]> = {
   name: ['customer name', 'name', 'client name', 'lead name', 'customer', 'full name'],

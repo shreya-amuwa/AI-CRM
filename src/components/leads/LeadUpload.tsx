@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Copy, Download, FileSpreadsheet, History, RefreshCw, Upload, XCircle } from 'lucide-react';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
-import { LEAD_UPLOAD_COLUMNS, matchLeadUploadHeadings, type LeadUploadField } from '../../../shared/leadUpload';
+import { LEAD_UPLOAD_COLUMNS, LEAD_UPLOAD_LEGACY_EXAMPLE, matchLeadUploadHeadings, type LeadUploadField } from '../../../shared/leadUpload';
 import { LEAD_UPLOAD_CHUNK_ROWS, LEAD_UPLOAD_MAX_ROWS } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { canUploadLeads } from '../../lib/auth/roleMapping';
@@ -81,7 +81,7 @@ async function readFile(file: File): Promise<ReadFile> {
     .filter(r => r.cells.some(c => cellText(c) !== ''))
     .filter(r => {
       // the example row of our own template is never imported
-      const isExample = TEMPLATE_EXAMPLE.every((v, i) => cellText(r.cells[i] ?? null) === v);
+      const isExample = [TEMPLATE_EXAMPLE, LEAD_UPLOAD_LEGACY_EXAMPLE].some(ex => ex.every((v, i) => cellText(r.cells[i] ?? null) === v));
       if (isExample) skippedExample = true;
       return !isExample;
     });

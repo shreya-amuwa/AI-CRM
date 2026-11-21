@@ -51,7 +51,7 @@ Search, source, temperature / call status (Telecaller), service, follow-up, sort
 * API: `GET /api/v1/lead-scope?scope=ALL|MINE|DEPARTMENT|TO_ACCOUNTS|RETURNED` and `GET /api/v1/lead-scope/counts`.
 
 ## Assigning an Excel sheet (Department Head: *Telecaller Sheets*)
-1. Choose the Telecaller, then the `.xlsx` file (up to 700 KB, at most 2,000 contacts). The first row needs the headings
+1. Choose the Telecaller, then the `.xlsx` file (up to 700 KB, at most 2,000 contacts). **Download the sample sheet** on the page to see the format (its first row holds placeholders such as `Contact_Name`; that row is skipped when uploaded, see `docs/SAMPLE_SHEETS.md`). The first row needs the headings
    *Contact Name, Company Name, Phone Number, Email, Remarks* (Contact Name and Phone Number are required; common alternative headings work).
 2. The file is read in the browser, and every row is checked again by the database. Nothing is saved while any row is wrong: the page lists each
    problem with its Excel row number and shows a preview of the valid rows.
