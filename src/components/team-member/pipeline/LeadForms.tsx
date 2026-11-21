@@ -27,6 +27,7 @@ import {
   longDate,
   notifyPipelineChanged,
   Pill,
+  selectCls,
   Spinner,
   todayIso,
   useServiceCatalog
@@ -254,7 +255,14 @@ const PhotoTag: React.FC<{ id: string; check?: boolean }> = ({ id, check }) => (
   </p>
 );
 
-export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string) => void; /** The lead source to start with (e.g. 'Field visit' when added from the Field Visit pages). */ defaultSource?: string }> = ({ onCancel, onSaved, defaultSource }) => {
+export const AddLeadView: React.FC<{
+  onCancel: () => void;
+  onSaved: (id: string) => void;
+  /** The lead source to start with (e.g. 'Field visit' when added from the Field Visit pages). */
+  defaultSource?: string;
+  /** A Department Head's dashboard: who the lead can be given to (the first is the head). The database checks the choice again and refuses anyone outside the head's department. */
+  owners?: { id: string; name: string; hint?: string }[];
+}> = ({ onCancel, onSaved, defaultSource, owners }) => {
   const { items: services, error: catalogError } = useServiceCatalog();
   const [form, setForm] = useState(() => (defaultSource ? { ...EMPTY, leadSource: defaultSource } : EMPTY));
   // Field Visit > Add Lead: a photo can fill the form, the source stays "Field visit" and the lead goes to the Sales Department Head
@@ -272,6 +280,7 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
   const [otherCategory, setOtherCategory] = useState('');
   const [otherSource, setOtherSource] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [ownerId, setOwnerId] = useState(owners?.[0]?.id ?? '');
   // the plan, duration, amount and message credits of each selected service (Sales never enters a start or an expiry date)
   const [terms, setTerms] = useState<Record<string, TermsDraft>>({});
   const [termErrors, setTermErrors] = useState<Record<string, TermsErrors>>({});
@@ -349,7 +358,8 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
       nextFollowUpAt: fromLocalInput(form.nextFollowUpAt),
       expectedBudget: form.expectedBudget === '' ? null : form.expectedBudget,
       notes: form.notes || null,
-      services: selected
+      services: selected,
+      ...(owners && ownerId ? { ownerId } : {})
     };
     const subscriptions: Record<string, unknown>[] = [];
     const subErrors: Record<string, TermsErrors> = {};
@@ -443,6 +453,22 @@ export const AddLeadView: React.FC<{ onCancel: () => void; onSaved: (id: string)
             </div>
           )}
         </>
+      )}
+
+      {owners && owners.length > 0 && (
+        <Card className="p-5">
+          <h2 className="text-sm font-bold text-slate-900 mb-3">Lead owner</h2>
+          <div className="max-w-md">
+            <Field label="Assign this lead to" required htmlFor="lead-owner">
+              <select id="lead-owner" className={selectCls} value={ownerId} onChange={e => setOwnerId(e.target.value)}>
+                {owners.map(o => (
+                  <option key={o.id} value={o.id}>{o.name}{o.hint ? ` · ${o.hint}` : ''}</option>
+                ))}
+              </select>
+            </Field>
+            <p className="mt-1 text-[11px] text-slate-500">The lead is added to your department. Only people of your department can be chosen.</p>
+          </div>
+        </Card>
       )}
 
       <Card className="p-5">
