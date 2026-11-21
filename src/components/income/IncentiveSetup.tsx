@@ -279,7 +279,7 @@ const GivenEditor: React.FC<{ rule: SetupRule; row: GivenRow; reload: () => void
           <p className="text-xs text-slate-500">{LEVEL_NAME[row.level] ?? row.level}</p>
         </div>
         <label className="text-xs font-medium text-slate-600">Gets per unit (₹)
-          <input className={`${input} w-32`} aria-label="Gets per unit (₹)" type="number" inputMode="decimal" min="0" step="0.01" value={value} onChange={e => setValue(e.target.value)} aria-label={`Amount for ${row.name}`} required />
+          <input className={`${input} w-32`} type="number" inputMode="decimal" min="0" step="0.01" value={value} onChange={e => setValue(e.target.value)} aria-label={`Amount for ${row.name}`} required />
         </label>
         <div className="text-xs text-slate-600 min-w-[7rem]">You keep<br /><strong className="text-sm text-slate-900 tabular-nums" data-testid="kept">{kept == null ? '—' : rupees(kept)}</strong></div>
         <button type="submit" className={btn.secondary} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
