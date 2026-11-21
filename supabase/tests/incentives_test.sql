@@ -312,3 +312,48 @@ select test.check((incentive_allocation_set((select v from inc where k = 'rule2'
 reset role;
 update profiles set status = 'ACTIVE' where id in (select v::uuid from inc where k like 'tl:%');
 update incentive_allocations set amount = 100 where rule_id = (select v from inc where k = 'rule2')::uuid and recipient_id = test.id('tm_a');
+
+\echo '   the Super Admin edits and deletes rules; the setup screen shows each person below with what they get'
+reset role;
+\i supabase/migrations/20270120000100_incentive_setup_given.sql
+\i supabase/migrations/20270120000100_incentive_setup_given.sql
+set role authenticated;
+select test.login('sa');
+select incentive_rule_update((select v from inc where k = 'rule2')::uuid, '{"name":"Test 400 renamed","targetUnits":2000}');
+reset role;
+select test.check((select name = 'Test 400 renamed' and target_units = 2000 and ended_at is null from incentive_rules where id = (select v from inc where k = 'rule2')::uuid),
+  'editing the name and target changes the rule in place');
+set role authenticated;
+select test.login('sa');
+insert into inc select 'rule3', incentive_rule_update((select v from inc where k = 'rule2')::uuid, '{"amount":450}') ->> 'id';
+reset role;
+select test.check((select ended_at is not null from incentive_rules where id = (select v from inc where k = 'rule2')::uuid)
+                  and (select amount = 450 and name = 'Test 400 renamed' and ended_at is null from incentive_rules where id = (select v from inc where k = 'rule3')::uuid)
+                  and private.incentive_amount((select v from inc where k = 'rule3')::uuid, test.id('tm_a')) = 100
+                  and (select count(*) > 0 from earnings where rule_id = (select v from inc where k = 'rule2')::uuid and status = 'EARNED'),
+  'editing the amount applies from now on: the old version ends (its earnings stay), the new one carries the amounts passed down');
+set role authenticated;
+select test.login('sa');
+insert into inc select 'unused', incentive_rule_create(jsonb_build_object('name', 'Test unused', 'eventType', 'VISIT_COMPLETED', 'amount', 10,
+  'scopeType', 'PERSON', 'scopeValue', test.id('tm_a')))::text;
+select test.check((incentive_rule_delete((select v from inc where k = 'unused')::uuid) ->> 'deleted')::boolean, 'a rule nobody earned from is deleted');
+select test.check((select (d ->> 'deleted')::boolean = false and (d ->> 'ended')::boolean from (select incentive_rule_delete((select v from inc where k = 'demo')::uuid) d) x),
+  'a rule with earnings is stopped instead of deleted (earned money is never erased)');
+select test.login('sh_head');
+select test.must_fail(format($$select incentive_rule_delete(%L)$$, (select v from inc where k = 'rule3')), 'only the Super Admin deletes rules', 'FORBIDDEN');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"amount":1}')$$, (select v from inc where k = 'rule3')), 'only the Super Admin edits rules', 'FORBIDDEN');
+reset role;
+select test.check(not exists (select 1 from incentive_rules where id = (select v from inc where k = 'unused')::uuid)
+                  and (select ended_at is not null from incentive_rules where id = (select v from inc where k = 'demo')::uuid)
+                  and (select count(*) > 0 from earnings where rule_id = (select v from inc where k = 'demo')::uuid),
+  'the deleted rule is gone; the stopped one and its earnings remain');
+set role authenticated;
+select test.login('sa');
+select incentive_allocation_set((select v from inc where k = 'rule3')::uuid, test.id('tm_a'), 80);
+select test.login('th_wab');
+select test.check((select (g ->> 'amount')::numeric = 80 and (g ->> 'kept')::numeric = 70 and g ->> 'name' is not null
+                     from jsonb_array_elements(incentive_setup() -> 'rules') r, jsonb_array_elements(r -> 'given') g
+                    where r ->> 'id' = (select v from inc where k = 'rule3') and g ->> 'recipientId' = test.id('tm_a')::text),
+  'after a Super Admin override the Team Lead sees what their member now gets (80) and what they keep (70)');
+reset role;
+select test.check((select count(*) >= 3 from audit_logs where action in ('INCENTIVE_RULE_UPDATED', 'INCENTIVE_RULE_DELETED')), 'edits and deletions are on the audit trail');
