@@ -1,10 +1,12 @@
 import type {
-  CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity
+  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity
 } from '../../shared/contracts.js';
 import {
-  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, uuidSchema
+  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, crocodialRefreshSchema, uuidSchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
+import { credentialCheck, reportRuntime, runtimeInfo } from '../crocodial/runtime.js';
+import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
 import { runCrocodialSync } from '../crocodial/sync.js';
 import { parse } from '../http/validate.js';
@@ -16,7 +18,8 @@ import type { CrocodialRepository } from '../repositories/CrocodialRepository.js
  * token setting a connection names (a yes / no, never the value), and runs "Test connection" after the database has checked the caller.
  */
 export class CrocodialService {
-  constructor(private readonly repo: CrocodialRepository, private readonly env: NodeJS.ProcessEnv = process.env) {}
+  // env: only tests pass one; the server reads its own settings (process.env, then the Worker's bindings: server/crocodial/runtime.ts)
+  constructor(private readonly repo: CrocodialRepository, private readonly env?: NodeJS.ProcessEnv) {}
 
   private withCredential(c: CrocodialConnection): CrocodialConnection {
     return { ...c, credentialConfigured: crocodialToken(c.credentialRef, this.env) !== null };
@@ -35,10 +38,10 @@ export class CrocodialService {
     const b = parse(crocodialConnectionSaveSchema, body);
     return this.withCredential(await this.repo.connectionSave({ ...b, externalAccountLabel: b.externalAccountLabel ?? null }));
   }
-  async testConnection(id: string): Promise<CrocodialTestResult> {
+  async testConnection(id: string, host?: string | null): Promise<CrocodialTestResult> {
     // the database checks the caller is the Super Admin and returns the setting's NAME; the server reads the token from its own environment
     const c = await this.repo.connection(parse(uuidSchema, id));
-    return testCrocodialConnection({ id: c.id, credentialRef: c.credentialRef }, { env: this.env }) as Promise<CrocodialTestResult>;
+    return testCrocodialConnection({ id: c.id, credentialRef: c.credentialRef }, { env: this.env, host }) as Promise<CrocodialTestResult>;
   }
   departmentLinkSave(body: unknown) {
     const b = parse(crocodialDepartmentLinkSchema, body);
@@ -61,6 +64,60 @@ export class CrocodialService {
     return this.repo.mappingRevoke(parse(uuidSchema, id), parse(crocodialRevokeSchema, body ?? {}).reason ?? null);
   }
   myStatus(): Promise<CrocodialMyStatus> { return this.repo.myStatus(); }
+
+  /** Which refresh buttons the signed-in person has (decided by the database from their role, scopes and approved mappings). */
+  refreshCapabilities(): Promise<CrocodialRefreshCapabilities> { return this.repo.refreshCapabilities(); }
+
+  /**
+   * "Refresh": the database checks the scope against the signed-in account, coalesces with any read already running or asked for, and
+   * names the connections this request started. Those are read after the answer is sent (one account-level read per connection, whoever
+   * asked); the answer itself never carries connection or Crocodial user details. The scheduled run picks up anything not finished.
+   */
+  async refresh(body: unknown): Promise<{ data: CrocodialRefreshRequest; after?: () => Promise<unknown> }> {
+    const b = parse(crocodialRefreshSchema, body ?? {});
+    const { kick, ...request } = await this.repo.refreshRequest(b.scope, b.departmentId ?? null);
+    const ids = Array.isArray(kick) ? kick : [];
+    if (!ids.length) return { data: request };
+    const env = this.env;
+    return {
+      data: request,
+      after: async () => {
+        // the Worker reads after the answer (waitUntil); elsewhere the answer waits for this, so only a short first slice runs there
+        const deadline = Date.now() + (runtimeInfo(env).platform === 'cloudflare' ? 25_000 : 8_000);
+        for (const connectionId of ids) {
+          const left = deadline - Date.now();
+          if (left < 3_000) break; // the scheduled run continues (croc_sync_due includes a pending refresh)
+          await runCrocodialSync({ connectionId, budgetMs: left, env, context: 'REFRESH' }).catch(() => undefined);
+        }
+      }
+    };
+  }
+  refreshStatus(id: string): Promise<CrocodialRefreshRequest> { return this.repo.refreshStatus(parse(uuidSchema, id)); }
+
+  /**
+   * Super Admin: each connection's health, with what EVERY server reported about its token and this server's live check. This server's
+   * check is recorded too, so the page shows which deployment has the setting and which does not. Never a token value.
+   */
+  async connectionHealth(host?: string | null): Promise<CrocodialHealthReport> {
+    const rows = await this.repo.connectionHealth();
+    const rt = runtimeInfo(this.env, host);
+    const db = hasServiceClient() ? getServiceClient() : null;
+    const connections = await Promise.all(rows.map(async h => {
+      const check = credentialCheck(h.connection.credentialRef, this.env);
+      if (db) await reportRuntime(db, h.connection.id, rt, check, 'PAGE');
+      const mine: CrocodialRuntimeReport = {
+        runtime: rt.runtime, platform: rt.platform, environment: rt.environment, deployment: rt.deployment, host: rt.host,
+        credentialDetected: check.detected, credentialFormatValid: check.formatValid, context: 'PAGE', reportedAt: new Date().toISOString()
+      };
+      return {
+        ...h,
+        connection: this.withCredential(h.connection),
+        runtimes: [mine, ...(h.runtimes ?? []).filter(r => r.runtime !== rt.runtime)],
+        current: { nameValid: check.nameValid, credentialDetected: check.detected, credentialFormatValid: check.formatValid }
+      };
+    }));
+    return { server: { runtime: rt.runtime, platform: rt.platform, environment: rt.environment, deployment: rt.deployment, host: rt.host }, connections };
+  }
   syncStatus(): Promise<CrocodialSyncStatus[]> { return this.repo.syncStatus(); }
   /** The connected people the caller may see (their own people, their department's Sales, or everyone for the Super Admin). */
   teamActivity(query: unknown): Promise<CrocodialTeamActivity> {

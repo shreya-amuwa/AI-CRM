@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CrocodialConnectionHealth } from './CrocodialConnectionHealth';
 import { CheckCircle2, PlugZap, RefreshCw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
 import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
@@ -18,7 +19,7 @@ const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleSt
 const HEALTH: Record<string, [string, string]> = {
   UNKNOWN: ['Not tested yet', 'bg-slate-100 text-slate-700'],
   OK: ['Connected', 'bg-emerald-50 text-emerald-800'],
-  NO_CREDENTIAL: ['Token setting missing on the server', 'bg-amber-50 text-amber-800'],
+  NO_CREDENTIAL: ['Token missing (at the last check)', 'bg-amber-50 text-amber-800'],
   AUTH_FAILED: ['Token refused by Crocodial', 'bg-rose-50 text-rose-800'],
   DISABLED_AT_SOURCE: ['Token turned off in Crocodial', 'bg-rose-50 text-rose-800'],
   RATE_LIMITED: ['Crocodial rate limit reached', 'bg-amber-50 text-amber-800'],
@@ -225,9 +226,11 @@ export const CrocodialAdminPage: React.FC = () => {
   const [editing, setEditing] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, CrocodialTestResult>>({});
   const [sync, setSync] = useState<CrocodialSyncStatus[]>([]);
+  const [reloads, setReloads] = useState(0);
   const load = useCallback(() => {
     crocodialApi.overview().then(d => { setData(d); setError(''); }).catch(e => setError(errText(e)));
     crocodialApi.syncStatus().then(setSync).catch(() => setSync([]));
+    setReloads(n => n + 1);
   }, []);
   useEffect(load, [load]);
   const run = async (key: string, fn: () => Promise<unknown>, text?: string) => {
@@ -254,6 +257,8 @@ export const CrocodialAdminPage: React.FC = () => {
       </div>
       {flash ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" role="status">{flash}</p> : null}
       {error ? <ErrorBanner message={error} onRetry={load} /> : null}
+
+      <CrocodialConnectionHealth reloadKey={reloads} />
 
       <Card className="p-4 space-y-3">
         <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><ShieldCheck className="w-4 h-4" aria-hidden /> 1. Rollout</h2>
@@ -291,9 +296,9 @@ export const CrocodialAdminPage: React.FC = () => {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="text-sm">
                     <p className="font-semibold text-slate-900">{c.name} {c.externalAccountLabel ? <span className="text-slate-500 font-normal">· {c.externalAccountLabel}</span> : null}</p>
-                    <p className="text-xs text-slate-500 font-mono">{c.credentialRef} {c.credentialConfigured ? <span className="text-emerald-700">(set on the server)</span> : <span className="text-amber-700">(not set on the server)</span>}</p>
+                    <p className="text-xs text-slate-500 font-mono">{c.credentialRef} {c.credentialConfigured ? <span className="text-emerald-700">(set on this server)</span> : <span className="text-amber-700">(not set on this server: see Connection health)</span>}</p>
                     <p className="text-xs text-slate-500">Last test / sync: {when(c.lastAttemptAt)} · last success: {when(c.lastSuccessAt)}{c.timezone ? ` · ${c.timezone}` : ''}</p>
-                    {c.lastError ? <p className="text-xs text-rose-700">{c.lastError}</p> : null}
+                    {c.lastError ? <p className="text-xs text-rose-700">{c.health === 'NO_CREDENTIAL' && c.credentialConfigured ? `Recorded ${when(c.lastAttemptAt)} (this server has the token now; Test connection clears it): ` : ''}{c.lastError}</p> : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Pill tone={tone}>{hl}</Pill>

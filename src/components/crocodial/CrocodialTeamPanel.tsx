@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, PhoneCall } from 'lucide-react';
-import type { CrocodialTeamActivity } from '../../../shared/contracts';
+import type { CrocodialRefreshCapabilities, CrocodialTeamActivity } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi } from '../../lib/api/endpoints';
 import { CrocodialActivityPanel } from './CrocodialActivity';
+import { CrocodialRefreshControl } from './CrocodialRefreshControl';
 
 /**
  * The management view of Crocodial (part 4 of docs/CROCODIAL_INTEGRATION.md): the connected people the signed-in manager may see, in the
@@ -47,19 +48,79 @@ const Card: React.FC<{ label: string; value: React.ReactNode; hint?: string }> =
   </div>
 );
 
+/**
+ * The refresh buttons of a manager's view, from croc_refresh_capabilities:
+ *   Team Lead        - Refresh My Team (+ Refresh My Data when connected themselves)
+ *   Department Head  - Refresh Department (+ a department choice when they cover more than one) (+ Refresh My Data)
+ *   Operations Head  - Refresh Selected Department, Refresh My Departments (+ Refresh My Data)
+ *   Super Admin      - Refresh Selected Department, Refresh All Departments
+ * The department choice also filters the figures below. Counts come from approved mappings, never from Crocodial's own user list.
+ */
+const RefreshBar: React.FC<{ caps: CrocodialRefreshCapabilities; dept: string; setDept: (v: string) => void; onCompleted: () => void; lastSyncAt: string | null }> = ({ caps, dept, setDept, onCompleted, lastSyncAt }) => {
+  const heads = caps.kind === 'DEPARTMENT_HEAD' || caps.kind === 'OPERATIONS_HEAD' || caps.kind === 'SUPER_ADMIN';
+  const depts = caps.departments;
+  const chosen = depts.find(d => d.departmentId === dept) ?? (depts.length === 1 ? depts[0] : undefined);
+  const recent = (scope: string, id?: string) => (caps.recent && caps.recent.scope === scope && (caps.recent.departmentId ?? undefined) === id ? caps.recent : null);
+  const self = caps.self.state === 'CONNECTED';
+  if (!self && !(caps.team?.people) && !(heads && depts.length)) return null;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 flex flex-wrap items-start justify-between gap-3" data-testid="croc-refresh-bar">
+      <div className="text-xs text-slate-600 space-y-1">
+        {caps.kind === 'TEAM_LEAD' ? <p><b className="text-slate-800">My Team Crocodial Activity</b> · Connected employees: {caps.team?.people ?? 0}</p> : null}
+        {heads ? (
+          <p><b className="text-slate-800">{caps.kind === 'OPERATIONS_HEAD' ? 'Operations Crocodial Activity' : caps.kind === 'SUPER_ADMIN' ? 'All Crocodial Activity' : 'Department Crocodial Activity'}</b>
+            {' '}· {caps.kind === 'DEPARTMENT_HEAD' ? 'Departments' : 'Authorized departments'}: {depts.length} · Connected employees: {caps.all?.people ?? 0}</p>
+        ) : null}
+        {heads && depts.length > 1 ? (
+          <label className="flex items-center gap-1.5">Department
+            <select className="border border-slate-200 rounded-md px-1.5 py-0.5 text-xs" value={dept} onChange={e => setDept(e.target.value)} aria-label="Department">
+              <option value="">All my departments</option>
+              {depts.map(d => <option key={d.departmentId} value={d.departmentId}>{d.name} ({d.people})</option>)}
+            </select>
+          </label>
+        ) : null}
+      </div>
+      <div className="flex flex-wrap items-start gap-3">
+        {caps.kind === 'TEAM_LEAD' && caps.team?.people ? (
+          <CrocodialRefreshControl scope="TEAM" label="Refresh My Team" variant="primary" lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('TEAM')} />
+        ) : null}
+        {heads && chosen ? (
+          <CrocodialRefreshControl key={chosen.departmentId} scope="DEPARTMENT" departmentId={chosen.departmentId}
+            label={depts.length > 1 ? 'Refresh Selected Department' : 'Refresh Department'} variant={caps.kind === 'DEPARTMENT_HEAD' ? 'primary' : 'secondary'}
+            lastSyncAt={chosen.lastSyncAt} onCompleted={onCompleted} resume={recent('DEPARTMENT', chosen.departmentId)} />
+        ) : null}
+        {heads && depts.length > 1 && caps.kind !== 'DEPARTMENT_HEAD' ? (
+          <CrocodialRefreshControl scope="ALL" label={caps.kind === 'SUPER_ADMIN' ? 'Refresh All Departments' : 'Refresh My Departments'} variant="primary"
+            lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('ALL')} />
+        ) : null}
+        {heads && depts.length > 1 && caps.kind === 'DEPARTMENT_HEAD' && !chosen ? (
+          <CrocodialRefreshControl scope="ALL" label="Refresh My Departments" variant="primary" lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('ALL')} />
+        ) : null}
+        {self ? <CrocodialRefreshControl scope="SELF" label="Refresh My Data" lastSyncAt={caps.self.lastSyncAt} onCompleted={onCompleted} resume={recent('SELF')} /> : null}
+      </div>
+    </div>
+  );
+};
+
 export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Crocodial calling activity' }) => {
   const [range, setRange] = useState<[string, number]>(['7', 6]);
   const [from, setFrom] = useState(daysAgo(6));
   const [to, setTo] = useState(daysAgo(0));
   const [team, setTeam] = useState('');
+  const [dept, setDept] = useState('');
   const [data, setData] = useState<CrocodialTeamActivity | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
+  const [caps, setCaps] = useState<CrocodialRefreshCapabilities | null>(null);
   const load = useCallback(() => {
     setError('');
-    crocodialApi.teamActivity({ from, to, teamId: team || undefined }).then(setData).catch(e => setError(errText(e)));
-  }, [from, to, team]);
+    crocodialApi.teamActivity({ from, to, teamId: team || undefined, departmentId: dept || undefined }).then(setData).catch(e => setError(errText(e)));
+  }, [from, to, team, dept]);
   useEffect(load, [load]);
+  // which refresh buttons this person has (the database decides from their role, scopes and approved mappings)
+  useEffect(() => {
+    crocodialApi.refreshCapabilities().then(setCaps).catch(() => setCaps(null));
+  }, []);
   const teams = useMemo(() => {
     const m = new Map<string, string>();
     for (const p of data?.people ?? []) if (p.teamId) m.set(p.teamId, p.teamName ?? 'Team');
@@ -104,9 +165,12 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
         </div>
       </div>
 
+      {caps?.active ? <RefreshBar caps={caps} dept={dept} setDept={v => { setDept(v); setTeam(''); }} onCompleted={load} lastSyncAt={data?.oldestSyncAt ?? null} /> : null}
+
       {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800" role="alert">{error} <button type="button" className="underline" onClick={load}>Try again</button></p> : null}
       {!data && !error ? <p className="text-xs text-slate-500" role="status">Loading…</p> : null}
-      {data && !data.connectedEmployees ? <p className="text-sm text-slate-500" data-testid="croc-team-empty">None of your people is connected to Crocodial.</p> : null}
+      {data && !data.connectedEmployees ? <p className="text-sm text-slate-500" data-testid="croc-team-empty">{caps?.kind === 'TEAM_LEAD' ? 'No team members connected to Crocodial yet.' : 'None of your people is connected to Crocodial yet.'}</p> : null}
+      {data && data.connectedEmployees > 0 && data.unavailable === data.connectedEmployees ? <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700" role="status" data-testid="croc-team-first-import">The first Crocodial import is still in progress. Figures appear once it has finished (they are not zero).</p> : null}
 
       {data && data.connectedEmployees ? (
         <>

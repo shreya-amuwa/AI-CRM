@@ -124,6 +124,10 @@ dashboards, never into chat, files or commits.
 3. **Deploy** (Deployments → Retry / push to `main`). Open the `https://ai-crm.<your-subdomain>.workers.dev` address and check:
    `…/api/v1/health` shows `"status":"ok"`; sign in; open a few dashboards; generate one invoice PDF.
 4. Worker → **Settings → Triggers**: the two cron schedules from `wrangler.jsonc` are listed. **Settings → Observability**: logs are on.
+   `wrangler.jsonc` also sets `CRM_ENVIRONMENT=production` and the `CF_VERSION_METADATA` binding: Super Admin → Crocodial Integration →
+   Connection health then names this Worker and its deployment, and says (yes / no, never the value) whether it has each `CROCODIAL_TOKEN_*`
+   secret. If that page says a token is missing although it is set, check which server answered (see docs/CROCODIAL_INTEGRATION.md,
+   "Connection health"): a second deployment without the secret (an old Vercel one) is listed there too.
 
 ### Step C: switch the address (the cut-over)
 

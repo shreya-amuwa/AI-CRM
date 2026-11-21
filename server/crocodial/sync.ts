@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { CrocodialClient, CrocodialError, crocodialToken, safeNextUrl, type ClientOptions, type CrocodialResource } from './client.js';
+import { credentialCheck, credentialProblem, reportRuntime, runtimeInfo } from './runtime.js';
 import { testCrocodialConnection } from './directory.js';
 
 /**
@@ -123,7 +124,7 @@ async function syncResource(db: SupabaseClient, client: CrocodialClient, connect
  * progress resumes next run. Never throws.
  */
 export async function runCrocodialSync(
-  opts: ClientOptions & { db?: SupabaseClient; connectionId?: string; budgetMs?: number; env?: NodeJS.ProcessEnv } = {}
+  opts: ClientOptions & { db?: SupabaseClient; connectionId?: string; budgetMs?: number; env?: NodeJS.ProcessEnv; context?: 'SYNC' | 'REFRESH' } = {}
 ): Promise<CrocodialSyncSummary> {
   const out: CrocodialSyncSummary = { connections: [], requests: 0 };
   if (!opts.db && !hasServiceClient()) return { ...out, note: 'The server has no service key.' };
@@ -141,12 +142,22 @@ export async function runCrocodialSync(
     out.connections.push(summary);
     const token = crocodialToken(c.credentialRef, opts.env);
     if (!token) {
+      // A server without the token never marks a connection broken while another server (for example the Cloudflare Worker, when an
+      // old Vercel deployment still receives the scheduled call) has a valid one: it leaves the read to that server.
+      const rt = runtimeInfo(opts.env);
+      const check = credentialCheck(c.credentialRef, opts.env);
+      const seen = await reportRuntime(db, c.id, rt, check, opts.context ?? 'SYNC');
       summary.health = 'NO_CREDENTIAL';
-      await db.rpc('croc_connection_status', { p_connection: c.id, p_health: 'NO_CREDENTIAL', p_error: `The server has no ${c.credentialRef} setting.` });
+      if (seen.otherHasCredential) {
+        summary.error = 'Skipped: this server has no token; another server that has it reads this connection.';
+        continue;
+      }
+      summary.error = credentialProblem(c.credentialRef, check, rt);
+      await db.rpc('croc_connection_status', { p_connection: c.id, p_health: 'NO_CREDENTIAL', p_error: summary.error });
       continue;
     }
     // the account's users first: a new Crocodial user appears for mapping, a removed one is marked missing
-    const dir = await testCrocodialConnection(c, { ...opts, db });
+    const dir = await testCrocodialConnection(c, { ...opts, db, context: opts.context ?? 'SYNC' });
     out.requests += dir.requests;
     if (!dir.ok) {
       summary.health = dir.health;

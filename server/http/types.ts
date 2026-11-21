@@ -24,6 +24,8 @@ export interface RequestContext {
 export interface HandlerResult<T = unknown> {
   status?: number;
   data: T;
+  /** Work to run after the answer is sent (Cloudflare: waitUntil; elsewhere awaited first). Never changes the answer. */
+  after?: () => Promise<unknown>;
 }
 
 export type Handler = (ctx: RequestContext) => Promise<HandlerResult>;

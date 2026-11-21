@@ -46,6 +46,12 @@ function api(req, res, body) {
   state.calls.push({ method: req.method, path: p, body, auth: req.headers.authorization || null, raw: req.url.replace(/^\/api\/v1\/users/, '') });
   const o = state.o;
   if (p === '/crocodial/admin') return ok(res, o);
+  // Connection health (20270127000100): this page is answered by the Cloudflare Worker, which has the token; an old Vercel deployment does not
+  if (p === '/crocodial/connection-health') return ok(res, { server: { runtime: 'cloudflare:production', platform: 'cloudflare', environment: 'production', deployment: 'v-42', host: 'crm.example.com' },
+    connections: o.connections.map(c => ({ connection: c, syncable: c.enabled, refreshRequestedAt: null, lastManualSyncAt: null, lastSyncAt: c.lastSuccessAt, syncRunning: false, syncInProgress: false,
+      lastSyncError: null, connectedPeople: 0, refreshesToday: 0, current: { nameValid: true, credentialDetected: true, credentialFormatValid: true },
+      runtimes: [{ runtime: 'cloudflare:production', platform: 'cloudflare', environment: 'production', deployment: 'v-42', host: 'crm.example.com', credentialDetected: true, credentialFormatValid: true, context: 'PAGE', reportedAt: now },
+                 { runtime: 'vercel:production', platform: 'vercel', environment: 'production', deployment: 'abc123', host: null, credentialDetected: false, credentialFormatValid: false, context: 'SYNC', reportedAt: now }] })) });
   if (p === '/crocodial/sync') return ok(res, o.connections.map(c => ({ connectionId: c.id, syncable: c.enabled, lastManualSyncAt: null,
     resources: state.synced ? [{ resource: 'call-logs', checkpoint: now, lastFullAt: now, running: false, inProgress: false, lastRunAt: now, lastOkAt: now, lastError: null, rowsLastRun: 18387, skippedLastRun: 0 }] : [],
     counts: { leads: 234, calls: state.synced ? 18387 : 0, followups: 0, remarks: 0, missing: 0 },
@@ -151,12 +157,20 @@ try {
     await page.getByRole('button', { name: 'Add connection' }).last().click();
     await page.getByTestId('croc-connection').waitFor();
     check(lastCall('POST', '/crocodial/connections').body.credentialRef === 'CROCODIAL_TOKEN_MPILLAR', `${label}: the connection is saved with the setting name`);
-    check(await page.getByText('(set on the server)').isVisible() && await page.getByText('Not tested yet').isVisible(), `${label}: it says the server has the setting, not tested yet`);
+    check(await page.getByText('(set on this server)').isVisible() && await page.getByText('Not tested yet').first().isVisible(), `${label}: it says this server has the setting, not tested yet`);
 
     // Test connection fills the Crocodial user list
     await page.getByTestId('croc-test').click();
     await page.getByTestId('croc-test-result').getByText(/Connected\. 2 employees/).waitFor();
     check(true, `${label}: Test connection reports what it read`);
+    // Connection health: which server answered, the token detected there (yes / no, never the value), and a second server without it
+    const health = page.getByTestId('croc-health');
+    await health.getByTestId('croc-health-category').getByText(/Successful connection/).waitFor();
+    check(await page.getByTestId('croc-health-server').getByText('Cloudflare (production)').isVisible() && await health.getByText('v-42').first().isVisible(),
+      `${label}: connection health names the server and deployment that answered`);
+    check(await health.getByTestId('croc-health-mismatch').getByText(/Vercel \(production\)/).isVisible(),
+      `${label}: a second server without the token is pointed out`);
+    check(!(await health.getByText(/test-token|Bearer/).count()), `${label}: no token value on the page`);
     // link M Pillar Sales (stays off), then map Sachin
     await page.getByRole('button', { name: 'Link (stays off)' }).click();
     await page.getByText('Linked, off').waitFor();

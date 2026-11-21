@@ -6417,6 +6417,71 @@ export interface CrocodialConnection {
   createdAt: string;
   updatedAt: string;
 }
+/** "Refresh" on a Sales dashboard (croc_refresh_*): the browser names a scope; the database works out the people and connections. */
+export type CrocodialRefreshScope = 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ALL';
+export type CrocodialRefreshState = 'UP_TO_DATE' | 'REFRESH_QUEUED' | 'SYNCING' | 'PARTIALLY_SYNCED' | 'SYNC_FAILED' | 'RATE_LIMITED'
+  | 'TOKEN_MISSING' | 'TOKEN_INVALID' | 'DATA_UNAVAILABLE';
+export interface CrocodialRefreshRequest {
+  id: string;
+  scope: CrocodialRefreshScope;
+  departmentId: string | null;
+  /** connected people the request covers (counted from approved mappings) */
+  people: number;
+  connections: number;
+  /** QUEUED: a read was started; JOINED: a read already running / asked for; UP_TO_DATE: read in the last 2 minutes */
+  outcome: 'QUEUED' | 'JOINED' | 'UP_TO_DATE';
+  requestedAt: string;
+  state: CrocodialRefreshState;
+  /** false while the read is queued or running */
+  finished: boolean;
+  /** the oldest complete read of the connections involved (null: never read) */
+  lastSyncAt: string | null;
+  repeated?: boolean;
+}
+export interface CrocodialRefreshCapabilities {
+  kind: 'EMPLOYEE' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'SUPER_ADMIN';
+  active: boolean;
+  /** Crocodial is switched on for the caller's own department's Sales */
+  rollout: boolean;
+  self: { state: 'CONNECTED' | 'NOT_MAPPED' | 'PENDING_APPROVAL' | 'NOT_ENABLED'; lastSyncAt?: string | null };
+  team: { people: number } | null;
+  departments: { departmentId: string; name: string; people: number; lastSyncAt: string | null }[];
+  all: { people: number } | null;
+  /** the caller's latest request of the last 10 minutes, to keep showing its progress after a reload */
+  recent: CrocodialRefreshRequest | null;
+}
+/** What one server (Cloudflare / Vercel / Node.js, environment, deployment) reported about a connection's token: never the token. */
+export interface CrocodialRuntimeReport {
+  runtime: string;
+  platform: 'cloudflare' | 'vercel' | 'node';
+  environment: string | null;
+  deployment: string | null;
+  host: string | null;
+  credentialDetected: boolean;
+  credentialFormatValid: boolean;
+  context: 'PAGE' | 'TEST' | 'SYNC' | 'REFRESH';
+  reportedAt: string;
+}
+export interface CrocodialConnectionHealth {
+  connection: CrocodialConnection;
+  syncable: boolean;
+  refreshRequestedAt: string | null;
+  lastManualSyncAt: string | null;
+  lastSyncAt: string | null;
+  syncRunning: boolean;
+  syncInProgress: boolean;
+  lastSyncError: string | null;
+  connectedPeople: number;
+  refreshesToday: number;
+  runtimes: CrocodialRuntimeReport[];
+  /** checked live by the server answering this page */
+  current: { nameValid: boolean; credentialDetected: boolean; credentialFormatValid: boolean };
+}
+export interface CrocodialHealthReport {
+  /** the server answering this page */
+  server: { runtime: string; platform: 'cloudflare' | 'vercel' | 'node'; environment: string | null; deployment: string | null; host: string | null };
+  connections: CrocodialConnectionHealth[];
+}
 export interface CrocodialMapping {
   id: string;
   connectionId: string;

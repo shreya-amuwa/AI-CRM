@@ -168,7 +168,7 @@ export const crocodialController = {
   overview: (async ctx => ok(await svc(ctx).crocodial.overview())) as Handler,
   rolloutSet: (async ctx => ok(await svc(ctx).crocodial.rolloutSet(ctx.req.body))) as Handler,
   connectionSave: (async ctx => ok(await svc(ctx).crocodial.connectionSave(ctx.req.body))) as Handler,
-  testConnection: (async ctx => ok(await svc(ctx).crocodial.testConnection(ctx.params.id))) as Handler,
+  testConnection: (async ctx => ok(await svc(ctx).crocodial.testConnection(ctx.params.id, ctx.req.headers.host))) as Handler,
   departmentLinkSave: (async ctx => ok(await svc(ctx).crocodial.departmentLinkSave(ctx.req.body))) as Handler,
   mappingCheck: (async ctx => ok(await svc(ctx).crocodial.mappingCheck(ctx.req.body))) as Handler,
   mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
@@ -180,7 +180,15 @@ export const crocodialController = {
   syncNow: (async ctx => ok(await svc(ctx).crocodial.syncNow(ctx.params.id))) as Handler,
   activity: (async ctx => ok(await svc(ctx).crocodial.activity(ctx.req.query))) as Handler,
   teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler,
-  leads: (async ctx => ok(await svc(ctx).crocodial.leads(ctx.req.query))) as Handler
+  leads: (async ctx => ok(await svc(ctx).crocodial.leads(ctx.req.query))) as Handler,
+  refreshCapabilities: (async ctx => ok(await svc(ctx).crocodial.refreshCapabilities())) as Handler,
+  // the read of the connections this request started runs after the answer (Cloudflare waitUntil)
+  refresh: (async ctx => {
+    const r = await svc(ctx).crocodial.refresh(ctx.req.body);
+    return { ...ok(r.data), after: r.after };
+  }) as Handler,
+  refreshStatus: (async ctx => ok(await svc(ctx).crocodial.refreshStatus(ctx.params.id))) as Handler,
+  connectionHealth: (async ctx => ok(await svc(ctx).crocodial.connectionHealth(ctx.req.headers.host))) as Handler
 };
 
 export const leadWhatsAppController = {
