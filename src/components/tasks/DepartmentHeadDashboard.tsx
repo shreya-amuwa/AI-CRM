@@ -79,6 +79,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const [nav, setNav] = useRememberedPage<HeadPage>('department-head', lastHeadPage ?? (isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview'), HEAD_PAGES);
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
+  // the Overview's "Add lead": opens the Leads page with the form already open (a number, so asking twice works)
+  const [addLead, setAddLead] = useState(0);
   const data = useWorkTasks();
   const waiting = useWaitingForLead();
   const chatUnread = useChatNavBadge();
@@ -127,8 +129,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
         label: 'Customers',
         items: [
           { id: 'clients', label: 'Client Hand-overs', icon: UserCheck, badge: waiting || 0 },
-          // not for the Accounts head (Accounts has its own invoice pages); leads are on the Sales side only
-          ...(!isAccounts && !supportSide ? [{ id: 'leads', label: 'Leads', icon: UserPlus }] : []),
+          // not for the Accounts head (Accounts has its own invoice pages)
+          ...(!isAccounts ? [{ id: 'leads', label: 'Leads', icon: UserPlus }] : []),
           { id: 'customers', label: 'Customers', icon: Users },
           ...(!isAccounts ? [{ id: 'invoices', label: 'Invoices', icon: FileText }] : []),
           { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
@@ -152,6 +154,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
     lastHeadPage = p;
+    // leaving the Leads page ends the Overview's "open the lead form" request, so the next visit starts on the list
+    if (p !== 'leads') setAddLead(0);
     setNav(p);
   };
   // a page this department does not have (for example Accounts' Payment confirmations): its own first page, never a blank or stale one
@@ -198,7 +202,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
           {data.error}
         </div>
       )}
-      {nav === 'overview' && <HeadOverview data={data} go={go} />}
+      {nav === 'overview' && <HeadOverview data={data} go={go} onAddLead={() => { setAddLead(n => n + 1); go('leads'); }} />}
       {nav === 'operations' && operationsHead && <OperationsDashboard />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'work-updates' && <WorkUpdatesPanel />}
@@ -209,7 +213,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'activity' && <TeamActivityPage />}
       {nav === 'support' && <SupportDeskPage />}
       {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
-      {nav === 'leads' && !isAccounts && !supportSide && <HeadLeadsPage />}
+      {nav === 'leads' && !isAccounts && <HeadLeadsPage startAdd={addLead} />}
       {nav === 'customers' && <HeadCustomersPage initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
       {nav === 'invoices' && !isAccounts && <HeadInvoicesPage />}
       {nav === 'team-attendance' && <HeadAttendancePage />}
