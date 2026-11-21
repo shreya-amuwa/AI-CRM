@@ -3,12 +3,15 @@ import { RefreshCw } from 'lucide-react';
 import type { CrocodialActivity } from '../../../shared/contracts';
 import { crocodialApi } from '../../lib/api/endpoints';
 import { EVENT_LABEL, ROLE_LABEL, incomeApi, rupees, units, type Earning, type IncomeSummary } from '../../lib/income';
+import { STATUS_LABEL, STATUS_TONE, methodLine, payoutsApi, type PayoutRequest } from '../../lib/payouts';
+import { WithdrawDialog } from './WithdrawDialog';
 import { PageTitle } from '../layout/shell';
 
 /**
  * "My Income": the signed-in person's own incentive earnings (income_summary / income_earnings, 20270119000100). Shown in the side panel of
  * every sales dashboard. Earnings appear the moment Accounts verifies a payment (or a demo / field visit is completed); a reversed payment
- * shows its earning struck through. Payouts come later: until then the balance is everything earned.
+ * shows its earning struck through. Withdrawals (20270123000100): Balance shows what was paid out and what is available; the person asks
+ * for a withdrawal and Accounts pays it.
  */
 /** The office date (Asia/Kolkata), the calendar the database counts earnings in. */
 const ymd = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -40,6 +43,9 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
   const [calls, setCalls] = useState<CrocodialActivity['calls'] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [withdrawals, setWithdrawals] = useState<PayoutRequest[]>([]);
+  const [dialog, setDialog] = useState<'withdraw' | 'details' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const seq = useRef(0);
   const load = useCallback(async () => {
@@ -47,9 +53,9 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
     setLoading(true); setError(null);
     const to = new Date(), from = new Date(Date.now() - period.days * 86400e3);
     try {
-      const [s, e] = await Promise.all([incomeApi.summary(), incomeApi.earnings(ymd(from), ymd(to))]);
+      const [s, e, w] = await Promise.all([incomeApi.summary(), incomeApi.earnings(ymd(from), ymd(to)), payoutsApi.mine().catch(() => [] as PayoutRequest[])]);
       if (mine !== seq.current) return;
-      setSummary(s); setEarnings(e ?? []);
+      setSummary(s); setEarnings(e ?? []); setWithdrawals(w ?? []);
     } catch (err) {
       if (mine === seq.current) setError(err instanceof Error ? err.message : 'Your income could not be loaded.');
     } finally {
@@ -70,6 +76,22 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
     return () => { alive = false; };
   }, []);
 
+  const available = summary?.available ?? summary?.balance ?? 0;
+  const openReq = summary?.openRequest ?? null;
+  const withdrawOpen = summary?.withdrawOpen ?? false;
+  const canWithdraw = !!summary && withdrawOpen && !openReq && available >= 500;
+  const withdrawNote = !summary ? null
+    : summary.withdrawOpensOn == null ? `Withdrawals open ${summary.startAfterDays ?? 15} days after HR records your joining date.`
+    : !withdrawOpen ? `Withdrawals open on ${dayText(summary.withdrawOpensOn)}.`
+    : openReq ? `Your withdrawal of ${rupees(openReq.amount)} is waiting for Accounts.`
+    : available < 500 && available >= 0 ? 'You can withdraw once at least ₹500 is available.'
+    : null;
+  const cancel = async (id: string) => {
+    if (!window.confirm('Cancel this withdrawal?')) return;
+    try { await payoutsApi.cancel(id); setNotice('Withdrawal cancelled.'); void load(); } catch (err) { setError(err instanceof Error ? err.message : 'It could not be cancelled.'); }
+  };
+  const slip = (id: string) => { payoutsApi.downloadSlip(id).catch(err => setError(err instanceof Error ? err.message : 'The slip could not be downloaded.')); };
+
   return (
     <div className="space-y-6">
       <PageTitle
@@ -86,12 +108,33 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
         </div>
       )}
 
-      <section aria-label="Earnings" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile label="Today" value={summary ? rupees(summary.today) : '…'} />
-        <Tile label="This month" value={summary ? rupees(summary.month) : '…'} />
-        <Tile label="Total earned" value={summary ? rupees(summary.total) : '…'} />
-        <Tile label="Balance" value={summary ? rupees(summary.balance) : '…'} hint="Withdrawals are coming soon." strong />
-      </section>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <section aria-label="My Earnings" className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h2 className="text-sm font-bold text-slate-900">My Earnings</h2>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <Tile label="Total earned" value={summary ? rupees(summary.total) : '…'} />
+            <Tile label="Today" value={summary ? rupees(summary.today) : '…'} />
+            <Tile label="This month" value={summary ? rupees(summary.month) : '…'} />
+          </div>
+        </section>
+        <section aria-label="Balance" className="rounded-2xl border border-emerald-200 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold text-slate-900">Balance</h2>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setDialog('details')} className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800 hover:bg-slate-50">Payout details</button>
+              <button type="button" onClick={() => setDialog('withdraw')} disabled={!canWithdraw}
+                className="h-9 px-4 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">Withdraw</button>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Tile label="Withdrawn so far" value={summary ? rupees(summary.withdrawn ?? 0) : '…'} />
+            <Tile label="Available to withdraw" strong value={summary ? (available < 0 ? rupees(0) : rupees(available)) : '…'}
+              hint={available < 0 ? `${rupees(-available)} to be recovered from future incentives` : undefined} />
+          </div>
+          {summary && withdrawNote && <p className="mt-2 text-xs text-slate-600" role="status">{withdrawNote}</p>}
+        </section>
+      </div>
+      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
 
       {summary && summary.targets.length > 0 && (
         <section aria-label="Targets" className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
@@ -120,6 +163,28 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
         <Tile label="Field visits completed" value={summary ? summary.activity.visitsCompletedThisMonth : '…'} hint="This month" />
         {calls && <Tile label="Calls this month" value={calls.made} hint={`${calls.connected} connected · ${duration(calls.talkSeconds)} talk time`} />}
       </section>
+
+      {withdrawals.length > 0 && (
+        <section aria-label="Withdrawals" className="rounded-2xl border border-slate-200 bg-white">
+          <h2 className="border-b border-slate-100 px-4 py-3 text-sm font-bold text-slate-900">Withdrawals</h2>
+          <ul className="divide-y divide-slate-100">
+            {withdrawals.map(w => (
+              <li key={w.id} data-testid="withdrawal-row" className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">{rupees(w.amount)} <span className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_TONE[w.status]}`}>{STATUS_LABEL[w.status]}</span></p>
+                  <p className="text-xs text-slate-500 break-words">{whenText(w.requestedAt)} · {methodLine(w.method)}</p>
+                  {w.status === 'PAID' && <p className="text-xs text-slate-600">Paid {w.paidOn ? dayText(w.paidOn) : ''}{w.reference ? ` · ref ${w.reference}` : ''}{w.tdsAmount ? ` · TDS ${rupees(w.tdsAmount)} · net ${rupees(w.netAmount ?? 0)}` : ''}</p>}
+                  {w.reason && <p className="text-xs text-rose-700">{w.reason}</p>}
+                </div>
+                <div className="flex gap-2">
+                  {(w.status === 'PAID' || w.status === 'REVERSED') && <button type="button" onClick={() => slip(w.id)} className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold">Download slip</button>}
+                  {w.status === 'REQUESTED' && <button type="button" onClick={() => void cancel(w.id)} className="h-9 px-3 rounded-xl border border-rose-200 bg-white text-xs font-semibold text-rose-700">Cancel withdrawal</button>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section aria-label="Earnings list" className="rounded-2xl border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
@@ -152,6 +217,8 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
           </ul>
         )}
       </section>
+      {dialog && <WithdrawDialog available={available} editOnly={dialog === 'details'} onClose={() => setDialog(null)}
+        onDone={() => { setNotice(dialog === 'details' ? 'Payout details saved.' : 'Withdrawal requested. Accounts will pay it soon.'); setDialog(null); void load(); }} />}
     </div>
   );
 };

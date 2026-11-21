@@ -13,6 +13,9 @@ export interface IncomeTarget { ruleId: string; name: string; serviceName: strin
 export interface IncomeSummary {
   startsOn: string; eligible: boolean;
   today: number; month: number; total: number; balance: number;
+  /** Payouts (20270123000100): paid out so far; earned - paid - the open request (negative = to be recovered); when withdrawals open. */
+  withdrawn?: number; available?: number; withdrawOpensOn?: string | null; withdrawOpen?: boolean; startAfterDays?: number;
+  openRequest?: import('./payouts').PayoutRequest | null;
   targets: IncomeTarget[];
   activity: { businessThisMonth: number; demosCompletedThisMonth: number; visitsCompletedThisMonth: number };
 }

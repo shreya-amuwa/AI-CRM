@@ -72,7 +72,8 @@ try {
   // 1. My Income: tiles, target, list with the reversed earning marked; no calls tile without Crocodial
   let { ctx, page } = await open('mountIncome');
   await page.getByText('Acme Traders', { exact: false }).waitFor();
-  const tiles = await page.getByRole('region', { name: 'Earnings', exact: true }).innerText();
+  // My Earnings (overall, today, month) and Balance (withdrawn, available) since payouts (20270123000100)
+  const tiles = (await page.getByRole('region', { name: 'My Earnings' }).innerText()) + (await page.getByRole('region', { name: 'Balance' }).innerText());
   check(tiles.includes('₹50') && tiles.includes('₹100') && tiles.includes('₹1,250.5'), 'the tiles show today, this month, total and balance', tiles);
   check((await page.getByTestId('target-progress').innerText()) === '412 of 1,000', 'target progress reads "412 of 1,000"');
   const rows = page.getByTestId('earning-row');

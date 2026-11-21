@@ -22,6 +22,8 @@ import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
+import { PayoutRequests } from './finance/PayoutRequests';
+import { payoutsApi } from '../../lib/payouts';
 import { CustomerRevenue } from './finance/CustomerRevenue';
 import { FinanceMails } from './finance/FinanceMails';
 import { BusinessReports } from '../reports/BusinessReports';
@@ -31,7 +33,7 @@ import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 
-const ACCOUNTS_PAGES = ['overview', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+const ACCOUNTS_PAGES = ['overview', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'payouts', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
 type Page = (typeof ACCOUNTS_PAGES)[number];
 
 /**
@@ -49,12 +51,15 @@ export const AccountsDashboard: React.FC = () => {
   const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);
   // Add-on requests that wait for Accounts: to verify, or approved and waiting for the invoice.
   const [addonsWaiting, setAddonsWaiting] = useState(0);
+  // incentive withdrawals waiting for Accounts (20270123000100)
+  const [payoutsWaiting, setPayoutsWaiting] = useState(0);
   const refreshCounts = () => {
     pipelineApi.accountsCounts().then(setCounts, () => setCounts(null));
     addonsApi.list({ pageSize: 1 }).then(
       r => setAddonsWaiting((r.counts.PENDING_VERIFICATION ?? 0) + (r.counts.APPROVED ?? 0)),
       () => setAddonsWaiting(0)
     );
+    payoutsApi.counts().then(c => setPayoutsWaiting(c.requested), () => setPayoutsWaiting(0));
   };
   useEffect(refreshCounts, []);
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
@@ -86,6 +91,7 @@ export const AccountsDashboard: React.FC = () => {
         { id: 'customer-revenue', label: 'Customer-wise Revenue', icon: Crown },
         { id: 'finance-mails', label: 'Finance e-mails', icon: MailCheck },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
+        { id: 'payouts', label: 'Payout requests', icon: Wallet, badge: payoutsWaiting },
         { id: 'business-reports', label: 'Business Reports', icon: BarChart3 }
       ]
     },
@@ -137,6 +143,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'finance-mails' && <FinanceMails />}
       {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
+      {page === 'payouts' && <PayoutRequests key={pageKey} />}
       {page === 'chat' && <ChatRoute />}
       {page === 'raise-issue' && <IssuesRoute />}
       {page === 'work-reports' && <ReportsRoute />}
