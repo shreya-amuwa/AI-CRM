@@ -53,3 +53,17 @@ rule form's option lists and how often each rule was earned.
 - Help: `docs-site/content/sales/my-income.md`, `docs-site/content/sales/incentive-setup.md`. Browser test: `supabase/tests/ui_income.test.mjs`.
 
 Tests: `supabase/tests/incentives_test.sql`.
+
+## Payouts (phase 2, migration `20270123000100_incentive_payouts.sql`)
+Design: `docs/superpowers/specs/2026-11-21-incentive-payouts-design.md`.
+- `payout_methods` (bank / UPI / international details; full only to the owner and Accounts) and `payout_requests` (REQUESTED → PAID /
+  REJECTED / CANCELLED; FAILED / REVERSED / PROCESSING come with Razorpay). Available = earned − paid − the open request; a clawback can
+  make it negative (recovered from future earnings; no request until positive).
+- Withdrawals open on the HR joining date + `incentive_settings.start_after_days`; no HR joining date → closed. Minimum ₹500; one open request.
+- Accounts (`private.require_accounts_staff`, never their own): `payout_queue`, `payout_detail`, `payout_mark_paid` (reference, date, TDS),
+  `payout_reject`, `payout_leavers`, `payout_final_settlement`. A paid payout is a `department_expenses` row (category `Sales Incentive`,
+  allocated to the person's department). Notifications: `PAYOUT_REQUESTED`, `PAYOUT_DETAILS_CHANGED` (Accounts), `PAYOUT_PAID`,
+  `PAYOUT_REJECTED` (the person).
+- Slip: `GET /api/v1/payouts/:id/slip` (PDF as base64; `payout_slip_data` checks and audits each download).
+- Screens: My Income (My Earnings, Balance, Withdraw, Withdrawals), Accounts > Finance > Payout requests. Tests: `payouts_test.sql`,
+  `ui_payouts.test.mjs`, the payouts block of `api_integration.test.ts`.

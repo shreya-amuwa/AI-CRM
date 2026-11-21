@@ -23,7 +23,7 @@ updated: 2026-11-21
 ## Steps
 
 1. Open **My Income** in the sidebar. A Team Lead finds it under **Income**. The Sales Department Head and the Sales Operations Head find it next to **Department Income**, which still shows the department's business.
-2. Read the four tiles: **Today**, **This month**, **Total earned** and **Balance**.
+2. Read **My Earnings** (**Total earned**, **Today**, **This month**) and **Balance** (**Withdrawn so far**, **Available to withdraw**).
 3. Under **Targets**, read your progress for each product, for example **412 of 1,000**.
 4. Under the activity tiles, read **Business this month**, **Demos completed** and **Field visits completed**. If you are connected to Crocodial, **Calls this month** also shows your calls, connected calls and talk time.
 5. Under **Your earnings**, choose **Last 30 days**, **Last 90 days** or **Last 12 months** to see each earning: the product and customer, what it was for (for example **Your sale** or **Team Lead share**) and the amount.
@@ -43,11 +43,7 @@ New employees earn incentives once they have been in the company for the number 
 
 - A target is a goal only. Every sale earns from the first one.
 - An incentive uses the amount in force when it was earned. A later change of the amount does not change past earnings.
-- **Balance** is everything you have earned. Withdrawals are not available yet.
-
-:::gap Not available yet
-Withdrawing your balance through the Accountant comes in a later release.
-:::
+- **Balance** shows what was paid out to you and what you can still withdraw. See [Withdraw your income](/sales/withdraw-your-income).
 
 ## If something goes wrong
 
