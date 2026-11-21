@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { CrocodialActivity } from '../../../shared/contracts';
 import { crocodialApi } from '../../lib/api/endpoints';
@@ -10,7 +10,8 @@ import { PageTitle } from '../layout/shell';
  * every sales dashboard. Earnings appear the moment Accounts verifies a payment (or a demo / field visit is completed); a reversed payment
  * shows its earning struck through. Payouts come later: until then the balance is everything earned.
  */
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** The office date (Asia/Kolkata), the calendar the database counts earnings in. */
+const ymd = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 const dayText = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 const whenText = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 const duration = (s: number) => {
@@ -40,17 +41,19 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const seq = useRef(0);
   const load = useCallback(async () => {
+    const mine = ++seq.current;   // a slower, older answer never replaces a newer one
     setLoading(true); setError(null);
-    const to = new Date(), from = new Date();
-    from.setDate(from.getDate() - period.days);
+    const to = new Date(), from = new Date(Date.now() - period.days * 86400e3);
     try {
       const [s, e] = await Promise.all([incomeApi.summary(), incomeApi.earnings(ymd(from), ymd(to))]);
+      if (mine !== seq.current) return;
       setSummary(s); setEarnings(e ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Your income could not be loaded.');
+      if (mine === seq.current) setError(err instanceof Error ? err.message : 'Your income could not be loaded.');
     } finally {
-      setLoading(false);
+      if (mine === seq.current) setLoading(false);
     }
   }, [period]);
   useEffect(() => { void load(); }, [load]);
@@ -59,7 +62,7 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
   useEffect(() => {
     let alive = true;
     const now = new Date();
-    const first = ymd(new Date(now.getFullYear(), now.getMonth(), 1));
+    const first = `${ymd(now).slice(0, 8)}01`;
     crocodialApi.me()
       .then(s => (s.enabled ? crocodialApi.activity({ from: first, to: ymd(now) }) : null))
       .then(a => { if (alive) setCalls(a && a.enabled && a.calls ? a.calls : null); })

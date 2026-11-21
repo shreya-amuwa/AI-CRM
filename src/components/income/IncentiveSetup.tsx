@@ -81,6 +81,12 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
       default: return options.people.map(p => ({ value: p.id, label: p.name }));
     }
   }, [f.scopeType, options, sale]);
+  // a rule's current person, Operations Head or product may no longer be listed (left, inactive): keep it selectable so the rule can still be edited
+  const withCurrent = (list: { value: string; label: string }[], current: string | null | undefined, sameKind: boolean) =>
+    current && sameKind && !list.some(c => c.value === current) ? [...list, { value: current, label: '(current, no longer listed)' }] : list;
+  const scopeOptions = withCurrent(scopeChoices, rule?.scopeValue, !!rule && (sale || f.scopeType === rule.scopeType));
+  const serviceOptions = withCurrent(options.services.map(s => ({ value: s.code, label: s.name })), rule?.serviceCode, true);
+  const sameSale = !!rule && sale && (f.serviceCode || null) === rule.serviceCode && (f.scopeValue || null) === rule.scopeValue;
   // what changes "from now on" (the old version ends, a new one starts): shown before saving
   const replaces = !!rule && (Number(f.amount) !== rule.amount || (sale && (f.serviceCode || null) !== rule.serviceCode)
     || (!sale && f.scopeType !== rule.scopeType) || (f.scopeValue || null) !== rule.scopeValue);
@@ -92,7 +98,7 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
     try {
       if (rule) {
         const next = toInput(f);
-        const changes: Partial<RuleInput> = { name: next.name, targetUnits: next.targetUnits, monthlyCap: next.monthlyCap };
+        const changes: Partial<RuleInput> = sale ? { name: next.name, targetUnits: next.targetUnits } : { name: next.name, monthlyCap: next.monthlyCap };
         if (replaces) Object.assign(changes, { amount: next.amount, serviceCode: next.serviceCode, scopeType: next.scopeType, scopeValue: next.scopeValue });
         await incomeApi.updateRule(rule.id, changes);
         onSaved(replaces ? 'Saved. The new amount applies from now on; earnings already recorded keep the amount they were earned at.' : 'Saved.');
@@ -120,7 +126,7 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
           <label className="text-sm font-medium text-slate-700">Product
             <select className={input} aria-label="Product" value={f.serviceCode} onChange={e => set('serviceCode', e.target.value)} required>
               <option value="">Choose a product</option>
-              {options.services.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+              {serviceOptions.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </label>
         )}
@@ -137,7 +143,7 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
         <label className="text-sm font-medium text-slate-700">{sale ? 'Operations Head' : 'Choose'}
           <select className={input} aria-label={sale ? 'Operations Head' : 'Choose'} value={f.scopeValue} onChange={e => set('scopeValue', e.target.value)} required>
             <option value="">Choose</option>
-            {scopeChoices.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            {scopeOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
         </label>
         {sale ? (
@@ -150,7 +156,10 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
           </label>
         )}
       </div>
-      {replaces && <p className="text-xs text-amber-800">This change applies from now on: the current version stops and a new one starts{sale ? ', keeping the amounts already passed down' : ''}. Earnings already recorded stay as they were.</p>}
+      {replaces && <p className="text-xs text-amber-800" data-testid="replace-note">
+        This change applies from now on: the current version stops and a new one starts{sameSale ? ', keeping the amounts already passed down' : ''}. Earnings already recorded stay as they were.
+        {sale && !sameSale && ' With a different product or Operations Head, every level must set its amounts again: until they do, the people below earn nothing from this rule.'}
+      </p>}
       {error && <Alert tone="error">{error}</Alert>}
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" className={btn.secondary} onClick={onCancel} disabled={saving}>Cancel</button>
@@ -166,7 +175,8 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
   const [busy, setBusy] = useState<string | null>(null);
   const [showEnded, setShowEnded] = useState(false);
   const options = data.options!;
-  const rules = data.rules.filter(r => showEnded || r.active);
+  const current = (r: SetupRule) => r.current ?? r.active;
+  const rules = data.rules.filter(r => showEnded || current(r));
   const saved = (text: string) => { setEditing(null); setNote({ tone: 'ok', text }); reload(); };
   const act = async (r: SetupRule, kind: 'end' | 'delete') => {
     const question = kind === 'end'
@@ -208,7 +218,8 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-900 break-words">
-                      {r.name} {!r.active && <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Stopped</span>}
+                      {r.name} {!current(r) && <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Stopped</span>}
+                      {current(r) && !r.active && <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Starts {r.activeFrom}</span>}
                     </p>
                     <p className="text-xs text-slate-600">
                       {EVENT_LABEL[r.eventType]}{r.serviceName ? ` · ${r.serviceName}` : ''} · <strong>{rupees(r.amount)}</strong>{r.eventType === 'SALE_PAID' ? ' per unit' : ' each'} · {scopeText(r, options)}
@@ -217,7 +228,7 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
                       {r.targetUnits ? `Target ${r.targetUnits} units · ` : ''}{r.monthlyCap ? `Cap ${rupees(r.monthlyCap)} a month · ` : ''}From {r.activeFrom}{r.earnedCount ? ` · earned ${r.earnedCount} times` : ''}
                     </p>
                   </div>
-                  {r.active && (
+                  {current(r) && (
                     <div className="flex flex-wrap gap-2">
                       <button type="button" className={btn.secondary} onClick={() => setEditing(r.id)} disabled={busy === r.id} aria-label={`Edit ${r.name}`}><Pencil className="w-4 h-4" aria-hidden="true" /> Edit</button>
                       <button type="button" className={btn.secondary} onClick={() => void act(r, 'end')} disabled={busy === r.id} aria-label={`Stop ${r.name}`}><Square className="w-4 h-4" aria-hidden="true" /> Stop</button>

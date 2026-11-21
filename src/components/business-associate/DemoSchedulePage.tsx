@@ -37,6 +37,7 @@ export const DemoSchedulePage: React.FC<{ go: BaNavigate; initialContactId?: str
   const [form, setForm] = useState<{ demo?: BaDemo; date?: string; contactId?: string } | null>(openNew ? { contactId: initialContactId } : null);
   const [detail, setDetail] = useState<BaDemo | null>(null);
   const [finish, setFinish] = useState<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED' } | null>(null);
+  const finishTick = useRef(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -101,7 +102,7 @@ export const DemoSchedulePage: React.FC<{ go: BaNavigate; initialContactId?: str
 
       {form && <DemoForm demo={form.demo} date={form.date} contactId={form.contactId} onClose={() => setForm(null)} onSaved={(d, created) => changed(created ? `The demo with ${d.client} is scheduled.` : d.status === 'RESCHEDULED' ? 'The demo was rescheduled.' : 'The demo was updated.')} />}
       {detail && !form && !finish && <DemoDetail demo={detail} onClose={() => setDetail(null)} onEdit={() => { setForm({ demo: detail }); }} onFinish={status => setFinish({ demo: detail, status })} onAuthorised={d => { setDetail(d); setDemos(list => list && list.map(x => (x.id === d.id ? d : x))); }} />}
-      {finish && <FinishDialog demo={finish.demo} status={finish.status} onClose={() => setFinish(null)} onDone={d => changed(`The demo was marked ${STATUS_LABEL[d.status].toLowerCase()}.`)} />}
+      {finish && <FinishDialog demo={finish.demo} status={finish.status} onClose={() => setFinish(null)} onDone={d => changed(`The demo was marked ${STATUS_LABEL[d.status].toLowerCase()}.${finish.status === 'COMPLETED' && finishTick.current && !d.authorisedPersonAttended ? ' The authorised-person tick was not saved: open the demo and tick it again.' : ''}`)} onTick={v => { finishTick.current = v; }} />}
     </div>
   );
 };
@@ -187,7 +188,7 @@ const AuthorisedTick: React.FC<{ demo: BaDemo; onChanged: (d: BaDemo) => void }>
   );
 };
 
-const FinishDialog: React.FC<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED'; onClose: () => void; onDone: (d: BaDemo) => void }> = ({ demo, status, onClose, onDone }) => {
+const FinishDialog: React.FC<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED'; onClose: () => void; onDone: (d: BaDemo) => void; onTick?: (ticked: boolean) => void }> = ({ demo, status, onClose, onDone, onTick }) => {
   const [feedback, setFeedback] = useState('');
   const [followUp, setFollowUp] = useState('');
   const [authorised, setAuthorised] = useState(false);
@@ -202,7 +203,7 @@ const FinishDialog: React.FC<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED'; 
     try { done = await businessAssociateApi.demoStatus(demo.id, status, feedback.trim() || null, followUp.trim() || null); } catch (err) { setError(errorMessage(err)); busy.current = false; setSaving(false); return; }
     // the tick is saved after the demo is completed; if it fails the demo stays completed and the tick can be set from the demo's details
     if (status === 'COMPLETED' && authorised) {
-      try { done = { ...done, authorisedPersonAttended: (await incomeApi.setDemoAuthorised(demo.id, true)).authorisedPersonAttended }; } catch { /* shown as not ticked */ }
+      try { done = { ...done, authorisedPersonAttended: (await incomeApi.setDemoAuthorised(demo.id, true)).authorisedPersonAttended }; } catch { done = { ...done, authorisedPersonAttended: false }; }
     }
     onDone(done);
   };
@@ -213,7 +214,7 @@ const FinishDialog: React.FC<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED'; 
         <Field label="Follow-up notes" htmlFor="dm-fu"><textarea id="dm-fu" className={`${tcInput} min-h-[70px]`} maxLength={3000} value={followUp} onChange={e => setFollowUp(e.target.value)} /></Field>
         {status === 'COMPLETED' && (
           <label className="flex items-start gap-2 text-sm text-slate-800">
-            <input type="checkbox" className="mt-0.5" checked={authorised} onChange={e => setAuthorised(e.target.checked)} />
+            <input type="checkbox" className="mt-0.5" checked={authorised} onChange={e => { setAuthorised(e.target.checked); onTick?.(e.target.checked); }} />
             <span><span className="font-semibold">The client's authorised person attended</span><br /><span className="text-xs text-slate-500">The demo counts towards incentives only when the person who can decide was there.</span></span>
           </label>
         )}

@@ -130,6 +130,28 @@ try {
   check(upd.p.amount === 450, 'a new amount is sent as a change that applies from now on');
   check(await page.getByTestId('rule-row').filter({ hasText: '₹450' }).count() === 1 && await page.getByTestId('rule-row').filter({ hasText: '₹500' }).filter({ hasText: 'Website' }).count() === 0, 'the old version leaves the active list');
 
+  // moving a sales rule to another product warns that the amounts must be passed down again
+  await page.getByRole('button', { name: 'Edit WA 500' }).click();
+  edit = page.getByRole('form', { name: 'Edit rule' });
+  await edit.getByLabel('Product').selectOption('WEB');
+  const note = await edit.getByTestId('replace-note').innerText();
+  check(note.includes('every level must set its amounts again') && !note.includes('keeping the amounts already passed down'), 'a product change says the amounts must be set again', note);
+  await edit.getByLabel('Product').selectOption('WA_API');
+  await edit.getByLabel('Amount per unit for the Operations Head (₹)').fill('520');
+  check((await edit.getByTestId('replace-note').innerText()).includes('keeping the amounts already passed down'), 'an amount change on the same product keeps the amounts passed down');
+  await edit.getByRole('button', { name: 'Cancel' }).click();
+
+  // a rule whose Operations Head has left can still be renamed; clearing its target sends null
+  await page.getByRole('button', { name: 'Edit Old OH rule' }).click();
+  edit = page.getByRole('form', { name: 'Edit rule' });
+  check((await edit.getByLabel('Operations Head', { exact: true }).inputValue()) === 'oh-gone', 'the departed Operations Head stays selected');
+  await edit.getByLabel('Name', { exact: true }).fill('Old OH rule renamed');
+  await edit.getByLabel('Target units (optional, a goal only)').fill('');
+  await edit.getByRole('button', { name: 'Save' }).click();
+  await page.getByText('Saved.', { exact: true }).waitFor();
+  upd = (await calls(page, 'incentive_rule_update')).at(-1);
+  check(upd.p.name === 'Old OH rule renamed' && upd.p.targetUnits === null && !('monthlyCap' in upd.p) && !('amount' in upd.p), 'renaming it works and clearing the target sends null (and no cap)', JSON.stringify(upd));
+
   // delete: a rule with earnings is stopped; a fresh one is removed
   await page.getByRole('button', { name: 'Delete WA 500' }).click();
   await page.getByText('had earnings, so it was stopped instead of deleted', { exact: false }).waitFor();
@@ -150,7 +172,7 @@ try {
 
   // 4. Team Lead: more than they get is refused with the database's message; the kept share follows the amount
   ({ ctx, page } = await open('mountSetup', 'tl'));
-  const row = page.getByTestId('given-row').filter({ hasText: 'Meera Member' });
+  const row = page.getByRole('region', { name: 'WhatsApp API: WA 500' }).getByTestId('given-row').filter({ hasText: 'Meera Member' });
   await row.waitFor();
   check((await row.getByTestId('kept').innerText()) === '₹50', 'the Team Lead keeps 150 - 100 = ₹50');
   await row.getByLabel('Amount for Meera Member').fill('200');

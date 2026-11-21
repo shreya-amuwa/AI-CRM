@@ -18,6 +18,8 @@ const state: any = (window as any).__state = {
 };
 let n = 0;
 const ruleJson = (r: any) => ({ ...r, serviceName: r.serviceCode === 'WA_API' ? 'WhatsApp API' : r.serviceCode ? 'Website' : null, activeFrom: '2026-11-21', activeTo: null });
+// a rule whose Operations Head has left (no longer in the option lists)
+state.rules.push({ id: 'r-old', name: 'Old OH rule', eventType: 'SALE_PAID', serviceCode: 'WEB', amount: 300, targetUnits: 50, scopeType: 'OPERATIONS_HEAD', scopeValue: 'oh-gone', monthlyCap: null, endedAt: null, active: true, earned: 0 });
 state.rules.push({ id: 'r-wa', name: 'WA 500', eventType: 'SALE_PAID', serviceCode: 'WA_API', amount: 500, targetUnits: 1000, scopeType: 'OPERATIONS_HEAD', scopeValue: OH, monthlyCap: null, endedAt: null, active: true, earned: 2 });
 const fail = (message: string) => { throw new Error(message); };
 const setup = () => {

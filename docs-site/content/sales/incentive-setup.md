@@ -61,7 +61,9 @@ Payment verified | Accounts | everyone in the chain earns their share
 ## Good to know
 
 - **Editing a name, target or monthly cap** changes the rule as it is.
-- **Editing the amount, the product or who it is for** applies from now on: the screen says **This change applies from now on**. The current version stops and a new one starts with the same name. A sales rule with the same product and Operations Head keeps the amounts already passed down. Earnings already recorded keep the amount they were earned at.
+- **Editing the amount, the product or who it is for** applies from now on: the screen says **This change applies from now on**. The current version stops and a new one starts with the same name. A sales rule with the same product and Operations Head keeps the amounts already passed down. With a different product or Operations Head, every level must set its amounts again; until they do, the people below earn nothing from that rule. Earnings already recorded keep the amount they were earned at.
+- An edit never lifts a limit: an order never earns more than 100% of its incentive, and a reward's monthly cap counts what was earned before the edit.
+- A rule that starts later shows **Starts** with its date and can be edited.
 - **Delete** removes a rule nobody has earned from yet. A rule with earnings is stopped instead, because earned money is never erased; the screen says so.
 - Only one sales rule per product can be in force for an Operations Head. To change it, edit it.
 - An amount you pass down can never be more than what you get. The screen shows the message **The amount must be between 0 and ...** with your own amount.

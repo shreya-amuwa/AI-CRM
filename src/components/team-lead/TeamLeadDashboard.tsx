@@ -61,6 +61,8 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
   useOpenWorkUpdateRequest(React.useCallback(() => setNav('assigned-tasks'), []));
 
   const sales = profile?.team?.division === 'SALES';
+  // a remembered Income page of a Team Lead who is not in Sales (or has moved) opens the overview instead of a blank page
+  React.useEffect(() => { if (profile && !sales && (nav === 'my-income' || nav === 'incentive-setup')) setNav('overview'); }, [profile, sales, nav]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups: ShellNavGroup[] = useMemo(
     () => [

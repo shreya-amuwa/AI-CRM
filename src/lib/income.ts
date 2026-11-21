@@ -27,7 +27,8 @@ export interface IncentiveRule {
   activeFrom: string; activeTo: string | null; endedAt: string | null; active: boolean;
 }
 export interface GivenRow { recipientId: string; name: string; level: string; amount: number; kept: number }
-export interface SetupRule extends IncentiveRule { myAmount: number; given: GivenRow[]; kept: number; earnedCount: number | null }
+/** current: not stopped and not past its end date (a rule that starts later is current, though not yet active). */
+export interface SetupRule extends IncentiveRule { myAmount: number; given: GivenRow[]; kept: number; earnedCount: number | null; current?: boolean }
 export interface IncentiveOptions {
   services: { code: string; name: string }[];
   operationsHeads: { id: string; name: string }[];

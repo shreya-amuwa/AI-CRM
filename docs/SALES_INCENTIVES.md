@@ -13,7 +13,8 @@ shown as progress only), an optional monthly cap (event rewards), and who it is 
 the name, target and monthly cap change in place; a new amount, product or audience ends the old version and creates a new one with the
 same name (a sales rule with the same product and Operations Head carries the allocations, capped at the new amount), so an earning always
 keeps the rule and amount it was earned with. `incentive_rule_delete(rule)` removes a rule nobody earned from and only ends one with
-earnings. All Super Admin only, audited (`INCENTIVE_RULE_UPDATED`, `INCENTIVE_RULE_DELETED`). The start period (15 days in the company by
+earnings. A new version records the one it replaced (`replaces_rule_id`); a sale's 100% of the order counts every version of the product's rule for
+that Operations Head, and an event reward's monthly cap counts every version (`private.incentive_lineage`). All Super Admin only, audited (`INCENTIVE_RULE_UPDATED`, `INCENTIVE_RULE_DELETED`). The start period (15 days in the company by
 default) is `incentive_settings_set(days)`.
 
 ## The cascade (sales)
