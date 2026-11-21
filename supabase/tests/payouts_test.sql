@@ -10,9 +10,9 @@ reset role;
 \i supabase/migrations/20270123000100_incentive_payouts.sql
 \i supabase/migrations/20270123000100_incentive_payouts.sql
 -- a clean slate: this suite's earnings, requests, expenses and details
-delete from payout_requests where profile_id in (test.id('tm_a'), test.id('tc_a'), test.id('acc_m'));
+delete from payout_requests where profile_id in (test.id('tm_a'), test.id('tc_a'), test.id('acc_m'), test.id('sec_user'));
 delete from department_expenses where category = 'Sales Incentive' and description like 'Sales incentive payout - %';
-delete from payout_methods where profile_id in (test.id('tm_a'), test.id('tc_a'), test.id('acc_m'));
+delete from payout_methods where profile_id in (test.id('tm_a'), test.id('tc_a'), test.id('acc_m'), test.id('sec_user'));
 delete from earnings where event_ref like 'TESTPO:%';
 delete from incentive_rules where name = 'Test payout rule';
 update profiles set status = 'ACTIVE' where id in (test.id('tm_a'), test.id('tc_a'));
@@ -65,3 +65,127 @@ select test.po_join('tc_a', null);
 update hr_employees set joining_date = null where profile_id = test.id('tc_a');
 select test.check(private.payout_opens_on(test.id('tc_a')) is null, 'no HR joining date: withdrawals stay closed (no fallback to the account date)');
 select test.po_join('tc_a', date '2026-01-01');
+
+\echo '   withdrawal requests and the Accounts actions'
+reset role;
+select test.po_join('tm_a', private.office_today() - 10);
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select payout_request(600, 'po-req-early')$$, 'before the opening date a request is refused', 'Withdrawals open on');
+reset role;
+update hr_employees set joining_date = null where profile_id = test.id('tm_a');
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select payout_request(600, 'po-req-nodate')$$, 'without an HR joining date a request is refused', 'HR records your joining date');
+reset role;
+select test.po_join('tm_a', private.office_today() - 16);
+set role authenticated;
+select test.login('tm_a');
+select test.must_fail($$select payout_request(499, 'po-req-small')$$, 'less than 500 is refused', 'VALIDATION_ERROR');
+select test.must_fail(format($$select payout_request(%s, 'po-req-big')$$, :earned0 + 1), 'more than available is refused', 'VALIDATION_ERROR');
+insert into po select 'r1', payout_request(600, 'po-req-0001') ->> 'id';
+select test.check((payout_request(600, 'po-req-0001') ->> 'id') = (select v from po where k = 'r1'), 'the same request sent twice is one request');
+select test.must_fail($$select payout_request(700, 'po-req-0002')$$, 'a second open request is refused', 'CONFLICT');
+select test.check((income_summary() ->> 'available')::numeric = :earned0 - 600 and (income_summary() -> 'openRequest' ->> 'id') = (select v from po where k = 'r1'),
+  'the open request is taken off the available balance and shown');
+select test.check((payout_cancel((select v from po where k = 'r1')::uuid) ->> 'status') = 'CANCELLED', 'the person cancels their request');
+select test.check((income_summary() ->> 'available')::numeric = :earned0, 'cancelling frees the amount again');
+select test.must_fail(format($$select payout_cancel(%L)$$, (select v from po where k = 'r1')), 'a cancelled request cannot be cancelled again', 'CONFLICT');
+select test.must_fail($$select payout_queue('REQUESTED')$$, 'a Sales member cannot open the Accounts queue', 'FORBIDDEN');
+insert into po select 'r2', payout_request(1234.50, 'po-req-0003') ->> 'id';
+-- details changed while a request is open: the request keeps the details it was made with, and Accounts is told
+select payout_method_save('{"kind":"BANK","holderName":"Test Member","accountNumber":"999999999999","ifsc":"ICIC0004321"}');
+reset role;
+select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_REQUESTED' and recipient_id = test.id('acc_m') and entity_id = (select v from po where k = 'r2')::uuid),
+  'Accounts staff are told about a new request');
+select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_DETAILS_CHANGED' and recipient_id = test.id('acc_m')),
+  'Accounts staff are told when details change while a request is open');
+set role authenticated;
+select test.login('tc_a');
+select test.must_fail(format($$select payout_cancel(%L)$$, (select v from po where k = 'r2')), 'someone else''s request cannot be cancelled', 'FORBIDDEN');
+select test.login('acc_m');
+select test.check((payout_detail((select v from po where k = 'r2')::uuid) -> 'method' ->> 'accountNumber') = '123456789012',
+  'Accounts sees the full details the request was made with');
+select test.check(exists (select 1 from jsonb_array_elements(payout_queue('REQUESTED')) x where x ->> 'id' = (select v from po where k = 'r2')), 'the request is in the Accounts queue');
+select test.check((payout_counts() ->> 'requested')::int >= 1, 'the Accounts badge counts it');
+select test.must_fail(format($$select payout_mark_paid(%L, ' ', private.office_today(), 0)$$, (select v from po where k = 'r2')), 'paying needs a reference', 'VALIDATION_ERROR');
+select test.must_fail(format($$select payout_mark_paid(%L, 'UTR1', private.office_today() + 1, 0)$$, (select v from po where k = 'r2')), 'a payment date in the future is refused', 'VALIDATION_ERROR');
+select test.must_fail(format($$select payout_mark_paid(%L, 'UTR1', private.office_today(), 1300)$$, (select v from po where k = 'r2')), 'TDS above the amount is refused', 'VALIDATION_ERROR');
+select test.check((select x ->> 'status' = 'PAID' and (x ->> 'netAmount')::numeric = 1184.25 and (x ->> 'tdsAmount')::numeric = 50.25
+                     from (select payout_mark_paid((select v from po where k = 'r2')::uuid, 'UTR123', private.office_today(), 50.25) x) y),
+  'Accounts marks 1,234.50 paid with TDS 50.25: net 1,184.25');
+select test.must_fail(format($$select payout_mark_paid(%L, 'UTR124', private.office_today(), 0)$$, (select v from po where k = 'r2')), 'a paid request cannot be paid again', 'CONFLICT');
+reset role;
+select test.check((select e.category = 'Sales Incentive' and e.amount = 1234.50 and e.payment_status = 'PAID'
+                          and (select count(*) = 1 and bool_and(a.department_id = (select department_id from profiles where id = test.id('tm_a')))
+                                 from expense_allocations a where a.expense_id = e.id)
+                     from payout_requests r join department_expenses e on e.id = r.expense_id where r.id = (select v from po where k = 'r2')::uuid),
+  'the payout is a Sales Incentive expense of the person''s department');
+select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_PAID' and recipient_id = test.id('tm_a')), 'the person is told it was paid');
+select test.check((select count(*) >= 1 from audit_logs where action = 'PAYOUT_PAID' and entity_id = (select v from po where k = 'r2')::uuid), 'paying is audited');
+set role authenticated;
+select test.login('tm_a');
+select test.check((income_summary() ->> 'withdrawn')::numeric = 1234.50 and (income_summary() ->> 'available')::numeric = :earned0 - 1234.50,
+  'My Income: withdrawn 1,234.50, available reduced by the same');
+-- reject
+insert into po select 'r3', payout_request(500, 'po-req-0004') ->> 'id';
+select test.login('acc_m');
+select test.must_fail(format($$select payout_reject(%L, ' ')$$, (select v from po where k = 'r3')), 'rejecting needs a reason', 'VALIDATION_ERROR');
+select test.check((payout_reject((select v from po where k = 'r3')::uuid, 'Wrong account') ->> 'status') = 'REJECTED', 'Accounts rejects with a reason');
+reset role;
+select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_REJECTED' and recipient_id = test.id('tm_a')), 'the person is told why');
+-- nobody pays their own request
+select test.po_earn('acc_m', 'acc1', 800);
+set role authenticated;
+select test.login('acc_m');
+select payout_method_save('{"kind":"UPI","holderName":"Test Accounts","upiId":"acc.test@okhdfcbank"}');
+insert into po select 'own', payout_request(500, 'po-req-0005') ->> 'id';
+select test.must_fail(format($$select payout_mark_paid(%L, 'UTR9', private.office_today(), 0)$$, (select v from po where k = 'own')), 'nobody pays their own withdrawal', 'FORBIDDEN');
+select test.login('sa');
+select payout_mark_paid((select v from po where k = 'own')::uuid, 'UTR9', private.office_today(), 0);
+-- clawback: an earning reversed after it was paid out
+select test.login('tm_a');
+select payout_request((income_summary() ->> 'available')::numeric, 'po-req-0006') ->> 'id' as rall \gset
+select test.login('acc_m');
+select payout_mark_paid(:'rall', 'UTR200', private.office_today(), 0);
+reset role;
+update earnings set status = 'REVERSED', reversed_at = now() where event_ref = 'TESTPO:2';
+set role authenticated;
+select test.login('tm_a');
+select test.check((income_summary() ->> 'available')::numeric = -2000, 'an earning reversed after payout: available is -2,000 (to be recovered)');
+select test.must_fail($$select payout_request(500, 'po-req-0007')$$, 'no withdrawal while money is to be recovered', 'VALIDATION_ERROR');
+reset role;
+select test.po_earn('tm_a', '3', 2600);
+set role authenticated;
+select test.login('tm_a');
+select test.check((income_summary() ->> 'available')::numeric = 600, 'new earnings recover it first (2,600 - 2,000 = 600 available)');
+-- final settlement of someone who left
+select test.login('acc_m');
+select test.must_fail(format($$select payout_final_settlement(%L, 'UTR300', private.office_today(), 0)$$, test.id('tm_a')), 'an active person is not settled', 'VALIDATION_ERROR');
+reset role;
+update profiles set status = 'SUSPENDED' where id = test.id('tm_a');
+set role authenticated;
+select test.login('acc_m');
+select test.check(exists (select 1 from jsonb_array_elements(payout_leavers()) x where x ->> 'profileId' = test.id('tm_a')::text and (x ->> 'available')::numeric = 600),
+  'people who left with money to come are listed');
+select test.check((select x ->> 'status' = 'PAID' and (x ->> 'finalSettlement')::boolean and (x ->> 'amount')::numeric = 600
+                     from (select payout_final_settlement(test.id('tm_a'), 'UTR300', private.office_today(), 0) x) y),
+  'Accounts pays the remaining 600 as a final settlement');
+select test.check(not exists (select 1 from jsonb_array_elements(payout_leavers()) x where x ->> 'profileId' = test.id('tm_a')::text), 'and they leave the list');
+reset role;
+update profiles set status = 'ACTIVE' where id = test.id('tm_a');
+-- a person without a department (sec_user, a pending account): a company-wide expense
+update earnings set status = 'EARNED', reversed_at = null where event_ref = 'TESTPO:2';
+delete from payout_requests where profile_id = test.id('sec_user');
+delete from payout_methods where profile_id = test.id('sec_user');
+select test.po_earn('sec_user', 'sec1', 700);
+insert into payout_methods (profile_id, kind, holder_name, other_details)
+  values (test.id('sec_user'), 'OTHER', 'Test Abroad', 'Test Bank, IBAN GB00TEST0000000000, SWIFT TESTGB00, United Kingdom');
+set role authenticated;
+select test.login('acc_m');
+select payout_final_settlement(test.id('sec_user'), 'SWIFT-REF-1', private.office_today(), 0) ->> 'id' as rsec \gset
+reset role;
+select test.check((select not exists (select 1 from expense_allocations a where a.expense_id = r.expense_id) and r.expense_id is not null
+                          and r.method_snapshot -> 'full' ->> 'kind' = 'OTHER'
+                     from payout_requests r where r.id = :'rsec'),
+  'someone without a department: the expense is company-wide (international details paid by hand)');

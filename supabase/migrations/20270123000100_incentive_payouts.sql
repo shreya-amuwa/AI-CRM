@@ -245,3 +245,320 @@ begin
 end $$;
 revoke all on function public.income_summary() from public, anon;
 grant execute on function public.income_summary() to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 6. Withdrawal requests (the person)
+-- ---------------------------------------------------------------------------
+-- Tell every active member of the Accounts department.
+create or replace function private.payout_notify_accounts(p_type text, p_title text, p_body text, p_entity uuid)
+returns void language sql security definer set search_path = '' as $$
+  select private.notify(p.id, p_type, p_title, p_body, 'payout_request', p_entity)
+    from public.profiles p join public.departments d on d.id = p.department_id
+   where p.status = 'ACTIVE' and d.slug = 'accounts'
+$$;
+revoke all on function private.payout_notify_accounts(text, text, text, uuid) from public, anon, authenticated;
+
+create or replace function public.payout_request(p_amount numeric, p_request_id text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me public.profiles := private.payout_me();
+  m public.payout_methods;
+  r public.payout_requests;
+  v_amount numeric := round(p_amount, 2);
+  v_opens date := private.payout_opens_on(me.id);
+  v_avail numeric;
+begin
+  if p_request_id is null or length(p_request_id) not between 8 and 80 then
+    raise exception 'VALIDATION_ERROR: Send the request again.' using errcode = 'P0001';
+  end if;
+  select * into r from public.payout_requests where request_id = p_request_id;
+  if r.id is not null then
+    if r.profile_id <> me.id then
+      raise exception 'CONFLICT: Send the request again.' using errcode = 'P0001';
+    end if;
+    return private.payout_request_json(r, true);   -- the same press sent twice
+  end if;
+  if v_opens is null then
+    raise exception 'VALIDATION_ERROR: Withdrawals open % days after HR records your joining date.',
+      (select start_after_days from public.incentive_settings where id) using errcode = 'P0001';
+  end if;
+  if private.office_today() < v_opens then
+    raise exception 'VALIDATION_ERROR: Withdrawals open on %.', to_char(v_opens, 'DD Mon YYYY') using errcode = 'P0001';
+  end if;
+  if v_amount is null or v_amount < 500 then
+    raise exception 'VALIDATION_ERROR: Withdraw at least ₹500.' using errcode = 'P0001';
+  end if;
+  select * into m from public.payout_methods where profile_id = me.id;
+  if m.profile_id is null then
+    raise exception 'VALIDATION_ERROR: Add your payout details first.' using errcode = 'P0001';
+  end if;
+  -- one request at a time per person: lock this person's requests while checking
+  perform 1 from public.payout_requests where profile_id = me.id for update;
+  if exists (select 1 from public.payout_requests where profile_id = me.id and status in ('REQUESTED', 'PROCESSING')) then
+    raise exception 'CONFLICT: You already have a withdrawal waiting. Cancel it or wait until Accounts pays it.' using errcode = 'P0001';
+  end if;
+  v_avail := private.payout_available(me.id);
+  if v_amount > v_avail then
+    raise exception 'VALIDATION_ERROR: You can withdraw up to ₹%.', greatest(v_avail, 0) using errcode = 'P0001';
+  end if;
+  insert into public.payout_requests (profile_id, amount, method_snapshot, request_id)
+  values (me.id, v_amount, jsonb_build_object('full', private.payout_method_json(m, true), 'masked', private.payout_method_json(m, false)), p_request_id)
+  returning * into r;
+  perform private.write_audit('PAYOUT_REQUESTED', 'payout_request', r.id, me.department_id, me.team_id, jsonb_build_object('amount', v_amount));
+  perform private.payout_notify_accounts('PAYOUT_REQUESTED', 'Withdrawal request',
+    format('%s asked to withdraw ₹%s.', me.full_name, to_char(v_amount, 'FM99,99,99,990.00')), r.id);
+  return private.payout_request_json(r, true);
+end $$;
+revoke all on function public.payout_request(numeric, text) from public, anon;
+grant execute on function public.payout_request(numeric, text) to authenticated;
+
+create or replace function public.payout_cancel(p_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me public.profiles := private.payout_me();
+  r public.payout_requests;
+begin
+  select * into r from public.payout_requests where id = p_id for update;
+  if r.id is null then
+    raise exception 'NOT_FOUND: This withdrawal does not exist.' using errcode = 'P0001';
+  end if;
+  if r.profile_id <> me.id then
+    raise exception 'FORBIDDEN: You can only cancel your own withdrawal.' using errcode = '42501';
+  end if;
+  if r.status <> 'REQUESTED' then
+    raise exception 'CONFLICT: This withdrawal was already handled.' using errcode = 'P0001';
+  end if;
+  update public.payout_requests set status = 'CANCELLED', decided_at = now(), decided_by = me.id where id = r.id returning * into r;
+  perform private.write_audit('PAYOUT_CANCELLED', 'payout_request', r.id, me.department_id, me.team_id, jsonb_build_object('amount', r.amount));
+  return private.payout_request_json(r, true);
+end $$;
+revoke all on function public.payout_cancel(uuid) from public, anon;
+grant execute on function public.payout_cancel(uuid) to authenticated;
+
+create or replace function public.payout_my_requests()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  me public.profiles := private.payout_me();
+begin
+  return coalesce((select jsonb_agg(private.payout_request_json(r, true) order by r.requested_at desc)
+                     from public.payout_requests r where r.profile_id = me.id), '[]'::jsonb);
+end $$;
+revoke all on function public.payout_my_requests() from public, anon;
+grant execute on function public.payout_my_requests() to authenticated;
+
+-- details changed while a request is open: Accounts is told (the request keeps the details it was made with)
+create or replace function private.payout_methods_changed()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  v_open uuid;
+begin
+  select id into v_open from public.payout_requests where profile_id = new.profile_id and status in ('REQUESTED', 'PROCESSING') limit 1;
+  if v_open is not null then
+    perform private.payout_notify_accounts('PAYOUT_DETAILS_CHANGED', 'Payout details changed',
+      format('%s changed their payout details while a withdrawal is waiting. Pay to the details shown on the request.',
+             (select full_name from public.profiles where id = new.profile_id)), v_open);
+  end if;
+  return new;
+end $$;
+revoke all on function private.payout_methods_changed() from public, anon, authenticated;
+drop trigger if exists payout_methods_changed on public.payout_methods;
+create trigger payout_methods_changed after update on public.payout_methods for each row execute function private.payout_methods_changed();
+
+-- ---------------------------------------------------------------------------
+-- 7. Accounts: the queue, paying, rejecting, people who left
+-- ---------------------------------------------------------------------------
+create or replace function private.payout_accounts_actor(p_owner uuid)
+returns public.profiles language plpgsql stable security definer set search_path = '' as $$
+declare
+  me public.profiles;
+begin
+  perform private.require_accounts_staff();
+  select * into me from public.profiles where id = auth.uid();
+  if p_owner is not null and me.id = p_owner then
+    raise exception 'FORBIDDEN: You cannot pay your own withdrawal.' using errcode = '42501';
+  end if;
+  return me;
+end $$;
+revoke all on function private.payout_accounts_actor(uuid) from public, anon, authenticated;
+
+create or replace function public.payout_queue(p_status text)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_accounts_staff();
+  return coalesce((select jsonb_agg(private.payout_request_json(r, false) || jsonb_build_object('available', private.payout_available(r.profile_id))
+                                    order by r.requested_at desc)
+                     from (select * from public.payout_requests x
+                            where x.status = coalesce(nullif(upper(btrim(p_status)), ''), 'REQUESTED')
+                            order by x.requested_at desc limit 500) r), '[]'::jsonb);
+end $$;
+revoke all on function public.payout_queue(text) from public, anon;
+grant execute on function public.payout_queue(text) to authenticated;
+
+create or replace function public.payout_counts()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_accounts_staff();
+  return jsonb_build_object('requested', (select count(*) from public.payout_requests where status = 'REQUESTED'),
+                            'processing', (select count(*) from public.payout_requests where status = 'PROCESSING'));
+end $$;
+revoke all on function public.payout_counts() from public, anon;
+grant execute on function public.payout_counts() to authenticated;
+
+create or replace function public.payout_detail(p_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  r public.payout_requests;
+begin
+  perform private.require_accounts_staff();
+  select * into r from public.payout_requests where id = p_id;
+  if r.id is null then
+    raise exception 'NOT_FOUND: This withdrawal does not exist.' using errcode = 'P0001';
+  end if;
+  return private.payout_request_json(r, true) || jsonb_build_object(
+    'available', private.payout_available(r.profile_id),
+    'withdrawn', private.payout_withdrawn(r.profile_id),
+    'personActive', (select status = 'ACTIVE' from public.profiles where id = r.profile_id),
+    'recentEarnings', coalesce((select jsonb_agg(jsonb_build_object('earnedAt', e.earned_at, 'eventType', e.event_type, 'role', e.role, 'amount', e.amount,
+                                   'status', e.status, 'ruleName', ru.name) order by e.earned_at desc)
+                                  from (select * from public.earnings where profile_id = r.profile_id order by earned_at desc limit 20) e
+                                  join public.incentive_rules ru on ru.id = e.rule_id), '[]'::jsonb));
+end $$;
+revoke all on function public.payout_detail(uuid) from public, anon;
+grant execute on function public.payout_detail(uuid) to authenticated;
+
+-- Paying: PAID, net = gross - TDS, a "Sales Incentive" expense of the person's department (company-wide without one), audit, notify.
+create or replace function private.payout_settle(r public.payout_requests, p_reference text, p_paid_on date, p_tds numeric, p_channel text, p_actor uuid)
+returns public.payout_requests language plpgsql security definer set search_path = '' as $$
+declare
+  owner_p public.profiles;
+  v_ref text := nullif(btrim(p_reference), '');
+  v_tds numeric := round(coalesce(p_tds, 0), 2);
+  v_exp uuid;
+begin
+  if v_ref is null or length(v_ref) > 120 then
+    raise exception 'VALIDATION_ERROR: Enter the bank or UPI reference of the payment.' using errcode = 'P0001';
+  end if;
+  if p_paid_on is null or p_paid_on > private.office_today() then
+    raise exception 'VALIDATION_ERROR: Enter the date the money was sent (not in the future).' using errcode = 'P0001';
+  end if;
+  if v_tds < 0 or v_tds >= r.amount then
+    raise exception 'VALIDATION_ERROR: TDS must be at least 0 and less than the amount.' using errcode = 'P0001';
+  end if;
+  select * into owner_p from public.profiles where id = r.profile_id;
+  insert into public.department_expenses (expense_date, description, department_id, category, amount, payment_status, notes, source, created_by)
+  values (p_paid_on, left('Sales incentive payout - ' || owner_p.full_name, 300), owner_p.department_id, 'Sales Incentive', r.amount, 'PAID',
+          left(format('Withdrawal %s, reference %s, TDS %s', r.id, v_ref, v_tds), 1000), 'MANUAL', p_actor)
+  returning id into v_exp;
+  -- the department's allocation (the expenses trigger adds it when the expense has a department; this makes sure it exists)
+  if owner_p.department_id is not null then
+    insert into public.expense_allocations (expense_id, department_id, amount) values (v_exp, owner_p.department_id, r.amount)
+    on conflict (expense_id, department_id) do nothing;
+  end if;
+  update public.payout_requests
+     set status = 'PAID', channel = p_channel, reference = v_ref, paid_on = p_paid_on, tds_amount = v_tds, net_amount = r.amount - v_tds,
+         decided_by = coalesce(decided_by, p_actor), decided_at = now(), expense_id = v_exp
+   where id = r.id returning * into r;
+  perform private.write_audit('PAYOUT_PAID', 'payout_request', r.id, owner_p.department_id, owner_p.team_id,
+    jsonb_build_object('amount', r.amount, 'tds', v_tds, 'net', r.net_amount, 'reference', v_ref, 'channel', p_channel, 'finalSettlement', r.final_settlement));
+  perform private.notify(r.profile_id, 'PAYOUT_PAID', 'Your withdrawal was paid',
+    format('₹%s was sent to you (reference %s).', to_char(r.net_amount, 'FM99,99,99,990.00'), v_ref), 'payout_request', r.id);
+  return r;
+end $$;
+revoke all on function private.payout_settle(public.payout_requests, text, date, numeric, text, uuid) from public, anon, authenticated;
+
+create or replace function public.payout_mark_paid(p_id uuid, p_reference text, p_paid_on date, p_tds numeric)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  r public.payout_requests;
+  me public.profiles;
+begin
+  perform private.require_accounts_staff();
+  select * into r from public.payout_requests where id = p_id for update;
+  if r.id is null then
+    raise exception 'NOT_FOUND: This withdrawal does not exist.' using errcode = 'P0001';
+  end if;
+  me := private.payout_accounts_actor(r.profile_id);
+  if r.status <> 'REQUESTED' then
+    raise exception 'CONFLICT: This withdrawal was already handled.' using errcode = 'P0001';
+  end if;
+  r := private.payout_settle(r, p_reference, p_paid_on, p_tds, 'MANUAL', me.id);
+  return private.payout_request_json(r, true);
+end $$;
+revoke all on function public.payout_mark_paid(uuid, text, date, numeric) from public, anon;
+grant execute on function public.payout_mark_paid(uuid, text, date, numeric) to authenticated;
+
+create or replace function public.payout_reject(p_id uuid, p_reason text)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  r public.payout_requests;
+  me public.profiles;
+  v_reason text := nullif(btrim(p_reason), '');
+begin
+  perform private.require_accounts_staff();
+  select * into r from public.payout_requests where id = p_id for update;
+  if r.id is null then
+    raise exception 'NOT_FOUND: This withdrawal does not exist.' using errcode = 'P0001';
+  end if;
+  me := private.payout_accounts_actor(r.profile_id);
+  if r.status <> 'REQUESTED' then
+    raise exception 'CONFLICT: This withdrawal was already handled.' using errcode = 'P0001';
+  end if;
+  if v_reason is null or length(v_reason) > 500 then
+    raise exception 'VALIDATION_ERROR: Say why the withdrawal is rejected.' using errcode = 'P0001';
+  end if;
+  update public.payout_requests set status = 'REJECTED', reason = v_reason, decided_by = me.id, decided_at = now() where id = r.id returning * into r;
+  perform private.write_audit('PAYOUT_REJECTED', 'payout_request', r.id, null, null, jsonb_build_object('amount', r.amount, 'reason', v_reason));
+  perform private.notify(r.profile_id, 'PAYOUT_REJECTED', 'Your withdrawal was rejected', v_reason, 'payout_request', r.id);
+  return private.payout_request_json(r, true);
+end $$;
+revoke all on function public.payout_reject(uuid, text) from public, anon;
+grant execute on function public.payout_reject(uuid, text) to authenticated;
+
+-- People who left with money still to come.
+create or replace function public.payout_leavers()
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.require_accounts_staff();
+  return coalesce((select jsonb_agg(jsonb_build_object('profileId', p.id, 'name', p.full_name, 'department', d.name, 'status', p.status,
+                                      'available', private.payout_available(p.id),
+                                      'method', (select private.payout_method_json(m, true) from public.payout_methods m where m.profile_id = p.id))
+                                    order by p.full_name)
+                     from public.profiles p left join public.departments d on d.id = p.department_id
+                    where p.status <> 'ACTIVE' and private.payout_available(p.id) > 0
+                      and not exists (select 1 from public.payout_requests x where x.profile_id = p.id and x.status in ('REQUESTED', 'PROCESSING'))), '[]'::jsonb);
+end $$;
+revoke all on function public.payout_leavers() from public, anon;
+grant execute on function public.payout_leavers() to authenticated;
+
+create or replace function public.payout_final_settlement(p_profile uuid, p_reference text, p_paid_on date, p_tds numeric)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me public.profiles := private.payout_accounts_actor(p_profile);
+  owner_p public.profiles;
+  m public.payout_methods;
+  r public.payout_requests;
+  v_avail numeric;
+begin
+  select * into owner_p from public.profiles where id = p_profile for update;
+  if owner_p.id is null then
+    raise exception 'NOT_FOUND: This person does not exist.' using errcode = 'P0001';
+  end if;
+  if owner_p.status = 'ACTIVE' then
+    raise exception 'VALIDATION_ERROR: A final settlement is only for people who have left. Active staff ask for a withdrawal themselves.' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.payout_requests where profile_id = p_profile and status in ('REQUESTED', 'PROCESSING')) then
+    raise exception 'CONFLICT: This person has a withdrawal waiting: pay or reject it first.' using errcode = 'P0001';
+  end if;
+  v_avail := private.payout_available(p_profile);
+  if v_avail <= 0 then
+    raise exception 'VALIDATION_ERROR: Nothing is left to pay this person.' using errcode = 'P0001';
+  end if;
+  select * into m from public.payout_methods where profile_id = p_profile;
+  insert into public.payout_requests (profile_id, amount, method_snapshot, final_settlement, decided_by)
+  values (p_profile, v_avail, jsonb_build_object('full', private.payout_method_json(m, true), 'masked', private.payout_method_json(m, false)), true, me.id)
+  returning * into r;
+  r := private.payout_settle(r, p_reference, p_paid_on, p_tds, 'MANUAL', me.id);
+  return private.payout_request_json(r, true);
+end $$;
+revoke all on function public.payout_final_settlement(uuid, text, date, numeric) from public, anon;
+grant execute on function public.payout_final_settlement(uuid, text, date, numeric) to authenticated;
