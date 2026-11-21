@@ -2,12 +2,14 @@ import React, { useMemo, useState } from 'react';
 import { FolderKanban, Pencil, Plus, UserMinus, UserPlus } from 'lucide-react';
 import { AI_STUDIO_PROJECT_STATUSES, type AiStudioPerson, type AiStudioProject, type AiStudioRole } from '../../../shared/contracts';
 import { aiStudioProjectSchema } from '../../../shared/validation';
+import { isoToIstInput, istInputToIso } from '../../lib/aiStudioDeadline';
 import { aiStudioApi } from '../../lib/api/aiStudio';
 import { errorMessage } from '../../lib/api/client';
 import { PageTitle } from '../layout/shell';
 import { Dialog, ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
 import { Card, CardHead, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../tasks/head/headParts';
 import { AssignTaskButton, AssignTaskDialog, TaskList } from './AiStudioTasks';
+import { DeadlineChip } from './DeadlineClock';
 import { notifyAiStudioChanged, useAiStudioChanged } from './aiStudioEvents';
 import { PROJECT_STATUS_LABELS, ProgressBar, ProjectStatusBadge, useLoad } from './ui';
 
@@ -21,6 +23,7 @@ export const ProjectCards: React.FC<{ projects: AiStudioProject[] }> = ({ projec
           <ProjectStatusBadge status={p.status} />
         </div>
         {p.description && <p className="mt-2 text-sm text-slate-600 line-clamp-2">{p.description}</p>}
+        {p.deadlineAt && <div className="mt-3"><DeadlineChip deadlineAt={p.deadlineAt} status={p.status} /></div>}
         <div className="mt-3"><ProgressBar value={p.tasks.progress} label={`${p.name}: ${p.tasks.progress}% complete`} /></div>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
           <span>{p.tasks.total} tasks</span><span>{p.tasks.ongoing} in progress</span><span>{p.tasks.completed} completed</span>
@@ -72,16 +75,22 @@ export const ProjectDialog: React.FC<{ project?: AiStudioProject; onClose: () =>
   const [name, setName] = useState(project?.name ?? '');
   const [description, setDescription] = useState(project?.description ?? '');
   const [status, setStatus] = useState<string>(project?.status ?? 'ACTIVE');
+  // a date and time in Indian time (the deadline of the project); empty = no deadline
+  const initialDeadline = isoToIstInput(project?.deadlineAt);
+  const [deadline, setDeadline] = useState(initialDeadline);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = aiStudioProjectSchema.safeParse({ name, description, status: project ? status : undefined });
+    // left alone when it was not touched (the project can still be renamed after its deadline has passed); cleared when emptied
+    const deadlineAt = deadline === initialDeadline ? undefined : deadline ? istInputToIso(deadline) : null;
+    if (deadline && deadlineAt === null) { setError('Enter the deadline as a date and time.'); return; }
+    const parsed = aiStudioProjectSchema.safeParse({ name, description, status: project ? status : undefined, deadlineAt });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Please check the form.'); return; }
     setSaving(true);
     setError('');
     try {
-      const body = { name: parsed.data.name, description: parsed.data.description ?? undefined, status: parsed.data.status };
+      const body = { name: parsed.data.name, description: parsed.data.description ?? undefined, status: parsed.data.status, deadlineAt: parsed.data.deadlineAt };
       const saved = project ? await aiStudioApi.updateProject(project.id, body) : await aiStudioApi.createProject(body);
       notifyAiStudioChanged();
       onSaved(saved);
@@ -92,6 +101,13 @@ export const ProjectDialog: React.FC<{ project?: AiStudioProject; onClose: () =>
       <form onSubmit={submit} className="space-y-3">
         <Field label="Project name" htmlFor="ai-pr-name" required><input id="ai-pr-name" className={fieldCls} value={name} maxLength={120} onChange={e => setName(e.target.value)} autoComplete="off" /></Field>
         <Field label="Description (optional)" htmlFor="ai-pr-desc"><textarea id="ai-pr-desc" className={textareaCls} rows={3} maxLength={2000} value={description} onChange={e => setDescription(e.target.value)} /></Field>
+        <Field label="Deadline (optional, Indian time)" htmlFor="ai-pr-deadline">
+          <div className="flex gap-2">
+            <input id="ai-pr-deadline" type="datetime-local" className={fieldCls} value={deadline} onChange={e => setDeadline(e.target.value)} />
+            {deadline && <button type="button" className={ghostBtn} onClick={() => setDeadline('')} aria-label="Remove the deadline">Clear</button>}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">The Team Leads and Team Members on the project see a clock counting down to this time, and are told when it is set or changed.</p>
+        </Field>
         {project && (
           <Field label="Status" htmlFor="ai-pr-status">
             <select id="ai-pr-status" className={fieldCls} value={status} onChange={e => setStatus(e.target.value)}>
@@ -186,6 +202,7 @@ export const ProjectManagement: React.FC<{ role: AiStudioRole }> = ({ role }) =>
               </div>
               <ProjectStatusBadge status={p.status} />
             </div>
+            <div className="mt-3">{p.deadlineAt ? <DeadlineChip deadlineAt={p.deadlineAt} status={p.status} /> : <span className="text-xs text-slate-500">No deadline set</span>}</div>
             <div className="mt-3"><ProgressBar value={p.tasks.progress} label={`${p.name}: ${p.tasks.progress}% complete`} /></div>
             <dl className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
               <div><dt className="text-slate-500">Tasks</dt><dd className="font-bold text-slate-900">{p.tasks.total}</dd></div>

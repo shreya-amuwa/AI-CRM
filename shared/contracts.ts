@@ -6242,12 +6242,27 @@ export interface AiStudioProject {
   description: string | null;
   status: AiStudioProjectStatus;
   createdAt: string;
+  /** When the project is due (set by the Super Admin / Department Head, migration 20270119000100); null = no deadline. */
+  deadlineAt?: string | null;
   /** The caller works on this project. */
   mine: boolean;
   leads: { id: string; name: string }[];
   memberCount: number;
   tasks: AiStudioTaskCounts;
 }
+/** The clock (migration 20270119000100): a running project with a deadline. The server's own time comes with the list so every browser counts to the same moment. */
+export interface AiStudioDeadlineItem {
+  projectId: string;
+  name: string;
+  status: AiStudioProjectStatus;
+  deadlineAt: string;
+  /** The caller works on this project. */
+  mine: boolean;
+  /** Tasks of this project not completed yet that the caller may see / that are assigned to the caller. */
+  openTasks: number;
+  myOpenTasks: number;
+}
+export interface AiStudioDeadlines { serverNow: string; items: AiStudioDeadlineItem[] }
 export interface AiStudioPerson {
   id: string;
   fullName: string;

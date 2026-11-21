@@ -11490,6 +11490,53 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'sales roles API: at most 500 rows at once', r);
 }
 
+// 20270119000100: AI Studio project deadlines (the clock; who sets it; who sees it)
+{
+  let q = await api('sa', 'GET', '/ai-studio/projects');
+  const crm = q.json.data.find((p: any) => p.name === 'AI CRM');
+  const due = new Date(Date.now() + 4 * 86400000).toISOString();
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', description: crm.description ?? undefined, deadlineAt: due });
+  check(q.status === 200 && Date.parse(q.json.data.deadlineAt) === Date.parse(due), 'AI Studio deadline: the Super Admin sets a project deadline', q);
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(Date.parse(q.json.data.find((p: any) => p.id === crm.id).deadlineAt) === Date.parse(due), 'AI Studio deadline: the project list carries it', q);
+  q = await api('sa', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && Math.abs(Date.parse(q.json.data.serverNow) - Date.now()) < 60000 && q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: the clock lists it with the server time', q);
+  q = await api('ail1', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && q.json.data.items.some((i: any) => i.projectId === crm.id && i.mine), 'AI Studio deadline: a Team Lead on the project sees its clock', q);
+  q = await api('aim1', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: so does a Team Member on it', q);
+  q = await api('ail2', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && !q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: a Team Lead who is not on the project does not', q);
+  q = await api(null, 'GET', '/ai-studio/deadlines');
+  check(q.status === 401, 'AI Studio deadline: signed-out visitors are refused', q);
+
+  q = await api('ail1', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: new Date(Date.now() + 9 * 86400000).toISOString() });
+  check(q.status === 403, 'AI Studio deadline: a Team Lead cannot change it', q);
+  q = await api('aim1', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: null });
+  check(q.status === 403, 'AI Studio deadline: nor can a Team Member clear it', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: new Date(Date.now() - 3600000).toISOString() });
+  check(q.status === 422, 'AI Studio deadline: a time in the past is refused', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: 'tomorrow' });
+  check(q.status === 422, 'AI Studio deadline: and so is text', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: '2030-01-01T10:00:00' });
+  check(q.status === 422, 'AI Studio deadline: a time without its offset is refused', q);
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(Date.parse(q.json.data.find((p: any) => p.id === crm.id).deadlineAt) === Date.parse(due), 'AI Studio deadline: every refusal left the deadline as it was', q);
+
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', description: 'Edited without touching the deadline' });
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(Date.parse(q.json.data.find((p: any) => p.id === crm.id).deadlineAt) === Date.parse(due), 'AI Studio deadline: an edit that does not mention the deadline keeps it', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: null });
+  check(q.status === 200 && q.json.data.deadlineAt === null, 'AI Studio deadline: the Super Admin clears it', q);
+  q = await api('sa', 'GET', '/ai-studio/deadlines');
+  check(!q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: and the clock stops', q);
+  q = await api('sa', 'POST', '/ai-studio/projects', { name: 'AI Deadline Project', deadlineAt: new Date(Date.now() + 2 * 86400000).toISOString() });
+  check(q.status === 201 && q.json.data.deadlineAt, 'AI Studio deadline: a new project can be added with a deadline', q);
+  q = await api('sa', 'POST', '/ai-studio/projects', { name: 'AI Past Project', deadlineAt: new Date(Date.now() - 3600000).toISOString() });
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(q.status === 200 && !q.json.data.some((p: any) => p.name === 'AI Past Project'), 'AI Studio deadline: a refused deadline saves no project', q);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

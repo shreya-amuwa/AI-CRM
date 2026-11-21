@@ -384,6 +384,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/ai-studio/people/assign-lead', handler: aiStudio.assignLead, options: S },
   { method: 'POST', path: '/ai-studio/people/:id/lead', handler: aiStudio.setLead, options: S },
   { method: 'GET', path: '/ai-studio/projects', handler: aiStudio.projects },
+  { method: 'GET', path: '/ai-studio/deadlines', handler: aiStudio.deadlines },
   { method: 'POST', path: '/ai-studio/projects', handler: aiStudio.createProject, options: S },
   { method: 'PATCH', path: '/ai-studio/projects/:id', handler: aiStudio.updateProject, options: S },
   { method: 'POST', path: '/ai-studio/projects/:id/assign', handler: aiStudio.assignProject, options: S },
