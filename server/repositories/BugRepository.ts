@@ -24,5 +24,5 @@ export class BugRepository {
   setStatus(id: string, status: string, note?: string | null) { return this.rpc<DevBug>('bug_dev_set_status', { p_id: id, p_status: status, p_note: note ?? null }); }
   comment(id: string, note: string) { return this.rpc<DevBug>('bug_dev_comment', { p_id: id, p_note: note }); }
   team() { return this.rpc<DevTeamMember[]>('dev_team_list'); }
-  setTeam(profileId: string, member: boolean) { return this.rpc<DevTeamMember[]>('dev_team_set', { p_profile: profileId, p_member: member }); }
+  setTeam(profileId: string, member: boolean, lead?: boolean) { return this.rpc<DevTeamMember[]>('dev_team_set', { p_profile: profileId, p_member: member, p_lead: lead ?? null }); }
 }

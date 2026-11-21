@@ -11577,65 +11577,111 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 // ---------------------------------------------------------------------------
-// Bugs for the Developers team (migration 20270122000300)
+// Bugs for the Developers team (migrations 20270122000300, 20270122000400): every new bug seen by the whole team; the Team Lead assigns;
+// after assignment only the lead and the assigned developer see it. Each of the three accounts is checked on its own.
 // ---------------------------------------------------------------------------
 {
-  // the API database has nobody named like the three developers: make one Team Lead a developer for this block
-  const devId = deliveryLead as string;
-  await db.query(`insert into public.dev_team_members (profile_id) values ($1) on conflict do nothing`, [devId]);
+  // the API database has nobody named like the three developers: a Team Lead and two developers for this block
+  const leadId = deliveryLead as string, dev1 = deliveryMember as string, dev2 = salesTeamLeadId as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, true), ($2, false), ($3, false)
+                  on conflict (profile_id) do update set is_lead = excluded.is_lead`, [leadId, dev1, dev2]);
+  tokens.set('bd1', tokenFor(dev1));
+  tokens.set('bd2', tokenFor(dev2));
   let r = await api('tl2', 'GET', '/bugs/access');
-  check(r.status === 200 && r.json.data.isDeveloper === true && r.json.data.developers.some((d: any) => d.id === devId), 'bugs API: a developer has the Bugs section', r);
+  check(r.status === 200 && r.json.data.isLead === true && r.json.data.developers.length === 2 && !r.json.data.developers.some((d: any) => d.id === leadId),
+    'bugs API: the Team Lead has the Bugs section and assigns to the two developers', r);
+  r = await api('bd1', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === true && r.json.data.isLead === false && r.json.data.developers.length === 0, 'bugs API: developer 1 has it (no assignment control)', r);
+  r = await api('bd2', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === true && r.json.data.isLead === false, 'bugs API: developer 2 has it too', r);
   r = await api('a', 'GET', '/bugs/access');
-  check(r.status === 200 && r.json.data.isDeveloper === false && r.json.data.developers.length === 0, 'bugs API: an employee does not (and sees no developer list)', r);
+  check(r.status === 200 && r.json.data.isDeveloper === false && r.json.data.developers.length === 0, 'bugs API: an employee does not', r);
   r = await api('sa', 'GET', '/bugs/access');
   check(r.status === 200 && r.json.data.isDeveloper === false, 'bugs API: nor the Super Admin', r);
 
   const form = { title: 'BGX Report page is blank', description: 'The monthly report page shows nothing after login.', steps: '1. Open Reports', attachmentIds: [], clientRequestId: 'bgx-key-0001' };
   r = await api('a', 'POST', '/bugs', form);
-  check(r.status === 201 && r.json.data.status === 'PENDING' && r.json.data.reference.startsWith('BUG-') && r.json.data.reporterName && r.json.data.duplicate === false,
-    'bugs API: an employee reports a bug', r);
-  const bugId = r.json.data.id as string;
+  check(r.status === 201 && r.json.data.status === 'PENDING' && r.json.data.assignmentStatus === 'UNASSIGNED' && r.json.data.reference.startsWith('BUG-') && r.json.data.duplicate === false,
+    'bugs API: an employee reports a bug: PENDING, UNASSIGNED', r);
+  const bugA = r.json.data.id as string;
   r = await api('a', 'POST', '/bugs', form);
-  check(r.status === 201 && r.json.data.id === bugId && r.json.data.duplicate === true, 'bugs API: the same form again is the same bug', r);
-  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0002', description: 'short' });
+  check(r.status === 201 && r.json.data.id === bugA && r.json.data.duplicate === true, 'bugs API: the same form again is the same bug', r);
+  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0002', title: 'BGX Second bug' });
+  const bugB = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0003', description: 'short' });
   check(r.status === 422, 'bugs API: a description is required', r);
-  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0003', reporterName: 'Someone else' });
-  check(r.status === 422, 'bugs API: the reporter is never taken from the request', r);
   r = await api(null, 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0004' });
   check(r.status === 401, 'bugs API: not for visitors', r);
 
+  for (const who of ['tl2', 'bd1', 'bd2']) {
+    r = await api(who, 'GET', '/bugs?status=OPEN&assignee=UNASSIGNED');
+    check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && r.json.data.items.some((b: any) => b.id === bugB),
+      `bugs API: ${who} sees both new, unassigned bugs`, r);
+    r = await api(who, 'GET', `/bugs/${bugA}`);
+    check(r.status === 200 && r.json.data.description.startsWith('The monthly report'), `bugs API: ${who} opens the new bug`, r);
+  }
   r = await api('a', 'GET', '/bugs');
   check(r.status === 403, 'bugs API: an employee cannot open the Bugs section', r);
-  r = await api('th', 'GET', `/bugs/${bugId}`);
-  check(r.status === 403, 'bugs API: nor another employee open a bug', r);
   r = await api('sa', 'GET', '/bugs');
   check(r.status === 403, 'bugs API: nor the Super Admin', r);
-  r = await api('tl2', 'GET', '/bugs?status=OPEN&assignee=UNASSIGNED');
-  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugId) && r.json.data.counts.UNASSIGNED >= 1, 'bugs API: the developer sees the new bug', r);
-  r = await api('tl2', 'POST', `/bugs/${bugId}/assign`, { developerId: devId });
-  check(r.status === 200 && r.json.data.assigneeId === devId, 'bugs API: assigned to a developer', r);
-  r = await api('tl2', 'POST', `/bugs/${bugId}/assign`, { developerId: deliveryMember });
-  check(r.status === 422, 'bugs API: only to a developer', r);
-  r = await api('tl2', 'POST', `/bugs/${bugId}/comment`, { note: 'Reproduced on staging' });
-  check(r.status === 201 && r.json.data.history.some((h: any) => h.internal && h.note === 'Reproduced on staging'), 'bugs API: an internal comment', r);
-  r = await api('tl2', 'POST', `/bugs/${bugId}/status`, { status: 'RESOLVED' });
+
+  r = await api('bd1', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 403, 'bugs API: a developer cannot assign, not even to themself', r);
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: leadId });
+  check(r.status === 422, 'bugs API: the lead assigns to a developer, not to herself', r);
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 200 && r.json.data.assigneeId === dev1 && r.json.data.assignmentStatus === 'ASSIGNED' && r.json.data.assignedById === leadId && !!r.json.data.assignedAt,
+    'bugs API: the lead assigns bug A to developer 1 (assigned_to, assigned_by, assigned_at)', r);
+  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: dev2 });
+  check(r.status === 200 && r.json.data.assigneeId === dev2, 'bugs API: and bug B to developer 2', r);
+
+  r = await api('tl2', 'GET', '/bugs');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && r.json.data.items.some((b: any) => b.id === bugB)
+    && r.json.data.byDeveloper.some((d: any) => d.id === dev1 && d.open >= 1), 'bugs API: the lead still sees both, and each developer\'s workload', r);
+  r = await api('bd1', 'GET', '/bugs');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && !r.json.data.items.some((b: any) => b.id === bugB), 'bugs API: developer 1 sees A, not B', r);
+  r = await api('bd1', 'GET', `/bugs/${bugB}`);
+  check(r.status === 404, 'bugs API: developer 1 cannot open B', r);
+  r = await api('bd2', 'GET', '/bugs');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugB) && !r.json.data.items.some((b: any) => b.id === bugA)
+    && r.json.data.counts.MINE >= 1, 'bugs API: developer 2 sees B, not A, and the counts follow', r);
+  r = await api('bd2', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed it myself' });
+  check(r.status === 404, 'bugs API: developer 2 cannot change A', r);
+  r = await api('bd2', 'POST', `/bugs/${bugA}/comment`, { note: 'x' });
+  check(r.status === 404, 'bugs API: nor comment on it', r);
+
+  r = await api('bd1', 'POST', `/bugs/${bugA}/comment`, { note: 'Reproduced on staging' });
+  check(r.status === 201 && r.json.data.history.some((h: any) => h.internal && h.note === 'Reproduced on staging'), 'bugs API: developer 1 comments (internal)', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED' });
   check(r.status === 422, 'bugs API: resolving needs a note', r);
-  r = await api('tl2', 'POST', `/bugs/${bugId}/status`, { status: 'RESOLVED', note: 'Fixed in release 2.4' });
-  check(r.status === 200 && r.json.data.status === 'RESOLVED' && r.json.data.resolutionNote === 'Fixed in release 2.4', 'bugs API: resolved', r);
-  r = await api('a', 'POST', `/bugs/${bugId}/status`, { status: 'REJECTED', note: 'I changed my mind' });
-  check(r.status === 403, 'bugs API: the reporter cannot change the status', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed in release 2.4' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED' && r.json.data.resolutionNote === 'Fixed in release 2.4', 'bugs API: developer 1 resolves A', r);
+  r = await api('tl2', 'GET', '/bugs?status=RESOLVED');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA), 'bugs API: the lead sees it resolved', r);
+
+  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: dev1 });
+  check(r.status === 200 && r.json.data.assigneeId === dev1 && r.json.data.assignments.length === 2, 'bugs API: B re-assigned to developer 1; two assignments in the history', r);
+  r = await api('bd2', 'GET', `/bugs/${bugB}`);
+  check(r.status === 404, 'bugs API: developer 2 no longer sees B', r);
+  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: null });
+  check(r.status === 200 && r.json.data.assignmentStatus === 'UNASSIGNED', 'bugs API: un-assigned', r);
+  r = await api('bd2', 'GET', `/bugs/${bugB}`);
+  check(r.status === 200, 'bugs API: every developer sees it again', r);
+  const copies = (await db.query(`select count(*)::int n from public.dev_bugs where title in ('BGX Report page is blank', 'BGX Second bug')`)).rows[0].n;
+  check(copies === 2, 'bugs API: assignments never duplicate a bug', copies);
+
   r = await api('a', 'GET', '/bugs/mine');
-  check(r.status === 200 && r.json.data.some((b: any) => b.id === bugId && b.status === 'RESOLVED' && b.resolutionNote === 'Fixed in release 2.4'), 'bugs API: the reporter sees the resolution', r);
-  r = await api('a', 'GET', `/bugs/mine/${bugId}`);
-  check(r.status === 200 && !r.json.data.history.some((h: any) => h.internal), 'bugs API: but never the internal comment', r);
-  r = await api('th', 'GET', `/bugs/mine/${bugId}`);
+  check(r.status === 200 && r.json.data.some((b: any) => b.id === bugA && b.status === 'RESOLVED' && b.resolutionNote === 'Fixed in release 2.4'), 'bugs API: the reporter sees the resolution', r);
+  r = await api('a', 'GET', `/bugs/mine/${bugA}`);
+  check(r.status === 200 && !r.json.data.history.some((h: any) => h.internal) && r.json.data.assignments.length === 0, 'bugs API: but never internal comments or the team\'s assignment history', r);
+  r = await api('th', 'GET', `/bugs/mine/${bugA}`);
   check(r.status === 404, 'bugs API: someone else\'s bug is not found', r);
   r = await api('sa', 'GET', '/bugs/team');
-  check(r.status === 200 && r.json.data.some((m: any) => m.id === devId), 'bugs API: the Super Admin sees the developers list', r);
+  check(r.status === 200 && r.json.data.some((m: any) => m.id === leadId && m.isLead), 'bugs API: the Super Admin sees the team and its lead', r);
   r = await api('tl2', 'GET', '/bugs/team');
-  check(r.status === 403, 'bugs API: a developer does not manage the list', r);
+  check(r.status === 403, 'bugs API: the lead does not manage the list', r);
   await db.query(`delete from public.dev_bugs where title like 'BGX %'`);
-  await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
+  await db.query(`delete from public.dev_team_members where profile_id = any($1::uuid[])`, [[leadId, dev1, dev2]]);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

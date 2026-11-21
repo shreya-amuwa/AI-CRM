@@ -6635,9 +6635,12 @@ export interface MeetingMail {
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
 export type DevBugStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'REJECTED';
+export type DevBugAssignmentStatus = 'UNASSIGNED' | 'ASSIGNED';
 export interface DevBugRow {
   id: string; reference: string; title: string; status: DevBugStatus; reporterName: string; department: string | null; designation: string | null;
   assigneeId: string | null; assigneeName: string | null; attachmentCount: number; createdAt: string; updatedAt: string; resolvedAt: string | null;
+  /** UNASSIGNED: every developer sees it; ASSIGNED: the Team Lead and the assigned developer only (20270122000400) */
+  assignmentStatus: DevBugAssignmentStatus; assignedByName: string | null; assignedAt: string | null;
   /** the reporter's own list carries the resolution note */
   resolutionNote?: string | null;
 }
@@ -6646,6 +6649,9 @@ export interface DevBug {
   id: string; reference: string; title: string; description: string; steps: string | null; status: DevBugStatus;
   reporterId: string; reporterName: string; department: string | null; designation: string | null;
   assigneeId: string | null; assigneeName: string | null; resolutionNote: string | null; resolvedAt: string | null; createdAt: string; updatedAt: string;
+  assignmentStatus: DevBugAssignmentStatus; assignedById: string | null; assignedByName: string | null; assignedAt: string | null;
+  /** the assignment history (the team only; empty for the reporter) */
+  assignments: { to: string | null; by: string | null; at: string }[];
   attachments: { id: string; name: string; mime: string; size: number }[];
   /** internal comments only for the developers */
   history: DevBugHistoryEntry[];
@@ -6654,7 +6660,12 @@ export interface DevBug {
 export interface DevBugList {
   total: number;
   counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number };
+  /** the Team Lead sees every bug; a developer the unassigned ones and their own */
+  isLead: boolean;
+  /** the lead's view of the team's workload */
+  byDeveloper: { id: string; name: string; open: number; closed: number }[];
   items: DevBugRow[];
 }
-export interface DevBugAccess { isDeveloper: boolean; developers: { id: string; name: string }[] }
-export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; department: string | null; addedAt: string }
+/** developers: who the Team Lead can assign to (empty for everyone else) */
+export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[] }
+export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; isLead: boolean; department: string | null; addedAt: string }

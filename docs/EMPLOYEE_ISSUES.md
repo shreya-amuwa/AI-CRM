@@ -86,42 +86,62 @@ The reporter's name, department and designation are copied from their profile. T
 one bug. *My bug reports* below the form shows each bug's status, the developer working on it and the resolution note. Internal comments
 are never shown.
 
-### The developers
+### The developers (migration `20270122000400_bug_team_lead_assignment.sql`)
 
-A **Bugs** entry appears in the side panel only for the developers on the list. It is seeded with **Shreya Mande, Ashish Sinha and
-Siddhesh Shinde**, matched by name among the active members of AI Studio.
+The **Bugs** entry appears in the side panel only for the people on the developers list:
 
-Every reported bug, from every department, is there:
+| Who | Role in the team |
+| --- | --- |
+| **Shreya Mande** | **Team Lead** |
+| **Ashish Sinha** | Developer |
+| **Siddhesh Shinde** | Developer |
 
-- reference and title;
-- reporter, department and designation;
-- submitted at;
-- files;
-- the assigned developer;
-- the status.
+**How the developers are found.** They are matched by name in **any department**, ignoring case, spaces and dots, with the spellings
+Siddhesh / Siddesh / Sidhesh.
+- The first version (`20270122000300`) only looked in AI Studio for the exact names. A developer whose account was spelled or placed
+  differently never got the section, which is why Siddhesh saw no bugs.
+- The Super Admin can still add or remove a developer, and choose the Team Lead, in Settings > *Developers team (Bugs access)*.
 
-A developer can:
+**Who sees a bug.**
 
-- open a bug (description, steps, files, history);
-- **assign** it to any developer;
-- set **Pending / In Progress / Resolved / Rejected**. Resolved needs the resolution note and Rejected the reason, both read by the reporter;
-- add **internal comments**, which only developers see.
+| Bug | Team Lead (Shreya) | The assigned developer | The other developer | The reporter |
+| --- | --- | --- | --- | --- |
+| New, **unassigned** | yes | — | yes (both developers see it) | own bug only |
+| **Assigned** to Ashish | yes | Ashish: yes | Siddhesh: **no** | own bug only |
+| **Assigned** to Siddhesh | yes | Siddhesh: yes | Ashish: **no** | own bug only |
 
-Filters: Open, Assigned to me, Unassigned, each status, and search. Notifications reach every developer for a new bug, the assignee for
-an assignment, and the reporter for each status change.
+Every new bug starts **Unassigned** and is seen by all three. They all get the same details, files, employee details and submission time.
+
+**Who does what.**
+- **Only the Team Lead assigns.** Her bug drawer has an *Assign to* dropdown with Ashish Sinha and Siddhesh Shinde. She can also re-assign a
+  bug, or put it back to *Unassigned* so every developer sees it again.
+- **The Team Lead's view** shows every bug. Filters: *New (unassigned)*, one per developer, each status. A workload strip gives each
+  developer's open and closed bugs.
+- **A developer** sees the new unassigned bugs and the ones assigned to them, under *New (unassigned)* and *Assigned to me*. They can open
+  and comment on these, and change the status of their own.
+- **Changing a status:** the Team Lead on any bug, a developer on the bugs assigned to them. Resolved needs the resolution note and Rejected
+  the reason, both read by the reporter. The lead is notified of each developer's progress.
+- **Comments:** everyone in the team who sees the bug can add internal comments. Only the team sees them.
+
+**Records.**
+- `dev_bugs` has `assigned_to`, `assigned_by`, `assigned_at` and `assignment_status` (UNASSIGNED / ASSIGNED).
+- `dev_bug_assignments` keeps every assignment and un-assignment with its time. Ownership changes never delete or copy a bug.
+- Removing a developer from the list puts their open bugs back to unassigned.
 
 ### Who can see what
 
 The database enforces all of this:
 
-- **Bugs section.** Only the developers on `dev_team_members` (`private.require_developer`). Everyone else, including other AI Studio
-  members, Department Heads and the Super Admin, gets `FORBIDDEN`.
+- **The visibility rule.** It lives in `private.bug_visible` / `private.bug_team_visible`. The same rule is applied by every function
+  (`bug_dev_list`, `bug_dev_detail`, comments, status, files) and by the **row level security policies** on `dev_bugs`, `dev_bug_events` and
+  `dev_bug_assignments`. Anyone else gets `FORBIDDEN` or "not found".
+- **Writing.** Nothing is written past the functions: there is no insert, update or delete grant.
 - **Reporting and following.** Any Team Member, Team Lead or Department Head (`private.require_employee`), for their own bugs only.
-- **Files.** A bug's files open for its reporter and the developers only, and each download is audited.
-- **The developers list.** The Super Admin keeps it (Settings > *Developers team (Bugs access)*, `dev_team_set`) but does not get the Bugs
-  section.
-- **History.** `dev_bug_events` is append-only. Submitted, assigned, status changes, comments and the resolution are kept as they happened,
-  and reporting, assigning and status changes are audited.
+- **Files.** A bug's files open for its reporter and the developers who see the bug, and each download is audited.
+- **History.** `dev_bug_events` is append-only. Reporting, assigning and status changes are audited.
+
+**Re-running the migrations.** After `20270122000400` has run, do not re-run `20270122000300` (it refers to the old column name
+`assignee_id`). Re-running `20270122000400` itself is safe.
 
 ### API
 
@@ -130,7 +150,7 @@ The database enforces all of this:
 - `GET /bugs/mine`, `GET /bugs/mine/:id`
 - `GET /bugs`, `GET /bugs/:id` (developers)
 - `POST /bugs/:id/assign|status|comment` (developers)
-- `GET|POST /bugs/team` (Super Admin)
+- `GET|POST /bugs/team` (Super Admin; `{ profileId, member, lead }`)
 
 Uploads use `/employee/issues/uploads`.
 
