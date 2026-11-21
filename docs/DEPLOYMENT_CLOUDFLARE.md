@@ -205,3 +205,20 @@ logged `[api] could not reach Supabase: TimeoutError`. Two contributions are red
 
 If the database is still slow: Supabase → Reports → Database (CPU), and Project Settings → Compute and Disk (a larger compute size removes the
 CPU throttling of the smallest one).
+
+
+## Attendance reminders and push (migration 20270126000200)
+
+The reminders need all of these on the **production** Worker (`ai-crm`); none of them can be checked from GitHub:
+
+1. **Variables / secrets** (Worker → Settings → Variables and Secrets): `SCHEDULED_ENABLED=true`; `CRON_SECRET` (or `AUTOMATION_DISPATCH_SECRET`,
+   16+ characters); `VAPID_PRIVATE_KEY` (the private key as a JWK, secret), `VAPID_SUBJECT` (`mailto:` or `https:`), and `VAPID_PUBLIC_KEY`
+   if set must be the private key's own public key (otherwise push is switched off and the log says so). Optional `PUSH_MAX_PER_RUN`
+   (default 40; the Free plan allows 50 subrequests per invocation, raise it on the Paid plan, e.g. 400).
+2. **Cron**: Worker → Settings → Triggers lists `*/5 * * * *` (from `wrangler.jsonc`). Exactly one platform runs it: `VERCEL_CRON_PAUSED=true` on
+   Vercel if Vercel still exists, and no second Worker (e.g. a workers.dev rehearsal copy) with `SCHEDULED_ENABLED=true` against the same database.
+3. **Check** after deploying: Worker → Logs shows `[cron] attendance reminders: HTTP 200 {... "mode":"outbox" ...}` every 5 minutes, and
+   Super Admin → Notification Health shows the scheduler as **Healthy** and push as configured. "Not running" there means the cron, the
+   switch or the secret is wrong; "Push configuration unavailable" means the VAPID settings are missing or do not match.
+4. Run `supabase/migrations/20270126000200_notification_reliability.sql` in the Supabase SQL editor (before or after the deploy: the API falls
+   back to the previous reminder path until it exists).

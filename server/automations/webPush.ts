@@ -7,11 +7,26 @@
  * `npx @pushforge/builder vapid`), VAPID_SUBJECT (a mailto: or https: contact the push services can reach).
  */
 export interface PushTarget { id: string; endpoint: string; p256dh: string; auth: string }
-export interface PushMessage { title: string; body: string; tag: string; url: string }
+export interface PushMessage {
+  title: string;
+  body: string;
+  tag: string;
+  url: string;
+  /** Seconds the push service may keep the message for an offline device (default 1800); a reminder is never shown after it stops being true. */
+  ttl?: number;
+}
 /** A P-256 private key as a JSON Web Key (what `npx @pushforge/builder vapid` prints). */
 export interface VapidPrivateJwk { kty?: string; crv?: string; x?: string; y?: string; d?: string }
 export interface VapidConfig { publicKey: string; privateJWK: VapidPrivateJwk; subject: string }
 export type PushOutcome = 'ok' | 'gone' | 'failed';
+/**
+ * What the push service answered, for the delivery outbox (notificationDelivery.ts):
+ * - accepted: 2xx. The push service took the message. It does NOT prove the device showed it or made a sound.
+ * - gone: 404 / 410. The subscription is expired or unsubscribed: switch the device off, never retry.
+ * - retry: a timeout, a network error, 429 or 5xx. Temporary: try again later (Retry-After is passed on when given).
+ * - failed: any other answer (400 bad request, 401 / 403 VAPID refused, 413 too large) or a broken device key. Not retried.
+ */
+export interface PushResult { outcome: 'accepted' | 'gone' | 'retry' | 'failed'; status: number | null; error: string | null; retryAfter: number | null; ms: number }
 
 /**
  * The VAPID settings, or null when push is not set up (reminders then reach the CRM bell only). The public key is the private key's own
@@ -93,21 +108,41 @@ async function vapidToken(endpoint: string, vapid: VapidConfig): Promise<string>
 /** A push "topic" (base64url characters, at most 32): a newer message with the same topic replaces one still waiting at the push service. */
 const topicOf = (tag: string) => tag.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'amuwa-crm';
 
+/** Retry-After as seconds (a number of seconds or an HTTP date); null when absent or unreadable. */
+export function retryAfterSeconds(value: string | null, now = Date.now()): number | null {
+  if (!value) return null;
+  const n = Number(value.trim());
+  if (Number.isFinite(n) && n >= 0) return Math.round(n);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : Math.max(0, Math.round((at - now) / 1000));
+}
+
 /**
- * Send one message to one device. 404 / 410 mean the device unsubscribed or expired: it is "gone" and should not be tried again.
- * A push service that does not answer within the timeout is a failure, so one slow service never holds up everyone else's reminders.
+ * Send one message to one device and say exactly what happened (see PushResult). A push service that does not answer within the
+ * timeout is a temporary failure, so one slow service never holds up everyone else's reminders. Never throws; the error text is a short
+ * code only (never the endpoint, a key or the response body).
  */
-export async function sendWebPush(target: PushTarget, message: PushMessage, vapid: VapidConfig,
-  fetchImpl: (url: string, init: RequestInit) => Promise<Response> = fetch, timeoutMs = 10_000): Promise<PushOutcome> {
+export async function sendWebPushDetailed(target: PushTarget, message: PushMessage, vapid: VapidConfig,
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response> = fetch, timeoutMs = 10_000): Promise<PushResult> {
+  const started = Date.now();
+  const done = (outcome: PushResult['outcome'], status: number | null, error: string | null, retryAfter: number | null = null): PushResult =>
+    ({ outcome, status, error, retryAfter, ms: Date.now() - started });
+  if (!/^https:\/\//.test(target.endpoint)) return done('failed', null, 'INVALID_ENDPOINT');
+  let body: Bytes;
   try {
-    if (!/^https:\/\//.test(target.endpoint)) return 'failed';
-    const body = await encrypt(enc(JSON.stringify(message)), target.p256dh, target.auth);
+    const { ttl: _ttl, ...payload } = message;
+    body = await encrypt(enc(JSON.stringify(payload)), target.p256dh, target.auth);
+  } catch {
+    return done('failed', null, 'INVALID_DEVICE_KEY');
+  }
+  const ttl = Math.max(0, Math.min(86_400, Math.round(message.ttl ?? 1800)));
+  try {
     const res = await fetchImpl(target.endpoint, {
       method: 'POST',
       headers: {
         'Content-Encoding': 'aes128gcm',
         'Content-Type': 'application/octet-stream',
-        TTL: '1800',
+        TTL: String(ttl),
         Urgency: 'high',
         Topic: topicOf(message.tag),
         Authorization: `vapid t=${await vapidToken(target.endpoint, vapid)}, k=${vapid.publicKey}`
@@ -115,9 +150,25 @@ export async function sendWebPush(target: PushTarget, message: PushMessage, vapi
       body,
       signal: AbortSignal.timeout(timeoutMs)
     });
-    if (res.status === 404 || res.status === 410) return 'gone';
-    return res.ok ? 'ok' : 'failed';
-  } catch {
-    return 'failed';
+    if (res.ok) return done('accepted', res.status, null);
+    if (res.status === 404 || res.status === 410) return done('gone', res.status, `HTTP ${res.status}`);
+    if (res.status === 429 || res.status >= 500) return done('retry', res.status, `HTTP ${res.status}`, retryAfterSeconds(res.headers.get('retry-after')));
+    return done('failed', res.status, res.status === 401 || res.status === 403 ? `HTTP ${res.status} VAPID_REFUSED` : `HTTP ${res.status}`);
+  } catch (e) {
+    const name = e instanceof Error ? e.name : '';
+    if (name === 'TimeoutError' || name === 'AbortError') return done('retry', null, 'TIMEOUT');
+    // the Worker's own per-invocation subrequest limit: nothing reached the push service, try again on the next run
+    if (e instanceof Error && /too many subrequests/i.test(e.message)) return done('retry', null, 'SUBREQUEST_LIMIT');
+    return done('retry', null, 'NETWORK_ERROR');
   }
+}
+
+/**
+ * Send one message to one device (the chat push and older callers). 404 / 410 mean the device unsubscribed or expired: it is "gone" and
+ * should not be tried again. Anything else that is not a 2xx is "failed".
+ */
+export async function sendWebPush(target: PushTarget, message: PushMessage, vapid: VapidConfig,
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response> = fetch, timeoutMs = 10_000): Promise<PushOutcome> {
+  const r = await sendWebPushDetailed(target, message, vapid, fetchImpl, timeoutMs);
+  return r.outcome === 'accepted' ? 'ok' : r.outcome === 'gone' ? 'gone' : 'failed';
 }

@@ -14,14 +14,21 @@ self.addEventListener('push', event => {
     data = { title: 'Amuwa CRM', body: event.data ? event.data.text() : '' };
   }
   const title = data.title || 'Amuwa CRM';
-  event.waitUntil(self.registration.showNotification(title, {
-    body: data.body || '',
-    tag: data.tag || 'amuwa-crm',
-    renotify: true,                       // the follow-up replaces the first reminder and still alerts
-    icon: '/icons/icon-192.png',
-    badge: '/favicon-192.png',
-    data: { url: data.url || '/?open=attendance' }
-  }));
+  event.waitUntil((async () => {
+    await self.registration.showNotification(title, {
+      body: data.body || '',
+      tag: data.tag || 'amuwa-crm',
+      renotify: true,                     // the follow-up replaces the first reminder and still alerts
+      silent: false,                      // an alert: the device's own notification sound and Do Not Disturb rules apply
+      timestamp: Date.now(),
+      icon: '/icons/icon-192.png',
+      badge: '/favicon-192.png',
+      data: { url: data.url || '/?open=attendance' }
+    });
+    // an open CRM window reads its notifications again at once (in case its live connection is asleep)
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of windows) w.postMessage({ type: 'push-received' });
+  })());
 });
 
 self.addEventListener('notificationclick', event => {

@@ -1,5 +1,6 @@
 import { attendanceApi } from '../attendance';
 import { registerServiceWorker } from './registerServiceWorker';
+import { audioState, setPushActiveOnThisDevice } from '../notifications/notificationSound';
 
 /**
  * Attendance reminders on this device (Web Push). What the browser can do, turning reminders on and off, and the "Install app" prompt.
@@ -28,12 +29,90 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 }
 
 export async function detectPushState(): Promise<PushState> {
+  const state = await detectPushStateOnly();
+  // the in-app sound stays quiet in a hidden tab when the operating system shows the push itself (lib/notifications/notificationSound.ts)
+  setPushActiveOnThisDevice(state === 'on');
+  return state;
+}
+async function detectPushStateOnly(): Promise<PushState> {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return 'unsupported';
   if (isIos() && !isStandalone()) return 'ios-needs-install';
   if (!pushAvailable()) return 'unsupported';
   if (Notification.permission === 'denied') return 'blocked';
   const sub = await currentSubscription().catch(() => null);
   return sub && Notification.permission === 'granted' ? 'on' : 'off';
+}
+
+/** Which kind of device this is, for the setup guide. */
+export type Platform = 'ios' | 'android' | 'windows' | 'mac' | 'other';
+export function platformOf(ua: string = typeof navigator === 'undefined' ? '' : navigator.userAgent): Platform {
+  if (/iPhone|iPad|iPod/.test(ua) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) return 'ios';
+  if (/Android/.test(ua)) return 'android';
+  if (/Windows/.test(ua)) return 'windows';
+  if (/Mac OS X|Macintosh/.test(ua)) return 'mac';
+  return 'other';
+}
+
+/** Everything this browser can say about itself, for "Check device status". Nothing here is sent anywhere except the summary in reportDeviceCheck. */
+export interface DeviceDiagnostics {
+  platform: Platform;
+  label: string;
+  standalone: boolean;
+  serviceWorker: boolean;
+  pushApi: boolean;
+  permission: NotificationPermission | 'unsupported';
+  subscribed: boolean;
+  state: PushState;
+  audio: ReturnType<typeof audioState>;
+  endpoint: string | null;
+}
+export async function deviceDiagnostics(): Promise<DeviceDiagnostics> {
+  const state = await detectPushState();
+  const sub = await currentSubscription().catch(() => null);
+  return {
+    platform: platformOf(), label: deviceLabel(), standalone: typeof window !== 'undefined' && isStandalone(),
+    serviceWorker: typeof navigator !== 'undefined' && 'serviceWorker' in navigator,
+    pushApi: typeof window !== 'undefined' && 'PushManager' in window,
+    permission: typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+    subscribed: !!sub, state, audio: audioState(), endpoint: sub?.endpoint ?? null
+  };
+}
+
+/** This browser's random id (not linked to anything else), so its reports replace each other in Notification Health. */
+function clientId(): string {
+  const KEY = 'crm.notify.clientId';
+  try {
+    const have = localStorage.getItem(KEY);
+    if (have && /^[A-Za-z0-9-]{8,64}$/.test(have)) return have;
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `c-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    localStorage.setItem(KEY, id);
+    return id;
+  } catch {
+    return 'no-storage-client';
+  }
+}
+
+/**
+ * Tell the server what this browser reports (permission, subscribed, audio allowed): at most once a day per person, or when it changed.
+ * Only that summary is sent (no address, no key). Never throws.
+ */
+export async function reportDeviceCheck(profileId: string, force = false): Promise<void> {
+  try {
+    const d = await deviceDiagnostics();
+    const summary = [profileId, d.permission, d.state, d.audio, d.standalone].join('|');
+    const KEY = 'crm.notify.lastCheck';
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    let last: { summary?: string; day?: string } = {};
+    try { last = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* */ }
+    if (!force && last.summary === summary && last.day === today) return;
+    await attendanceApi.clientCheck({ clientId: clientId(), label: d.label, permission: d.permission, pushState: d.state, audioState: d.audio, standalone: d.standalone });
+    try { localStorage.setItem(KEY, JSON.stringify({ summary, day: today })); } catch { /* */ }
+  } catch { /* an older database, or offline: nothing to report */ }
+}
+
+/** This browser's own subscription address (only to mark "the test appeared on THIS device"). */
+export async function thisDeviceEndpoint(): Promise<string | null> {
+  return (await currentSubscription().catch(() => null))?.endpoint ?? null;
 }
 
 /** "Chrome on Android", "Safari on iPhone": how the device shows in the person's list. */
@@ -79,12 +158,17 @@ export async function subscribeThisDevice(): Promise<void> {
   const asked = Notification.requestPermission();
   const [permission, key] = await Promise.all([asked, loadPushKey()]);
   if (!key) throw new Error(NOT_SET_UP);
-  if (permission !== 'granted') throw new Error('Notifications were not allowed. Allow them for this site to get them.');
+  if (permission !== 'granted') {
+    throw new Error(permission === 'denied'
+      ? "Notifications are blocked for this site. Allow them in your browser's site settings (see the steps below), then reload."
+      : 'Notifications were not allowed. Tap "Turn on notifications" again and choose Allow.');
+  }
   const reg = await registerServiceWorker();
   if (!reg) throw new Error('This browser cannot show notifications.');
   const sub = (await reg.pushManager.getSubscription())
     ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }));
   await save(sub);
+  setPushActiveOnThisDevice(true);
 }
 
 /**
