@@ -11714,7 +11714,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 // Incentive payouts through RazorpayX (20270125000100): a local stand-in for RazorpayX; no real Razorpay is called and no real keys exist
 {
   const { createHmac } = await import('node:crypto');
-  const rzp = { contacts: 0, funds: 0, payouts: new Map<string, any>(), keys: new Map<string, string>(), fail: null as null | { status: number; description: string }, auth: [] as string[] };
+  const rzp = { contacts: 0, funds: 0, payouts: new Map<string, any>(), keys: new Map<string, string>(), fail: null as null | { status: number; description: string }, auth: [] as string[], lose: false };
   const rzpSrv = http.createServer((req, res) => {
     let raw = '';
     req.on('data', c => (raw += c));
@@ -11731,6 +11731,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
         if (known) return send(200, rzp.payouts.get(known));
         const p = { id: `pout_${rzp.payouts.size + 1}`, status: 'processing', utr: null, amount: b.amount, mode: b.mode, fund_account_id: b.fund_account_id, reference_id: b.reference_id };
         rzp.payouts.set(p.id, p); rzp.keys.set(key, p.id);
+        // Razorpay took it, but the answer is lost on the way back
+        if (rzp.lose) return send(504, { error: { description: 'Gateway timeout' } });
         return send(200, p);
       }
       const m = req.url?.match(/^\/v1\/payouts\/([^/?]+)$/);
@@ -11812,8 +11814,25 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('a', 'POST', `/payouts/${r2}/razorpay/check`);
   check(r.status === 403, 'razorpay API: only Accounts checks', r);
 
-  await db.query(`delete from public.department_expenses where id in (select expense_id from public.payout_requests where id = any($1::uuid[]))`, [[r1, r2]]);
-  await db.query(`delete from public.payout_requests where id = any($1::uuid[])`, [[r1, r2]]);
+  // Razorpay accepted the payout but its answer was lost: the request stays being sent (never back to waiting, never payable by hand);
+  // Check status sends it again with the same idempotency key, which gives back the same payout - one payout in all
+  const r3 = await newRequest(600);
+  rzp.lose = true;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay`, { tds: 0 });
+  const { rows: [lost] } = await db.query(`select status, rzp_status from public.payout_requests where id = $1`, [r3]);
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && lost.status === 'PROCESSING' && lost.rzp_status === 'sending',
+    'razorpay API: an answer lost after Razorpay took it leaves the withdrawal being sent, not waiting', { r, lost });
+  rzp.lose = false;
+  const before = rzp.payouts.size;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && rzp.payouts.size === before, 'razorpay API: Check status sends it again with the same key: still one payout', { r, size: rzp.payouts.size, before });
+  const p3 = [...rzp.payouts.values()].find((p: any) => p.amount === 60000);
+  p3.status = 'processed'; p3.utr = 'UTR-RZP-3';
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: and settles it once Razorpay has paid it', r);
+
+  await db.query(`delete from public.department_expenses where id in (select expense_id from public.payout_requests where id = any($1::uuid[]))`, [[r1, r2, r3]]);
+  await db.query(`delete from public.payout_requests where id = any($1::uuid[])`, [[r1, r2, r3]]);
   await db.query(`delete from public.razorpay_events where event_id like 'evt_api_%'`);
   for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
   rzpSrv.close();

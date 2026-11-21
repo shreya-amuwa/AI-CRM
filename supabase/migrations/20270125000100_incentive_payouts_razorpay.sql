@@ -16,6 +16,10 @@ alter table public.payout_methods add column if not exists rzp_contact_id text;
 alter table public.payout_methods add column if not exists rzp_fund_account_id text;
 alter table public.payout_requests add column if not exists rzp_payout_id text;
 alter table public.payout_requests add column if not exists rzp_status text;
+-- what was sent (so a payout whose answer was lost is sent again with exactly the same fund account and amount)
+alter table public.payout_requests add column if not exists rzp_fund_account_id text;
+alter table public.payout_requests add column if not exists rzp_amount_paise bigint;
+alter table public.payout_requests add column if not exists rzp_mode text;
 create unique index if not exists payout_requests_rzp_payout on public.payout_requests (rzp_payout_id) where rzp_payout_id is not null;
 
 create table if not exists public.razorpay_events (
@@ -38,6 +42,15 @@ end $$;
 revoke all on function private.payout_methods_rzp_reset() from public, anon, authenticated;
 drop trigger if exists payout_methods_rzp_reset on public.payout_methods;
 create trigger payout_methods_rzp_reset before update on public.payout_methods for each row execute function private.payout_methods_rzp_reset();
+
+-- Are the saved details exactly the ones a request was made with? (kind, holder, account, IFSC, UPI ID)
+create or replace function private.payout_method_matches(m public.payout_methods, s jsonb)
+returns boolean language sql immutable set search_path = '' as $$
+  select m.profile_id is not null and s is not null
+     and (m.kind, m.holder_name, m.account_number, m.ifsc, m.upi_id)
+         is not distinct from (s ->> 'kind', s ->> 'holderName', s ->> 'accountNumber', s ->> 'ifsc', s ->> 'upiId')
+$$;
+revoke all on function private.payout_method_matches(public.payout_methods, jsonb) from public, anon, authenticated;
 
 -- Is this person (not the signed-in user: the server passes the Accountant) in the Accounts department, or the Super Admin?
 create or replace function private.payout_actor_is_accounts(p uuid)
@@ -85,18 +98,45 @@ begin
     'email', owner_p.email, 'phone', owner_p.phone,
     -- the fund account is reused only if it was made for these same details
     'contactId', m.rzp_contact_id,
-    'fundAccountId', case when (r.method_snapshot -> 'full' ->> 'accountNumber', r.method_snapshot -> 'full' ->> 'upiId')
-                                 is not distinct from (m.account_number, m.upi_id) then m.rzp_fund_account_id end);
+    'fundAccountId', case when private.payout_method_matches(m, r.method_snapshot -> 'full') then m.rzp_fund_account_id end);
 end $$;
 revoke all on function public.payout_rzp_begin(uuid, uuid, numeric) from public, anon, authenticated;
 grant execute on function public.payout_rzp_begin(uuid, uuid, numeric) to service_role;
 
-create or replace function public.payout_rzp_link(p_profile uuid, p_contact text, p_fund text)
-returns void language sql security definer set search_path = '' as $$
-  update public.payout_methods set rzp_contact_id = coalesce(p_contact, rzp_contact_id), rzp_fund_account_id = p_fund where profile_id = p_profile
-$$;
+-- The Razorpay contact and fund account made for a request. The fund account is kept on the person's details for next time only if their
+-- details are still the ones the request was made with (if they changed meanwhile, it points at the old account and must not be reused).
+drop function if exists public.payout_rzp_link(uuid, text, text);
+create or replace function public.payout_rzp_link(p_id uuid, p_contact text, p_fund text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  r public.payout_requests;
+begin
+  select * into r from public.payout_requests where id = p_id;
+  if r.id is null then
+    raise exception 'NOT_FOUND: This withdrawal does not exist.' using errcode = 'P0001';
+  end if;
+  update public.payout_requests set rzp_fund_account_id = p_fund where id = r.id;
+  update public.payout_methods m set rzp_contact_id = coalesce(p_contact, m.rzp_contact_id),
+         rzp_fund_account_id = case when private.payout_method_matches(m, r.method_snapshot -> 'full') then p_fund else m.rzp_fund_account_id end
+   where m.profile_id = r.profile_id;
+end $$;
 revoke all on function public.payout_rzp_link(uuid, text, text) from public, anon, authenticated;
 grant execute on function public.payout_rzp_link(uuid, text, text) to service_role;
+
+-- Right before the payout call: what is sent. From here on the request is never put back to waiting: if the answer is lost, the
+-- status check sends the same payout again with the same idempotency key (Razorpay returns the payout it already made).
+drop function if exists public.payout_rzp_prepare(uuid, text, bigint);
+create or replace function public.payout_rzp_prepare(p_id uuid, p_fund text, p_paise bigint, p_mode text)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  update public.payout_requests set rzp_fund_account_id = p_fund, rzp_amount_paise = p_paise, rzp_mode = p_mode, rzp_status = 'sending'
+   where id = p_id and status = 'PROCESSING' and rzp_payout_id is null;
+  if not found then
+    raise exception 'CONFLICT: This withdrawal is not being sent.' using errcode = 'P0001';
+  end if;
+end $$;
+revoke all on function public.payout_rzp_prepare(uuid, text, bigint, text) from public, anon, authenticated;
+grant execute on function public.payout_rzp_prepare(uuid, text, bigint, text) to service_role;
 
 create or replace function public.payout_rzp_set_id(p_id uuid, p_payout text)
 returns void language plpgsql security definer set search_path = '' as $$
@@ -120,15 +160,18 @@ begin
     raise exception 'CONFLICT: Only a payout Razorpay has not accepted yet can be put back.' using errcode = 'P0001';
   end if;
   update public.payout_requests set status = 'REQUESTED', channel = null, tds_amount = 0, net_amount = null, decided_by = null, decided_at = null,
-         rzp_status = null where id = r.id returning * into r;
+         rzp_status = null, rzp_fund_account_id = null, rzp_amount_paise = null, rzp_mode = null where id = r.id returning * into r;
   perform private.write_audit('PAYOUT_RAZORPAY_UNDONE', 'payout_request', r.id, null, null, jsonb_build_object('reason', left(p_reason, 300)));
   return private.payout_request_json(r, true);
 end $$;
 revoke all on function public.payout_rzp_undo(uuid, text) from public, anon, authenticated;
 grant execute on function public.payout_rzp_undo(uuid, text) to service_role;
 
--- A status from the webhook (with its event id) or from a status check (no event id).
-create or replace function public.payout_rzp_settle(p_payout text, p_status text, p_utr text, p_reason text, p_event_id text)
+-- A status from the webhook (with its event id) or from a status check (no event id). p_reference is the payout's reference_id (the
+-- request id without dashes): it finds a request whose payout id was not recorded yet (a webhook faster than the API, or a lost answer).
+-- An event is recorded as seen only when it matched a request, so Razorpay's retry of an unmatched one can still settle it.
+drop function if exists public.payout_rzp_settle(text, text, text, text, text);
+create or replace function public.payout_rzp_settle(p_payout text, p_status text, p_utr text, p_reason text, p_event_id text, p_reference text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   r public.payout_requests;
@@ -136,21 +179,29 @@ declare
   v_status text := lower(btrim(coalesce(p_status, '')));
   v_exp jsonb;
 begin
+  select * into r from public.payout_requests where rzp_payout_id = p_payout for update;
+  if r.id is null and nullif(btrim(p_reference), '') is not null then
+    select * into r from public.payout_requests
+     where replace(id::text, '-', '') = lower(btrim(p_reference)) and status = 'PROCESSING' and channel = 'RAZORPAY' and rzp_payout_id is null for update;
+    if r.id is not null then
+      update public.payout_requests set rzp_payout_id = p_payout where id = r.id returning * into r;
+    end if;
+  end if;
+  if r.id is null then
+    return jsonb_build_object('matched', false);
+  end if;
   if p_event_id is not null then
     insert into public.razorpay_events (event_id) values (left(p_event_id, 120)) on conflict do nothing;
     if not found then
-      return jsonb_build_object('matched', true, 'ignored', true);
+      return jsonb_build_object('matched', true, 'ignored', true, 'status', r.status);
     end if;
-  end if;
-  select * into r from public.payout_requests where rzp_payout_id = p_payout for update;
-  if r.id is null then
-    return jsonb_build_object('matched', false);
   end if;
   select * into owner_p from public.profiles where id = r.profile_id;
   if r.status = 'PROCESSING' and v_status = 'processed' then
     update public.payout_requests set rzp_status = v_status where id = r.id;
     r := private.payout_settle(r, coalesce(nullif(btrim(p_utr), ''), p_payout), private.office_today(), r.tds_amount, 'RAZORPAY', r.decided_by);
-  elsif r.status = 'PROCESSING' and v_status in ('failed', 'rejected', 'cancelled') then
+  elsif r.status = 'PROCESSING' and v_status in ('failed', 'rejected', 'cancelled', 'reversed') then
+    -- reversed before it was ever processed is a failure too: the money came back, the amount is free again
     update public.payout_requests set status = 'FAILED', rzp_status = v_status, reason = left(coalesce(nullif(btrim(p_reason), ''), 'Razorpay could not send the payout.'), 500)
      where id = r.id returning * into r;
     perform private.write_audit('PAYOUT_FAILED', 'payout_request', r.id, owner_p.department_id, owner_p.team_id, jsonb_build_object('status', v_status, 'reason', r.reason));
@@ -171,15 +222,17 @@ begin
   end if;
   return jsonb_build_object('matched', true, 'status', r.status);
 end $$;
-revoke all on function public.payout_rzp_settle(text, text, text, text, text) from public, anon, authenticated;
-grant execute on function public.payout_rzp_settle(text, text, text, text, text) to service_role;
+revoke all on function public.payout_rzp_settle(text, text, text, text, text, text) from public, anon, authenticated;
+grant execute on function public.payout_rzp_settle(text, text, text, text, text, text) to service_role;
 
--- Payouts still being sent after this many minutes: the status check asks Razorpay about them.
+-- Withdrawals still being sent after this many minutes, for the status check: with a payout id (ask Razorpay), or without one (the answer
+-- was lost: send again with the same key, fund account and amount; or the payout call was never made: put it back to waiting).
 create or replace function public.payout_rzp_pending(p_minutes integer)
 returns jsonb language sql stable security definer set search_path = '' as $$
-  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'payoutId', r.rzp_payout_id) order by r.decided_at), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'payoutId', r.rzp_payout_id, 'rzpStatus', r.rzp_status,
+                                               'fundAccountId', r.rzp_fund_account_id, 'amountPaise', r.rzp_amount_paise, 'mode', r.rzp_mode) order by r.decided_at), '[]'::jsonb)
     from (select * from public.payout_requests
-           where status = 'PROCESSING' and rzp_payout_id is not null and decided_at < now() - make_interval(mins => greatest(coalesce(p_minutes, 10), 1))
+           where status = 'PROCESSING' and channel = 'RAZORPAY' and decided_at < now() - make_interval(mins => greatest(coalesce(p_minutes, 10), 0))
            order by decided_at limit 50) r
 $$;
 revoke all on function public.payout_rzp_pending(integer) from public, anon, authenticated;
@@ -188,7 +241,8 @@ grant execute on function public.payout_rzp_pending(integer) to service_role;
 -- The Razorpay payout behind a request (for the Check status button; the API has already checked the Accountant).
 create or replace function public.payout_rzp_lookup(p_id uuid)
 returns jsonb language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object('id', r.id, 'status', r.status, 'payoutId', r.rzp_payout_id, 'profileId', r.profile_id)
+  select jsonb_build_object('id', r.id, 'status', r.status, 'payoutId', r.rzp_payout_id, 'profileId', r.profile_id, 'rzpStatus', r.rzp_status,
+                            'fundAccountId', r.rzp_fund_account_id, 'amountPaise', r.rzp_amount_paise, 'mode', r.rzp_mode, 'channel', r.channel)
     from public.payout_requests r where r.id = p_id
 $$;
 revoke all on function public.payout_rzp_lookup(uuid) from public, anon, authenticated;

@@ -23,7 +23,7 @@ export class RazorpayXError extends Error {
   }
 }
 
-export interface RzpPayout { id: string; status: string; utr?: string | null; status_details?: { description?: string | null } | null }
+export interface RzpPayout { id: string; status: string; utr?: string | null; reference_id?: string | null; status_details?: { description?: string | null } | null }
 export type RzpMethod = { kind: 'BANK'; holderName: string; accountNumber: string; ifsc: string } | { kind: 'UPI'; holderName: string; upiId: string };
 
 export class RazorpayXClient {
@@ -37,7 +37,7 @@ export class RazorpayXClient {
         'content-type': 'application/json', ...headers
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(20_000)
+      signal: AbortSignal.timeout(8_000)   // three calls fit in a 30-second serverless run
     });
     const json = (await res.json().catch(() => ({}))) as { error?: { description?: string } } & T;
     if (!res.ok) throw new RazorpayXError(res.status, (json.error?.description || `Razorpay answered ${res.status}.`).slice(0, 300));
