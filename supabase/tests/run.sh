@@ -174,6 +174,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/meetings_test.sql 2>&1 | sed -E "s
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meetings_organiser_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meetings_ceo_approval_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/work_update_requests_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/department_head_dashboard_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/task_work_updates_v2_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/lead_upload_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/bolify_recharge_reminders_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
