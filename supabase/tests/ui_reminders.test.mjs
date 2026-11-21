@@ -301,8 +301,9 @@ try {
   check(await rows.count() === 2, 'Notification Health lists the employees from the server', await rows.count());
   check(/Device not registered/.test(await rows.nth(0).textContent()) && /Ready/.test(await rows.nth(1).textContent()), 'each with a meaningful status');
   check(!/push\.example\.com|p256dh/.test(await page.content()), 'no device address or key on the page');
+  const filtered = page.waitForResponse(r => r.url().includes('issue=DEVICE_NOT_REGISTERED'));
   await page.getByLabel('Issue').selectOption('DEVICE_NOT_REGISTERED');
-  await page.waitForResponse(r => r.url().includes('issue=DEVICE_NOT_REGISTERED'));
+  await filtered;
   check(healthQueries.some(q => q.includes('issue=DEVICE_NOT_REGISTERED')), 'the issue filter asks the server for that issue');
   await rows.nth(1).getByRole('button', { name: /Send a test notification/ }).click();
   await rows.nth(1).getByRole('button', { name: 'Send' }).click();

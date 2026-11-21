@@ -11831,11 +11831,14 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const realFetch = globalThis.fetch;
   const pushed: string[] = [];
   const plan: number[] = [];
+  // answers for one device (the pushes run concurrently, so they reach the push service in any order)
+  const planFor: Record<string, number[]> = {};
   globalThis.fetch = (async (input: any, init?: any) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     if (url.startsWith('https://push.example.com/')) {
       pushed.push(url);
-      return new Response(null, { status: plan.shift() ?? 201 });
+      const device = url.split('/').pop() ?? '';
+      return new Response(null, { status: planFor[device]?.shift() ?? plan.shift() ?? 201 });
     }
     return realFetch(input, init);
   }) as typeof fetch;
@@ -11860,7 +11863,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
                     select 'TEST', profile_id, id, label, 'Queued', 'x', 'crm-test', '/?open=attendance', now() + interval '1 hour'
                       from public.push_subscriptions where endpoint in ('https://push.example.com/nr-phone', 'https://push.example.com/nr-laptop') order by endpoint desc`);
     pushed.length = 0;
-    plan.push(503, 410);
+    planFor['nr-phone'] = [503];
+    planFor['nr-laptop'] = [410];
     const reminders = () => fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: { authorization: 'Bearer dispatch-secret-0123456789' } })
       .then(async x => ({ status: x.status, json: (await x.json()) as any }));
     let run = await reminders();
