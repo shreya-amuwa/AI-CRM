@@ -1,4 +1,4 @@
-// Browser test of the sales incentives screens (20270119000100, 20270120000100): "My Income" (tiles, the start date before incentives
+// Browser test of the sales incentives screens (20270119000100, 20270121000100): "My Income" (tiles, the start date before incentives
 // begin, target progress, the earnings list with reversed ones marked, the calls tile only for someone connected to Crocodial, phone
 // width); Incentive setup (the Super Admin creates, edits, stops and deletes rules; a Team Lead entering more than they get sees the
 // database's message and the kept share updates; a Department Head saves a 60% split); and the Business Associate's "authorised person

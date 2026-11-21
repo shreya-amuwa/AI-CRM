@@ -3257,7 +3257,9 @@ export const aiStudioProjectSchema = z
   .object({
     name: z.string().trim().min(2, 'Enter the project name (at least 2 characters).').max(120, 'The project name can have at most 120 characters.'),
     description: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The description can have at most 2000 characters.').nullable().optional()),
-    status: z.enum(AI_STUDIO_PROJECT_STATUSES).optional()
+    status: z.enum(AI_STUDIO_PROJECT_STATUSES).optional(),
+    /** Left out = the deadline stays as it is; null (or an empty string) = no deadline; a time with its offset (+05:30) = due then. Only the Super Admin / Department Head. */
+    deadlineAt: z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter the deadline as a date and time.' }).nullable().optional())
   })
   .strict();
 export type AiStudioProjectInput = z.infer<typeof aiStudioProjectSchema>;

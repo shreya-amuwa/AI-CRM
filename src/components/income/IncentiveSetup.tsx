@@ -7,7 +7,7 @@ import {
 import { PageTitle } from '../layout/shell';
 
 /**
- * Incentive setup (20270119000100, 20270120000100; docs/SALES_INCENTIVES.md).
+ * Incentive setup (20270119000100, 20270121000100; docs/SALES_INCENTIVES.md).
  * - Super Admin: creates, edits, ends and deletes rules, and sets after how many days in the company incentives start.
  * - Operations Head / Department Head / Team Lead: for each sales rule, the amount each person directly below gets (never more than their
  *   own) and the share they keep.

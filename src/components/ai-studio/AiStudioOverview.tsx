@@ -5,6 +5,7 @@ import { aiStudioApi } from '../../lib/api/aiStudio';
 import { PageTitle } from '../layout/shell';
 import { ErrorBanner, Spinner } from '../team-member/pipeline/shared';
 import { Card, CardHead, StatCard } from '../tasks/head/headParts';
+import { ProjectDeadlines } from './DeadlineClock';
 import { useAiStudioChanged } from './aiStudioEvents';
 import { PriorityBadge, ProgressBar, ProjectStatusBadge, TaskStatusBadge, dateText, dateTimeText, useLoad } from './ui';
 
@@ -33,6 +34,7 @@ export const AiStudioOverviewPage: React.FC<{ go: Go }> = ({ go }) => {
       />
       {error && <ErrorBanner message={error} onRetry={reload} />}
       {loading && !data && <Spinner label="Loading the overview…" />}
+      {data && <ProjectDeadlines canSet={head} onManage={() => go('projects')} />}
       {data?.myTasks && <MyWork data={data} go={go} />}
       {data?.team && <TeamBlock data={data} go={go} />}
       {data?.department && <DepartmentBlock data={data} go={go} />}

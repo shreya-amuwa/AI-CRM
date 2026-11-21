@@ -889,6 +889,7 @@ export const aiStudioController = {
   assignLead: (async ctx => ok(await svc(ctx).aiStudio.assignLead(ctx.req.body))) as Handler,
   setLead: (async ctx => ok(await svc(ctx).aiStudio.setLead(ctx.params.id, ctx.req.body))) as Handler,
   projects: (async ctx => ok(await svc(ctx).aiStudio.projects())) as Handler,
+  deadlines: (async ctx => ok(await svc(ctx).aiStudio.deadlines())) as Handler,
   createProject: (async ctx => ok(await svc(ctx).aiStudio.createProject(ctx.req.body), 201)) as Handler,
   updateProject: (async ctx => ok(await svc(ctx).aiStudio.updateProject(ctx.params.id, ctx.req.body))) as Handler,
   assignProject: (async ctx => ok(await svc(ctx).aiStudio.assignProject(ctx.params.id, ctx.req.body))) as Handler,

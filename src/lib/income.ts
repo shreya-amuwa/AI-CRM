@@ -1,7 +1,7 @@
 import { getSupabase } from '../services/supabaseClient';
 
 /**
- * Sales incentives and the "Income" page (migrations 20270119000100, 20270120000100; docs/SALES_INCENTIVES.md). Every figure comes from
+ * Sales incentives and the "Income" page (migrations 20270119000100, 20270121000100; docs/SALES_INCENTIVES.md). Every figure comes from
  * the database, which decides who may read and set what: a person reads only their own earnings; the Super Admin sets the rules; each sales
  * head and Team Lead sets the amount for the people directly below them.
  */

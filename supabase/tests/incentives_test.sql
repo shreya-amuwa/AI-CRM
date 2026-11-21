@@ -315,8 +315,8 @@ update incentive_allocations set amount = 100 where rule_id = (select v from inc
 
 \echo '   the Super Admin edits and deletes rules; the setup screen shows each person below with what they get'
 reset role;
-\i supabase/migrations/20270120000100_incentive_setup_given.sql
-\i supabase/migrations/20270120000100_incentive_setup_given.sql
+\i supabase/migrations/20270121000100_incentive_setup_given.sql
+\i supabase/migrations/20270121000100_incentive_setup_given.sql
 set role authenticated;
 select test.login('sa');
 select incentive_rule_update((select v from inc where k = 'rule2')::uuid, '{"name":"Test 400 renamed","targetUnits":2000}');

@@ -1,5 +1,5 @@
 import type {
-  AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
 } from '../../shared/contracts.js';
 import {
   aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
@@ -19,6 +19,7 @@ export class AiStudioService {
   people(): Promise<AiStudioPerson[]> { return this.repo.people(); }
 
   projects(): Promise<AiStudioProject[]> { return this.repo.projects(); }
+  deadlines(): Promise<AiStudioDeadlines> { return this.repo.deadlines(); }
   createProject(body: unknown) { return this.repo.saveProject(null, parse(aiStudioProjectSchema, body)); }
   updateProject(id: string, body: unknown) { return this.repo.saveProject(parse(uuidSchema, id), parse(aiStudioProjectSchema, body)); }
   assignProject(projectId: string, body: unknown) {

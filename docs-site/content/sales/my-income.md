@@ -6,7 +6,7 @@ group: Income
 roles: [Telecaller, Business Associate, Sales Team Member, Team Lead, Department Head, Operations Head]
 audience: internal
 status: verified
-sources: [src/components/income/IncomePage.tsx, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270120000100_incentive_setup_given.sql]
+sources: [src/components/income/IncomePage.tsx, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
 related: [sales/incentive-setup, sales/business-associate-workspace]
 updated: 2026-11-21
 ---

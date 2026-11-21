@@ -34,7 +34,7 @@ type Page = (typeof SUPER_ADMIN_PAGES)[number];
  *   Departments         the department cards: open a department's own panel, lock / unlock, add one (unchanged functions)
  *   Business Reports    the existing company business report
  *   Team Members        Team Member Management in full screen: Add Team Member, Team Members (the directory), Access Control
- *   Sales Incentives    create, edit, stop and delete the incentive rules sales staff earn from (20270120000100)
+ *   Sales Incentives    create, edit, stop and delete the incentive rules sales staff earn from (20270121000100)
  *   Security & Audit    who did what, and what was refused (read-only)
  * Opening a department still uses the existing department panels; their "home" button brings the Super Admin back here.
  */

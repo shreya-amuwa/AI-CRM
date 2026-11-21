@@ -1,6 +1,6 @@
 # Sales incentives and "My Income" (phase 1)
 
-Migrations `20270119000100_sales_incentives.sql` (database) and `20270120000100_incentive_setup_given.sql` (setup screens: edit, delete). Design: `docs/superpowers/specs/2026-11-20-sales-incentives-income-design.md`.
+Migrations `20270119000100_sales_incentives.sql` (database) and `20270121000100_incentive_setup_given.sql` (setup screens: edit, delete). Design: `docs/superpowers/specs/2026-11-20-sales-incentives-income-design.md`.
 Payouts (withdrawing a balance through Accounts) are phase 2; until then the balance is everything earned.
 
 ## Rules (the Super Admin)
@@ -9,7 +9,7 @@ shown as progress only), an optional monthly cap (event rewards), and who it is 
 - **Sales (`SALE_PAID`)**: a product (`crm_services.code`) and the Operations Head it is given to (amount per unit).
 - **Event rewards**: a level (`DEPARTMENT_HEAD` / `TEAM_HEAD` / `TEAM_MEMBER`), a sales sub-role (`TELECALLER`, `BUSINESS_ASSOCIATE`, …), a
   department, a team or a person.
-`incentive_rule_end` stops a rule at once (earnings already recorded stay). `incentive_rule_update(rule, changes)` (20270120000100):
+`incentive_rule_end` stops a rule at once (earnings already recorded stay). `incentive_rule_update(rule, changes)` (20270121000100):
 the name, target and monthly cap change in place; a new amount, product or audience ends the old version and creates a new one with the
 same name (a sales rule with the same product and Operations Head carries the allocations, capped at the new amount), so an earning always
 keeps the rule and amount it was earned with. `incentive_rule_delete(rule)` removes a rule nobody earned from and only ends one with
