@@ -368,7 +368,10 @@ export const hrDocumentController = {
 };
 
 export const payoutController = {
-  slip: (async ctx => ok(await svc(ctx).payouts.slip(ctx.params.id))) as Handler
+  slip: (async ctx => ok(await svc(ctx).payouts.slip(ctx.params.id))) as Handler,
+  razorpayStatus: (async ctx => ok(svc(ctx).payouts.razorpayStatus())) as Handler,
+  payViaRazorpay: (async ctx => ok(await svc(ctx).payouts.payViaRazorpay(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  checkRazorpay: (async ctx => ok(await svc(ctx).payouts.checkRazorpay(ctx.params.id))) as Handler
 };
 
 export const performanceController = {
