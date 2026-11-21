@@ -58,7 +58,7 @@ select test.check((select x ->> 'status' = 'PROCESSING' and (x ->> 'netAmount'):
                      from (select payout_rzp_begin((select v from rz where k = 'r1')::uuid, test.id('acc_m'), 50.25) x) y),
   'Accounts starts it: PROCESSING, net 1,184.25, the full details for Razorpay');
 select test.must_fail(format($$select payout_rzp_begin(%L, %L, 0)$$, (select v from rz where k = 'r1'), test.id('acc_m')), 'a request being sent cannot be started again', 'CONFLICT');
-select payout_rzp_link(test.id('tm_a'), 'cont_test_1', 'fa_test_1');
+select payout_rzp_link((select v from rz where k = 'r1')::uuid, 'cont_test_1', 'fa_test_1');
 select payout_rzp_set_id((select v from rz where k = 'r1')::uuid, 'pout_test_1');
 reset role;
 select test.check((select rzp_contact_id = 'cont_test_1' and rzp_fund_account_id = 'fa_test_1' from payout_methods where profile_id = test.id('tm_a')), 'the Razorpay contact is kept for next time');
@@ -136,3 +136,65 @@ select set_config('request.jwt.claims', '', false);
 set role service_role;
 select payout_rzp_settle('pout_test_3', 'processed', 'UTR888', null, 'evt_test_5');
 reset role;
+
+\echo '   review fixes: a fund account only for the details it was made for, early webhooks, reversed while being sent, a payout whose answer was lost'
+set role authenticated;
+select test.login('tm_a');
+select payout_method_save('{"kind":"UPI","holderName":"Test Member","upiId":"tm.a@okaxis"}');
+insert into rz select 'r5', payout_request(500, 'rzp-' || gen_random_uuid()) ->> 'id';
+select payout_method_save('{"kind":"UPI","holderName":"Test Member","upiId":"tm.b@okaxis"}');
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select test.check((payout_rzp_begin((select v from rz where k = 'r5')::uuid, test.id('acc_m'), 0) ->> 'fundAccountId') is null,
+  'details changed since the request: no saved fund account is reused');
+select payout_rzp_link((select v from rz where k = 'r5')::uuid, 'cont_test_5', 'fa_test_A');
+reset role;
+select test.check((select rzp_fund_account_id is null from payout_methods where profile_id = test.id('tm_a')),
+  'the fund account made for the old details is not kept on the new ones (it would send money to the old account)');
+select test.check((select rzp_fund_account_id = 'fa_test_A' from payout_requests where id = (select v from rz where k = 'r5')::uuid),
+  'the request remembers the fund account it was sent to');
+-- the webhook arrives before the payout id was recorded: the reference (the request id) finds it
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select test.check((payout_rzp_settle('pout_test_early', 'processed', 'UTR-EARLY', null, 'evt_test_6', replace((select v from rz where k = 'r5'), '-', '')) ->> 'status') = 'PAID',
+  'a webhook that arrives before the payout id is recorded still settles it, by its reference');
+select test.check((payout_rzp_settle('pout_test_nobody', 'processed', 'U', null, 'evt_test_7', 'notarequest') ->> 'matched')::boolean = false, 'an event for a payout the CRM does not know is not matched');
+reset role;
+select test.check(not exists (select 1 from razorpay_events where event_id = 'evt_test_7'), 'and is not used up (a retry of that event can still settle it)');
+-- reversed while still being sent: FAILED, amount free
+set role authenticated;
+select test.login('tm_a');
+insert into rz select 'r6', payout_request(500, 'rzp-' || gen_random_uuid()) ->> 'id';
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select payout_rzp_begin((select v from rz where k = 'r6')::uuid, test.id('acc_m'), 0);
+select payout_rzp_set_id((select v from rz where k = 'r6')::uuid, 'pout_test_6');
+select test.check((payout_rzp_settle('pout_test_6', 'reversed', null, 'Returned by the bank', 'evt_test_8') ->> 'status') = 'FAILED',
+  'reversed while still being sent: FAILED, the amount is free again');
+select test.check((payout_rzp_settle('pout_test_6', 'processed', 'UTR-LATE', null, 'evt_test_9') ->> 'status') = 'FAILED', 'a processed event arriving after that changes nothing');
+-- the answer to the payout call was lost: the request stays being sent, with what was sent, for the status check to finish
+set role authenticated;
+select test.login('tm_a');
+insert into rz select 'r7', payout_request(500, 'rzp-' || gen_random_uuid()) ->> 'id';
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select payout_rzp_begin((select v from rz where k = 'r7')::uuid, test.id('acc_m'), 0);
+select payout_rzp_prepare((select v from rz where k = 'r7')::uuid, 'fa_test_7', 50000, 'UPI');
+reset role;
+update payout_requests set decided_at = now() - interval '30 minutes' where id = (select v from rz where k = 'r7')::uuid;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select test.check(exists (select 1 from jsonb_array_elements(payout_rzp_pending(10)) x
+                           where x ->> 'id' = (select v from rz where k = 'r7') and x ->> 'payoutId' is null and x ->> 'fundAccountId' = 'fa_test_7'
+                             and (x ->> 'amountPaise')::int = 50000 and x ->> 'rzpStatus' = 'sending'),
+  'a payout whose answer was lost is listed with its fund account and amount, to be sent again with the same key');
+reset role;
+set role authenticated;
+select test.login('acc_m');
+select test.must_fail(format($$select payout_mark_paid(%L, 'X', private.office_today(), 0)$$, (select v from rz where k = 'r7')),
+  'it cannot be marked paid by hand meanwhile (it may already be paid)', 'CONFLICT');
+reset role;
+
