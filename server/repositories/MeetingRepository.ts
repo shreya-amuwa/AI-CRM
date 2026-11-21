@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, Meeting, MeetingBookingLink, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, Meeting, MeetingBookingLink, MeetingDetail, MeetingDirectoryEntry, MeetingSettings,
+  MeetingReportActionList, MeetingReportList, MeetingReportsOverview, MeetingSummaryList, MeetingSummaryView, MyMeetingAction
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -46,6 +47,37 @@ export class MeetingRepository {
   setAvailability(input: Record<string, unknown>) { return this.rpc<MeetingSettings>('mtg_set_availability', { p: input }); }
   saveBookingLink(input: Record<string, unknown>) { return this.rpc<MeetingBookingLink>('mtg_booking_type_save', { p: input }); }
   setDelegates(ids: string[]) { return this.rpc<MeetingSettings>('mtg_set_delegates', { p_delegates: ids }); }
+  // post-meeting summaries and the CEO's Meeting Decisions (20270124000200)
+  summary(id: string) { return this.rpc<MeetingSummaryView>('mms_get', { p_meeting: id }); }
+  confirmAttendance(id: string, attended: string[], version: number | null) {
+    return this.rpc<MeetingSummaryView>('mms_confirm_attendance', { p_meeting: id, p_attended: attended, p_version: version });
+  }
+  assignSummaryOwner(id: string, ownerId: string, reason: string | null, version: number | null) {
+    return this.rpc<MeetingSummaryView>('mms_assign_owner', { p_meeting: id, p_owner: ownerId, p_reason: reason, p_version: version });
+  }
+  saveSummary(id: string, content: Record<string, unknown>, submit: boolean, version: number, changeNote: string | null) {
+    return this.rpc<MeetingSummaryView>('mms_save', { p_meeting: id, p: content, p_submit: submit, p_version: version, p_change_note: changeNote });
+  }
+  clarifySummary(id: string, message: string) { return this.rpc<MeetingSummaryView>('mms_clarify', { p_meeting: id, p_message: message }); }
+  replySummary(id: string, message: string) { return this.rpc<MeetingSummaryView>('mms_reply', { p_meeting: id, p_message: message }); }
+  flagSummaryItem(id: string, itemType: string, itemId: string, flag: boolean, note: string | null) {
+    return this.rpc<MeetingSummaryView>('mms_flag', { p_meeting: id, p_item_type: itemType, p_item: itemId, p_flag: flag, p_note: note });
+  }
+  updateSummaryAction(actionId: string, status: string, note: string | null) {
+    return this.rpc<{ id: string; status: string }>('mms_action_update', { p_action: actionId, p_status: status, p_note: note });
+  }
+  summaries(scope: string, tab: string, limit: number, offset: number) {
+    return this.rpc<MeetingSummaryList>('mms_list', { p_scope: scope, p_tab: tab, p_limit: limit, p_offset: offset });
+  }
+  myActions() { return this.rpc<MyMeetingAction[]>('mms_my_actions'); }
+  reportsOverview(filters: Record<string, unknown>) { return this.rpc<MeetingReportsOverview>('mms_reports_overview', { p: filters }); }
+  reports(filters: Record<string, unknown>, limit: number, offset: number) {
+    return this.rpc<MeetingReportList>('mms_reports', { p: filters, p_limit: limit, p_offset: offset });
+  }
+  report(id: string) { return this.rpc<MeetingSummaryView>('mms_report', { p_meeting: id }); }
+  reportActions(filters: Record<string, unknown>, limit: number, offset: number) {
+    return this.rpc<MeetingReportActionList>('mms_report_actions', { p: filters, p_limit: limit, p_offset: offset });
+  }
   googleStatus() {
     return this.rpc<{ connected: boolean; status: 'CONNECTED' | 'NEEDS_RECONNECT' | 'NOT_CONNECTED'; googleEmail: string | null; connectedAt: string | null; lastError: string | null }>('mtg_google_status');
   }

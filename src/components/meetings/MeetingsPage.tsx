@@ -9,7 +9,8 @@ import type {
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type BookingLinkInput, type NewMeeting } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
-import { takePendingMeeting, useMeetingsChanged, useOpenMeetingRequest } from './meetingEvents';
+import { takePendingMeeting, takePendingMeetingReport, useMeetingsChanged, useOpenMeetingReportRequest, useOpenMeetingRequest } from './meetingEvents';
+import { MeetingDecisionsTab, MySummariesTab, SummaryPanel, SummaryReportDrawer } from './MeetingSummaries';
 import { AvailabilityPill, MyAvailabilityPanel, usePresenceOf } from './CeoPresence';
 import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
 
@@ -100,7 +101,9 @@ const GOOGLE_RETURN: Record<string, { tone: 'ok' | 'warn' | 'error'; text: strin
 // ---------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------
-type Tab = 'calendar' | 'requests' | 'client' | 'settings';
+type Tab = 'calendar' | 'requests' | 'client' | 'summaries' | 'decisions' | 'settings';
+/** An internal team meeting: completed with its summary (20270124000200), not with "Mark done". */
+const isTeamMeeting = (m: Meeting) => m.kind === 'MEETING' && !m.sourceType && m.bookedVia === 'STAFF' && !m.clientCompany;
 
 export const MeetingsPage: React.FC = () => {
   const [tab, setTab] = useState<Tab>('calendar');
@@ -119,6 +122,9 @@ export const MeetingsPage: React.FC = () => {
   const openMeeting = useCallback((id: string | null, intent?: 'reject' | 'reschedule') => { setOpenIntent(intent); setOpenId(id); }, []);
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
+  // a meeting summary report opened from a list or a notification (submitted, revised, an action item given)
+  const [reportId, setReportId] = useState<string | null>(() => takePendingMeetingReport());
+  useOpenMeetingReportRequest(useCallback((id: string) => setReportId(id), []));
   // live: a meeting notification (a new request, an approval, a move) reloads the page; so does coming back to the browser tab
   useMeetingsChanged(reload);
   useOpenMeetingRequest(useCallback((id?: string) => { if (id) setOpenId(id); reload(); }, [reload]));
@@ -178,10 +184,11 @@ export const MeetingsPage: React.FC = () => {
       {!isCeo && <MyAvailabilityPanel today={today} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} onOpen={setOpenId} />}
       {google && tab !== 'settings' && <GoogleBanner status={google} onOpenSettings={() => setTab('settings')} />}
 
-      <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200">
-        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['client', 'Client meetings'], ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
+      <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200 overflow-x-auto">
+        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['client', 'Client meetings'],
+          ['summaries', 'Meeting summaries'], ...(isCeo ? [['decisions', 'Meeting Decisions']] : []), ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
-            className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+            className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
             {label}
           </button>
         ))}
@@ -190,6 +197,8 @@ export const MeetingsPage: React.FC = () => {
       {tab === 'calendar' && <CalendarTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
       {tab === 'requests' && <RequestsTab reloadKey={reloadKey} onOpen={openMeeting} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} />}
       {tab === 'client' && <ClientMeetingsTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
+      {tab === 'summaries' && <MySummariesTab reloadKey={reloadKey} onOpenMeeting={id => openMeeting(id)} onOpenReport={setReportId} />}
+      {tab === 'decisions' && isCeo && <MeetingDecisionsTab reloadKey={reloadKey} onOpenReport={setReportId} />}
       {tab === 'settings' && <SettingsTab google={google} onGoogleChange={setGoogle} onFlash={setFlash} />}
 
       {composer === 'client' && <ClientMeetingComposer onClose={() => setComposer(null)} onSaved={m => {
@@ -205,6 +214,7 @@ export const MeetingsPage: React.FC = () => {
           ? `Request sent to ${m.hostName}. You will be told when it is approved.`
           : `${m.kindLabel} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
       }} />}
+      {reportId && <SummaryReportDrawer meetingId={reportId} ceo={isCeo} onClose={() => setReportId(null)} onChanged={reload} />}
       {openId && <MeetingDrawer id={openId} intent={openIntent} onClose={() => openMeeting(null)} onChanged={text => { done(text); }} />}
     </div>
   );
@@ -545,7 +555,7 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
                 {m.canRequestChange && (
                   <button type="button" disabled={busy} className={btnGhost} onClick={() => openWhen('reschedule')}><Clock3 className="w-4 h-4" /> Ask for another time</button>
                 )}
-                {m.canManage && m.status === 'SCHEDULED' && new Date(m.startsAt) <= new Date() && (
+                {m.canManage && m.status === 'SCHEDULED' && new Date(m.startsAt) <= new Date() && !isTeamMeeting(m) && (
                   <button type="button" disabled={busy} className={btnGhost} onClick={() => run(() => meetingsApi.complete(m.id), 'Marked as done.')}><Check className="w-4 h-4" /> Mark done</button>
                 )}
                 {m.status === 'SCHEDULED' && m.myResponse !== null && !m.canManage && (
@@ -555,6 +565,10 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
                   </>
                 )}
               </div>
+            )}
+
+            {isTeamMeeting(m) && ['SCHEDULED', 'COMPLETED'].includes(m.status) && (
+              <SummaryPanel meetingId={m.id} onChanged={() => { load(); }} />
             )}
 
             {!!m.history.length && (

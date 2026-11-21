@@ -11838,6 +11838,96 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   rzpSrv.close();
 }
 
+{
+  console.log('--- meeting summaries (20270124000200): attendance, the responsible leader, submission, the CEO reports');
+  const idOf = async (who: string) => (await api(who, 'GET', '/me')).json.data.id as string;
+  const [thId, aId] = [await idOf('th'), await idOf('a')];
+  // a team meeting that took place two hours ago: the Team Lead hosts, member A attends
+  const mk = async (title: string, kind = 'MEETING') => {
+    const id = (await db.query(`insert into public.meetings (kind, title, description, host_id, created_by, starts_at, ends_at, status, booked_via, google_sync_status)
+      values ($1, $2, 'Weekly review', $3, $3, now() - interval '2 hours', now() - interval '1 hour', 'SCHEDULED', 'STAFF', 'SKIPPED') returning id`, [kind, title, thId])).rows[0].id as string;
+    await db.query(`insert into public.meeting_attendees (meeting_id, profile_id, role, response) values ($1, $2, 'REQUIRED', 'ACCEPTED')`, [id, aId]);
+    return id;
+  };
+  const mid = await mk('API MS weekly review');
+  let rs = await api(null, 'GET', `/meetings/${mid}/summary`);
+  check(rs.status === 401, 'summaries: a sign-in is needed', rs);
+  rs = await api('th', 'GET', `/meetings/${mid}/summary`);
+  check(rs.status === 200 && rs.json.data.eligible === true && rs.json.data.summary.status === 'PENDING' && rs.json.data.can.confirmAttendance === true,
+    'summaries: the host sees a pending summary and may confirm attendance', rs);
+  rs = await api('a', 'POST', `/meetings/${mid}/summary/attendance`, { attendedIds: [aId] });
+  check(rs.status === 403, 'summaries: an attendee cannot confirm attendance', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/attendance`, { attendedIds: [] });
+  check(rs.status === 422, 'summaries: attendance needs at least one person (validated before the database)', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/attendance`, { attendedIds: [thId, aId] });
+  check(rs.status === 200 && rs.json.data.summary.owner?.id === thId && rs.json.data.summary.ownerMethod === 'SENIORITY',
+    'summaries: the Team Lead who attended with their member is responsible', rs);
+  const version = rs.json.data.summary.version as number;
+  const body = (extra: Record<string, unknown> = {}) => ({
+    version,
+    summary: {
+      executiveSummary: 'Reviewed weekly follow-ups and agreed on a daily morning check of pending leads.',
+      discussionPoints: ['Follow-ups'],
+      decisions: [{ key: '11111111-1111-4111-8111-111111111111', title: 'Daily morning check' }],
+      actions: [{ key: '22222222-2222-4222-8222-222222222222', title: 'Check pending leads', assigneeId: aId, priority: 'HIGH' }],
+      noBlockers: true,
+      ...extra
+    }
+  });
+  rs = await api('a', 'POST', `/meetings/${mid}/summary/submit`, body());
+  check(rs.status === 403, 'summaries: a member cannot submit the Team Lead\'s summary', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body({ executiveSummary: '   ' }));
+  check(rs.status === 422, 'summaries: a blank executive summary is refused', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body({ decisions: [] }));
+  check(rs.status === 422, 'summaries: no decisions without "No decisions were made"', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/complete`, {});
+  check(rs.status === 409, 'summaries: "Mark done" does not complete a team meeting without its summary', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body());
+  check(rs.status === 200 && rs.json.data.summary.status === 'SUBMITTED' && rs.json.data.summary.revisionNo === 1, 'summaries: the Team Lead submits the summary', rs);
+  check((await db.query(`select status from public.meetings where id = $1`, [mid])).rows[0].status === 'COMPLETED', 'summaries: the meeting is completed with it');
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body());
+  check(rs.status === 409, 'summaries: the same submission again (old version) is a conflict', rs);
+  check(Number((await db.query(`select count(*) from public.meeting_summary_decisions d join public.meeting_summaries s on s.id = d.summary_id where s.meeting_id = $1`, [mid])).rows[0].count) === 1,
+    'summaries: and created nothing twice');
+  rs = await api('a', 'GET', `/meetings/${mid}/summary`);
+  check(rs.status === 200 && rs.json.data.summary.content?.decisions?.[0]?.title === 'Daily morning check', 'summaries: the attendee reads the submitted summary', rs);
+  rs = await api('a', 'GET', `/meetings/${crypto.randomUUID()}/summary`);
+  check(rs.status === 404, 'summaries: a guessed id finds nothing', rs);
+  rs = await api('a', 'GET', '/meetings/summaries/actions');
+  check(rs.status === 200 && rs.json.data.some((x: any) => x.title === 'Check pending leads'), 'summaries: the assignee sees the action item', rs);
+  rs = await api('th', 'GET', '/meetings/summaries?scope=MINE&tab=SUBMITTED');
+  check(rs.status === 200 && rs.json.data.items.some((x: any) => x.meetingId === mid), 'summaries: the Team Lead\'s submitted list has it', rs);
+
+  console.log('--- meeting summaries: the CEO reports are the Super Admin\'s only');
+  for (const who of ['th', 'dh', 'a']) {
+    rs = await api(who, 'GET', '/meetings/reports');
+    check(rs.status === 403, `summaries: ${who} cannot list the CEO reports`, rs);
+    rs = await api(who, 'GET', `/meetings/reports/${mid}`);
+    check(rs.status === 403, `summaries: ${who} cannot open a CEO report`, rs);
+    rs = await api(who, 'POST', `/meetings/${mid}/summary/clarifications`, { message: 'Why this way?' });
+    check(rs.status === 403, `summaries: ${who} cannot ask for a clarification`, rs);
+  }
+  rs = await api('sa', 'GET', '/meetings/reports?status=SUBMITTED');
+  check(rs.status === 200 && rs.json.data.items.some((x: any) => x.meetingId === mid && x.decisions === 1), 'summaries: the CEO lists the submitted report', rs);
+  rs = await api('sa', 'GET', '/meetings/reports?from=2026-02-10&to=2026-02-01');
+  check(rs.status === 422, 'summaries: a period that ends before it starts is refused', rs);
+  rs = await api('sa', 'GET', '/meetings/reports/overview');
+  check(rs.status === 200 && rs.json.data.submitted >= 1 && rs.json.data.decisions >= 1, 'summaries: the CEO overview counts it', rs);
+  rs = await api('sa', 'GET', `/meetings/reports/${mid}`);
+  check(rs.status === 200 && rs.json.data.summary.content.actions[0].assigneeName && !JSON.stringify(rs.json.data).includes('meetLink'),
+    'summaries: the CEO opens the report (outcome fields only)', rs);
+  rs = await api('sa', 'POST', `/meetings/${mid}/summary/clarifications`, { message: 'Who checks the weekend leads?' });
+  check(rs.status === 201 && rs.json.data.summary.status === 'REVISION_REQUESTED', 'summaries: the CEO asks for a clarification', rs);
+  rs = await api('sa', 'GET', '/meetings/reports/actions?status=OPEN');
+  check(rs.status === 200 && rs.json.data.items.some((x: any) => x.title === 'Check pending leads'), 'summaries: the CEO follows the action items', rs);
+
+  console.log('--- meeting summaries: other meetings are unchanged');
+  const appt = await mk('API MS appointment', 'APPOINTMENT');
+  rs = await api('th', 'POST', `/meetings/${appt}/complete`, {});
+  check(rs.status === 200 && rs.json.data.status === 'COMPLETED', 'summaries: an appointment is still marked done as before', rs);
+  rs = await api('th', 'GET', `/meetings/${appt}/summary`);
+  check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

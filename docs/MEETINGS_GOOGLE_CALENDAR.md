@@ -329,3 +329,10 @@ waiting request can be cancelled like any request.
 `supabase/tests/ui_meeting_presence.test.mjs` (browser: Enter / Exit, the
 indicator, the busy message, the pending request and a Realtime update), and the "Live meeting availability" block of
 `supabase/tests/api_integration.test.ts`.
+
+## Post-meeting summaries and Meeting Decisions (migration 20270124000200)
+
+Internal team meetings (kind `MEETING`, booked by staff) are completed with a structured summary written by the most senior
+leader who attended, instead of "Mark done". The organiser confirms who attended, and the summary is due 24 hours after the
+meeting. The CEO (Super Admin) sees the outcomes in **Meetings → Meeting Decisions**; everyone sees theirs in **Meetings →
+Meeting summaries**. All other meeting kinds are unchanged. See [MEETING_SUMMARIES.md](MEETING_SUMMARIES.md).
