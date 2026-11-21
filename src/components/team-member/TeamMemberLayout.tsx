@@ -32,26 +32,8 @@ const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 
-export type TeamMemberNav =
-  | '__attendance'
-  | '__meetings'
-  | 'home'
-  | 'leads'
-  | 'potential'
-  | 'onboarding'
-  | 'part-payments'
-  | 'customers'
-  | 'tasks'
-  | 'work-tasks'
-  | 'my-clients'
-  | 'calendar'
-  | 'invoices'
-  | 'delivery'
-  | 'settings'
-  | 'chat'
-  | 'raise-issue'
-  | 'work-reports'
-  | 'notifications';
+export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+export type TeamMemberNav = (typeof TEAM_MEMBER_NAVS)[number];
 
 interface TeamMemberLayoutProps {
   children: React.ReactNode;

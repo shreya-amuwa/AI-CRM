@@ -42,7 +42,7 @@ import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
-import { HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
+import { HEAD_PAGES, HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
 import { HeadReports } from './head/HeadReports';
 import { HeadDaily } from './head/HeadDaily';
@@ -54,6 +54,7 @@ import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
 import { WorkUpdatesPanel, useWorkUpdateCounts } from './WorkUpdates';
 import { useOpenWorkUpdateRequest } from './workUpdateEvents';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -71,7 +72,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const isAccounts = profile?.department?.slug === 'accounts';
   const supportSide = profile?.headDivision === 'SUPPORT';
   const operationsHead = !!profile?.isOperationsHead;
-  const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview'));
+  const [nav, setNav] = useRememberedPage<HeadPage>('department-head', lastHeadPage ?? (isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview'), HEAD_PAGES);
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
   const data = useWorkTasks();

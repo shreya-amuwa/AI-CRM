@@ -22,7 +22,9 @@ import { Sparkles } from 'lucide-react';
 
 // Team Member Dedicated Components & Routing
 import { TeamMemberLayout } from './components/team-member/TeamMemberLayout';
-import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole } from './utils/router';
+import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole, lastPathUnder, rememberPath } from './utils/router';
+import { clearPanelPage, readPanelPage, writePanelPage } from './lib/rememberedPage';
+import { isRestorableTab } from './components/layout/restorableTabs';
 
 // Dashboards and department panels are loaded on demand, so signing in only
 // downloads the code for the screen the user actually opens.
@@ -83,7 +85,7 @@ const ScreenLoader = () => (
 );
 
 const MainAppContent: React.FC = () => {
-  const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout, needsDepartmentChoice, scopeKey } = useAuth();
+  const { user, authLoading, connectionProblem, retryConnection, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout, needsDepartmentChoice, scopeKey } = useAuth();
   const { departments } = useDepartments();
   const { tabs, activeTabId, updateTabState, closeAllTabs } = useTabs();
   // a notification can ask for the Chat page of whichever dashboard layout is showing
@@ -116,6 +118,8 @@ const MainAppContent: React.FC = () => {
     // refresh to /login and loses the page the user was on.
     if (authLoading) return;
     if (!user) {
+      // signed in but the server could not be reached: stay on this address (the sign-in is kept), do not go to /login
+      if (connectionProblem) return;
       if (route.type !== 'login') {
         navigateTo('/login');
       }
@@ -152,56 +156,56 @@ const MainAppContent: React.FC = () => {
       // /support-member/dashboard/:id and its pages (…/tasks, …/tickets) stay where they are.
       const base = `/support-member/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'support-lead') {
       // /support-lead/dashboard/:id and its pages (…/tickets, …/tasks) stay where they are.
       const base = `/support-lead/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'design-studio') {
       // /ai-design-studio/dashboard/:id and its pages stay where they are.
       const base = `/ai-design-studio/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'hr-recruiter') {
       // /hr-recruiter/dashboard/:id and its pages (…/applications/:applicationId, …) stay where they are.
       const base = `/hr-recruiter/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'telecaller') {
       // /telecaller/dashboard/:id and its pages (…/tasks, …/leads) stay where they are.
       const base = `/telecaller/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'business-associate') {
       // /business-associate/dashboard/:id and its pages (…/tasks, …/quotation) stay where they are.
       const base = `/business-associate/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'ai-studio') {
       // /ai-studio/dashboard/:id and its pages (…/projects, …/daily-report) stay where they are.
       const base = `/ai-studio/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'sales-head') {
       // /sales-head/dashboard/:id and its pages (…/leads/assign, …/tasks) stay where they are.
       const base = `/sales-head/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'sales-role') {
@@ -232,7 +236,7 @@ const MainAppContent: React.FC = () => {
       }
     }
     // departments.length: department list arrives asynchronously from the API.
-  }, [authLoading, user, route.path, activeDepartmentId, departments.length]);
+  }, [authLoading, user, connectionProblem, route.path, activeDepartmentId, departments.length]);
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
@@ -257,20 +261,45 @@ const MainAppContent: React.FC = () => {
   const prevDeptIdRef = React.useRef(activeDepartmentId);
   const prevUserIdRef = React.useRef(user?.id);
 
+  // A refresh (or opening the installed app again) returns to the page the person was on in that department, not to the dashboard.
+  const skipPanelSave = React.useRef(false);
   React.useEffect(() => {
     if (prevDeptIdRef.current !== activeDepartmentId || prevUserIdRef.current !== user?.id) {
       prevDeptIdRef.current = activeDepartmentId;
       prevUserIdRef.current = user?.id;
-      setActiveTab('dashboard');
-      setSubDept(null);
+      const saved = user && activeDepartmentId ? readPanelPage(user.id, activeDepartmentId) : null;
+      skipPanelSave.current = true; // this commit still holds the old page: do not store it over the remembered one
+      setActiveTab(saved && isRestorableTab(saved.tab) ? saved.tab : 'dashboard');
+      setSubDept((saved?.subDept as typeof subDept) ?? null);
     }
   }, [activeDepartmentId, user?.id]);
+  React.useEffect(() => {
+    if (skipPanelSave.current) { skipPanelSave.current = false; return; }
+    if (user && activeDepartmentId) writePanelPage(user.id, activeDepartmentId, { tab: activeTab, subDept });
+  }, [user?.id, activeDepartmentId, activeTab, subDept]);
+  // The last dashboard address, for the installed app (it always opens at "/")
+  React.useEffect(() => {
+    if (user) rememberPath(user.id);
+  }, [user?.id, route.path]);
 
   // Step 0: Restoring the Supabase session / loading the profile
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-sm text-slate-500 font-mono">
         Loading secure session…
+      </div>
+    );
+  }
+
+  // Signed in, but the server did not answer (busy or offline): the session is kept, so say so instead of asking to sign in again
+  if (!user && connectionProblem) {
+    return (
+      <div role="alert" className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-center space-y-3">
+          <h1 className="text-base font-extrabold text-slate-900">The CRM is not answering right now</h1>
+          <p className="text-sm text-slate-600">You are still signed in. This is usually a busy server or a weak connection and passes in a moment.</p>
+          <button type="button" onClick={() => void retryConnection()} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Try again</button>
+        </div>
       </div>
     );
   }
@@ -447,6 +476,7 @@ const MainAppContent: React.FC = () => {
       closeAllTabs();
     } else {
       // In single mode: reset state
+      if (user && activeDepartmentId) clearPanelPage(user.id, activeDepartmentId); // the next visit starts at the dashboard
       setSubDept(null);
       setActiveTab('dashboard');
       resetDepartmentSelection();

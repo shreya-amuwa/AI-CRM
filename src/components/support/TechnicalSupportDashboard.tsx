@@ -11,7 +11,7 @@ import { ReportsRoute } from '../reports/ReportsRoute';
 import { useOpenReportsRequest } from '../reports/reportEvents';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { useOpenChatRequest } from '../chat/chatEvents';
-import { ConsultantLayout, type ConsultantPage } from './consultant/ConsultantLayout';
+import { CONSULTANT_PAGES, ConsultantLayout, type ConsultantPage } from './consultant/ConsultantLayout';
 import { ConsultantIntake } from './consultant/ConsultantIntake';
 import { ConsultantCustomerDetail, ConsultantCustomerList } from './consultant/ConsultantViews';
 import { TcFollowUps } from './consultant/TcFollowUps';
@@ -19,6 +19,7 @@ import { ConsultantAddons } from './consultant/ConsultantAddons';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 interface TechnicalSupportDashboardProps {
   currentUserId?: string;
@@ -38,7 +39,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
   const name = userName ?? (verifier ? 'Meta Verifier' : 'Technical Consultant');
   const { logout } = useAuth();
   const [openId, setOpenId] = useState<string | null>(null);
-  const [page, setPage] = useState<ConsultantPage>('customers');
+  const [page, setPage] = useRememberedPage<ConsultantPage>(verifier ? 'meta-verifier' : 'technical-support', 'customers', CONSULTANT_PAGES);
   const [counts, setCounts] = useState<ReviewCounts | null>(null);
   const loadCounts = useCallback(() => {
     pipelineApi.reviewCounts().then(setCounts, err => console.warn('[consultant] counts failed', errorMessage(err)));

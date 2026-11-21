@@ -24,8 +24,10 @@ import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamPanel';
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
-export type TeamLeadNav = 'overview' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'customers' | 'assigned-tasks' | 'performance' | 'field-visits' | 'team-members' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications' | 'crocodial' | 'crocodial-me' | 'crocodial-leads';
+export const TEAM_LEAD_NAVS = ['overview', 'my-leads', 'my-potential', 'my-onboarding', 'my-part-payments', 'customers', 'assigned-tasks', 'performance', 'field-visits', 'team-members', 'chat', 'raise-issue', 'work-reports', 'notifications', 'crocodial', 'crocodial-me', 'crocodial-leads'] as const;
+export type TeamLeadNav = (typeof TEAM_LEAD_NAVS)[number];
 
 const MY_SECTION: Record<'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments', PipelineSection> = {
   'my-leads': 'leads', 'my-potential': 'potential', 'my-onboarding': 'onboarding', 'my-part-payments': 'part-payments'
@@ -44,7 +46,7 @@ interface TeamLeadDashboardProps {
  */
 export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }) => {
   const { profile, logout } = useAuth();
-  const [nav, setNav] = useState<TeamLeadNav>('overview');
+  const [nav, setNav] = useRememberedPage<TeamLeadNav>('team-lead', 'overview', TEAM_LEAD_NAVS);
   const { counts: pipelineCounts } = usePipelineCounts();
   // bumped on every sidebar click so choosing a section again returns to its list
   const [navNonce, setNavNonce] = useState(0);

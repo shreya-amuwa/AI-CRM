@@ -105,18 +105,18 @@ export function storeScope(userId: string, scope: ActiveScope) {
     /* private mode: the choice lasts until the page is closed */
   }
 }
-/** The department picker is shown once per browser tab session (and again after signing out and in). */
+/** The department picker is shown once per sign-in: closing the browser or the app does not ask again, only signing out and in does. */
 export function readChosen(userId: string): boolean {
   try {
-    return sessionStorage.getItem(chosenKey(userId)) === '1';
+    return localStorage.getItem(chosenKey(userId)) === '1';
   } catch {
     return false;
   }
 }
 export function storeChosen(userId: string, chosen: boolean) {
   try {
-    if (chosen) sessionStorage.setItem(chosenKey(userId), '1');
-    else sessionStorage.removeItem(chosenKey(userId));
+    if (chosen) localStorage.setItem(chosenKey(userId), '1');
+    else localStorage.removeItem(chosenKey(userId));
   } catch {
     /* ignore */
   }
