@@ -1,5 +1,5 @@
 -- =============================================================================
--- Department Head dashboard (migration 20270124000100): overview, team attendance, leads, customers and invoices of the head's OWN department.
+-- Department Head dashboard (migration 20270125000100): overview, team attendance, leads, customers and invoices of the head's OWN department.
 -- Reuses the fixtures of weekly_report_routing_test.sql and task_hierarchy_test.sql: department wkr-a with the Sales head wkr_dhs and the Support head wkr_dhp,
 -- Sales Team Lead tsk_tls, Sales member wkr_tms, Support Team Lead tsk_tl1, Support member tsk_m1; department wkr-b (Sales + Support teams) with its head
 -- wkr_dhb; Accounts head dh_acc; Team Lead / Team Member / Super Admin as the other roles. "42501" is the SQLSTATE the API turns into HTTP 403.

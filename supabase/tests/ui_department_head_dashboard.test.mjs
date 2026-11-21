@@ -1,4 +1,4 @@
-// Browser test of the Department Head dashboard pages (migration 20270124000100): the Overview statistics, Team Attendance, Leads (and Add lead), Customers
+// Browser test of the Department Head dashboard pages (migration 20270125000100): the Overview statistics, Team Attendance, Leads (and Add lead), Customers
 // (and the customer panel) and Invoices (and the invoice detail), at desktop and phone width. The database is answered in the page by a stand-in that applies the
 // filters, search and paging; the test also checks what is SENT: never a department, a role or a user id (the database works those out).
 import { createRequire } from 'node:module';
