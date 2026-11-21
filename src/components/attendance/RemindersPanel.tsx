@@ -195,7 +195,7 @@ const MyDevices: React.FC = () => {
   );
 };
 
-/** HR: the Resume Work follow-up (when the database has it, 20270125000200). Saved on its own; audited. */
+/** HR: the Resume Work follow-up (when the database has it, 20270126000200). Saved on its own; audited. */
 const ResumeFollowUp: React.FC<{ settings: ReminderSettings; onSaved: (s: ReminderSettings) => void }> = ({ settings, onSaved }) => {
   const [minutes, setMinutes] = useState(settings.company.resumeFollowUpMinutes ?? 10);
   const [busy, setBusy] = useState(false);

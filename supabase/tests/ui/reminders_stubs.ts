@@ -40,7 +40,7 @@ const handlers: Record<string, (a: any) => any> = {
   push_subscription_remove_by_id: a => { state.devices = state.devices.filter((d: any) => d.id !== a.p_id); if (a.p_id === state.thisDevice) state.thisDevice = null; return null; },
   push_subscription_claim: () => state.thisDevice !== null,
   my_push_devices: () => state.devices,
-  // notification reliability (20270125000200)
+  // notification reliability (20270126000200)
   push_test_confirm: () => null,
   notification_sound_confirm: () => null,
   notification_sound_save: () => settings(),

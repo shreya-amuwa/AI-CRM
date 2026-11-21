@@ -77,7 +77,7 @@ export const SuperAdminDashboard: React.FC = () => {
         items: [
           { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell },
-          // attendance reminders: who can receive them, what the scheduler and the push services did (20270125000200)
+          // attendance reminders: who can receive them, what the scheduler and the push services did (20270126000200)
           { id: 'notification-health', label: 'Notification Health', icon: Activity }
         ]
       }

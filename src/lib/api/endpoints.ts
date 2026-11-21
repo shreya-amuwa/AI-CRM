@@ -609,7 +609,7 @@ export const notificationsApi = {
   remove: (id: string) => api.delete<null>(`/notifications/${id}`),
   broadcast: (body: { title: string; body: string; priority?: NotificationPriority; departmentId?: string; division?: TeamDivision }) =>
     api.post<{ recipients: number }>('/announcements', body),
-  // Notification Health (20270125000200): Super Admin and HR staff
+  // Notification Health (20270126000200): Super Admin and HR staff
   health: (q: { departmentId?: string; role?: string; issue?: string } = {}) => api.get<NotificationHealthReport>('/notifications/health', { ...q }),
   healthEmployee: (profileId: string) => api.get<NotificationHealthDetail>(`/notifications/health/${profileId}`),
   healthTest: (profileId: string) => api.post<NotificationTestResult>(`/notifications/health/${profileId}/test`, {})

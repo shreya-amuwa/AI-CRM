@@ -6,12 +6,28 @@ import { HeadCustomersPage } from '../../../src/components/department-head/HeadC
 import { HeadInvoicesPage } from '../../../src/components/department-head/HeadInvoicesPage';
 import { HeadDeptStats } from '../../../src/components/department-head/HeadDeptStats';
 import { pipelineApi, invoicesApi } from '../../../src/lib/api/endpoints';
+import { AddLeadView } from '../../../src/components/team-member/pipeline/LeadForms';
 
 const w = window as any;
 w.__created = [];
 // the CRM's own lead creation and service list: replaced by in-page ones so the test sees exactly what the form sends
 (pipelineApi as any).services = async () => [{ code: 'AI_CALLING', name: 'AI Calling', description: '', sortOrder: 1, requirements: [], active: true }];
-(pipelineApi as any).createLead = async (body: any) => { w.__created.push(body); return { id: 'new-lead', name: body.name }; };
+// like the real endpoint: one lead per request id (a retry or a double click returns the lead the first request made), and the lead joins the department's list
+w.__made = {};
+(pipelineApi as any).createLead = async (body: any) => {
+  if (w.__failCreate) { const m = w.__failCreate; w.__failCreate = null; throw new Error(m); }
+  w.__created.push(body);
+  await new Promise(r => setTimeout(r, 200));
+  const key = body.clientRequestId;
+  if (key && w.__made[key]) return w.__made[key];
+  const owner = (w.__state.owners as any[]).find(o => o.id === body.ownerId);
+  const id = `new-${w.__state.leads.length + 1}`;
+  w.__state.leads.unshift({ id, code: `CUS-${id}`, name: body.name, company: body.company, phone: body.phone, email: null, city: null, state: 'NEW', stage: 'LEAD', leadStatus: 'NEW', source: body.leadSource, nextFollowUpAt: null, expectedBudget: null,
+    owner: owner ? { id: owner.id, name: owner.name } : null, services: [{ code: 'AI_CALLING', name: 'AI Calling' }], createdAt: new Date().toISOString() });
+  const lead = { id, name: body.name };
+  if (key) w.__made[key] = lead;
+  return lead;
+};
 (pipelineApi as any).counts = async () => ({});
 (invoicesApi as any).get = async (id: string) => {
   const i = w.__state.invoices.find((x: any) => x.id === id);
@@ -28,3 +44,5 @@ w.mount = (page: string, props: any = {}) => {
 // the real Department Head dashboard (navigation and routing of the new pages); the signed-in person is window.__profile
 import { DepartmentHeadDashboard } from '../../../src/components/tasks/DepartmentHeadDashboard';
 w.mountDashboard = () => root().render(<DepartmentHeadDashboard />);
+// the Team Lead's lead form, exactly as the Team Lead's dashboard shows it (no owner choice)
+w.mountTlForm = () => root().render(<div className="p-4 max-w-6xl"><AddLeadView onCancel={() => undefined} onSaved={() => undefined} /></div>);

@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Notification reliability: attendance reminders that are not lost, a Resume Work reminder, notification sound settings and
 -- Notification Health for the Super Admin and HR (docs/NOTIFICATION_RELIABILITY.md).
--- Run after 20270125000100_department_head_dashboard.sql. Additive and safe to run twice; pasteable in the Supabase SQL editor. No data is deleted
+-- Run after 20270126000100_department_head_lead_owners.sql. Additive and safe to run twice; pasteable in the Supabase SQL editor. No data is deleted
 -- except the delivery history older than 30 days that this migration itself creates.
 --
 -- ROOT CAUSES this fixes (confirmed in the code of 20270109000200 / server/automations/attendanceReminders.ts):

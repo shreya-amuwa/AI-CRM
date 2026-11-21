@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarCheck, FileText, UserPlus, Users } from 'lucide-react';
+import { CalendarCheck, FileText, Plus, UserPlus, Users } from 'lucide-react';
 import { Card, CardHead, ghostBtn, StatCard } from '../tasks/head/headParts';
 import { headApi, inr, useHeadData } from '../../lib/headDashboard';
 import type { HeadPage } from '../tasks/head/HeadOverview';
@@ -9,7 +9,7 @@ import type { HeadPage } from '../tasks/head/HeadOverview';
  * one read-only database function that works out the head's department itself. If the database does not have it yet (before the migration), this section says
  * so and the rest of the Overview works as before.
  */
-export const HeadDeptStats: React.FC<{ go: (p: HeadPage) => void }> = ({ go }) => {
+export const HeadDeptStats: React.FC<{ go: (p: HeadPage) => void; /** The Overview's "Add lead": opens the Leads page with the lead form open. */ onAddLead?: () => void }> = ({ go, onAddLead }) => {
   const { data, error, loading, reload } = useHeadData(() => headApi.overview(), []);
   if (error) {
     return (
@@ -47,7 +47,7 @@ export const HeadDeptStats: React.FC<{ go: (p: HeadPage) => void }> = ({ go }) =
         </Card>
         <Card label="Leads">
           <div className="p-5">
-            <div className="flex items-center justify-between"><span className="text-[13px] font-semibold text-slate-500">Leads</span>{link('leads', 'View', UserPlus)}</div>
+            <div className="flex items-center justify-between"><span className="text-[13px] font-semibold text-slate-500">Leads</span><span className="flex items-center gap-3">{onAddLead && <button type="button" className="inline-flex items-center gap-1.5 text-[13px] font-bold text-blue-700 hover:underline" onClick={onAddLead}><Plus className="w-3.5 h-3.5" aria-hidden="true" /> Add lead</button>}{link('leads', 'View', UserPlus)}</span></div>
             <div className="mt-1.5 text-[32px] leading-none font-extrabold text-slate-900" data-testid="ov-leads">{data.leads.total}</div>
             <div className="mt-2 text-xs text-slate-500">{data.leads.new} new · {data.leads.inProgress} in progress · {data.leads.converted} converted · {data.leads.lost} lost</div>
           </div>

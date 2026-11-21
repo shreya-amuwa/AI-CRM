@@ -15,8 +15,8 @@ const PAGE = 15;
  * head's own department. "Add lead" is the CRM's existing lead form and lead creation; it only adds a "Lead owner" choice (the head, or a Team Lead / Team
  * Member of the department). The department is never sent: the database puts the lead in the owner's department and refuses anyone outside the head's.
  */
-export const HeadLeadsPage: React.FC = () => {
-  const [mode, setMode] = useState<'list' | 'add'>('list');
+export const HeadLeadsPage: React.FC<{ /** Raised by the Overview's "Add lead": opens the page with the lead form open. */ startAdd?: number }> = ({ startAdd = 0 }) => {
+  const [mode, setMode] = useState<'list' | 'add'>(startAdd > 0 ? 'add' : 'list');
   const [filter, setFilter] = useState<Filter>('ALL');
   const [source, setSource] = useState('');
   const [search, setSearch] = useState('');

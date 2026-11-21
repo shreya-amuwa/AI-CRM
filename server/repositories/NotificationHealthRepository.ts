@@ -4,7 +4,7 @@ import type { NotificationHealthQuery } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
 /**
- * Notification Health (migration 20270125000200), as the caller: the database functions allow HR staff and the Super Admin only and audit
+ * Notification Health (migration 20270126000200), as the caller: the database functions allow HR staff and the Super Admin only and audit
  * every read; this layer only calls them.
  */
 export class NotificationHealthRepository {

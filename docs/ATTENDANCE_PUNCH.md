@@ -142,7 +142,7 @@ Super Admin. For each employee it checks:
 It then checks that the HR Admin Head sees all of them in today's register, and that the entry comes first on a phone.
 
 
-## Reliable reminders, Resume Work, sound and Notification Health (migration 20270125000200)
+## Reliable reminders, Resume Work, sound and Notification Health (migration 20270126000200)
 
 Details: `docs/NOTIFICATION_RELIABILITY.md`.
 

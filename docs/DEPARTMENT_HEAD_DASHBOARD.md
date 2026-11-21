@@ -43,3 +43,24 @@ The new pages show a clear error (the Overview says "Department statistics are n
 
 - `supabase/tests/department_head_dashboard_test.sql` (86 checks, real functions and policies): attendance (present, absent, on leave, pending leave, punch times, date and status filters, department and side isolation, no locations, the CRM sign-in is ignored), the overview numbers, lead creation (own lead, chosen owner, another department refused), the lead list and filters, customers (list, filters, detail, isolation), invoices (filters, date range, isolation, no accounting writes, document access refused for another department), role refusals and the private helpers.
 - `supabase/tests/ui_department_head_dashboard.test.mjs` (89 checks, browser): the Overview statistics, each page (loading, empty and error states, filters, search, paging, details), Add lead with the owner choice, the real dashboard navigation for a Sales head, a Support-side head and the Accounts head, and phone width.
+
+## Add lead for a Department Head (the Team Lead's flow)
+
+**How the Team Lead's Add Lead works.** The Team Lead's dashboard opens the CRM's shared lead pages (`PipelineWorkspace`): the *Add lead* button of the lead list opens
+`AddLeadView`, which checks the form with `leadCreateSchema` and sends it to `POST /pipeline/leads` with one request id per form. The service calls `create_lead_once`
+(one lead per request id), which runs `create_lead`; the `customers` insert policy and trigger put the lead in the owner's team and department, check who may own it
+(`private.can_assign_customer_owner`) and write the activity. There is no department or team in the request: the schema is strict.
+
+**What the Department Head has.** The very same form (`AddLeadView`), endpoint, schema and database functions. The only difference is one extra field, **Lead owner**:
+the head first ("Myself"), then the Team Leads and Team Members of the head's own side of the department (`head_lead_owners`, migration `20270126000100`, for the
+Sales side and the Support side; a head with no side is offered every team). The button is on the Leads page next to the lead statistics and on the Overview's Leads card.
+After saving, the form closes, "Lead added to your department." shows, and the list, the lead summary and the Overview numbers reload.
+
+**Permissions (checked in the database, not only by showing the button).** A head can give a lead only to someone in their own department (`FORBIDDEN` / 403 otherwise);
+a department, team, role or user id sent in the request is refused by the API schema, and, if it ever reached the database, ignored (the lead goes to the owner's
+department). A Team Lead can give a lead only to their own team, a Team Member only to themself, the head of another department to no one in this department, and a
+signed-out caller to no one. The Team Lead's own flow is unchanged. Sending the same form twice (double click, retry) makes one lead.
+
+**Tests.** `department_head_dashboard_test.sql` section 8 (the Team Lead still adds their lead; the head's lead appears in the list and moves the statistics; one lead per
+request id; a smuggled department is ignored; every refused combination; the Support head), `department_head_add_lead.test.ts` (what the API accepts) and the browser
+test (same fields as the Team Lead's form plus the owner choice, validation, success, refresh, double click, server error, the Overview button).

@@ -16,7 +16,7 @@ import { backoffMs, pickNotificationToChime } from '../lib/notifications/notific
  * only the signed-in user's notifications (RLS), so no client-side privacy
  * filtering is needed. Realtime changes trigger a refetch.
  *
- * Reliability (20270125000200): a Realtime channel can drop (network change, laptop sleep, token refresh, a phone suspending the tab).
+ * Reliability (20270126000200): a Realtime channel can drop (network change, laptop sleep, token refresh, a phone suspending the tab).
  * Then the channel is opened again with growing pauses, and the list is read again when it is back, when the tab becomes visible or
  * focused, when the network returns and when a push notification arrives (public/sw.js). Only while Realtime is down and the tab is on
  * screen is the list also read every 30 seconds. One read at a time; a failed read is retried 2 s, 4 s ... 60 s later. A new notification

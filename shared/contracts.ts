@@ -6890,7 +6890,7 @@ export interface MeetingReportAction {
 export interface MeetingReportActionList { items: MeetingReportAction[]; total: number }
 
 // ---------------------------------------------------------------------------
-// Notification Health (migration 20270125000200). Counts, times, statuses and short failure codes only: never a device address or key.
+// Notification Health (migration 20270126000200). Counts, times, statuses and short failure codes only: never a device address or key.
 // "Accepted" means the push service took the message, not that the device showed it or made a sound.
 // ---------------------------------------------------------------------------
 export type NotificationHealthStatus = 'READY' | 'SETUP_REQUIRED' | 'NOTIFICATIONS_BLOCKED' | 'DEVICE_NOT_REGISTERED' | 'PUSH_UNAVAILABLE'

@@ -1,6 +1,6 @@
 # Notification reliability: attendance reminders, Web Push delivery, sound and Notification Health
 
-Migration `20270125000200_notification_reliability.sql`. Related: `docs/ATTENDANCE_PUNCH.md` ("Reminders and the app"), `docs/CHAT.md`
+Migration `20270126000200_notification_reliability.sql`. Related: `docs/ATTENDANCE_PUNCH.md` ("Reminders and the app"), `docs/CHAT.md`
 ("Push notifications"), `docs/DEPLOYMENT_CLOUDFLARE.md` ("Attendance reminders and push").
 
 ## What "delivered" means here

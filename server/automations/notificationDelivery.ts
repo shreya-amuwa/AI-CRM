@@ -2,7 +2,7 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { sendWebPushDetailed, vapidConfig, type PushResult, type VapidConfig } from './webPush.js';
 
 /**
- * The delivery outbox (migration 20270125000200): the database holds one row per notification and device; this takes due rows with a lease
+ * The delivery outbox (migration 20270126000200): the database holds one row per notification and device; this takes due rows with a lease
  * (push_deliveries_claim), sends them with bounded concurrency, and reports each answer back (push_deliveries_report), which decides
  * accepted / retry later / failed / device gone. A Worker that stops half way loses nothing: the rows it held are taken again when their
  * lease ends. Two runs at once never take the same row.

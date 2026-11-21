@@ -207,7 +207,7 @@ If the database is still slow: Supabase → Reports → Database (CPU), and Proj
 CPU throttling of the smallest one).
 
 
-## Attendance reminders and push (migration 20270125000200)
+## Attendance reminders and push (migration 20270126000200)
 
 The reminders need all of these on the **production** Worker (`ai-crm`); none of them can be checked from GitHub:
 
@@ -220,5 +220,5 @@ The reminders need all of these on the **production** Worker (`ai-crm`); none of
 3. **Check** after deploying: Worker → Logs shows `[cron] attendance reminders: HTTP 200 {... "mode":"outbox" ...}` every 5 minutes, and
    Super Admin → Notification Health shows the scheduler as **Healthy** and push as configured. "Not running" there means the cron, the
    switch or the secret is wrong; "Push configuration unavailable" means the VAPID settings are missing or do not match.
-4. Run `supabase/migrations/20270125000200_notification_reliability.sql` in the Supabase SQL editor (before or after the deploy: the API falls
+4. Run `supabase/migrations/20270126000200_notification_reliability.sql` in the Supabase SQL editor (before or after the deploy: the API falls
    back to the previous reminder path until it exists).

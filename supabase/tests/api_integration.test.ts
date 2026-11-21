@@ -11800,7 +11800,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   rs = await api('th', 'GET', `/meetings/${appt}/summary`);
   check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
 }
-// Notification reliability (20270125000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
+// Notification reliability (20270126000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
 // retries, a 410 switching a device off, the self and admin test notifications, the scheduler run record and Notification Health.
 {
   console.log('--- notification reliability: outbox, retries, tests, Notification Health');

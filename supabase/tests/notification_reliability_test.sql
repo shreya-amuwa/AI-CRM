@@ -1,5 +1,5 @@
 -- =============================================================================
--- Notification reliability (migration 20270125000200): the delivery outbox (generation, claiming with leases, reporting, retries, expiry,
+-- Notification reliability (migration 20270126000200): the delivery outbox (generation, claiming with leases, reporting, retries, expiry,
 -- cancellation when the reminder is no longer true), the Resume Work reminder, test notifications, sound settings, browser reports and
 -- Notification Health with its permissions. Reuses wkr_tmp / wkr_tms (weekly_report_routing_test.sql), hr_head (hr_test.sql), sa
 -- (rls_test.sql), rr_rec1 (an HR Recruiter) and dh_wab (a Department Head outside HR). Safe to run again.
@@ -8,8 +8,8 @@
 \set QUIET 1
 \echo '--- 160. Notification reliability: outbox, Resume Work, tests, sound, Notification Health'
 reset role;
-\i supabase/migrations/20270125000200_notification_reliability.sql
-\i supabase/migrations/20270125000200_notification_reliability.sql
+\i supabase/migrations/20270126000200_notification_reliability.sql
+\i supabase/migrations/20270126000200_notification_reliability.sql
 grant execute on all functions in schema test to anon, authenticated, service_role;
 update attendance_settings set reminders_enabled = true, reminder_punch_in = '10:00', reminder_lunch = '14:00', reminder_punch_out = '19:00',
        reminder_follow_up_minutes = 15, reminder_lunch_warning_minutes = 5, reminder_days = '{1,2,3,4,5,6,7}', reminders_paused_on = null,

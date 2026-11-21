@@ -166,7 +166,7 @@ export const attendanceApi = {
   pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused }),
   /** Chat notifications on this person's devices (20270111000100). */
   setChatPush: (enabled: boolean) => rpc<ReminderSettings>('push_chat_set', { p_enabled: enabled }),
-  // Notification reliability (20270125000200)
+  // Notification reliability (20270126000200)
   saveSound: (attendance: boolean, chat: boolean, general: boolean) =>
     rpc<ReminderSettings>('notification_sound_save', { p_attendance: attendance, p_chat: chat, p_general: general }),
   /** "I heard the test sound". */
@@ -188,7 +188,7 @@ export interface PushDevice {
 /** Reminder times are "HH:MM" (India time). Days are ISO weekdays: 1 = Monday ... 7 = Sunday. */
 export interface ReminderCompany {
   enabled: boolean; punchIn: string; lunch: string; punchOut: string; followUpMinutes: number; lunchWarningMinutes: number; days: number[];
-  /** Resume Work follow-up in minutes, 0 = none (20270125000200; absent before the migration) */
+  /** Resume Work follow-up in minutes, 0 = none (20270126000200; absent before the migration) */
   resumeFollowUpMinutes?: number;
   lunchAllowanceMinutes?: number;
 }
@@ -202,7 +202,7 @@ export interface ReminderSettings {
   canManage: boolean;
   /** chat messages pushed to this person's devices (default on) */
   chatPush?: boolean;
-  /** in-app sounds (20270125000200; absent before the migration) */
+  /** in-app sounds (20270126000200; absent before the migration) */
   sound?: { attendance: boolean; chat: boolean; general: boolean; confirmedAt: string | null };
   testConfirmedAt?: string | null;
 }

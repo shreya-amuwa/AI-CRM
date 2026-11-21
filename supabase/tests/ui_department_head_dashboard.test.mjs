@@ -198,6 +198,75 @@ try {
   check(made && made.ownerId === '00000000-0000-4000-8000-0000000000a1' && made.name === 'Dhruv Mehta' && made.services.join() === 'AI_CALLING' && !('departmentId' in made) && !('department' in made) && !('role' in made), 'the lead is created through the existing endpoint with the chosen owner and no department, role or user id', made);
   check(await page.getByTestId('lead-total').isVisible(), 'and the page returns to the list');
   await page.close();
+
+  // ================= Add lead: the same form as the Team Lead's, a refreshed list and statistics, and one lead per submit
+  page = await open();
+  await page.evaluate(() => window.mountTlForm());
+  await page.getByLabel('Customer Name *').waitFor();
+  const labelsOf = () => page.evaluate(() => [...document.querySelectorAll('label')].map(l => (l.textContent || '').replace(/\s+/g, ' ').trim()).filter(Boolean).sort());
+  const tlLabels = await labelsOf();
+  check(tlLabels.length > 12 && tlLabels.includes('Customer Name *') && tlLabels.includes('Mobile number *') && tlLabels.includes('Lead source *'), 'the Team Lead\'s lead form (reference) has its fields', tlLabels.length);
+  await page.close();
+  page = await open();
+  await page.evaluate(() => window.mount('leads'));
+  await page.getByTestId('add-lead').waitFor();
+  check(await page.getByTestId('add-lead').isVisible(), 'the Add lead button is on the Leads page, next to the lead statistics');
+  await page.getByTestId('add-lead').click();
+  await page.getByLabel('Customer Name *').waitFor();
+  const dhLabels = await labelsOf();
+  const extra = dhLabels.filter(l => !tlLabels.includes(l));
+  const missing = tlLabels.filter(l => !dhLabels.includes(l));
+  check(missing.length === 0 && extra.length === 1 && /Assign this lead to/.test(extra[0]), 'the Department Head\'s form has every field of the Team Lead\'s form, plus only the lead owner choice', { missing, extra });
+  // validation is the Team Lead's validation
+  await page.getByRole('button', { name: 'Save lead' }).click();
+  await page.getByText('Please fix the highlighted fields.').waitFor();
+  check(await page.getByText('Customer name is required.').isVisible() && await page.evaluate(() => window.__created.length) === 0, 'saving an empty form shows the same validation and sends nothing');
+  const before = await page.evaluate(() => window.__state.leads.length);
+  await page.getByLabel('Assign this lead to').selectOption('00000000-0000-4000-8000-0000000000a1');
+  await page.getByLabel('Customer Name *').fill('Esha Kapoor');
+  await page.getByLabel('Business name *').fill('Esha Boutique');
+  await page.getByLabel('Mobile number *').fill('9812345678');
+  await page.getByRole('checkbox', { name: /AI Calling/ }).first().click();
+  const src2 = page.locator('#lead-leadSource');
+  await src2.click();
+  await page.getByRole('option', { name: 'Referral' }).first().click();
+  await page.getByLabel('Subscription plan *').fill('Growth');
+  await page.getByLabel('Subscription duration *').selectOption({ index: 1 });
+  await page.getByLabel('Subscription amount (₹) *').fill('12000');
+  // a double click on Save: one lead
+  await page.getByRole('button', { name: 'Save lead' }).dblclick();
+  await page.getByText('Lead added to your department.').waitFor();
+  const sent = await page.evaluate(() => window.__created);
+  check(sent.length >= 1 && new Set(sent.map(b => b.clientRequestId)).size === 1 && sent[0].clientRequestId, 'a double click sends the same request id every time (the server makes one lead for it)', sent.length);
+  check(await page.evaluate(() => window.__state.leads.length) === before + 1, 'and exactly one lead was created');
+  check(await page.getByTestId('lead-rows').getByText('Esha Boutique').isVisible(), 'the new lead is in the list at once, without a reload');
+  check(await page.getByTestId('lead-total').innerText() === String(before + 1) && await page.getByTestId('lead-new').innerText() === '2', 'the lead statistics went up (total and new)');
+  check(await page.getByTestId('add-lead').isVisible() && await page.getByRole('dialog').count() === 0, 'the form closed and the page is back on the list');
+  check(await page.evaluate(() => { const b = window.__created[0]; return !('departmentId' in b) && !('department' in b) && !('role' in b) && b.ownerId === '00000000-0000-4000-8000-0000000000a1'; }), 'the request carries the chosen owner and no department or role');
+  await page.close();
+  // an error from the server (here: an owner outside the head's department) is shown, the form stays open and a retry works
+  page = await open();
+  await page.evaluate(() => window.mount('leads'));
+  await page.getByTestId('add-lead').click();
+  await page.getByLabel('Customer Name *').waitFor();
+  await page.getByLabel('Customer Name *').fill('Farah Ali');
+  await page.getByLabel('Business name *').fill('Farah Studio');
+  await page.getByLabel('Mobile number *').fill('9823456789');
+  await page.getByRole('checkbox', { name: /AI Calling/ }).first().click();
+  await page.locator('#lead-leadSource').click();
+  await page.getByRole('option', { name: 'Walk-in' }).first().click();
+  await page.getByLabel('Subscription plan *').fill('Growth');
+  await page.getByLabel('Subscription duration *').selectOption({ index: 1 });
+  await page.getByLabel('Subscription amount (₹) *').fill('9000');
+  await page.evaluate(() => { window.__failCreate = 'FORBIDDEN: You cannot assign customers to this user.'; });
+  await page.getByRole('button', { name: 'Save lead' }).click();
+  await page.getByText(/cannot assign customers to this user/).waitFor();
+  check(await page.getByLabel('Customer Name *').inputValue() === 'Farah Ali' && await page.evaluate(() => window.__created.length) === 0 && await page.getByText('Lead added to your department.').count() === 0,
+    'a refusal from the server is shown, the form keeps what was typed and no lead was made');
+  await page.getByRole('button', { name: 'Save lead' }).click();
+  await page.getByText('Lead added to your department.').waitFor();
+  check(await page.getByTestId('lead-rows').getByText('Farah Studio').isVisible(), 'and Save again then works');
+  await page.close();
   // phone
   const pm = await browser.newContext({ viewport: { width: 390, height: 800 }, isMobile: true });
   page = await pm.newPage();
@@ -327,10 +396,23 @@ try {
   check(true, 'each new page opens from the navigation');
   await page.close();
   page = await dash({ ...base_, headDivision: 'SUPPORT' });
-  check(await nav().getByRole('button', { name: 'Leads', exact: true }).count() === 0 && await nav().getByRole('button', { name: 'Invoices', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Team Attendance', exact: true }).isVisible(), 'a Support-side head is not offered Leads (leads are the Sales side\'s) but has Invoices and Team Attendance');
+  check(await nav().getByRole('button', { name: 'Leads', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Invoices', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Team Attendance', exact: true }).isVisible(), 'a Support-side head has Leads (with Add lead), Invoices and Team Attendance too');
   await page.close();
   page = await dash({ ...base_, department: { slug: 'accounts', name: 'Accounts' }, headDivision: null });
   check(await nav().getByRole('button', { name: 'Leads', exact: true }).count() === 0 && await nav().getByRole('button', { name: 'Invoices', exact: true }).count() === 0, 'the Accounts head\'s navigation is unchanged apart from Team Attendance: no Leads and no Invoices page (they have their own)');
+  await page.close();
+
+  // the Overview's "Add lead" opens the same form
+  page = await dash(base_);
+  await page.getByTestId('dept-stats').waitFor();
+  await page.getByRole('button', { name: 'Add lead' }).click();
+  await page.getByRole('heading', { name: 'Lead owner' }).waitFor();
+  check(await page.getByLabel('Customer Name *').isVisible(), 'the Overview\'s Add lead opens the lead form on the Leads page');
+  await nav().getByRole('button', { name: 'Customers', exact: true }).click();
+  await page.getByRole('heading', { name: 'Customers', exact: true }).waitFor();
+  await nav().getByRole('button', { name: 'Leads', exact: true }).click();
+  await page.getByTestId('add-lead').waitFor();
+  check(await page.getByRole('heading', { name: 'Lead owner' }).count() === 0, 'and coming back to Leads later starts on the list, not on the form');
   await page.close();
 
   check(errors.length === 0, 'no script errors', errors);

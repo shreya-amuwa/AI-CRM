@@ -3618,7 +3618,7 @@ export const meetingReportActionsQuerySchema = z.object({
 export type MeetingSummaryContentInput = z.infer<typeof meetingSummaryContentSchema>;
 
 // ---------------------------------------------------------------------------
-// Notification Health (migration 20270125000200): Super Admin and HR staff; the database checks the caller again.
+// Notification Health (migration 20270126000200): Super Admin and HR staff; the database checks the caller again.
 // ---------------------------------------------------------------------------
 export const NOTIFICATION_HEALTH_STATUSES = ['READY', 'SETUP_REQUIRED', 'NOTIFICATIONS_BLOCKED', 'DEVICE_NOT_REGISTERED', 'PUSH_UNAVAILABLE',
   'DELIVERY_FAILED', 'RETRY_PENDING', 'REMINDERS_DISABLED', 'COMPANY_PAUSED'] as const;

@@ -5,7 +5,7 @@ import { sendWebPush, vapidConfig, type PushMessage, type PushOutcome, type Push
 import { NO_TOTALS, processDeliveries, type DeliveryTotals } from './notificationDelivery.js';
 
 /**
- * Attendance reminders (migrations 20270109000200, 20270125000200). Every 5 minutes the Worker's scheduled run calls this:
+ * Attendance reminders (migrations 20270109000200, 20270126000200). Every 5 minutes the Worker's scheduled run calls this:
  * 1. the database decides what is due and, in one transaction, records each reminder once, puts it in the CRM bell and queues one delivery
  *    per active device (attendance_reminders_generate);
  * 2. the outbox is sent (notificationDelivery.ts): this run's new rows and earlier ones waiting for a retry;
@@ -32,7 +32,7 @@ export function isMissingFunction(error: { code?: string; message?: string } | n
 
 /**
  * Send each message to each device, a few at a time, then tell the database which devices answered, failed or are gone for good.
- * Used by the chat push (chatPush.ts) and by the reminders before migration 20270125000200.
+ * Used by the chat push (chatPush.ts) and by the reminders before migration 20270126000200.
  */
 export async function sendPushJobs(jobs: { target: PushTarget; message: PushMessage }[], limit = 6): Promise<PushTotals> {
   const vapid = vapidConfig();
@@ -108,7 +108,7 @@ export async function sendTestPush(profileId: string, db?: SupabaseClient): Prom
     if (!error) return sendQueuedTest(data as { ids?: number[]; devices?: number }, pushConfigured);
     if (!isMissingFunction(error)) throw fromDatabaseError(error);
   }
-  // before migration 20270125000200
+  // before migration 20270126000200
   const { data, error } = await getServiceClient().rpc('push_targets_for', { p_profile: profileId });
   if (error) throw new Error(`Your devices could not be read: ${error.message}`);
   const targets = (data ?? []) as PushTarget[];
