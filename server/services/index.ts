@@ -33,6 +33,8 @@ import { CustomerService } from './CustomerService.js';
 import { HrService } from './HrService.js';
 import { GeneratedInvoiceService } from './GeneratedInvoiceService.js';
 import { NotificationService } from './NotificationService.js';
+import { NotificationHealthService } from './NotificationHealthService.js';
+import { NotificationHealthRepository } from '../repositories/NotificationHealthRepository.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
 import { WorkflowService } from './WorkflowService.js';
@@ -110,6 +112,7 @@ export function createServices(db: SupabaseClient) {
     customers: new CustomerService(new CustomerRepository(db)),
     approvals: new ApprovalService(new ApprovalRepository(db)),
     notifications: new NotificationService(new NotificationRepository(db)),
+    notificationHealth: new NotificationHealthService(new NotificationHealthRepository(db)),
     organization: new OrganizationService(new OrganizationRepository(db)),
     audit: new AuditService(new AuditRepository(db)),
     dashboards: new DashboardService(new DashboardRepository(db)),

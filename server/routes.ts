@@ -597,6 +597,9 @@ export const routes: RouteDef[] = [
 
   { method: 'GET', path: '/notifications', handler: notifications.list },
   { method: 'GET', path: '/notifications/unread-count', handler: notifications.unreadCount },
+  { method: 'GET', path: '/notifications/health', handler: notifications.health },
+  { method: 'GET', path: '/notifications/health/:profileId', handler: notifications.healthEmployee },
+  { method: 'POST', path: '/notifications/health/:profileId/test', handler: notifications.healthTest, options: S },
   { method: 'POST', path: '/notifications/read-all', handler: notifications.markAllRead },
   { method: 'PATCH', path: '/notifications/:id/read', handler: notifications.markRead },
   { method: 'DELETE', path: '/notifications/:id', handler: notifications.remove },

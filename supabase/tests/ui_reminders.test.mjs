@@ -27,11 +27,33 @@ const KEY = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 7)]).toString('bas
 let pushKey = KEY;
 let keyRequests = 0;
 const json = (res, data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, data })); };
+// Notification Health stand-in: two employees, one without a device, one ready
+const healthQueries = [];
+const emp = (id, name, status, extra = {}) => ({ profileId: id, name, role: 'TEAM_MEMBER', designation: null, departmentId: '11111111-1111-4111-8111-111111111111', department: 'Sales',
+  status, remindersEnabled: true, effective: { punchIn: '10:00', lunch: '14:00', punchOut: '19:00' }, activeDevices: 0, inactiveDevices: 0, expiredDevices: 0,
+  lastAcceptedAt: null, lastFailureAt: null, lastFailureCode: null, failed7d: 0, retryPending: 0, pending: 0, todayGenerated: 1, todayNoDevice: 1,
+  reminderMissing: false, noReminderToday: false, onLeave: false, attendanceStatus: 'NOT_PUNCHED_IN', blockedReported: false, lastDeviceCheckAt: null,
+  testConfirmedAt: null, soundStatus: 'UNKNOWN', ...extra });
+const report = () => ({ generatedAt: new Date().toISOString(), today: '2027-01-11', pushConfigured: true,
+  summary: { eligible: 2, remindersEnabled: 2, remindersDisabled: 0, withDevice: 1, withoutDevice: 1, recentFailures: 0, reminderMissing: 0, ready: 1, byStatus: { READY: 1, DEVICE_NOT_REGISTERED: 1 } },
+  queue: { pending: 0, retryPending: 0, accepted24h: 3, failed24h: 0, expired24h: 0, cancelled24h: 1 },
+  todayReminders: { generated: 2, bellWritten: 2, noDevice: 1, pushOff: 0 },
+  scheduler: { lastSuccessAt: new Date().toISOString(), lastRunAt: new Date().toISOString(), lastRunOk: true, lastError: null, lastRunPushConfigured: true, runs24h: 288, failedRuns24h: 0,
+    health: 'HEALTHY', last24h: { attempted: 3, accepted: 3, failed: 0, retry: 0, gone: 0, noDevice: 1, generated: 4 } },
+  employees: [emp('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Asha Device', 'DEVICE_NOT_REGISTERED'),
+              emp('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'Ravi Ready', 'READY', { activeDevices: 1, lastAcceptedAt: new Date().toISOString(), soundStatus: 'CONFIRMED' })] });
+function healthApi(req, res) {
+  healthQueries.push(req.url);
+  if (req.method === 'POST' && req.url.endsWith('/test')) return json(res, { devices: 1, sent: 1, retry: 0, failed: 0, gone: 0, pushConfigured: true });
+  if (/health\/[0-9a-f-]{36}$/.test(req.url)) return json(res, { profileId: 'x', name: 'x', devices: [], browsers: [], deliveries: [], reminders: [] });
+  return json(res, report());
+}
 const srv = createServer((req, res) => {
   if (req.url === '/app.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(bundle); }
   if (req.url === '/app.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css); }
   if (req.url === '/api/v1/attendance/push-key') { keyRequests++; return json(res, { publicKey: pushKey }); }
   if (req.url === '/api/v1/attendance/push-test') return json(res, { sent: 2, gone: 0, failed: 0 });
+  if (req.url.startsWith('/api/v1/notifications/health')) return healthApi(req, res);
   res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/app.css"><div id="root"></div><script src="/app.js"></script>');
 });
 await new Promise(r => srv.listen(0, '127.0.0.1', r));
@@ -75,7 +97,7 @@ try {
   // 1. a browser that can receive push, reminders off: the banner, then Turn on reminders
   let { ctx, page } = await open();
   await page.getByRole('button', { name: 'Turn on notifications' }).waitFor();
-  check(await page.getByText('Get chat messages and attendance reminders on this device.').isVisible(), 'off: banner shows Turn on reminders');
+  check(await page.getByText('Enable notifications to receive Punch In, Lunch, Resume Work and Punch Out reminders.').isVisible(), 'off: banner names the four reminders and offers Turn on notifications');
   await page.waitForTimeout(300);
   const keysBeforeClick = keyRequests;
   await page.getByRole('button', { name: 'Turn on notifications' }).click();
@@ -131,7 +153,7 @@ try {
   // 4. notifications blocked for the site
   ({ ctx, page } = await open({ permission: 'denied' }));
   await page.getByTestId('reminder-banner').waitFor();
-  check(/Notifications are blocked for this site\. Allow them in your browser's site settings, then reload\./.test(await page.getByTestId('reminder-banner').textContent())
+  check(/Notifications are blocked for this site, so reminders cannot reach this device\. Allow them in your browser's site settings \(Attendance → Reminders → Notification troubleshooting\), then reload\./.test(await page.getByTestId('reminder-banner').textContent())
     && await page.getByRole('button', { name: 'Turn on notifications' }).count() === 0, 'blocked: shows the site-settings help');
   await ctx.close();
 
@@ -190,11 +212,31 @@ try {
   await devices.first().getByRole('button', { name: 'Remove' }).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="device-row"]').length === 1);
   check((await calls(page, 'push_subscription_remove_by_id'))[0]?.p_id === 'd1', 'Remove deletes one');
-  await page.getByText('This device does not get notifications yet.').waitFor();
+  await page.getByTestId('this-device').getByText('Enable notifications to receive Punch In, Lunch, Resume Work and Punch Out reminders.').waitFor();
   check(await page.evaluate(() => window.__push.unsubscribed) === 1, 'removing the device you are holding turns its reminders off here too');
   await page.getByRole('button', { name: 'Send test notification' }).click();
-  await page.getByText('Sent to 2 devices').waitFor();
-  check(true, 'Send test notification shows "Sent to 2 devices"');
+  await page.getByText('Accepted by the push service for 2 devices. It should appear in a few seconds.').waitFor();
+  check(true, 'Send test notification says the push service accepted it (not "delivered")');
+  await page.getByRole('group', { name: 'Did the test notification appear?' }).getByRole('button', { name: 'Yes' }).click();
+  await page.getByRole('group', { name: 'Did it make a sound?' }).getByRole('button', { name: 'Yes' }).click();
+  await page.getByText('Thanks — recorded for this device.').waitFor();
+  const conf = await calls(page, 'push_test_confirm');
+  check(conf.length === 1 && conf[0].p_appeared === true && conf[0].p_sound === true, 'the employee confirms the test appeared and sounded', conf);
+  await page.getByRole('button', { name: 'Check device status' }).click();
+  const status = await page.getByTestId('device-status').textContent();
+  check(/Permission:\s*Allowed\./.test(status) && /Browser support:/.test(status) && /In-app sound:/.test(status), 'Check device status lists support, permission and sound', status);
+  await page.getByText('Notification troubleshooting').click();
+  check(/Site settings|site settings/.test(await page.getByTestId('device-guide').textContent()), 'troubleshooting steps for this device are one click away');
+  // the sound settings: three switches and Test sound
+  const sound = page.getByTestId('notification-sound');
+  check(await sound.getByLabel('Attendance reminders').isChecked() && await sound.getByLabel('Chat messages').isChecked() && await sound.getByLabel('General notifications').isChecked(),
+    'Notification sound: three switches, on by default');
+  await sound.getByLabel('General notifications').uncheck();
+  check(await page.evaluate(() => localStorage.getItem('crm.sound.general')) === 'off', 'turning general sounds off is remembered');
+  await sound.getByRole('button', { name: 'Test sound' }).click();
+  await page.getByRole('group', { name: 'Did you hear the sound?' }).getByRole('button', { name: 'Yes' }).click();
+  await page.getByText('Thanks — sound is confirmed on this device.').waitFor();
+  check((await calls(page, 'notification_sound_confirm')).length === 1, 'Test sound plays inside the click and the employee can confirm hearing it');
   await ctx.close();
 
   ({ ctx, page } = await panel('hr'));
@@ -210,6 +252,10 @@ try {
   await page.getByRole('button', { name: 'Turn reminders back on for today' }).waitFor();
   check((await calls(page, 'hr_attendance_reminders_pause_today'))[0]?.p_paused === true, 'HR can turn reminders off for today');
   check(await page.getByTestId('my-reminders').count() === 1, 'HR also has their own times');
+  await page.getByLabel('Resume Work follow-up (minutes, 0 = none)').fill('0');
+  await page.getByRole('button', { name: 'Save follow-up' }).click();
+  await page.getByTestId('resume-follow-up').getByText('Saved.').waitFor();
+  check((await calls(page, 'hr_attendance_resume_follow_up_save'))[0]?.p_minutes === 0, 'HR sets the Resume Work follow-up (0 = none)');
   await ctx.close();
 
   ({ ctx, page } = await panel('sa'));
@@ -245,6 +291,28 @@ try {
   await chatSwitch.uncheck();
   await page.waitForFunction(() => window.__calls.some(c => c.fn === 'push_chat_set'));
   check((await calls(page, 'push_chat_set'))[0]?.p_enabled === false && !(await chatSwitch.isChecked()), 'turning it off calls push_chat_set(false)');
+  await ctx.close();
+
+  // 9. Notification Health (Super Admin / HR): statuses with reasons, filters, the employee detail, a confirmed test
+  ({ ctx, page } = await open());
+  await page.evaluate(() => { document.getElementById('root').innerHTML = ''; window.mountHealth(); });
+  await page.getByTestId('notification-health').getByText('Healthy').waitFor();
+  const rows = page.getByTestId('health-row');
+  check(await rows.count() === 2, 'Notification Health lists the employees from the server', await rows.count());
+  check(/Device not registered/.test(await rows.nth(0).textContent()) && /Ready/.test(await rows.nth(1).textContent()), 'each with a meaningful status');
+  check(!/push\.example\.com|p256dh/.test(await page.content()), 'no device address or key on the page');
+  await page.getByLabel('Issue').selectOption('DEVICE_NOT_REGISTERED');
+  await page.waitForResponse(r => r.url().includes('issue=DEVICE_NOT_REGISTERED'));
+  check(healthQueries.some(q => q.includes('issue=DEVICE_NOT_REGISTERED')), 'the issue filter asks the server for that issue');
+  await rows.nth(1).getByRole('button', { name: /Send a test notification/ }).click();
+  await rows.nth(1).getByRole('button', { name: 'Send' }).click();
+  await page.getByText(/Accepted by the push service for 1 of 1 device/).waitFor();
+  check(true, 'Send test asks for confirmation, then shows how many push services accepted it');
+  await rows.nth(0).getByRole('button', { name: /^Asha Device/ }).click();
+  await page.getByText('What to do:').waitFor();
+  check(/turn on notifications/i.test(await page.getByText('What to do:').locator('..').textContent()), 'opening a row explains why and what to do');
+  await page.setViewportSize({ width: 375, height: 800 });
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= 375 + 1), 'the page itself does not scroll sideways on a phone (the table scrolls in its box)');
   await ctx.close();
 
   check(errors.length === 0, 'no script errors', errors);

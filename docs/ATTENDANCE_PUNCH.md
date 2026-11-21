@@ -141,3 +141,19 @@ Super Admin. For each employee it checks:
 
 It then checks that the HR Admin Head sees all of them in today's register, and that the entry comes first on a phone.
 
+
+## Reliable reminders, Resume Work, sound and Notification Health (migration 20270125000200)
+
+Details: `docs/NOTIFICATION_RELIABILITY.md`.
+
+* **Delivery outbox.** The scheduled run now records the reminder, writes the bell and queues one delivery per device in one transaction
+  (`attendance_reminders_generate`); deliveries are sent with leases, retried after temporary failures (timeout, 429, 5xx), cancelled when
+  the reminder is no longer true (punched in, lunch ended, punched out, leave) or the device moved to another person, and expire 30 minutes
+  after they were due. "Accepted by the push service" is recorded, never "delivered".
+* **Resume Work.** "Time to Resume Work" when an open lunch reaches the allowance left for the day (real start time, earlier breaks counted),
+  plus one follow-up (`reminder_resume_follow_up_minutes`, 10 by default, 0 = none; HR sets it in Attendance → Reminders). The 5-minute
+  "Lunch ends in N minutes" warning is unchanged.
+* **Sound.** Attendance → Reminders → Notification sound: Attendance reminders, Chat messages, General notifications, Test sound.
+* **Devices.** Send test notification (then "Did it appear / make a sound?"), Test sound, Check device status, Notification troubleshooting.
+* **Notification Health.** HR (not recruiters) and the Super Admin: Attendance → Notification health (the Super Admin also has it in their
+  menu). Per active employee: reminder settings, devices, last acceptance and failure, status, sound status, Send test.

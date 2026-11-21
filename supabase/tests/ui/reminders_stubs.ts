@@ -1,7 +1,7 @@
 // A stand-in Supabase client for the reminders browser test: the reminder settings, the device list, and a record of every call.
 const calls: { fn: string; args: any }[] = [];
 (window as any).__calls = calls;
-const company = { enabled: true, punchIn: '10:00', lunch: '14:00', punchOut: '19:00', followUpMinutes: 15, lunchWarningMinutes: 5, days: [1, 2, 3, 4, 5, 6] };
+const company = { enabled: true, punchIn: '10:00', lunch: '14:00', punchOut: '19:00', followUpMinutes: 15, lunchWarningMinutes: 5, days: [1, 2, 3, 4, 5, 6], resumeFollowUpMinutes: 10, lunchAllowanceMinutes: 45 };
 const state: any = (window as any).__state = {
   role: 'staff',            // 'staff' | 'hr' | 'sa'
   thisDevice: 'd1',         // the row of the browser under test (null: removed from the list)
@@ -39,7 +39,17 @@ const handlers: Record<string, (a: any) => any> = {
   push_subscription_remove: () => null,
   push_subscription_remove_by_id: a => { state.devices = state.devices.filter((d: any) => d.id !== a.p_id); if (a.p_id === state.thisDevice) state.thisDevice = null; return null; },
   push_subscription_claim: () => state.thisDevice !== null,
-  my_push_devices: () => state.devices
+  my_push_devices: () => state.devices,
+  // notification reliability (20270125000200)
+  push_test_confirm: () => null,
+  notification_sound_confirm: () => null,
+  notification_sound_save: () => settings(),
+  notification_client_check: () => null,
+  hr_attendance_resume_follow_up_save: a => {
+    if (a.p_minutes < 0 || a.p_minutes > 60) fail('VALIDATION_ERROR: The Resume Work follow-up must be between 0 (none) and 60 minutes');
+    company.resumeFollowUpMinutes = a.p_minutes;
+    return settings();
+  }
 };
 const chain: any = { on: () => chain, subscribe: () => chain };
 const fake = {

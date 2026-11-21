@@ -198,3 +198,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_role_dashboards_test.sql 2>&
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/realtime_publication_trim_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_inbox_mentions_reactions_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meeting_summaries_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/notification_reliability_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

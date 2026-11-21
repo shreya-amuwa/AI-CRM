@@ -15,7 +15,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'nume
  * newest first, ten per page (the server pages them, so page 2 is really the next ten).
  */
 export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => void }> = ({ onOpenItem }) => {
-  const { unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { unreadCount, markAsRead, markAllAsRead, notifications, realtimeStatus, syncError } = useNotifications();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<Notification> | null>(null);
@@ -35,8 +35,8 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
       e => n === seq.current && setError(errorMessage(e))
     );
   }, [filter, page]);
-  // Reload on page / filter change and whenever the notification context sees a change (realtime or read state).
-  useEffect(load, [load, unreadCount]);
+  // Reload on page / filter change and whenever the notification context read the list again (realtime, reconnect, focus, read state).
+  useEffect(load, [load, unreadCount, notifications]);
   useEffect(() => setPage(1), [filter]);
 
   const open = (n: Notification) => {
@@ -60,6 +60,11 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
           ) : undefined
         }
       />
+      {(syncError || realtimeStatus === 'offline') && (
+        <p role="status" data-testid="notification-sync" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {syncError ? `New notifications could not be loaded (${syncError}). Retrying automatically.` : 'Live updates are reconnecting; the list is refreshed every 30 seconds meanwhile.'}
+        </p>
+      )}
       <div className="flex gap-2" role="tablist" aria-label="Filter notifications">
         {(['all', 'unread'] as const).map(f => (
           <button

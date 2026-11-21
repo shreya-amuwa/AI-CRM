@@ -302,7 +302,11 @@ export const notificationsController = {
     await svc(ctx).notifications.delete(ctx.params.id);
     return ok(null);
   }) as Handler,
-  broadcast: (async ctx => ok(await svc(ctx).notifications.broadcast(ctx.actor, ctx.req.body), 201)) as Handler
+  broadcast: (async ctx => ok(await svc(ctx).notifications.broadcast(ctx.actor, ctx.req.body), 201)) as Handler,
+  // Notification Health (20270125000200): Super Admin and HR staff; the database checks the caller and audits each read
+  health: (async ctx => ok(await svc(ctx).notificationHealth.report(ctx.req.query))) as Handler,
+  healthEmployee: (async ctx => ok(await svc(ctx).notificationHealth.employee(ctx.params.profileId))) as Handler,
+  healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
 export const organizationController = {
