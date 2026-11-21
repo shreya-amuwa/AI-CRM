@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, CalendarCheck2, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Clock3, Copy, Crown, ExternalLink, Link2, Loader2, MapPin,
+  AlertTriangle, Briefcase, CalendarCheck2, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, Clock3, Copy, Crown, ExternalLink, Link2, Loader2, MapPin,
   Phone, Plus, Settings2, Trash2, UserPlus, Users, Video, X
 } from 'lucide-react';
 import type {
@@ -10,7 +10,8 @@ import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type BookingLinkInput, type NewMeeting } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
 import { takePendingMeeting, useMeetingsChanged, useOpenMeetingRequest } from './meetingEvents';
-import { CeoPresencePanel, useCeoPresence } from './CeoPresence';
+import { AvailabilityPill, MyAvailabilityPanel, usePresenceOf } from './CeoPresence';
+import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
 
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
@@ -43,15 +44,13 @@ const STATUS_STYLE: Record<string, string> = {
   SCHEDULED: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   DECLINED: 'bg-rose-50 text-rose-700 border-rose-200',
   CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200',
-  COMPLETED: 'bg-sky-50 text-sky-800 border-sky-200',
-  PENDING_AVAILABILITY: 'bg-orange-50 text-orange-800 border-orange-200'
+  COMPLETED: 'bg-sky-50 text-sky-800 border-sky-200'
 };
 const STATUS_LABEL: Record<string, string> = {
-  REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done',
-  PENDING_AVAILABILITY: 'Pending availability (the CEO is in a meeting)'
+  REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done'
 };
 /** How a request for the CEO's time reads to the people involved. */
-const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PENDING_AVAILABILITY' ? 'Pending availability (CEO in a meeting)' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
+const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
   : m.status === 'SCHEDULED' ? (m.rescheduleCount > 0 ? 'Rescheduled' : 'Approved') : m.status === 'COMPLETED' ? 'Completed' : 'Cancelled');
 const SYNC_LABEL: Record<string, string> = {
   SYNCED: 'On Google Calendar', PENDING: 'Sending to Google…', FAILED: 'Google sync failed (retrying)', NOT_CONNECTED: 'Host has not connected Google', SKIPPED: 'Not on Google'
@@ -101,7 +100,7 @@ const GOOGLE_RETURN: Record<string, { tone: 'ok' | 'warn' | 'error'; text: strin
 // ---------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------
-type Tab = 'calendar' | 'requests' | 'settings';
+type Tab = 'calendar' | 'requests' | 'client' | 'settings';
 
 export const MeetingsPage: React.FC = () => {
   const [tab, setTab] = useState<Tab>('calendar');
@@ -112,7 +111,7 @@ export const MeetingsPage: React.FC = () => {
   // the CEO's own meetings today: the one being entered can be chosen in the Enter Meeting panel
   const [today, setToday] = useState<Meeting[]>([]);
   const [flash, setFlash] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null);
-  const [composer, setComposer] = useState<null | 'meeting' | 'ceo'>(null);
+  const [composer, setComposer] = useState<null | 'meeting' | 'ceo' | 'client'>(null);
   // a meeting notification clicked before this page opened: show that meeting
   const [openId, setOpenId] = useState<string | null>(() => takePendingMeeting());
   // a button on a request row can open its details straight at the reject / reschedule form
@@ -149,7 +148,8 @@ export const MeetingsPage: React.FC = () => {
     meetingsApi.settings().then(x => setIsCeo(x.isCeo)).catch(() => setIsCeo(false));
   }, [reloadKey]);
   useEffect(() => {
-    if (!isCeo) return setToday([]);
+    // today's meetings: the ones an employee can choose when entering a meeting (the Super Admin has no Enter / Exit)
+    if (isCeo) return setToday([]);
     const d = new Date();
     const from = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     meetingsApi.list(from.toISOString(), addDays(from, 1).toISOString()).then(setToday).catch(() => setToday([]));
@@ -170,15 +170,16 @@ export const MeetingsPage: React.FC = () => {
         <div className="flex flex-wrap gap-2">
           {!isCeo && <button type="button" className={btnGhost} onClick={() => setComposer('ceo')}><Crown className="w-4 h-4 text-amber-500" /> Ask the CEO for time</button>}
           <button type="button" className={btnPrimary} onClick={() => setComposer('meeting')}><CalendarPlus className="w-4 h-4" /> New meeting</button>
+          <button type="button" className={btnGhost} onClick={() => setComposer('client')}><Briefcase className="w-4 h-4 text-indigo-600" /> Client meeting</button>
         </div>
       </div>
 
       {flash && <Notice tone={flash.tone} onClose={() => setFlash(null)}>{flash.text}</Notice>}
-      <CeoPresencePanel isCeo={isCeo} today={today} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} onOpen={setOpenId} reloadKey={reloadKey} />
+      {!isCeo && <MyAvailabilityPanel today={today} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} onOpen={setOpenId} />}
       {google && tab !== 'settings' && <GoogleBanner status={google} onOpenSettings={() => setTab('settings')} />}
 
       <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200">
-        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
+        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['client', 'Client meetings'], ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
             className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
             {label}
@@ -188,13 +189,19 @@ export const MeetingsPage: React.FC = () => {
 
       {tab === 'calendar' && <CalendarTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
       {tab === 'requests' && <RequestsTab reloadKey={reloadKey} onOpen={openMeeting} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} />}
+      {tab === 'client' && <ClientMeetingsTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
       {tab === 'settings' && <SettingsTab google={google} onGoogleChange={setGoogle} onFlash={setFlash} />}
 
-      {composer && <MeetingComposer mode={composer} onClose={() => setComposer(null)} onSaved={m => {
+      {composer === 'client' && <ClientMeetingComposer onClose={() => setComposer(null)} onSaved={m => {
         setComposer(null);
-        done(m.status === 'PENDING_AVAILABILITY'
-          ? `${m.hostName} is currently attending another meeting. Your request is saved as PENDING AVAILABILITY and will be scheduled automatically when they are free; you will be told the confirmed time.`
-          : m.status === 'REQUESTED'
+        done(m.duplicate ? 'This client meeting was already created; nothing was sent twice.'
+          : `Client meeting booked for ${fullWhen(m.startsAt, m.endsAt)}. The invitation to ${m.client?.email ?? 'the client'} is being sent: its delivery is shown in the meeting.`);
+        setTab('client');
+        openMeeting(m.id);
+      }} />}
+      {composer && composer !== 'client' && <MeetingComposer mode={composer} onClose={() => setComposer(null)} onSaved={m => {
+        setComposer(null);
+        done(m.status === 'REQUESTED'
           ? `Request sent to ${m.hostName}. You will be told when it is approved.`
           : `${m.kindLabel} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
       }} />}
@@ -435,7 +442,7 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
         {m && (
           <>
             <div className="flex flex-wrap gap-2 items-center">
-              <span className={`text-xs font-semibold border rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status]}`}>{m.kind === 'CEO_MEETING' ? ceoStatusLabel(m) : STATUS_LABEL[m.status]}</span>
+              <span className={`text-xs font-semibold border rounded-full px-2 py-0.5 ${STATUS_STYLE[m.status]}`}>{m.kind === 'CEO_MEETING' ? ceoStatusLabel(m) : m.kind === 'CLIENT_MEETING' ? clientStatus(m).label : STATUS_LABEL[m.status]}</span>
               <span className="text-xs text-slate-500">{SYNC_LABEL[m.googleSyncStatus]}</span>
             </div>
             <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5">
@@ -443,6 +450,11 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
               {m.status === 'PROPOSED' && m.proposedStartsAt && m.proposedEndsAt && (<><dt className="text-violet-700">Proposed</dt><dd className="font-medium text-violet-800">{fullWhen(m.proposedStartsAt, m.proposedEndsAt)}</dd></>)}
               <dt className="text-slate-500">Where</dt>
               <dd className="flex items-center gap-1.5"><ModeIcon mode={m.mode} />{MODE_LABEL[m.mode]}{m.location ? ` — ${m.location}` : ''}</dd>
+              {m.kind === 'CLIENT_MEETING' && (() => {
+                const c = m.attendees.find(a => a.role === 'EXTERNAL');
+                return (<><dt className="text-slate-500">Client</dt><dd>{c?.name ?? '—'}{c?.email ? ` · ${c.email}` : ''}</dd>
+                  <dt className="text-slate-500">Company</dt><dd>{m.clientCompany ?? '—'}</dd></>);
+              })()}
               <dt className="text-slate-500">Host</dt><dd>{m.hostName}</dd>
               {m.createdByName && m.createdBy !== m.hostId && (<><dt className="text-slate-500">{m.kind === 'CEO_MEETING' ? 'Requested by' : 'Booked by'}</dt><dd>{m.createdByName}{m.createdByDepartment ? ` · ${m.createdByDepartment}` : ''}{m.createdByDesignation ? ` · ${m.createdByDesignation}` : ''}</dd></>)}
               {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">Sent</dt><dd>{new Date(m.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>)}
@@ -454,7 +466,8 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
             {m.meetLink && m.status === 'SCHEDULED' && (
               <a href={m.meetLink} target="_blank" rel="noopener noreferrer" className={`${btnPrimary} w-full`}><Video className="w-4 h-4" /> Join the meeting <ExternalLink className="w-3.5 h-3.5" /></a>
             )}
-            {m.description && <p className="whitespace-pre-wrap text-slate-700 bg-slate-50 rounded-lg p-3">{m.kind === 'CEO_MEETING' && <span className="font-semibold">Agenda: </span>}{m.description}</p>}
+            {m.description && <p className="whitespace-pre-wrap text-slate-700 bg-slate-50 rounded-lg p-3">{(m.kind === 'CEO_MEETING' || m.kind === 'CLIENT_MEETING') && <span className="font-semibold">Agenda: </span>}{m.description}</p>}
+            {m.kind === 'CLIENT_MEETING' && m.canManage && <MeetingMailLog meetingId={m.id} version={m.version} />}
             {m.requestMessage && <p className="whitespace-pre-wrap text-slate-700 bg-amber-50/60 rounded-lg p-3"><span className="font-semibold">Message: </span>{m.requestMessage}</p>}
             <div>
               <h3 className="text-xs font-bold text-slate-500 uppercase mb-1.5">People</h3>
@@ -583,9 +596,10 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
 
   useEffect(() => { meetingsApi.directory().then(setPeople).catch(() => setPeople([])); }, []);
   const ceos = people.filter(p => p.isCeo);
-  // the chosen CEO's live availability: while BUSY the request is saved and waits (it is not confirmed now)
-  const { list: presence } = useCeoPresence(mode === 'ceo');
-  const ceoBusy = mode === 'ceo' && !!presence?.find(p => p.hostId === f.hostId && p.status === 'BUSY');
+  // the invited colleagues' live BUSY / AVAILABLE status (Enter / Exit Meeting): updates at once while the form is open
+  const [presenceIds, setPresenceIds] = useState<string[]>([]);
+  const { list: presence } = usePresenceOf(presenceIds);
+  const busyNow = (id: string) => !!presence?.find(p => p.hostId === id && p.status === 'BUSY');
   useEffect(() => { if (mode === 'ceo' && !f.hostId && ceos[0]) setF(x => ({ ...x, hostId: ceos[0].id })); }, [mode, ceos, f.hostId]);
 
   // the chosen day's busy times of the CEO / the invited colleagues (CRM + their Google Calendar)
@@ -603,6 +617,12 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   const matches = search.trim().length >= 1
     ? people.filter(p => !invited.includes(p.id) && p.id !== f.hostId && (p.name.toLowerCase().includes(search.toLowerCase()) || p.email.toLowerCase().includes(search.toLowerCase()))).slice(0, 8)
     : [];
+
+  // whose status to watch: the colleagues invited and the ones offered in the search list
+  const watchKey = [...invited, ...matches.map(p => p.id)].join(',');
+  useEffect(() => { setPresenceIds(watchKey ? watchKey.split(',') : []); }, [watchKey]);
+  // the database refuses a meeting starting within 30 minutes with someone BUSY; say so before the button is pressed
+  const busySoon = start && start.getTime() < Date.now() + 30 * 60_000 ? invited.filter(busyNow) : [];
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -637,12 +657,6 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
               </select>
             </div>
           ) : <Notice tone="warn">No CEO account was found.</Notice>
-        )}
-        {ceoBusy && (
-          <div role="status" aria-live="polite" data-testid="ceo-busy-notice" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-            <p className="font-bold">Superadmin is currently attending another meeting.</p>
-            <p className="mt-0.5">Your time is not confirmed now. Send the request: it is saved as PENDING AVAILABILITY and scheduled automatically, in the order requests were made, at the first free time from the one you choose, as soon as the CEO exits the meeting. You are notified of the confirmed date and time.</p>
-          </div>
         )}
         <div>
           <label className={labelCls} htmlFor="mtg-title">{mode === 'ceo' ? 'Subject' : 'Title'}</label>
@@ -692,7 +706,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
           <div className="flex flex-wrap gap-1.5 mb-1.5">
             {invited.map(id => (
               <span key={id} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-800 text-xs px-2 py-0.5">
-                {nameOf(id)}<button type="button" aria-label={`Remove ${nameOf(id)}`} onClick={() => setInvited(invited.filter(x => x !== id))}><X className="w-3 h-3" /></button>
+                {nameOf(id)}{busyNow(id) && <AvailabilityPill status="BUSY" compact />}<button type="button" aria-label={`Remove ${nameOf(id)}`} onClick={() => setInvited(invited.filter(x => x !== id))}><X className="w-3 h-3" /></button>
               </span>
             ))}
           </div>
@@ -701,11 +715,16 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
             <ul className="mt-1 border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-48 overflow-y-auto">
               {matches.map(p => (
                 <li key={p.id}><button type="button" className="w-full text-left px-3 py-1.5 hover:bg-slate-50 flex justify-between gap-2" onClick={() => { setInvited([...invited, p.id]); setSearch(''); }}>
-                  <span>{p.name} <span className="text-slate-400">· {p.department ?? p.role}</span></span>
+                  <span>{p.name} <span className="text-slate-400">· {p.department ?? p.role}</span>{busyNow(p.id) && <> <AvailabilityPill status="BUSY" compact /></>}</span>
                   {!p.googleConnected && <span className="text-[10px] text-slate-400">no Google</span>}
                 </button></li>
               ))}
             </ul>
+          )}
+          {busySoon.length > 0 && (
+            <p role="status" data-testid="busy-soon" className="mt-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+              {busySoon.map(nameOf).join(', ')} {busySoon.length === 1 ? 'is' : 'are'} in a meeting right now (Busy). A meeting starting within 30 minutes cannot be booked with them: pick a later time.
+            </p>
           )}
         </div>
         <div>
@@ -738,7 +757,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
         <div className="flex gap-2 pt-1">
           <button type="submit" disabled={saving || (mode === 'ceo' && !f.hostId)} className={btnPrimary}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : mode === 'ceo' ? <Crown className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
-            {mode === 'ceo' ? (ceoBusy ? 'Submit the request (pending availability)' : 'Send the request') : 'Book the meeting'}
+            {mode === 'ceo' ? 'Send the request' : 'Book the meeting'}
           </button>
           <button type="button" className={btnGhost} onClick={onClose}>Cancel</button>
         </div>

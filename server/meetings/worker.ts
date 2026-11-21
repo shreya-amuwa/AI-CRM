@@ -21,8 +21,6 @@ import { GOOGLE_SENDS, ICS_KINDS, linkSecret, manageToken, meetingIcs, renderMee
  */
 
 export interface MeetingsRunSummary {
-  /** Requests that waited for the CEO and were scheduled in this run. */
-  autoScheduled?: number;
   reminders: number;
   synced: number;
   syncFailed: number;
@@ -136,7 +134,9 @@ export interface ClaimedMail {
 export function mailDecision(o: ClaimedMail, now = Date.now()): 'SEND' | 'SKIP' | 'DEFER' {
   const m = o.meeting;
   const toOrganiser = !!o.organizerEmail && o.toEmail.trim().toLowerCase() === o.organizerEmail.trim().toLowerCase();
-  if (!GOOGLE_SENDS.includes(o.kind) || m.bookedVia === 'BOOKING_LINK' || toOrganiser) return 'SEND';
+  // a client meeting: the client always gets the CRM's own invitation / change / cancellation (agenda, company, host details), Google or not
+  const clientGuest = m.kind === 'CLIENT_MEETING' && !o.toProfileId;
+  if (!GOOGLE_SENDS.includes(o.kind) || m.bookedVia === 'BOOKING_LINK' || toOrganiser || clientGuest) return 'SEND';
   if (m.googleSyncStatus === 'SYNCED') return 'SKIP';
   if (m.googleSyncStatus === 'PENDING' && now - new Date(m.updatedAt).getTime() < 15 * 60_000) return 'DEFER';
   return 'SEND';
@@ -197,17 +197,6 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
   try {
     const rem = await db.rpc('mtg_enqueue_reminders');
     summary.reminders = Number(rem.data) || 0;
-
-    // requests that waited for the CEO to be free and are still waiting (no free slot at Exit, or an Exit that stopped half-way):
-    // scheduled now, with the CEO's Google busy times (migration 20270116000400; skipped quietly on a database without it)
-    const { data: hosts } = await db.rpc('mtg_pending_hosts');
-    for (const host of (Array.isArray(hosts) ? hosts : []) as string[]) {
-      if (Date.now() > deadline) break;
-      const from = new Date();
-      const busy = (await googleBusy([host], from, new Date(from.getTime() + 31 * 86_400_000), db).catch(() => ({} as Record<string, BusyBlock[]>)))[host] ?? [];
-      const done = await db.rpc('mtg_pending_process', { p_host: host, p_busy: busy.map(b => ({ start: b.start, end: b.end })) });
-      summary.autoScheduled = (summary.autoScheduled ?? 0) + (Array.isArray(done.data) ? done.data.length : 0);
-    }
 
     const cfg = googleConfig(process.env, appUrl());
     if (cfg) {

@@ -1,12 +1,14 @@
 import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, CalendarDays, ChevronDown, Clock3, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, Bug, CalendarDays, ChevronDown, Clock3, LogOut, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
 import { attendanceRequested } from '../attendance/attendanceEvents';
 import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
+import { useBugAccess } from '../bugs/bugUi';
+import { useOpenBugsRequest } from '../bugs/bugEvents';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -14,6 +16,9 @@ export const ATTENDANCE_NAV_ID = '__attendance';
 // Meetings (20270101000500): the one calendar with Google Calendar, booking links and CEO requests, also in every dashboard's menu
 const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 export const MEETINGS_NAV_ID = '__meetings';
+// Bugs (20270122000300): the Developers team's section, added to the menu ONLY of the developers the database names
+const BugsPage = React.lazy(() => import('../bugs/BugsPage'));
+export const BUGS_NAV_ID = '__bugs';
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
 export const meetingsRequested = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'meetings';
 
@@ -376,7 +381,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // Attendance (Punch In / Out, lunch) is added to every dashboard here; choosing any other page hands the content back to the dashboard
   // (Meetings works the same way)
   // a tapped reminder opens the CRM on /?open=attendance
-  const [overlay, setOverlay] = useState<null | typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID>(() => (meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null));
+  const bugAccess = useBugAccess();
+  const [overlay, setOverlay] = useState<null | typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID>(() => (meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null));
   const shownActive = overlay ?? active;
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);
@@ -388,8 +394,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []), React.useCallback(() => setOverlay(null), []));
   // a meeting notification was clicked: show Meetings (the page opens the meeting)
   useOpenMeetingRequest(React.useCallback(() => setOverlay(MEETINGS_NAV_ID), []));
+  // a bug notification was clicked by a developer: show Bugs
+  useOpenBugsRequest(React.useCallback(() => setOverlay(BUGS_NAV_ID), []));
   const select = (id: string) => {
-    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
+    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID || id === BUGS_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
     onSelect(id);
   };
@@ -397,9 +405,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // unlabelled top section (the dashboard entry), or sits in its own section above a menu that starts with a labelled one
   const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
   const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
+  const shared: ShellNavItem[] = [attendanceItem, meetingsItem, ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
-    ? [{ ...groups[0], items: [attendanceItem, meetingsItem, ...groups[0].items] }, ...groups.slice(1)]
-    : [{ items: [attendanceItem, meetingsItem] }, ...groups];
+    ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]
+    : [{ items: shared }, ...groups];
   const toggleGroup = (label: string) => setClosedGroups(prev => {
     const next = new Set(prev);
     if (next.has(label)) next.delete(label); else next.add(label);
@@ -460,7 +469,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : overlay === BUGS_NAV_ID ? <BugsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

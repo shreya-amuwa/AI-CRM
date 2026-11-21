@@ -66,3 +66,76 @@ HR: `GET /hr/case-assignees`, `GET /hr/case-departments`, `GET /hr/issues/overvi
 `supabase/tests/employee_issues_test.sql` (database rules, RLS, notifications, audit), the "Employee issues and HR meeting requests" block of
 `supabase/tests/api_integration.test.ts` (direct API calls: IDOR, HR-only routes, validation, files), and
 `supabase/tests/e2e/run-employee-issues.sh` (real browsers: the three roles, HR's two sections, status and meeting flows, phone / tablet).
+
+
+## Bugs for the Developers team (migration `20270122000300_developer_bugs.sql`)
+
+### The employee
+
+**Raise an Issue** has a third choice next to *Raise an Issue* and *Meeting Request*: **Report a bug to the Developers team**. It is a
+technical problem that goes straight to the developers, not to HR. The employee gives:
+
+- the issue title;
+- what the problem is;
+- the steps to reproduce (optional);
+- screenshots or files (optional).
+
+Files use the same upload pipeline, limits and checks as issues: up to 5 files of 5 MB, private, opened with short signed links.
+
+The reporter's name, department and designation are copied from their profile. The form carries a request id, so sending it twice is
+one bug. *My bug reports* below the form shows each bug's status, the developer working on it and the resolution note. Internal comments
+are never shown.
+
+### The developers
+
+A **Bugs** entry appears in the side panel only for the developers on the list. It is seeded with **Shreya Mande, Ashish Sinha and
+Siddhesh Shinde**, matched by name among the active members of AI Studio.
+
+Every reported bug, from every department, is there:
+
+- reference and title;
+- reporter, department and designation;
+- submitted at;
+- files;
+- the assigned developer;
+- the status.
+
+A developer can:
+
+- open a bug (description, steps, files, history);
+- **assign** it to any developer;
+- set **Pending / In Progress / Resolved / Rejected**. Resolved needs the resolution note and Rejected the reason, both read by the reporter;
+- add **internal comments**, which only developers see.
+
+Filters: Open, Assigned to me, Unassigned, each status, and search. Notifications reach every developer for a new bug, the assignee for
+an assignment, and the reporter for each status change.
+
+### Who can see what
+
+The database enforces all of this:
+
+- **Bugs section.** Only the developers on `dev_team_members` (`private.require_developer`). Everyone else, including other AI Studio
+  members, Department Heads and the Super Admin, gets `FORBIDDEN`.
+- **Reporting and following.** Any Team Member, Team Lead or Department Head (`private.require_employee`), for their own bugs only.
+- **Files.** A bug's files open for its reporter and the developers only, and each download is audited.
+- **The developers list.** The Super Admin keeps it (Settings > *Developers team (Bugs access)*, `dev_team_set`) but does not get the Bugs
+  section.
+- **History.** `dev_bug_events` is append-only. Submitted, assigned, status changes, comments and the resolution are kept as they happened,
+  and reporting, assigning and status changes are audited.
+
+### API
+
+- `GET /bugs/access`
+- `POST /bugs`
+- `GET /bugs/mine`, `GET /bugs/mine/:id`
+- `GET /bugs`, `GET /bugs/:id` (developers)
+- `POST /bugs/:id/assign|status|comment` (developers)
+- `GET|POST /bugs/team` (Super Admin)
+
+Uploads use `/employee/issues/uploads`.
+
+### Tests
+
+- `supabase/tests/developer_bugs_test.sql`
+- the "bugs API" block of `api_integration.test.ts`
+- `supabase/tests/ui_bugs.test.mjs`

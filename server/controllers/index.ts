@@ -201,9 +201,13 @@ export const meetingsController = {
   answerProposal: (async ctx => ok(await svc(ctx).meetings.answerProposal(ctx.params.id, ctx.req.body))) as Handler,
   respond: (async ctx => ok(await svc(ctx).meetings.respond(ctx.params.id, ctx.req.body))) as Handler,
   approvals: (async ctx => ok(await svc(ctx).meetings.approvals())) as Handler,
-  presence: (async ctx => ok(await svc(ctx).meetings.presence())) as Handler,
+  presence: (async ctx => ok(await svc(ctx).meetings.presence(ctx.req.query))) as Handler,
+  clientList: (async ctx => ok(await svc(ctx).meetings.clientList(ctx.req.query))) as Handler,
+  createClient: (async ctx => ok(await svc(ctx).meetings.createClient(ctx.req.body), 201)) as Handler,
+  mailLog: (async ctx => ok(await svc(ctx).meetings.mailLog(ctx.params.id))) as Handler,
+  mailRetry: (async ctx => ok(await svc(ctx).meetings.mailRetry(ctx.params.id))) as Handler,
   presenceEnter: (async ctx => ok(await svc(ctx).meetings.presenceEnter(ctx.req.body))) as Handler,
-  presenceExit: (async ctx => ok(await svc(ctx).meetings.presenceExit(ctx.actor))) as Handler,
+  presenceExit: (async ctx => ok(await svc(ctx).meetings.presenceExit())) as Handler,
   ceoRequests: (async ctx => ok(await svc(ctx).meetings.ceoRequests(ctx.req.query))) as Handler,
   directory: (async ctx => ok(await svc(ctx).meetings.directory(ctx.req.query))) as Handler,
   busy: (async ctx => ok(await svc(ctx).meetings.busy(ctx.req.body))) as Handler,
@@ -214,6 +218,21 @@ export const meetingsController = {
   googleStatus: (async ctx => ok(await svc(ctx).meetings.googleStatus())) as Handler,
   googleConnect: (async ctx => ok(svc(ctx).meetings.googleConnect(ctx.actor))) as Handler,
   googleDisconnect: (async ctx => ok(await svc(ctx).meetings.googleDisconnect(ctx.actor))) as Handler
+};
+
+/** Bugs for the Developers team (20270122000300). */
+export const bugsController = {
+  access: (async ctx => ok(await svc(ctx).bugs.access())) as Handler,
+  submit: (async ctx => ok(await svc(ctx).bugs.submit(ctx.req.body), 201)) as Handler,
+  mine: (async ctx => ok(await svc(ctx).bugs.mine())) as Handler,
+  myDetail: (async ctx => ok(await svc(ctx).bugs.myDetail(ctx.params.id))) as Handler,
+  list: (async ctx => ok(await svc(ctx).bugs.list(ctx.req.query))) as Handler,
+  detail: (async ctx => ok(await svc(ctx).bugs.detail(ctx.params.id))) as Handler,
+  assign: (async ctx => ok(await svc(ctx).bugs.assign(ctx.params.id, ctx.req.body))) as Handler,
+  setStatus: (async ctx => ok(await svc(ctx).bugs.setStatus(ctx.params.id, ctx.req.body))) as Handler,
+  comment: (async ctx => ok(await svc(ctx).bugs.comment(ctx.params.id, ctx.req.body), 201)) as Handler,
+  team: (async ctx => ok(await svc(ctx).bugs.team())) as Handler,
+  setTeam: (async ctx => ok(await svc(ctx).bugs.setTeam(ctx.req.body))) as Handler
 };
 
 export const employeeCasesController = {

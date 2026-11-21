@@ -1,5 +1,5 @@
 import type {
-  CeoPresence, CeoPresenceExit, CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
+  CeoPresence, CeoPresenceExit, ClientMeetingInput, ClientMeetingResult, MeetingMail, CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
   MeetingSettings, PublicBookingPage, PublicBookingResult, PublicBookingView
 } from '../../../shared/contracts';
 import { api } from './client';
@@ -39,7 +39,12 @@ export const meetingsApi = {
   respond: (id: string, response: 'ACCEPTED' | 'DECLINED' | 'TENTATIVE') => api.post<Meeting>(`/meetings/${id}/response`, { response }),
   approvals: () => api.get<Meeting[]>('/meetings/approvals'),
   // live availability of the CEO: everyone reads it; only the Super Admin enters / exits their own meeting
-  presence: () => api.get<CeoPresence[]>('/meetings/presence'),
+  // client meetings (20270122000200)
+  clientMeetings: (q: { scope?: 'UPCOMING' | 'PAST' | 'ALL'; status?: string }) => api.get<ClientMeetingResult[]>('/meetings/client', q),
+  createClient: (body: ClientMeetingInput) => api.post<ClientMeetingResult>('/meetings/client', body),
+  mails: (id: string) => api.get<MeetingMail[]>(`/meetings/${encodeURIComponent(id)}/mails`),
+  retryMail: (mailId: number) => api.post<{ id: number; status: string }>(`/meetings/mails/${mailId}/retry`, {}),
+  presence: (ids?: string[]) => api.get<CeoPresence[]>('/meetings/presence', ids ? { ids: ids.join(',') } : undefined),
   presenceEnter: (meetingId?: string | null) => api.post<CeoPresence>('/meetings/presence/enter', { meetingId: meetingId ?? null }),
   presenceExit: () => api.post<CeoPresenceExit>('/meetings/presence/exit', {}),
   ceoRequests: (section: CeoRequestSection = 'ALL', offset = 0, limit = 50) => api.get<CeoRequestList>('/meetings/ceo-requests', { section, offset, limit }),

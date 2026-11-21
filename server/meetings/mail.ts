@@ -30,6 +30,9 @@ export interface MailMeeting {
   proposedEndsAt: string | null;
   bookedVia: string;
   version: number;
+  /** CLIENT_MEETING (20270122000200): the invitation to the client carries the agenda, the company and the host's details. */
+  kind?: string;
+  clientCompany?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,12 +123,17 @@ function whereHtml(m: MailMeeting): string {
 export function renderMeetingEmail(kind: MeetingMailKind, m: MailMeeting, guestName: string | null, manageUrl: string | null, signedBy?: string | null): RenderedEmail {
   const hi = `<p>Dear ${esc(guestName || 'Sir/Madam')},</p>`;
   const when = esc(whenText(m.startsAt, m.endsAt, m.timezone));
+  const client = m.kind === 'CLIENT_MEETING';
+  const row = (k: string, v: string) => `<tr><td style="padding:2px 12px 2px 0;color:#666;vertical-align:top">${k}</td><td>${v}</td></tr>`;
   const facts = `<table style="border-collapse:collapse;margin:8px 0 16px">
-<tr><td style="padding:2px 12px 2px 0;color:#666">What</td><td><b>${esc(m.title)}</b></td></tr>
-<tr><td style="padding:2px 12px 2px 0;color:#666">When</td><td>${when}</td></tr>
-<tr><td style="padding:2px 12px 2px 0;color:#666">Where</td><td>${whereHtml(m)}</td></tr>
-<tr><td style="padding:2px 12px 2px 0;color:#666">With</td><td>${esc(m.hostName)}</td></tr>
-<tr><td style="padding:2px 12px 2px 0;color:#666">Reference</td><td>${esc(m.reference)}</td></tr></table>`;
+${row('What', `<b>${esc(m.title)}</b>`)}
+${client && m.clientCompany ? row('Company', esc(m.clientCompany)) : ''}
+${row('When', when)}
+${client ? row('Mode', m.mode === 'IN_PERSON' ? 'In person (offline)' : 'Online') : ''}
+${row(client && m.mode === 'IN_PERSON' ? 'Location' : client ? 'Meeting link' : 'Where', whereHtml(m))}
+${client && m.description ? row('Agenda', esc(m.description).replace(/\n/g, '<br>')) : ''}
+${row(client ? 'Host' : 'With', esc(m.hostName) + (client && m.hostEmail ? ` &lt;<a href="mailto:${esc(m.hostEmail)}">${esc(m.hostEmail)}</a>&gt;` : ''))}
+${row('Reference', esc(m.reference))}</table>`;
   const manage = manageUrl ? `<p>To cancel${kind === 'PROPOSED' ? ' or answer the proposed time' : ''}, use your private link: <a href="${esc(manageUrl)}">${esc(manageUrl)}</a></p>` : '';
   const sign = `<p>Regards,<br>${esc(signedBy?.trim() || m.hostName)}<br>${esc(COMPANY.senderName)} · ${esc(COMPANY.companyPhone)}</p>`;
   const proposed = m.proposedStartsAt && m.proposedEndsAt ? esc(whenText(m.proposedStartsAt, m.proposedEndsAt, m.timezone)) : null;
@@ -137,6 +145,12 @@ export function renderMeetingEmail(kind: MeetingMailKind, m: MailMeeting, guestN
       body = `<p>Thank you. Your request for the time below has reached ${esc(m.hostName)}. It is <b>not confirmed yet</b>: you will receive an e-mail once it is approved.</p>${facts}${manage}`;
       break;
     case 'CONFIRMED':
+      if (client && !signedBy) {
+        subject = `Meeting invitation: ${m.title} — ${whenText(m.startsAt, m.endsAt, m.timezone)}`;
+        body = `<p>Thank you for your time. We are pleased to invite you to the meeting below${m.clientCompany ? ` for ${esc(m.clientCompany)}` : ''}.`
+          + ` The calendar file attached adds it to your calendar. If the time does not suit you, simply reply to this e-mail.</p>${facts}`;
+        break;
+      }
       subject = `Confirmed: ${m.title} — ${whenText(m.startsAt, m.endsAt, m.timezone)}`;
       body = `<p>Your meeting is confirmed. The calendar file attached adds it to your calendar.</p>${facts}${manage}`;
       break;

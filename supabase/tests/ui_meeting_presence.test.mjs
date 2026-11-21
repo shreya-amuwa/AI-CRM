@@ -1,7 +1,7 @@
-// Browser test of the CEO's live meeting availability: Enter / Exit Meeting on the CEO's Meetings page, the BUSY / AVAILABLE indicator for
-// team members (on the Meetings page and in the header badge every dashboard shows), the "Superadmin is currently attending another
-// meeting" message and the pending request, and a Realtime change updating the page without a refresh. Real React components, real
-// Chromium; the CRM API is answered in the page (supabase/tests/ui/meeting_presence_harness.tsx). Skipped, loudly, without Playwright.
+// Browser test of Enter / Exit Meeting for employees (migration 20270122000100): an employee enters and exits (the header badge and the panel
+// follow), the Super Admin has no controls and the server refuses them, colleagues show BUSY in the New meeting form as soon as Realtime says
+// so, a meeting starting within 30 minutes with a BUSY colleague is flagged and refused, and Ask the CEO no longer mentions waiting.
+// Real React components, real Chromium; the CRM API is answered in the page (supabase/tests/ui/meeting_presence_harness.tsx).
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -41,83 +41,91 @@ const open = async (who, viewport = { width: 1280, height: 1000 }) => {
   await page.goto('http://mp.test/');
   await page.addScriptTag({ content: bundle });
   await page.evaluate(w => window.mount(w), who);
-  await page.waitForSelector('[data-testid="ceo-presence-panel"]');
+  await page.waitForSelector('h1:has-text("Meetings")');
   return page;
 };
-const statusIn = (page, scope) => page.$eval(`${scope} [data-testid="ceo-availability"]`, e => e.getAttribute('data-status'));
+const statusIn = (page, scope) => page.$eval(`${scope} [data-testid="availability"]`, e => e.getAttribute('data-status'));
 const calls = page => page.evaluate(() => window.__calls.filter(c => c.method !== 'GET').map(c => c.path));
 
 try {
-  // ---- the CEO: Enter Meeting / Exit Meeting
+  // ---- an employee: Enter Meeting / Exit Meeting
   {
-    const page = await open('ceo');
-    check(await statusIn(page, '[data-testid="ceo-presence-panel"]') === 'AVAILABLE', 'the CEO starts AVAILABLE');
+    const page = await open('member');
+    await page.waitForSelector('[data-testid="presence-panel"]');
+    check(await statusIn(page, '[data-testid="presence-panel"]') === 'AVAILABLE', 'an employee starts AVAILABLE');
+    check(!(await page.isVisible('[data-testid="header"] [data-testid="availability"]')), 'no header badge while AVAILABLE');
     check(await page.isVisible('[data-testid="presence-enter"]') && !(await page.isVisible('[data-testid="presence-exit"]')), 'not in a meeting: only Enter Meeting is offered');
     await page.click('[data-testid="presence-enter"]');
     await page.waitForSelector('[data-testid="presence-exit"]');
-    check(await statusIn(page, '[data-testid="ceo-presence-panel"]') === 'BUSY', 'Enter Meeting: BUSY');
-    check(/In a meeting since/.test(await page.innerText('[data-testid="ceo-presence-panel"]')), 'the panel says since when');
-    check(!(await page.isVisible('[data-testid="presence-enter"]')), 'in a meeting: only Exit Meeting is offered');
+    check(await statusIn(page, '[data-testid="presence-panel"]') === 'BUSY', 'Enter Meeting: BUSY');
+    check(/In a meeting since/.test(await page.innerText('[data-testid="presence-panel"]')), 'the panel says since when');
+    await page.evaluate(() => window.__fireRealtime('meeting_presence'));
+    await page.waitForSelector('[data-testid="header"] [data-testid="availability"][data-status="BUSY"]');
+    check(/You: BUSY/.test(await page.innerText('[data-testid="header"]')), 'the header badge reminds them they are BUSY');
     check((await calls(page)).includes('/api/v1/meetings/presence/enter'), 'Enter is sent to the server (not kept in the page)');
     await page.click('[data-testid="presence-exit"]');
     await page.waitForSelector('[data-testid="presence-enter"]');
-    check(await statusIn(page, '[data-testid="ceo-presence-panel"]') === 'AVAILABLE', 'Exit Meeting: AVAILABLE again');
-    check(/AVAILABLE again/.test(await page.innerText('body')), 'the CEO is told');
+    check(await statusIn(page, '[data-testid="presence-panel"]') === 'AVAILABLE', 'Exit Meeting: AVAILABLE again');
+    check(/AVAILABLE again/.test(await page.innerText('body')), 'they are told');
+    await page.evaluate(() => window.__fireRealtime('meeting_presence'));
+    await page.waitForFunction(() => !document.querySelector('[data-testid="header"] [data-testid="availability"]'));
+    check(true, 'the header badge goes away');
+
+    // ---- a colleague enters a meeting elsewhere: BUSY in the New meeting form, without a refresh
+    await page.click('button:has-text("New meeting")');
+    await page.fill('#mtg-people', 'Ravi');
+    await page.waitForSelector('li:has-text("Ravi Colleague")');
+    check(!(await page.isVisible('li:has-text("Ravi Colleague") [data-testid="availability"]')), 'the colleague is shown without BUSY while AVAILABLE');
+    await page.evaluate(() => { window.__setServerStatus(window.__ids.COL, 'BUSY'); window.__fireRealtime('meeting_presence'); });
+    await page.waitForSelector('li:has-text("Ravi Colleague") [data-testid="availability"][data-status="BUSY"]');
+    check(true, 'Realtime: the colleague turns BUSY in the list while the form is open');
+    await page.click('li:has-text("Ravi Colleague") button');
+    await page.waitForSelector('span:has-text("Ravi Colleague") [data-testid="availability"][data-status="BUSY"]');
+    check(true, 'the invited colleague carries the BUSY status');
+    const soon = new Date(Date.now() + 10 * 60_000);
+    const pad = n => String(n).padStart(2, '0');
+    await page.fill('#mtg-title', 'Quick sync');
+    await page.fill('#mtg-date', `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}`);
+    await page.fill('#mtg-time', `${pad(soon.getHours())}:${pad(soon.getMinutes())}`);
+    await page.waitForSelector('[data-testid="busy-soon"]');
+    check(/Ravi Colleague is in a meeting right now \(Busy\)/.test(await page.innerText('[data-testid="busy-soon"]')), 'starting within 30 minutes: the form says the colleague is BUSY');
+    await page.click('button:has-text("Book the meeting")');
+    await page.waitForSelector('text=is in a meeting right now (Busy). Pick a later time');
+    check(true, 'the server refuses the conflicting booking and the form shows why');
+    await page.evaluate(() => { window.__setServerStatus(window.__ids.COL, 'AVAILABLE'); window.__fireRealtime('meeting_presence'); });
+    await page.waitForFunction(() => !document.querySelector('[data-testid="busy-soon"]'));
+    check(true, 'the colleague exits: AVAILABLE again and the warning goes away');
+    await page.click('button:has-text("Book the meeting")');
+    await page.waitForSelector('text=booked for');
+    check(true, 'now the meeting can be booked');
+
+    // ---- asking the CEO for time: no waiting / pending availability any more
+    await page.click('button:has-text("Ask the CEO for time")');
+    await page.waitForSelector('button:has-text("Send the request")');
+    check(!(await page.isVisible('text=Superadmin is currently attending another meeting')) && !(await page.isVisible('text=pending availability')),
+      'asking the CEO says nothing about the CEO being in a meeting');
     await page.close();
   }
-  // ---- a team member: BUSY indicator, the message, the pending request; then the CEO exits (Realtime)
+  // ---- the Super Admin: no Enter / Exit at all, and the server refuses it
   {
-    const page = await open('member');
-    check(await statusIn(page, '[data-testid="header"]') === 'AVAILABLE' && await statusIn(page, '[data-testid="ceo-presence-panel"]') === 'AVAILABLE',
-      'a team member sees AVAILABLE in the header badge and on the Meetings page');
-    check(!(await page.isVisible('[data-testid="presence-enter"]')) && !(await page.isVisible('[data-testid="presence-exit"]')), 'a team member has no Enter / Exit controls');
-    // the CEO enters a meeting elsewhere: the server changes, Supabase sends the Realtime event
-    await page.evaluate(() => { window.__setServerStatus('BUSY'); window.__fireRealtime('meeting_presence'); });
-    await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="ceo-availability"]')].every(e => e.getAttribute('data-status') === 'BUSY'));
-    check(true, 'without a refresh, every indicator turns BUSY');
-
-    await page.click('button:has-text("Ask the CEO for time")');
-    await page.waitForSelector('[data-testid="ceo-busy-notice"]');
-    check(/Superadmin is currently attending another meeting\./.test(await page.innerText('[data-testid="ceo-busy-notice"]')), 'the scheduler says: Superadmin is currently attending another meeting.');
-    check(await page.isVisible('button:has-text("Submit the request (pending availability)")'), 'the request can still be submitted');
-    await page.fill('#mtg-title', 'Budget review');
-    await page.selectOption('#mtg-dur', '60');
-    await page.fill('#mtg-desc', 'Pune office budget');
-    await page.click('button:has-text("Submit the request (pending availability)")');
-    await page.waitForSelector('[role="status"]:has-text("is currently attending another meeting. Your request is saved")');
-    const sent = await page.evaluate(() => window.__calls.find(c => c.method === 'POST' && c.path === '/api/v1/meetings')?.body);
-    check(sent && sent.title === 'Budget review' && (new Date(sent.endsAt) - new Date(sent.startsAt)) === 3600000 && !!sent.startsAt && sent.description === 'Pune office budget',
-      'the request carries the date, time, length and purpose', sent);
-    check(/currently attending another meeting/.test(await page.innerText('body')), 'the member is told the request is saved and waits');
-    await page.waitForSelector('[data-testid="my-pending-count"]');
-    check(/1 of your requests waiting/.test(await page.innerText('[data-testid="my-pending-count"]')), 'the pending request is shown');
-    await page.click('[role="tab"]:has-text("Requests")');
-    await page.waitForSelector('text=Pending availability');
-    check(true, 'Requests > Your requests lists it as Pending availability');
-
-    // the CEO exits elsewhere: the server schedules the request; the Realtime event updates this page
-    await page.evaluate(async () => {
-      window.__profile = { ...window.__profile, id: window.__ids.CEO };
-      await fetch('/api/v1/meetings/presence/exit', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } });
-      window.__profile = { ...window.__profile, id: window.__ids.ME };
-      window.__fireRealtime('meeting_presence');
-    });
-    await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="ceo-availability"]')].every(e => e.getAttribute('data-status') === 'AVAILABLE'));
-    check(true, 'the CEO exits: every indicator turns AVAILABLE without a refresh');
-    await page.waitForFunction(() => !document.querySelector('[data-testid="my-pending-count"]'));
-    check(true, 'the request is no longer waiting');
-    await page.waitForSelector('text=Scheduled');
-    check(true, 'the meeting list reloads and shows it Scheduled');
+    const page = await open('ceo');
+    await page.waitForTimeout(300);
+    check(!(await page.isVisible('[data-testid="presence-panel"]')) && !(await page.isVisible('[data-testid="presence-enter"]')) && !(await page.isVisible('[data-testid="presence-exit"]')),
+      'the Super Admin sees no Enter Meeting / Exit Meeting');
+    check(!(await page.isVisible('[data-testid="header"] [data-testid="availability"]')), 'and no availability badge');
+    const r = await page.evaluate(async () => (await fetch('/api/v1/meetings/presence/enter', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } })).status);
+    check(r === 403, 'calling the API directly is refused');
     await page.close();
   }
   // ---- phone width
   {
-    const page = await open('ceo', { width: 360, height: 740 });
+    const page = await open('member', { width: 360, height: 740 });
+    await page.waitForSelector('[data-testid="presence-enter"]');
     const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth }));
-    check(m.sw <= m.iw && await page.isVisible('[data-testid="presence-enter"]'), 'phone width: the panel fits and Enter Meeting is reachable', m);
+    check(m.sw <= m.iw, 'phone width: the panel fits and Enter Meeting is reachable', m);
     await page.close();
   }
 } finally {
   await browser.close();
 }
-console.log(`=== MEETING AVAILABILITY BROWSER TESTS PASSED (${passed}) ===`);
+console.log(`=== EMPLOYEE MEETING AVAILABILITY BROWSER TESTS PASSED (${passed}) ===`);

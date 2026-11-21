@@ -159,7 +159,125 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
   - `supabase/tests/ui_meetings.test.mjs` (browser, 26)
   - the meetings block of `supabase/tests/api_integration.test.ts`
 
-## Live availability of the CEO: Enter / Exit Meeting
+## Employee availability: Enter / Exit Meeting
+
+Migration `supabase/migrations/20270122000100_meeting_presence_all_employees.sql` (run after `20270116000400`; additive, safe to run twice).
+
+> This replaces the CEO-only version of `20270116000400`. **The Super Admin no longer has Enter / Exit Meeting**, and requests for the CEO's
+> time no longer wait as "pending availability". Requests that were waiting become ordinary requests for the Super Admin to approve (nothing
+> is lost). Asking the CEO for time works as before: the Super Admin approves, proposes another time or declines.
+
+### Who
+
+- **Every employee except the Super Admin** has Enter Meeting / Exit Meeting at the top of Meetings: Department Heads, Operations Heads,
+  Team Leads and Team Members, in every department.
+- **The Super Admin** sees no Enter / Exit controls. The database refuses the Super Admin even if the API is called directly
+  (`mtg_presence_enter` / `mtg_presence_exit` raise `FORBIDDEN`).
+
+### What it does
+
+- **Enter Meeting:** the employee becomes **BUSY**. Optionally they choose which of today's meetings they are entering. The entry time is
+  recorded in `meeting_presence_log`.
+- **Exit Meeting:** they become **AVAILABLE** again. The exit time is recorded.
+- **What colleagues see:**
+  - When booking a meeting (New meeting), each colleague offered or invited shows a **BUSY** badge while in a meeting.
+  - The badge changes at once (Supabase Realtime on `meeting_presence`), with no refresh.
+  - The person themself sees a "You: BUSY" reminder next to the bell on every dashboard.
+
+### Conflicts
+
+A meeting **starting within the next 30 minutes** cannot be booked with a colleague who is BUSY right now. The form says so, and the
+database refuses it ("X is in a meeting right now (Busy)").
+
+Later times can still be booked (nobody knows when they will exit). The usual rule also stays: no two meetings of a host at the same time.
+
+### Rules the database enforces
+
+- Enter and Exit are for oneself only, never for someone else.
+- The status is read through `mtg_presence(ids)`: one's own, or up to 100 colleagues, with no meeting details of anyone else.
+- Nobody writes `meeting_presence` directly.
+- Entering and exiting are audited (`MEETING_PRESENCE_ENTERED` / `_EXITED`). A second click changes nothing.
+
+### Tests
+
+- `supabase/tests/meeting_presence_employees_test.sql`
+- the "employee availability" block of `api_integration.test.ts`
+- `supabase/tests/ui_meeting_presence.test.mjs`
+
+## Client meetings
+
+Migration `supabase/migrations/20270122000200_client_meetings.sql` (run after `20270122000100`; additive, safe to run twice).
+
+### The option and the form
+
+**Client meeting** is a third button on Meetings, next to *Ask the CEO for time* and *New meeting*. It opens its own form:
+
+- client name, client e-mail address, company name;
+- meeting title, agenda;
+- date, start time, end time;
+- **Online** (meeting link, `https://` required) or **Offline** (physical location required);
+- the assigned employee / meeting host (default: the one creating it; never the Super Admin, whose time is asked for).
+
+Every field is checked before anything is sent, by the same schema as the server (`clientMeetingSchema`), and the database checks it again.
+
+### Saving and conflicts
+
+The meeting is saved as a meeting of kind `CLIENT_MEETING`:
+
+- the client is its outside guest;
+- the company is in `meetings.client_company`;
+- the agenda is the description.
+
+It is refused when the host already has a meeting at that time, or is BUSY now and the meeting starts within 30 minutes.
+
+### The e-mails to the client
+
+The e-mails are sent by the **server**, never the browser, through the existing meeting e-mail outbox (`meeting_mail_outbox`):
+
+| When | The client receives |
+| --- | --- |
+| Created | A professional **meeting invitation**: title, company, date and time, mode, meeting link or location, agenda, host name and e-mail, reference, and a calendar file |
+| Rescheduled | The **new time** |
+| Cancelled | The **cancellation**, with the reason |
+
+For a client meeting the client always gets the CRM's own e-mail, even when the organiser's Google Calendar also sends an invitation.
+
+### Duplicates, failures and the delivery log
+
+- **No duplicates.** The form carries a request id: sending it twice returns the first meeting. The outbox keeps one e-mail per meeting,
+  address, kind and meeting version.
+- **Failures** are retried with back-off by the worker. Each attempt and its error are kept.
+- **Delivery log.** The meeting's details show the host and the one who booked it every e-mail to the client: *Sent*, *Sending…*, or
+  *Failed* with the reason.
+- **Send again** re-queues a failed one. An e-mail replaced by a later new-time or cancellation e-mail is not sent again.
+
+### Managing client meetings
+
+The **Client meetings** tab lists one's client meetings, upcoming or past, by status: **Scheduled**, **Rescheduled**, **Completed** or
+**Cancelled**.
+
+The host and the one who booked it can view, reschedule, cancel and complete one with the existing actions. Every change is in the meeting's
+history and the audit log.
+
+### API
+
+- `POST /meetings/client` and `GET /meetings/client?scope=&status=`
+- `GET /meetings/:id/mails`
+- `POST /meetings/mails/:id/retry`
+
+### Tests
+
+- `supabase/tests/client_meetings_test.sql`
+- `supabase/tests/client_meetings.test.ts` (the e-mail content and the always-send rule)
+- `supabase/tests/ui_client_meetings.test.mjs`
+- the "client meetings API" block of `api_integration.test.ts`
+
+## The CEO-only availability (20270116000400, replaced)
+
+The rest of this section describes the earlier CEO-only version. It is kept for its history; `20270122000100` replaced it.
+
+### Live availability of the CEO: Enter / Exit Meeting
+
 
 Migration `supabase/migrations/20270116000400_meeting_live_availability.sql` (run after `20270116000300`; additive, safe to run twice).
 
@@ -208,6 +326,6 @@ waiting request can be cancelled like any request.
 
 ### Tests
 
-`supabase/tests/meeting_live_availability_test.sql` (database), `supabase/tests/ui_meeting_presence.test.mjs` (browser: Enter / Exit, the
+`supabase/tests/ui_meeting_presence.test.mjs` (browser: Enter / Exit, the
 indicator, the busy message, the pending request and a Realtime update), and the "Live meeting availability" block of
 `supabase/tests/api_integration.test.ts`.
