@@ -10,6 +10,7 @@ import { DirectOptions, OperationsAssign, ReceivedTasks } from './TaskHierarchy'
 import { TaskTracker } from '../TaskTracker';
 import { TaskAssignPanel, type AssignValues } from '../TaskAssignPanel';
 import type { PickerPerson } from '../PeoplePicker';
+import { useTaskWorkspace } from '../useTaskWorkspace';
 
 type Filter = 'all' | 'progress' | 'completed' | 'overdue';
 export const HeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = props => {
@@ -32,6 +33,7 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
     return () => { live = false; };
   }, []);
 
+  const ws = useTaskWorkspace(() => void data.reload());
   const [filter, setFilter] = useState<Filter>('all');
   const [find, setFind] = useState(query);
   React.useEffect(() => setFind(query), [query]);
@@ -113,14 +115,15 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
         ) : shown.length === 0 ? (
           <EmptyState title="No task matches" hint="Try another filter or search." />
         ) : (
-          shown.map(t => <LeadTaskCard key={t.id} task={t} data={data} />)
+          shown.map(t => <LeadTaskCard key={t.id} task={t} data={data} ws={ws} />)
         )}
       </section>
+      {ws.node}
     </div>
   );
 };
 
-const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data }) => {
+const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData; ws: ReturnType<typeof useTaskWorkspace> }> = ({ task, data, ws }) => {
   const [open, setOpen] = useState(false);
   // a task given straight to a Team Member (20270114000100) has no members below it
   const toMember = data.people.find(p => p.id === task.assigneeId)?.role === 'TEAM_MEMBER';
@@ -129,7 +132,7 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, 
   const leadUpdates = data.updates.filter(u => u.taskId === task.id);
 
   return (
-    <article className="bg-white rounded-2xl border border-slate-200 p-5">
+    <article className="bg-white rounded-2xl border border-slate-200 p-5 cursor-pointer transition-colors hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" {...ws.cardProps(task.id)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">

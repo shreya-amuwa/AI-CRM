@@ -74,3 +74,24 @@ All of them carry `entity_type = 'work_task'` and the task id: clicking one open
 - `supabase/tests/task_tracker.test.ts`: 20 checks (cards, the eight filters, sorting, assignment form rules).
 - `supabase/tests/ui_task_management.test.mjs`: 50 browser checks (assignment panel, tracker, details panel, update form, phone width).
 - `supabase/tests/ui_work_updates.test.mjs`: updated for the unified answer form.
+
+## Task workspace (click a task card)
+
+Clicking a task card opens the **task workspace**: a large panel (about 94% of the screen width and 92% of its height on a computer or tablet, the whole
+screen on a phone). Nothing new was added to the database: it uses `work_task_details`, `submit_work_update`, `submit_task_update` and the update request
+functions described above.
+
+- **Header**: task id, status, priority, overdue, title, assignee (initials, designation, team), assigned by, due date, progress bar and the time of the
+  latest update. **Overview**: description, instructions, assignee, assigner, department, customer, created / assigned / due dates, progress, latest update.
+  **Progress**: current progress, status, last progress update, expected completion (from the latest update that gave one), number of updates.
+  **Work updates**: the complete history, oldest first (it can be flipped), each with who, when, %, status, work completed, remaining work, blockers,
+  next steps and expected date. **Update requests**: who asked, when, the message, the status and the answer. **Activity timeline**: created, assigned,
+  status changes, progress updates, update requests, reminders, answers, completion.
+- **Actions** (bottom bar, only what the database says the person may do): the assignee gets *Start task* (Pending only; the existing status update to
+  In progress), *Update progress*, *Mark as blocked*, *Submit completion* (each opens the work update form on that status; nothing is sent until the
+  person submits it, and only an explicit *Completed* update completes a task) and *Respond to request*. A Department Head / Team Lead who may ask gets
+  *Request update* and a reminder on a waiting request. Anyone else who can read the task gets no actions.
+- **Cards**: clicking anywhere on a task card (Team Member, Support Member, Team Lead, Department Head pages and the task tracker) opens its workspace,
+  except on the card's own buttons, fields, links, expanders and while selecting text. A card can also be opened with Enter when it has focus.
+- Escape or the close button returns to the list; the page behind does not scroll while it is open.
+- Not shown because the data model has none: reassignment events, comments and attachments.

@@ -7,6 +7,7 @@ import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, Statu
 import { TaskWorkUpdates, WorkUpdatesPanel } from './WorkUpdates';
 import { TaskTracker } from './TaskTracker';
 import { SubmitWorkUpdate } from './WorkUpdateForm';
+import { useTaskWorkspace } from './useTaskWorkspace';
 import { TaskAssignPanel, type AssignValues } from './TaskAssignPanel';
 import type { PickerPerson } from './PeoplePicker';
 
@@ -21,6 +22,7 @@ export const TeamLeadTasksView: React.FC = () => {
   const mine = data.tasks.filter(t => t.assigneeId === profile?.id);
   const direct = data.tasks.filter(t => t.parentId === null && t.assignedBy === profile?.id && t.assigneeId !== profile?.id);
   const s = summarize(mine);
+  const ws = useTaskWorkspace(() => void data.reload());
 
   return (
     <div className="space-y-5">
@@ -39,20 +41,21 @@ export const TeamLeadTasksView: React.FC = () => {
       <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
         title="Task tracker" emptyHint="Tasks you assign, and tasks from your Department Head, appear here with their progress." />
       <WorkUpdatesPanel hint="Ask your team members how the work is going. Their answers and the reminders you sent are kept here, and in each task below." />
-      <DirectTasks tasks={direct} data={data} />
+      <DirectTasks tasks={direct} data={data} ws={ws} />
       <h2 className="text-sm font-bold text-slate-900 pt-2">From your Department Head</h2>
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
       ) : mine.length === 0 ? (
         <EmptyState title="No tasks from your Department Head yet" hint="When the Department Head assigns you a task it appears here." />
       ) : (
-        mine.map(t => <LeadTask key={t.id} task={t} data={data} />)
+        mine.map(t => <LeadTask key={t.id} task={t} data={data} ws={ws} />)
       )}
+      {ws.node}
     </div>
   );
 };
 
-const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data }) => {
+const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData; ws: ReturnType<typeof useTaskWorkspace> }> = ({ task, data, ws }) => {
   const children = data.tasks.filter(c => c.parentId === task.id);
   const assigned = new Set(children.map(c => c.assigneeId));
   // the lead's OWN ordinary members from the database (not another lead's, no Technical Consultant, no Meta Verifier); the database checks it again on assign
@@ -84,7 +87,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
   };
 
   return (
-    <article className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4" aria-label={task.title}>
+    <article className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 cursor-pointer transition-colors hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" aria-label={task.title} {...ws.cardProps(task.id)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -104,7 +107,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
       {task.handling === 'SELF' ? (
         <p className="text-xs font-semibold text-emerald-700" role="status" data-testid="tl-self">You are working on this task yourself. Send your updates below.</p>
       ) : children.length === 0 && task.status !== 'COMPLETED' ? (
-        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50/60">
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50/60" data-no-open>
           <span className="text-xs text-slate-700">Do it yourself, or assign it to your team members below.</span>
           <button type="button" data-testid="tl-take-myself" disabled={busy} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             onClick={async () => {
@@ -118,7 +121,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="space-y-3">
-          <div className="p-3 rounded-xl border border-slate-200">
+          <div className="p-3 rounded-xl border border-slate-200" data-no-open>
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 mb-2">
               <UserPlus className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" /> Assign to team members
             </div>
@@ -251,7 +254,7 @@ const AssignDirectForm: React.FC<{ data: WorkTaskData }> = ({ data }) => {
 };
 
 /** Tasks the lead gave straight to members: who is doing what, and how far they are. */
-const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ tasks, data }) => {
+const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData; ws: ReturnType<typeof useTaskWorkspace> }> = ({ tasks, data, ws }) => {
   if (tasks.length === 0) return null;
   const s = summarize(tasks);
   return (
@@ -266,7 +269,7 @@ const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ task
         {tasks.map(t => {
           const updates = data.updates.filter(u => u.taskId === t.id);
           return (
-            <li key={t.id} className="py-3 space-y-1.5">
+            <li key={t.id} className="py-3 space-y-1.5 px-2 -mx-2 rounded-xl cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" {...ws.cardProps(t.id)}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800">{t.title}</span>

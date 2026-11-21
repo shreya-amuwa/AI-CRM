@@ -16,10 +16,11 @@ if (!chromium) { console.log('SKIPPED - Playwright is not installed, the task ma
 const cssDir = 'dist/assets';
 const css = existsSync(cssDir) ? readdirSync(cssDir).filter(f => f.endsWith('.css')).map(f => readFileSync(path.join(cssDir, f), 'utf8')).join('\n') : '';
 const stub = path.resolve('supabase/tests/ui/task_management_stubs.ts');
+const authStub = path.resolve('supabase/tests/ui/task_management_auth_stub.ts');
 const built = await build({
   entryPoints: ['supabase/tests/ui/task_management_harness.tsx'], bundle: true, format: 'iife', platform: 'browser', write: false, jsx: 'automatic', logLevel: 'error',
   define: { 'import.meta.env': '{}' }, loader: { '.css': 'empty' },
-  plugins: [{ name: 'stub-supabase', setup(b) { b.onResolve({ filter: /services\/supabaseClient$/ }, () => ({ path: stub })); } }]
+  plugins: [{ name: 'stub-supabase', setup(b) { b.onResolve({ filter: /services\/supabaseClient$/ }, () => ({ path: stub })); b.onResolve({ filter: /context\/AuthContext$/ }, () => ({ path: authStub })); } }]
 });
 const bundle = built.outputFiles[0].text;
 const srv = createServer((req, res) => {
@@ -137,36 +138,44 @@ try {
   check(await page.getByText('No tasks match').isVisible(), 'no match says so');
   await page.getByLabel('Search tasks').fill('');
 
-  // ================= Task details (manager)
+  // ================= Task workspace (manager)
   await page.getByRole('button', { name: /Open Reply to the backlog/ }).click();
-  const drawer = page.getByRole('dialog', { name: 'Reply to the backlog' });
-  await drawer.getByRole('tab', { name: 'Overview' }).waitFor();
-  check(await drawer.getByRole('tab').count() === 4, 'the details panel has Overview, Work Progress, Update Requests and Activity Timeline');
-  check(await drawer.getByText('Support Executive · Support A · Wabastore').isVisible() && await drawer.getByText('Acme Traders').isVisible() && await drawer.getByText('Call every customer with an open ticket.').isVisible(), 'Overview shows the description, the assignee with designation and team, and the customer');
-  check(await drawer.getByText('Blocked:').isVisible() === false, 'the blocked banner follows the task status (this task is not blocked)');
-  await drawer.getByRole('tab', { name: /Work Progress/ }).click();
-  const recs = drawer.getByTestId('update-record');
-  check(await recs.count() === 2 && await recs.first().getByText('Waiting for the new call list').isVisible() && await recs.first().getByText('Eight more calls').isVisible() && await recs.first().getByText('Resume tomorrow').isVisible(),
-    'Work Progress keeps every update as its own record (progress, work done, remaining, blockers, next steps), newest first');
-  check(await drawer.getByTestId('work-update-form').count() === 0, 'a manager cannot submit a work update for the employee');
-  await drawer.getByRole('tab', { name: 'Activity Timeline' }).click();
-  const tl = (await drawer.getByRole('tabpanel', { name: 'Activity Timeline' }).innerText());
-  check(/Task created/.test(tl) && /Task assigned/.test(tl) && /Progress update/.test(tl), 'the timeline lists created, assigned and progress events');
+  const ws = page.getByRole('dialog', { name: 'Reply to the backlog' });
+  await ws.getByRole('heading', { name: 'Task overview' }).waitFor();
+  const box = await ws.boundingBox();
+  check(box.width >= 1280 * 0.85 && box.height >= 900 * 0.85 && box.width <= 1280 && box.height <= 900, 'the workspace is large: it covers 85-95% of the screen, not a small popup', box);
+  check(await ws.getByRole('heading', { name: 'Progress' }).isVisible() && await ws.getByRole('heading', { name: /^Work updates \(2\)/ }).isVisible()
+        && await ws.getByRole('heading', { name: /^Update requests/ }).isVisible() && await ws.getByRole('heading', { name: 'Activity timeline' }).isVisible(),
+    'it has Overview, Progress, Work updates, Update requests and Activity timeline sections');
+  check(await ws.getByText(/^ID T-LATE$/).isVisible() && await ws.getByText('Support Executive · Support A', { exact: false }).first().isVisible() && await ws.getByText('Acme Traders').isVisible()
+        && await ws.getByText('Call every customer with an open ticket.').isVisible(), 'the header and overview show the task id, the assignee with designation and team, the customer and the description');
+  check(await ws.getByText('Updates submitted').isVisible() && await ws.getByText('Expected completion').first().isVisible() && await ws.getByText('Last progress update').isVisible(), 'the progress section shows the last update and the expected completion');
+  const recs = ws.getByTestId('update-record');
+  check(await recs.count() === 2 && /Started the calls/.test(await recs.first().innerText()) && /Waiting for the new call list/.test(await recs.last().innerText()), 'the work update history is in chronological order (oldest first)');
+  await ws.getByRole('button', { name: 'Oldest first' }).click();
+  check(/Waiting for the new call list/.test(await recs.first().innerText()) && await ws.getByText('Latest', { exact: true }).isVisible(), 'it can be flipped to newest first, and the latest update is marked');
+  check(/Eight more calls/.test(await recs.first().innerText()) && /Resume tomorrow/.test(await recs.first().innerText()), 'each update shows work completed, remaining work, blockers and next steps');
+  const tl = await ws.getByRole('list', { name: 'Activity timeline' }).innerText();
+  check(/Task created/.test(tl) && /Task assigned/.test(tl) && /Status changed/.test(tl) && /Pending → In progress/.test(tl) && /In progress → Blocked/.test(tl) && /Progress update submitted/.test(tl),
+    'the timeline lists created, assigned, status changes and progress updates with who and when');
+  check(await ws.getByTestId('work-update-form').count() === 0 && await ws.getByRole('button', { name: 'Start task' }).count() === 0 && await ws.getByRole('button', { name: 'Update progress' }).count() === 0,
+    'a manager cannot submit or start the employee\'s work');
+  check(await ws.getByRole('button', { name: 'Request update' }).count() === 0 && await ws.getByTestId('request-card').count() === 1, 'while a request is waiting no second one is offered; the waiting request is listed');
   await page.keyboard.press('Escape');
   await page.getByRole('dialog').waitFor({ state: 'detached' });
+  check(await page.getByTestId('tracker-task').count() === 5, 'closing the workspace returns to the task list');
 
-  // ask for an update on a task from its details
+  // ask for an update on a task from its workspace (footer action opens the form)
   await page.getByRole('button', { name: /Open Fix the billing mismatch/ }).click();
   const d2 = page.getByRole('dialog', { name: 'Fix the billing mismatch' });
-  await d2.getByRole('tab', { name: 'Overview' }).waitFor();
-  await d2.getByRole('button', { name: 'Request update' }).first().click();
+  await d2.getByRole('heading', { name: 'Task overview' }).waitFor();
+  await d2.getByRole('contentinfo', { name: 'Task actions' }).getByRole('button', { name: 'Request update' }).click();
   await d2.getByLabel('Message (optional)').fill('What is the current progress? Any blockers?');
   await d2.getByRole('button', { name: 'Send request' }).click();
   await page.getByText(/Update requested from Mia Member/).first().waitFor();
   const req = await lastCall(page, 'work_update_request');
   check(req && req.p_task === 't-urgent' && Object.keys(req).sort().join() === 'p_due,p_message,p_task' && noSmuggling(req), 'a request carries only the task, the message and the deadline (the employee is read by the database)', req);
-  await d2.getByRole('tab', { name: /Update Requests/ }).click();
-  check(await d2.getByTestId('request-card').count() === 1 && await d2.getByText('Please share the current progress.').isVisible(), 'the request is listed on the task');
+  check(await d2.getByTestId('request-card').count() === 1 && await d2.getByTestId('request-card').getByText(/Please share the current progress/).isVisible() && await d2.getByText(/Waiting for a response/).isVisible(), 'the request is listed on the task with its message and status');
   await page.keyboard.press('Escape');
 
   // phone
@@ -178,9 +187,24 @@ try {
   await phone.getByTestId('task-tracker').waitFor();
   check(await phone.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'the tracker fits a phone (no sideways scrolling)');
   await phone.getByRole('button', { name: /Open Fix the billing mismatch/ }).click();
-  await phone.getByRole('dialog').getByRole('tab', { name: 'Overview' }).waitFor();
-  check(await phone.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), 'and so does the details panel');
+  await phone.getByRole('dialog').getByRole('heading', { name: 'Task overview' }).waitFor();
+  const pb = await phone.getByRole('dialog').boundingBox();
+  check(pb.width === 390 && pb.height === 800, 'on a phone the workspace is full screen', pb);
+  check(await phone.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth) && await phone.getByTestId('task-workspace').evaluate(el => el.scrollWidth <= el.clientWidth), 'the phone workspace has no sideways scrolling');
+  check(await phone.getByRole('contentinfo', { name: 'Task actions' }).getByRole('button', { name: 'Request update' }).isVisible(), 'and the primary action stays reachable at the bottom');
   await pm.close();
+  // tablet
+  const tab = await browser.newContext({ viewport: { width: 820, height: 1000 } });
+  const tp = await tab.newPage();
+  tp.on('pageerror', e => errors.push(String(e)));
+  await tp.goto(base);
+  await tp.evaluate(([t, p]) => window.mountTracker(t, p, 'boss'), [tasks, people]);
+  await tp.getByRole('button', { name: /Open Fix the billing mismatch/ }).click();
+  await tp.getByRole('dialog').getByRole('heading', { name: 'Task overview' }).waitFor();
+  const tbx = await tp.getByRole('dialog').boundingBox();
+  check(tbx.width >= 820 * 0.85 && tbx.height >= 1000 * 0.85 && await tp.getByTestId('task-workspace').evaluate(el => el.scrollWidth <= el.clientWidth) && await tp.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+    'on a tablet the workspace is large and nothing is clipped or scrolls sideways', tbx);
+  await tab.close();
 
   // ================= Employee: Submit Work Update
   const emp = await ctx.newPage();
@@ -217,9 +241,10 @@ try {
   await emp.getByText('You are not assigned to this task.').waitFor();
   check(await emp.getByLabel('Work completed since the last update *').inputValue() === 'Another real piece of work', 'a refusal from the database is shown and the text is kept');
   await emp.evaluate(() => window.mountUpdate('COMPLETED', 100));
+  await emp.getByText('This task is completed.').waitFor();
   check(await emp.getByText('This task is completed.').isVisible() && await emp.getByRole('button', { name: 'Submit work update' }).count() === 0, 'a completed task offers no more updates');
 
-  // employee details panel: can update, cannot request, answers a request from the panel
+  // ================= Employee workspace: actions
   const emp2 = await ctx.newPage();
   emp2.on('pageerror', e => errors.push(String(e)));
   await emp2.goto(base);
@@ -227,15 +252,120 @@ try {
   check(await emp2.getByRole('tab', { name: 'Assigned by Me' }).count() === 0, 'a Team Member is not offered "Assigned by Me"');
   await emp2.getByRole('button', { name: /Open Reply to the backlog/ }).click();
   const ed = emp2.getByRole('dialog', { name: 'Reply to the backlog' });
-  await ed.getByRole('tab', { name: 'Overview' }).waitFor();
-  check(await ed.getByRole('button', { name: 'Request update' }).count() === 0 && await ed.getByRole('button', { name: 'Submit work update' }).isVisible(), 'the employee can submit an update but not request one');
-  await ed.getByRole('tab', { name: /Update Requests/ }).click();
-  check(await ed.getByTestId('work-update-form').isVisible() && await ed.getByText('Respond to the update request').isVisible(), 'the employee responds to that specific request from the Update Requests tab');
+  await ed.getByRole('heading', { name: 'Task overview' }).waitFor();
+  const acts = ed.getByRole('contentinfo', { name: 'Task actions' });
+  check(await acts.getByRole('button', { name: 'Request update' }).count() === 0 && await acts.getByRole('button', { name: 'Start task' }).count() === 0
+        && await acts.getByRole('button', { name: 'Update progress' }).isVisible() && await acts.getByRole('button', { name: 'Mark as blocked' }).isVisible() && await acts.getByRole('button', { name: 'Submit completion' }).isVisible()
+        && await acts.getByRole('button', { name: 'Respond to request' }).isVisible(),
+    'an employee on an in-progress task with a request sees Update progress, Mark as blocked, Submit completion and Respond to request, and no manager action');
+  await acts.getByRole('button', { name: 'Mark as blocked' }).click();
+  check(await ed.getByLabel('Current status').inputValue() === 'BLOCKED' && await ed.getByRole('button', { name: 'Submit update' }).isDisabled(), 'Mark as blocked opens the form on Blocked and sends nothing yet');
+  check(await emp2.evaluate(() => window.__calls.filter(c => c.fn === 'submit_work_update').length) === 0, 'nothing was submitted by opening the form');
+  await ed.getByRole('button', { name: 'Cancel' }).click();
+  await acts.getByRole('button', { name: 'Submit completion' }).click();
+  check(await ed.getByLabel('Current status').inputValue() === 'COMPLETED' && await ed.getByText('A completed task is 100%.').isVisible(), 'Submit completion opens the form on Completed at 100%');
+  await ed.getByLabel('Work completed since the last update *').fill('Cleared the whole backlog today');
+  await ed.getByRole('button', { name: 'Submit final update' }).click();
+  await emp2.waitForFunction(() => window.__calls.some(c => c.fn === 'submit_work_update'));
+  const fin = await lastCall(emp2, 'submit_work_update');
+  check(fin && fin.p_status === 'COMPLETED' && fin.p_progress === 100 && fin.p_task === 't-late' && fin.p_request === null && noSmuggling(fin), 'completion is only sent by the explicit final update', fin);
+  // a progress update never completes the task
+  await acts.getByRole('button', { name: 'Update progress' }).click();
+  check(await ed.getByLabel('Current status').inputValue() === 'IN_PROGRESS', 'Update progress opens on In progress, never on Completed');
+  await ed.getByRole('button', { name: 'Cancel' }).click();
+  await acts.getByRole('button', { name: 'Respond to request' }).click();
   await ed.getByLabel('Work completed since the last update *').fill('Cleared half of the backlog');
   await ed.getByRole('button', { name: 'Submit update' }).click();
-  await emp2.waitForFunction(() => window.__calls.some(c => c.fn === 'submit_work_update'));
+  await emp2.waitForFunction(() => window.__calls.filter(c => c.fn === 'submit_work_update').length === 2);
   const ans = await lastCall(emp2, 'submit_work_update');
-  check(ans && ans.p_request === 'req-t-late' && ans.p_task === 't-late', 'the answer is tied to the request it answers', ans);
+  check(ans && ans.p_request === 'req-t-late' && ans.p_task === 't-late' && ans.p_status === 'IN_PROGRESS', 'the answer is tied to the request it answers and is a progress update, not a completion', ans);
+
+  // Start task: once, even when pressed twice
+  const ep = await ctx.newPage();
+  ep.on('pageerror', e => errors.push(String(e)));
+  await ep.goto(base);
+  await ep.evaluate(([t, p]) => { window.__state.viewer = 'employee'; window.__state.delay = 400; window.mountTracker(t, p, 'emp'); }, [tasks, people]);
+  await ep.getByRole('button', { name: /Open Prepare the monthly deck/ }).click();
+  const sd = ep.getByRole('dialog', { name: 'Prepare the monthly deck' });
+  await sd.getByRole('heading', { name: 'Task overview' }).waitFor();
+  const start = sd.getByRole('button', { name: 'Start task' });
+  await start.dblclick();
+  await ep.waitForFunction(() => window.__calls.some(c => c.fn === 'submit_task_update'));
+  await ep.waitForTimeout(700);
+  const starts = await ep.evaluate(() => window.__calls.filter(c => c.fn === 'submit_task_update').map(c => c.args));
+  check(starts.length === 1 && starts[0].p_status === 'IN_PROGRESS' && starts[0].p_progress === 0 && noSmuggling(starts[0]), 'Start task sends one In progress update even when pressed twice', starts);
+
+  // someone who may only read the task sees no actions
+  const ro = await ctx.newPage();
+  ro.on('pageerror', e => errors.push(String(e)));
+  await ro.goto(base);
+  await ro.evaluate(([t, p]) => { window.__state.viewer = 'reader'; window.mountTracker(t, p, 'boss'); }, [tasks, people]);
+  await ro.getByRole('button', { name: /Open Reply to the backlog/ }).click();
+  const rd = ro.getByRole('dialog', { name: 'Reply to the backlog' });
+  await rd.getByRole('heading', { name: 'Task overview' }).waitFor();
+  check(await rd.getByRole('contentinfo', { name: 'Task actions' }).count() === 0 && await rd.getByRole('button', { name: /Request update|Start task|Update progress|Submit completion|Mark as blocked/ }).count() === 0, 'a person who may only read the task is offered no actions');
+
+  // loading failure: shown with a way to retry
+  const er = await ctx.newPage();
+  er.on('pageerror', e => errors.push(String(e)));
+  await er.goto(base);
+  await er.evaluate(([t, p]) => { window.__state.failDetails = 'Task not found.'; window.mountTracker(t, p, 'boss'); }, [tasks, people]);
+  await er.getByRole('button', { name: /Open Reply to the backlog/ }).click();
+  await er.getByRole('alert').getByText('Task not found.').waitFor();
+  await er.evaluate(() => { window.__state.failDetails = null; });
+  await er.getByRole('button', { name: 'Try again' }).click();
+  await er.getByRole('dialog').getByRole('heading', { name: 'Task overview' }).waitFor();
+  check(true, 'a failed load shows the error and Try again loads the task');
+
+  // ================= The real Assigned Tasks pages: clicking a card opens the workspace
+  const dbTask = (id, title, o = {}) => ({ id, department_id: 'd', team_id: 't', parent_id: null, customer_id: null, title, description: 'Plan and run it', priority: 'HIGH', due_date: '2999-01-01', assigned_by: 'boss',
+    assignee_id: 'me', status: 'IN_PROGRESS', progress: 35, last_update_note: 'Working on the brief', last_update_at: new Date(Date.now() - 3600e3).toISOString(), completed_at: null, created_at: new Date().toISOString(),
+    assignment_note: null, division: null, handling: null, ...o });
+  const profiles = [{ id: 'me', full_name: 'Avantika Gaikwad', role: 'TEAM_MEMBER', team_id: 't', department_id: 'd', status: 'ACTIVE', position: 'Executive' }, { id: 'boss', full_name: 'Ashwini Rajput', role: 'TEAM_HEAD', team_id: 't', department_id: 'd', status: 'ACTIVE', position: 'Team Lead' }];
+  const pg = await ctx.newPage();
+  pg.on('pageerror', e => errors.push(String(e)));
+  await pg.goto(base);
+  await pg.evaluate(([rows, ppl]) => { window.__profile = { id: 'me', role: 'TEAM_MEMBER', teamId: 't' }; window.__state.viewer = 'employee'; window.__tables.work_tasks.push(...rows); window.__tables.profiles.push(...ppl); window.mountMember(); },
+    [[dbTask('d1', 'Do the campaign'), dbTask('d2', 'todo list share', { priority: 'MEDIUM', status: 'ASSIGNED', progress: 0 })], profiles]);
+  await pg.getByRole('article', { name: 'Do the campaign' }).waitFor();
+  // a control inside the card does its own job and does not open the workspace
+  await pg.getByRole('article', { name: 'Do the campaign' }).getByRole('button', { name: 'Submit work update' }).click();
+  check(await pg.getByRole('dialog').count() === 0 && await pg.getByTestId('work-update-form').isVisible(), 'a button inside the card works without opening the workspace');
+  await pg.getByTestId('work-update-form').getByLabel('Work completed since the last update *').click();
+  check(await pg.getByRole('dialog').count() === 0, 'typing in a field inside the card does not open the workspace either');
+  await pg.getByRole('article', { name: 'Do the campaign' }).getByRole('button', { name: 'Cancel' }).click();
+  // the card itself opens it
+  await pg.getByRole('article', { name: 'Do the campaign' }).getByRole('heading', { name: 'Do the campaign' }).click();
+  const pd = pg.getByRole('dialog', { name: 'Do the campaign' });
+  await pd.getByRole('heading', { name: 'Task overview' }).waitFor();
+  check(await pd.getByText('Plan and run it').isVisible() && await pd.getByText('35%').first().isVisible(), 'clicking a task card opens the workspace with that task\'s information and progress');
+  await pd.getByRole('button', { name: 'Close task' }).click();
+  check(await pg.getByRole('dialog').count() === 0 && await pg.getByRole('article', { name: 'Do the campaign' }).isVisible(), 'the close button returns to the task list');
+  await pg.getByRole('article', { name: 'todo list share' }).click({ position: { x: 5, y: 5 } });
+  check(await pg.getByRole('dialog', { name: 'todo list share' }).isVisible(), 'any part of the card opens its own task');
+  await pg.keyboard.press('Escape');
+  await pg.getByRole('article', { name: 'todo list share' }).focus();
+  await pg.keyboard.press('Enter');
+  check(await pg.getByRole('dialog', { name: 'todo list share' }).isVisible(), 'a card can also be opened from the keyboard');
+  await pg.keyboard.press('Escape');
+
+  // Team Lead page: its controls (expanders, buttons, check boxes) do not open it, the card does
+  const tl2 = await ctx.newPage();
+  tl2.on('pageerror', e => errors.push(String(e)));
+  await tl2.goto(base);
+  await tl2.evaluate(([rows, ppl]) => { window.__profile = { id: 'lead', role: 'TEAM_HEAD', teamId: 't' }; window.__state.viewer = 'employee'; window.__tables.work_tasks.push(...rows); window.__tables.profiles.push(...ppl); window.mountLead(); },
+    [[dbTask('l1', 'Quarterly review pack', { assignee_id: 'lead', assigned_by: 'boss' })], [...profiles, { id: 'lead', full_name: 'Lena Lead', role: 'TEAM_HEAD', team_id: 't', department_id: 'd', status: 'ACTIVE', position: 'Team Lead' }]]);
+  const lead = tl2.getByRole('article', { name: 'Quarterly review pack' });
+  await lead.waitFor();
+  await lead.getByRole('button', { name: 'Assign to myself' }).click();
+  check(await tl2.evaluate(() => window.__calls.some(c => c.fn === 'take_task_myself')) && await tl2.getByRole('dialog', { name: 'Quarterly review pack' }).count() === 0, 'a Team Lead\'s card button (Assign to myself) does its job and does not open the workspace');
+  await lead.getByText('Assign to team members').click();
+  check(await tl2.getByRole('dialog').count() === 0, 'clicking inside the card\'s own assignment panel does not open the workspace');
+  await lead.getByRole('heading', { name: 'Quarterly review pack' }).click();
+  check(await tl2.getByRole('dialog', { name: 'Quarterly review pack' }).isVisible(), 'clicking the Team Lead\'s card opens the workspace');
+  const tb = await tl2.getByRole('dialog').boundingBox();
+  check(tb.width >= 1280 * 0.85, 'it is just as large on the Team Lead page', tb);
+
   check(errors.length === 0, 'no script errors', errors);
   console.log(`=== ${passed} TASK MANAGEMENT BROWSER CHECKS PASSED ===`);
 } finally {

@@ -6,6 +6,7 @@ import { DueLabel, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline
 import { MyUpdateRequests } from '../tasks/WorkUpdates';
 import { TaskTracker } from '../tasks/TaskTracker';
 import { SubmitWorkUpdate } from '../tasks/WorkUpdateForm';
+import { useTaskWorkspace } from '../tasks/useTaskWorkspace';
 import { Empty, ErrorBanner, KpiCard, Loading, PageHeader } from './SupportParts';
 
 const FILTERS: { id: TaskStatus | 'ALL'; label: string }[] = [
@@ -23,6 +24,7 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
   const [filter, setFilter] = useState<TaskStatus | 'ALL'>('ALL');
   const mine = tasks.tasks.filter(t => t.assigneeId === profile?.id);
   const s = summarize(mine);
+  const ws = useTaskWorkspace(() => void tasks.reload());
   const shown = mine.filter(t => filter === 'ALL' || t.status === filter);
 
   return (
@@ -62,7 +64,7 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
         shown.map(task => {
           const customer = customers.find(c => c.id === task.customerId);
           return (
-            <article key={task.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" aria-label={task.title}>
+            <article key={task.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3 cursor-pointer transition-colors hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" aria-label={task.title} {...ws.cardProps(task.id)}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -110,6 +112,7 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
           );
         })
       )}
+      {ws.node}
     </div>
   );
 };
