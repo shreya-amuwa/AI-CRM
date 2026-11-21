@@ -66,6 +66,10 @@ export const payoutsApi = {
   /** amount = what Accounts saw and sent; the database refuses it if the balance changed meanwhile. */
   settle: (profileId: string, amount: number, reference: string, paidOn: string, tds: number) =>
     rpc<PayoutRequest>('payout_final_settlement', { p_profile: profileId, p_amount: amount, p_reference: reference, p_paid_on: paidOn, p_tds: tds }),
+  /** RazorpayX (20270125000100): is it set up; send a withdrawal through it (net = amount - TDS); ask about one being sent. */
+  razorpayStatus: () => api.get<{ configured: boolean }>('/payouts/razorpay/status'),
+  payViaRazorpay: (id: string, tds: number) => api.post<{ id: string; status: PayoutStatus; razorpayStatus: string }>(`/payouts/${id}/razorpay`, { tds }),
+  checkRazorpay: (id: string) => api.post<{ id: string; status: PayoutStatus; razorpayStatus: string }>(`/payouts/${id}/razorpay/check`, {}),
   /** The payout slip PDF, saved by the browser (the API draws it; the database checks who may have it and logs the download). */
   async downloadSlip(id: string): Promise<void> {
     const r = await api.get<{ fileName: string; contentBase64: string }>(`/payouts/${id}/slip`);

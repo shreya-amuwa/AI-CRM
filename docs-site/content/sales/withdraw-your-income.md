@@ -25,7 +25,7 @@ On **My Income**, **My Earnings** shows what you earned overall, today and this 
 1. Open **My Income** and click **Payout details**.
 2. Choose **Bank account** (account holder name, account number, IFSC), **UPI** (UPI ID) or **Other (outside India)** (bank name, account or IBAN, SWIFT code and country). The PAN is optional. Click **Save details**.
 3. Click **Withdraw**, enter the **Amount (₹)** and click **Request withdrawal**.
-4. Follow it under **Withdrawals**: **Waiting for Accounts**, then **Paid** with the reference, or **Rejected** with the reason. While it is waiting you can click **Cancel withdrawal**.
+4. Follow it under **Withdrawals**: **Waiting for Accounts**, then **Being sent** if Accounts sent it through Razorpay, then **Paid** with the reference; or **Rejected** with the reason. **Failed** or **Reversed** means the bank did not take it: the amount is available again, so check your details and ask again. While it is waiting you can click **Cancel withdrawal**.
 5. When it is paid, click **Download slip** for your payout slip (PDF).
 
 ## What you should see

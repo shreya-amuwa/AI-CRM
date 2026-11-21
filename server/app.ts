@@ -32,6 +32,7 @@ import { runAttendanceReminders } from './automations/attendanceReminders.js';
 import { messageIdFrom, pushChatMessage } from './automations/chatPush.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
+import { checkPendingRazorpayPayouts, handleRazorpayWebhook } from './services/PayoutService.js';
 import { isPausedVercelCron } from './platform.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
@@ -222,6 +223,15 @@ app.post('/internal/bolify/call-status', async c => {
   return c.json(ok({ matched: true, ...(data as Record<string, unknown>) }));
 });
 
+// RazorpayX payout events (migration 20270125000100): signed with RAZORPAYX_WEBHOOK_SECRET (X-Razorpay-Signature over the raw body); no session.
+// Set it up in RazorpayX > Webhooks with this URL and the events payout.processed, payout.reversed, payout.failed, payout.rejected.
+app.post('/internal/razorpay/payouts', async c => {
+  if (Number(c.req.header('content-length') || 0) > 50_000) throw new AppError('VALIDATION_ERROR', 'The event is too large.');
+  const raw = await c.req.text();
+  if (raw.length > 50_000) throw new AppError('VALIDATION_ERROR', 'The event is too large.');
+  return c.json(ok(await handleRazorpayWebhook(raw, c.req.header('x-razorpay-signature'), c.req.header('x-razorpay-event-id'))));
+});
+
 /** The scheduled runs' check: "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>" (or Vercel Cron's CRON_SECRET), compared in constant time. */
 function requireDispatchSecret(header: string | undefined): void {
   const secrets = automationSettings().dispatchSecrets;
@@ -292,6 +302,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every 15 minutes each;
   // a long first pull continues on the next runs. Never throws.
   const crocodial = await crocodialSyncQuietly(15_000);
+  // RazorpayX payouts still being sent after 10 minutes (a missed webhook): ask Razorpay. Never throws.
+  const razorpayPayouts = await checkPendingRazorpayPayouts();
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const careers = await runCareerAutomation().catch(() => ({ error: 'Candidate maintenance failed.' }));
@@ -305,7 +317,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, crocodial, performance, topPerformers, reportAnalysis, training, careers }));
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, crocodial, razorpayPayouts, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
@@ -735,7 +747,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {
