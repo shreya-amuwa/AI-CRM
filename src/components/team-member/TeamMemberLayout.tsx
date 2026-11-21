@@ -10,8 +10,10 @@ import {
   Bell,
   ChevronDown,
   ClipboardList,
+  IndianRupee,
   PackageCheck
 } from 'lucide-react';
+import { IncomePage } from '../income/IncomePage';
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, TopBar } from '../layout/shell';
@@ -32,7 +34,7 @@ const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 
-export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications', 'income'] as const;
 export type TeamMemberNav = (typeof TEAM_MEMBER_NAVS)[number];
 
 interface TeamMemberLayoutProps {
@@ -57,7 +59,9 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   onSelectNav,
   pipelineCounts
 }) => {
-  const { user, logout } = useAuth();
+  const { user, profile, logout } = useAuth();
+  // sales incentives (20270119000100): "My Income" for Sales team members only
+  const sales = profile?.team?.division === 'SALES';
 
   const navItems = [
     // Punch In / Punch Out and lunch (20261230000400): the first entry, as in every dashboard's menu
@@ -71,6 +75,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
     { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
+    ...(sales ? [{ id: 'income' as TeamMemberNav, label: 'My Income', icon: IndianRupee }] : []),
     { id: REPORTS_NAV.id as TeamMemberNav, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
@@ -218,9 +223,10 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {currentNav === 'chat' && <ChatRoute />}
           {currentNav === 'raise-issue' && <IssuesRoute />}
           {currentNav === 'work-reports' && <ReportsRoute />}
+          {currentNav === 'income' && sales && <IncomePage />}
           {currentNav === ATTENDANCE_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense>}
           {currentNav === MEETINGS_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><MeetingsPage /></React.Suspense>}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID}>{children}</div>
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || (currentNav === 'income' && sales) || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID}>{children}</div>
         </main>
       </div>
     </div>

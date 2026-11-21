@@ -312,3 +312,125 @@ select test.check((incentive_allocation_set((select v from inc where k = 'rule2'
 reset role;
 update profiles set status = 'ACTIVE' where id in (select v::uuid from inc where k like 'tl:%');
 update incentive_allocations set amount = 100 where rule_id = (select v from inc where k = 'rule2')::uuid and recipient_id = test.id('tm_a');
+
+\echo '   the Super Admin edits and deletes rules; the setup screen shows each person below with what they get'
+reset role;
+\i supabase/migrations/20270121000100_incentive_setup_given.sql
+\i supabase/migrations/20270121000100_incentive_setup_given.sql
+set role authenticated;
+select test.login('sa');
+select incentive_rule_update((select v from inc where k = 'rule2')::uuid, '{"name":"Test 400 renamed","targetUnits":2000}');
+reset role;
+select test.check((select name = 'Test 400 renamed' and target_units = 2000 and ended_at is null from incentive_rules where id = (select v from inc where k = 'rule2')::uuid),
+  'editing the name and target changes the rule in place');
+set role authenticated;
+select test.login('sa');
+insert into inc select 'rule3', incentive_rule_update((select v from inc where k = 'rule2')::uuid, '{"amount":450}') ->> 'id';
+reset role;
+select test.check((select ended_at is not null from incentive_rules where id = (select v from inc where k = 'rule2')::uuid)
+                  and (select amount = 450 and name = 'Test 400 renamed' and ended_at is null from incentive_rules where id = (select v from inc where k = 'rule3')::uuid)
+                  and private.incentive_amount((select v from inc where k = 'rule3')::uuid, test.id('tm_a')) = 100
+                  and (select count(*) > 0 from earnings where rule_id = (select v from inc where k = 'rule2')::uuid and status = 'EARNED'),
+  'editing the amount applies from now on: the old version ends (its earnings stay), the new one carries the amounts passed down');
+set role authenticated;
+select test.login('sa');
+insert into inc select 'unused', incentive_rule_create(jsonb_build_object('name', 'Test unused', 'eventType', 'VISIT_COMPLETED', 'amount', 10,
+  'scopeType', 'PERSON', 'scopeValue', test.id('tm_a')))::text;
+select test.check((incentive_rule_delete((select v from inc where k = 'unused')::uuid) ->> 'deleted')::boolean, 'a rule nobody earned from is deleted');
+select test.check((select (d ->> 'deleted')::boolean = false and (d ->> 'ended')::boolean from (select incentive_rule_delete((select v from inc where k = 'demo')::uuid) d) x),
+  'a rule with earnings is stopped instead of deleted (earned money is never erased)');
+select test.login('sh_head');
+select test.must_fail(format($$select incentive_rule_delete(%L)$$, (select v from inc where k = 'rule3')), 'only the Super Admin deletes rules', 'FORBIDDEN');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"amount":1}')$$, (select v from inc where k = 'rule3')), 'only the Super Admin edits rules', 'FORBIDDEN');
+reset role;
+select test.check(not exists (select 1 from incentive_rules where id = (select v from inc where k = 'unused')::uuid)
+                  and (select ended_at is not null from incentive_rules where id = (select v from inc where k = 'demo')::uuid)
+                  and (select count(*) > 0 from earnings where rule_id = (select v from inc where k = 'demo')::uuid),
+  'the deleted rule is gone; the stopped one and its earnings remain');
+set role authenticated;
+select test.login('sa');
+select incentive_allocation_set((select v from inc where k = 'rule3')::uuid, test.id('tm_a'), 80);
+select test.login('th_wab');
+select test.check((select (g ->> 'amount')::numeric = 80 and (g ->> 'kept')::numeric = 70 and g ->> 'name' is not null
+                     from jsonb_array_elements(incentive_setup() -> 'rules') r, jsonb_array_elements(r -> 'given') g
+                    where r ->> 'id' = (select v from inc where k = 'rule3') and g ->> 'recipientId' = test.id('tm_a')::text),
+  'after a Super Admin override the Team Lead sees what their member now gets (80) and what they keep (70)');
+select test.login('sa');
+insert into inc select 'rule4', incentive_rule_update((select v from inc where k = 'rule3')::uuid, jsonb_build_object('serviceCode', :'svc2')) ->> 'id';
+reset role;
+select test.check((select ended_at is not null from incentive_rules where id = (select v from inc where k = 'rule3')::uuid)
+                  and (select service_code = :'svc2' and ended_at is null from incentive_rules where id = (select v from inc where k = 'rule4')::uuid)
+                  and not exists (select 1 from incentive_allocations where rule_id = (select v from inc where k = 'rule4')::uuid),
+  'moving a sales rule to another product ends it and starts a fresh one (amounts are passed down again)');
+select test.check((select private.ba_demo_row(d) ? 'authorisedPersonAttended' from ba_demos d limit 1), 'a demo record carries the authorised-person tick');
+select test.check((select count(*) >= 4 from audit_logs where action in ('INCENTIVE_RULE_UPDATED', 'INCENTIVE_RULE_DELETED')), 'edits and deletions are on the audit trail');
+\echo '   review fixes (setup screens): a new version keeps the 100% and monthly-cap limits; values are checked; future rules can be edited'
+reset role;
+-- a fully paid order earns nothing more after the rule's amount is edited (the new version shares the order's 100%)
+set role authenticated;
+select test.login('sa');
+select incentive_allocation_set((select v from inc where k = 'rule4')::uuid, test.id('sh_head'), 300);
+reset role;
+select test.inc_customer('Inc Test Version', 'tm_a', 2000, :'svc2') as cv \gset
+select test.inc_pay(:'cv', 2000);
+select coalesce(sum(amount), 0) as cv_before from earnings where customer_id = :'cv' and status = 'EARNED' \gset
+set role authenticated;
+select test.login('sa');
+insert into inc select 'rule5', incentive_rule_update((select v from inc where k = 'rule4')::uuid, '{"amount":460}') ->> 'id';
+reset role;
+select test.inc_pay(:'cv', 500);
+select test.check((select coalesce(sum(amount), 0) = :cv_before from earnings where customer_id = :'cv' and status = 'EARNED')
+                  and not exists (select 1 from earnings where customer_id = :'cv' and rule_id = (select v from inc where k = 'rule5')::uuid),
+  'an order already paid in full earns nothing more after the amount is edited (never more than 100% of the order)');
+select test.check(private.incentive_amount((select v from inc where k = 'rule5')::uuid, test.id('sh_head')) = 300
+                  and (select replaces_rule_id = (select v from inc where k = 'rule4')::uuid from incentive_rules where id = (select v from inc where k = 'rule5')::uuid),
+  'the new version records the one it replaces and keeps the amounts passed down');
+
+-- an event reward's monthly cap is shared by its versions
+set role authenticated;
+select test.login('sa');
+insert into inc select 'capv', incentive_rule_create(jsonb_build_object('name', 'Test cap visit', 'eventType', 'VISIT_COMPLETED', 'amount', 30,
+  'scopeType', 'PERSON', 'scopeValue', test.id('tm_a'), 'monthlyCap', 40))::text;
+reset role;
+update incentive_rules set ended_at = now() where id = (select v from inc where k = 'visit')::uuid;
+insert into lead_visits (lead_id, employee_id, visit_date, purpose, status)
+  values ((select id from customers where name = 'Inc Test One'), test.id('tm_a'), private.office_today(), 'Inc Test visit', 'SCHEDULED') returning id as cv1 \gset
+update lead_visits set status = 'COMPLETED', completed_at = now(), gps_captured = true where id = :'cv1';
+set role authenticated;
+select test.login('sa');
+insert into inc select 'capv2', incentive_rule_update((select v from inc where k = 'capv')::uuid, '{"amount":35}') ->> 'id';
+reset role;
+insert into lead_visits (lead_id, employee_id, visit_date, purpose, status)
+  values ((select id from customers where name = 'Inc Test One'), test.id('tm_a'), private.office_today(), 'Inc Test visit', 'SCHEDULED') returning id as cv2 \gset
+update lead_visits set status = 'COMPLETED', completed_at = now(), gps_captured = true where id = :'cv2';
+select test.check((select coalesce(sum(amount), 0) = 40 from earnings where profile_id = test.id('tm_a') and status = 'EARNED'
+                     and rule_id in ((select v from inc where k = 'capv')::uuid, (select v from inc where k = 'capv2')::uuid)),
+  'editing an event reward mid-month does not reset its monthly cap (30 + 10, cap 40)');
+
+-- padded values are the same product: the amounts passed down are kept
+set role authenticated;
+select test.login('sa');
+insert into inc select 'rule6', incentive_rule_update((select v from inc where k = 'rule5')::uuid, jsonb_build_object('serviceCode', ' ' || :'svc2' || ' ', 'amount', 470)) ->> 'id';
+reset role;
+select test.check(private.incentive_amount((select v from inc where k = 'rule6')::uuid, test.id('sh_head')) = 300,
+  'a product code with stray spaces is the same product: the amounts passed down are kept');
+set role authenticated;
+select test.login('sa');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"amount":"abc"}')$$, (select v from inc where k = 'rule6')), 'a bad amount is a validation error', 'VALIDATION_ERROR');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"amount":480,"targetUnits":"1.5"}')$$, (select v from inc where k = 'rule6')), 'a bad target is a validation error', 'VALIDATION_ERROR');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"amount":50,"monthlyCap":0}')$$, (select v from inc where k = 'capv2')), 'a zero cap is a validation error', 'VALIDATION_ERROR');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"name":"x"}')$$, gen_random_uuid()), 'a missing rule is not found', 'NOT_FOUND');
+select test.must_fail(format($$select incentive_rule_update(%L, '{"name":"x"}')$$, (select v from inc where k = 'rule5')), 'an ended rule cannot be edited', 'CONFLICT');
+select test.check((incentive_rule_update((select v from inc where k = 'capv2')::uuid, '{"amount":36,"eventType":"SALE_PAID","activeFrom":"2030-01-01"}') ->> 'eventType') = 'VISIT_COMPLETED',
+  'an edit cannot change what a rule rewards or move its start');
+reset role;
+insert into inc select 'future', id::text from incentive_rules where event_type = 'VISIT_COMPLETED' and name = 'Test cap visit' and ended_at is null;
+update incentive_rules set active_from = private.office_today() + 5 where id = (select v from inc where k = 'future')::uuid;
+set role authenticated;
+select test.login('sa');
+select test.check((incentive_rule_update((select v from inc where k = 'future')::uuid, '{"name":"Test cap visit later"}') ->> 'name') = 'Test cap visit later',
+  'a rule that starts later can be edited');
+select test.login('th_wab');
+select test.check((select incentive_setup() -> 'options' is null or incentive_setup() -> 'options' = 'null'::jsonb), 'a Team Lead gets no option lists');
+reset role;
+delete from lead_visits where purpose = 'Inc Test visit';
