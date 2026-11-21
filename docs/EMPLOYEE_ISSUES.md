@@ -159,3 +159,19 @@ Uploads use `/employee/issues/uploads`.
 - `supabase/tests/developer_bugs_test.sql`
 - the "bugs API" block of `api_integration.test.ts`
 - `supabase/tests/ui_bugs.test.mjs`
+
+## Developer access by email (migration `20270124000100_developer_access_by_email.sql`)
+
+Who gets the **Bugs** section is one row in `dev_team_members`. The first two bug migrations filled it once, by matching the person's *name*
+among ACTIVE profiles, so a developer whose profile did not match at that moment (not approved yet, spelled or placed differently, created
+or renamed afterwards) never got the row: `bug_access()` said `isDeveloper = false` and the menu hid Bugs. The visibility rule itself was
+correct (every developer sees every unassigned bug; once assigned, only the Team Lead and the assigned developer).
+
+- `dev_team_emails` lists the account emails of the developers (not the lead): `siddhesh.amuwa@gmail.com` (Siddhesh Shinde, AI Studio - AI CRM).
+- A profile with a listed email (`profiles.email` or the sign-in email) that is **ACTIVE** and **not a Super Admin** is added to
+  `dev_team_members` by the migration and, from then on, automatically when it is created, becomes ACTIVE, or changes email or role.
+  A pending / suspended profile is not approved or changed by this: the migration prints a NOTICE saying why the account is still not set up.
+- Removing a developer in Settings also removes the email from the list, so the removal is not undone later.
+- `supabase/diagnostics/bug_developer_access_check.sql` (read-only) shows the auth user, profile, status, role, membership and what the
+  developer sees, for one email.
+- The Bugs menu asks `bug_access()` up to three times before concluding "not a developer", so a network hiccup does not hide it.
