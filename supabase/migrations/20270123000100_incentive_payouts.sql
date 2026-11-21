@@ -562,3 +562,34 @@ begin
 end $$;
 revoke all on function public.payout_final_settlement(uuid, text, date, numeric) from public, anon;
 grant execute on function public.payout_final_settlement(uuid, text, date, numeric) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 8. The payout slip: the values printed on it (the server draws the PDF on each download; values never change once paid)
+-- ---------------------------------------------------------------------------
+create or replace function public.payout_slip_data(p_id uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  r public.payout_requests;
+  p public.profiles;
+begin
+  select * into r from public.payout_requests where id = p_id;
+  if r.id is null then
+    raise exception 'NOT_FOUND: This withdrawal does not exist.' using errcode = 'P0001';
+  end if;
+  if r.profile_id is distinct from auth.uid() and not private.is_accounts_staff() then
+    raise exception 'FORBIDDEN: Only the person paid and Accounts can download this slip.' using errcode = '42501';
+  end if;
+  if r.status not in ('PAID', 'REVERSED') then
+    raise exception 'CONFLICT: A slip is available once the withdrawal is paid.' using errcode = 'P0001';
+  end if;
+  select * into p from public.profiles where id = r.profile_id;
+  perform private.write_audit('PAYOUT_SLIP_DOWNLOADED', 'payout_request', r.id, p.department_id, p.team_id, '{}'::jsonb);
+  return jsonb_build_object(
+    'slipNo', 'PO-' || to_char(coalesce(r.paid_on, r.decided_at::date), 'YYMM') || '-' || upper(left(replace(r.id::text, '-', ''), 6)),
+    'name', p.full_name, 'employeeCode', (select h.id from public.hr_employees h where h.profile_id = p.id),
+    'department', (select d.name from public.departments d where d.id = p.department_id),
+    'amount', r.amount, 'tdsAmount', r.tds_amount, 'netAmount', r.net_amount, 'reference', r.reference, 'paidOn', r.paid_on,
+    'channel', r.channel, 'method', r.method_snapshot -> 'masked', 'finalSettlement', r.final_settlement, 'void', r.status = 'REVERSED');
+end $$;
+revoke all on function public.payout_slip_data(uuid) from public, anon;
+grant execute on function public.payout_slip_data(uuid) to authenticated;

@@ -367,6 +367,10 @@ export const hrDocumentController = {
   saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler
 };
 
+export const payoutController = {
+  slip: (async ctx => ok(await svc(ctx).payouts.slip(ctx.params.id))) as Handler
+};
+
 export const performanceController = {
   people: (async ctx => ok(await svc(ctx).performance.people(ctx.req.query))) as Handler,
   report: (async ctx => ok(await svc(ctx).performance.report(ctx.req.query))) as Handler,

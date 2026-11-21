@@ -13,6 +13,8 @@ import { OrganizationRepository } from '../repositories/OrganizationRepository.j
 import { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
+import { PayoutRepository } from '../repositories/PayoutRepository.js';
+import { PayoutService } from './PayoutService.js';
 import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { MeetingService } from './MeetingService.js';
 import { LeadWhatsAppService } from './LeadWhatsAppService.js';
@@ -94,6 +96,7 @@ export function createServices(db: SupabaseClient) {
     employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
     hrDocuments: new HrDocumentService(new HrDocumentRepository(db), new StorageRepository()),
+    payouts: new PayoutService(new PayoutRepository(db)),
     performance: new PerformanceService(new PerformanceRepository(db)),
     performers: new PerformersService(new PerformersRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
