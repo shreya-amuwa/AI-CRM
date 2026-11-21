@@ -26,10 +26,12 @@ export const WorkUpdateForm: React.FC<{
   currentProgress: number;
   /** The update request this answers, when it does. */
   requestId?: string | null;
+  /** Which status the form starts on: "Mark as blocked" opens it on Blocked, "Submit completion" on Completed. Nothing is submitted until the person sends it. */
+  initialStatus?: UpdateStatus;
   onDone: (message: string) => void;
   onCancel?: () => void;
-}> = ({ taskId, currentStatus, currentProgress, requestId, onDone, onCancel }) => {
-  const [status, setStatus] = useState<UpdateStatus>(currentStatus === 'BLOCKED' ? 'BLOCKED' : 'IN_PROGRESS');
+}> = ({ taskId, currentStatus, currentProgress, requestId, initialStatus, onDone, onCancel }) => {
+  const [status, setStatus] = useState<UpdateStatus>(initialStatus ?? (currentStatus === 'BLOCKED' ? 'BLOCKED' : 'IN_PROGRESS'));
   const [progress, setProgress] = useState(Math.min(99, currentProgress));
   const [done, setDone] = useState('');
   const [left, setLeft] = useState('');
@@ -66,7 +68,7 @@ export const WorkUpdateForm: React.FC<{
   };
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/30 p-3.5" aria-label="Submit work update" data-testid="work-update-form">
+    <form onSubmit={submit} className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/30 p-3.5" aria-label="Submit work update" data-testid="work-update-form" data-no-open>
       <div>
         <div className="text-[13px] font-bold text-slate-900">{requestId ? 'Respond to the update request' : 'Submit work update'}</div>
         <p className="text-[11px] text-slate-500">Each update is kept in the task history. Your progress is what you report here; changing the status does not change it.</p>
@@ -127,7 +129,7 @@ export const SubmitWorkUpdate: React.FC<{ taskId: string; status: TaskStatus; pr
   const [notice, setNotice] = useState<string | null>(null);
   if (status === 'COMPLETED') return <p className="text-[11px] font-semibold text-emerald-700">This task is completed.</p>;
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" data-no-open>
       {!open && (
         <button type="button" onClick={() => { setOpen(true); setNotice(null); }} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Submit work update</button>
       )}

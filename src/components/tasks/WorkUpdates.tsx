@@ -51,8 +51,9 @@ export const ResponseDetails: React.FC<{ r: WorkUpdateRequest }> = ({ r }) => {
 // Ask for an update
 // ---------------------------------------------------------------------------
 /** "Request update" on a task: an optional message and an optional reply-by time. The employee is the task's assignee (the database reads it). */
-export const RequestUpdate: React.FC<{ taskId: string; employeeName?: string; onDone?: (message: string) => void; label?: string }> = ({ taskId, employeeName, onDone, label = 'Request update' }) => {
+export const RequestUpdate: React.FC<{ taskId: string; employeeName?: string; onDone?: (message: string) => void; label?: string; /** Raising this number opens the form (a button elsewhere asked for it). */ openSignal?: number }> = ({ taskId, employeeName, onDone, label = 'Request update', openSignal = 0 }) => {
   const [open, setOpen] = useState(false);
+  useEffect(() => { if (openSignal > 0) setOpen(true); }, [openSignal]);
   const [message, setMessage] = useState('');
   const [due, setDue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -77,7 +78,7 @@ export const RequestUpdate: React.FC<{ taskId: string; employeeName?: string; on
   };
   if (!open) {
     return (
-      <span className="inline-flex flex-col items-start gap-1">
+      <span className="inline-flex flex-col items-start gap-1" data-no-open>
         <button type="button" className={ghost} onClick={() => { setOpen(true); setSent(false); }}><MessageSquarePlus className="w-3.5 h-3.5" aria-hidden="true" /> {label}</button>
         {sent && <span className="text-[11px] text-emerald-700" role="status">Update requested{employeeName ? ` from ${employeeName}` : ''}. They have been notified.</span>}
         {error && <span className="text-[11px] text-rose-700" role="alert">{error}</span>}
@@ -85,7 +86,7 @@ export const RequestUpdate: React.FC<{ taskId: string; employeeName?: string; on
     );
   }
   return (
-    <form onSubmit={send} className="w-full rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-2" aria-label="Request a work update">
+    <form onSubmit={send} className="w-full rounded-xl border border-blue-200 bg-blue-50/40 p-3 space-y-2" aria-label="Request a work update" data-no-open>
       <div className="text-xs font-bold text-slate-800">Request an update{employeeName ? ` from ${employeeName}` : ''}</div>
       <label className="block text-[11px] font-medium text-slate-600">
         Message (optional)
@@ -154,7 +155,7 @@ export const TaskWorkUpdates: React.FC<{ taskId: string; assigneeName?: string; 
   const [notice, setNotice] = useState<string | null>(null);
   const { data, error, loading, reload } = useWorkUpdatesLoader(() => (open ? workUpdatesApi.forTask(taskId) : Promise.resolve(null)), [taskId, open]);
   return (
-    <div className="mt-2">
+    <div className="mt-2" data-no-open>
       <button type="button" className="inline-flex items-center gap-1 text-[12px] font-bold text-blue-700" aria-expanded={open} onClick={() => setOpen(o => !o)}>
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? '' : '-rotate-90'}`} aria-hidden="true" /> Work updates &amp; history
       </button>

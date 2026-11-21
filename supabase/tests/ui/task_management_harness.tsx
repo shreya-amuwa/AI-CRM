@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { TaskAssignPanel } from '../../../src/components/tasks/TaskAssignPanel';
 import { TaskTracker } from '../../../src/components/tasks/TaskTracker';
 import { SubmitWorkUpdate } from '../../../src/components/tasks/WorkUpdateForm';
+import { MemberTasksView } from '../../../src/components/tasks/MemberTasksView';
+import { TeamLeadTasksView } from '../../../src/components/tasks/TeamLeadTasksView';
 
 const root = () => createRoot(document.getElementById('root')!);
 const w = window as any;
@@ -20,3 +22,7 @@ w.mountAssign = (people: any[]) => root().render(
   </div>);
 w.mountTracker = (tasks: any[], people: any[], meId: string, filters?: string[]) => { w.__tasks = tasks; root().render(<div className="p-4 max-w-5xl"><TaskTracker tasks={tasks} people={people} meId={meId} filters={filters as any} /></div>); };
 w.mountUpdate = (status: string, progress: number) => root().render(<div className="p-4 max-w-xl"><SubmitWorkUpdate taskId="t-1" status={status as any} progress={progress} onSent={() => (w.__sent = (w.__sent ?? 0) + 1)} /></div>);
+
+/** The real Assigned Tasks pages, as the signed-in person: tasks and people are put in window.__tables first. */
+w.mountMember = () => root().render(<MemberTasksView />);
+w.mountLead = () => root().render(<TeamLeadTasksView />);

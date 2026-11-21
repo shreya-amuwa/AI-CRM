@@ -5,6 +5,7 @@ import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, Up
 import { MyUpdateRequests, TaskWorkUpdates } from './WorkUpdates';
 import { TaskTracker } from './TaskTracker';
 import { SubmitWorkUpdate } from './WorkUpdateForm';
+import { useTaskWorkspace } from './useTaskWorkspace';
 
 /** Team Member: tasks from the Team Lead; send updates back to the Team Lead. */
 export const MemberTasksView: React.FC = () => {
@@ -12,6 +13,7 @@ export const MemberTasksView: React.FC = () => {
   const data = useWorkTasks();
   const mine = data.tasks.filter(t => t.assigneeId === profile?.id);
   const s = summarize(mine);
+  const ws = useTaskWorkspace(() => void data.reload());
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -43,7 +45,7 @@ export const MemberTasksView: React.FC = () => {
         <EmptyState title="No tasks yet" hint="When your Team Lead assigns you a task it appears here." />
       ) : (
         mine.map(task => (
-          <article key={task.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" aria-label={task.title}>
+          <article key={task.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3 cursor-pointer transition-colors hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" aria-label={task.title} {...ws.cardProps(task.id)}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -70,6 +72,7 @@ export const MemberTasksView: React.FC = () => {
           </article>
         ))
       )}
+      {ws.node}
     </div>
   );
 };

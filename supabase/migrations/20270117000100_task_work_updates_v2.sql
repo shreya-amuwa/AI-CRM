@@ -228,14 +228,16 @@ begin
     'task', jsonb_build_object(
       'id', t.id, 'parentId', t.parent_id, 'title', t.title, 'description', t.description, 'priority', t.priority, 'status', t.status, 'progress', t.progress,
       'dueDate', t.due_date, 'createdAt', t.created_at, 'completedAt', t.completed_at, 'lastUpdateAt', t.last_update_at, 'lastUpdateNote', t.last_update_note,
-      'assignmentNote', t.assignment_note, 'handling', t.handling,
+      -- assignment_note, handling and customer_id come from older migrations (20261224000300, 20261230000300, 20261223000100); read them through to_jsonb so
+      -- this works on a database that has not run those yet (they then show as empty)
+      'assignmentNote', to_jsonb(t) ->> 'assignment_note', 'handling', to_jsonb(t) ->> 'handling',
       'overdue', t.due_date is not null and t.status <> 'COMPLETED' and t.due_date < private.hr_today(), 'blocked', t.status = 'BLOCKED',
       'assignee', (select jsonb_build_object('id', a.id, 'name', a.full_name, 'role', a.role, 'designation', private.employee_snapshot(a.id) ->> 'designation',
                           'team', (select tm.name from public.teams tm where tm.id = a.team_id), 'department', (select d.name from public.departments d where d.id = a.department_id))
                      from public.profiles a where a.id = t.assignee_id),
       'assignedBy', (select jsonb_build_object('id', b.id, 'name', b.full_name, 'designation', private.employee_snapshot(b.id) ->> 'designation')
                        from public.profiles b where b.id = t.assigned_by),
-      'customer', (select jsonb_build_object('id', c.id, 'name', c.name, 'code', c.customer_code) from public.customers c where c.id = t.customer_id)),
+      'customer', (select jsonb_build_object('id', c.id, 'name', c.name, 'code', c.customer_code) from public.customers c where c.id = nullif(to_jsonb(t) ->> 'customer_id', '')::uuid)),
     'updates', coalesce((select jsonb_agg(jsonb_build_object(
                   'id', u.id, 'at', u.created_at, 'authorId', u.author_id, 'authorName', (select full_name from public.profiles where id = u.author_id),
                   'status', u.status, 'progress', u.progress, 'workCompleted', u.work_completed, 'remainingWork', u.remaining_work, 'blockers', u.blockers,
