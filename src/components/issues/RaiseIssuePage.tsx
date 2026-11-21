@@ -13,6 +13,7 @@ import { MessageFiles, StagedFiles, TicketFileButton, useTicketFiles } from '../
 import { issueFileTransport } from './issueFiles';
 import { CaseTimeline, dayLabel, Detail, IssueStatusPill, MeetingStatusPill, PriorityPill, timeLabel, todayLocalIso, whenLabel } from './caseUi';
 import { takePendingIssues } from './issueEvents';
+import { BugReportSection } from './BugReport';
 
 /**
  * Raise an Issue: ONE page for Team Members, Team Leads and Department Heads. A selector at the top switches between the two forms (Raise an
@@ -20,7 +21,7 @@ import { takePendingIssues } from './issueEvents';
  * profile by the server (shown here, never typed), the reference number and the time of submission are given by the database, and each
  * person sees only their own issues and requests with HR's responses. Loaded when the page opens and after each change; nothing polls.
  */
-type Mode = 'ISSUE' | 'MEETING';
+type Mode = 'ISSUE' | 'MEETING' | 'BUG';
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 const newRequestId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now().toString(16)}-0000-4000-8000-${Math.random().toString(16).slice(2, 14).padEnd(12, '0')}`);
 const PAGE = 10;
@@ -421,6 +422,7 @@ const RaiseIssuePage: React.FC = () => {
   }, []);
 
   const load = useCallback(async () => {
+    if (mode === 'BUG') return;   // the bug reports load in their own section
     setLoading(true);
     setError('');
     try {
@@ -438,7 +440,7 @@ const RaiseIssuePage: React.FC = () => {
     <div className="space-y-5" data-testid="raise-issue-page">
       <div>
         <h1 className="text-xl font-extrabold text-slate-900">Raise an Issue</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Tell HR about a problem, or ask for a meeting. You can follow HR&apos;s response here.</p>
+        <p className="text-sm text-slate-500 mt-0.5">Tell HR about a problem, ask for a meeting, or report a technical problem to the Developers team. You can follow the response here.</p>
       </div>
 
       <Card className="p-4">
@@ -446,11 +448,13 @@ const RaiseIssuePage: React.FC = () => {
         <select id="case-type" data-testid="case-type" className={`${selectCls} w-full sm:w-80 !text-sm`} value={mode} onChange={e => switchMode(e.target.value as Mode)}>
           <option value="ISSUE">Raise an Issue</option>
           <option value="MEETING">Meeting Request</option>
+          <option value="BUG">Report a bug to the Developers team</option>
         </select>
       </Card>
 
       <Summary employee={me} error={meError} />
 
+      {mode === 'BUG' ? <BugReportSection /> : (<>
       {done ? (
         <div role="status" className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4" data-testid="submitted-banner">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" aria-hidden />
@@ -520,6 +524,7 @@ const RaiseIssuePage: React.FC = () => {
           </Card>
         ) : null}
       </section>
+      </>)}
 
       {open?.kind === 'ISSUE' ? <IssueDetailDialog id={open.id} onClose={() => setOpen(null)} onChanged={() => void load()} /> : null}
       {open?.kind === 'MEETING' ? <MeetingDetailDialog id={open.id} onClose={() => setOpen(null)} onChanged={() => void load()} /> : null}

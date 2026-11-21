@@ -3015,6 +3015,10 @@ export const ceoRequestsQuerySchema = z.object({
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
 // ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
+/** GET /meetings/presence?ids=a,b,c: the live status of up to 100 colleagues (20270122000100); without ids, one's own. */
+export const meetingPresenceQuerySchema = z.object({
+  ids: z.preprocess(v => (typeof v === 'string' ? v.split(',').map(x => x.trim()).filter(Boolean) : v), z.array(uuidSchema).min(1).max(100)).optional()
+}).strict();
 export const meetingBusySchema = z.object({
   profileIds: z.array(uuidSchema).min(1).max(30),
   from: isoInstant,
@@ -3447,3 +3451,55 @@ export const salesRoleListQuerySchema = z
   .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'The start date is after the end date.', path: ['from'] });
 export const salesRolePersonQuerySchema = z.object(salesRolePeriod).strict()
   .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'The start date is after the end date.', path: ['from'] });
+
+// ---------------------------------------------------------------------------
+// Client meetings (migration 20270122000200)
+// ---------------------------------------------------------------------------
+export const clientMeetingSchema = z.object({
+  clientName: trimmed(200).min(1, 'Enter the client\'s name.'),
+  clientEmail: z.string().trim().toLowerCase().max(320).email('Enter a valid client e-mail address.'),
+  companyName: trimmed(200).min(1, 'Enter the company name.'),
+  title: trimmed(200).min(2, 'Give the meeting a title.'),
+  agenda: trimmed(4000).min(5, 'Describe the agenda (at least 5 characters).'),
+  startsAt: isoInstant,
+  endsAt: isoInstant,
+  timezone: optionalText(64),
+  mode: z.enum(['ONLINE', 'OFFLINE'], { message: 'Choose Online or Offline.' }),
+  meetLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable().optional()),
+  location: optionalText(500),
+  hostId: uuidSchema.optional().nullable(),
+  clientRequestId: z.string().trim().min(8).max(80)
+}).strict()
+  .refine(v => Date.parse(v.endsAt) > Date.parse(v.startsAt), { message: 'The meeting must end after it starts.', path: ['endsAt'] })
+  .refine(v => v.mode !== 'ONLINE' || !!v.meetLink, { message: 'Give the meeting link for an online meeting.', path: ['meetLink'] })
+  .refine(v => v.mode !== 'OFFLINE' || (v.location ?? '').trim().length >= 3, { message: 'Give the meeting place for an offline meeting.', path: ['location'] });
+export const meetingMailIdSchema = z.coerce.number().int().positive();
+export const clientMeetingListQuerySchema = z.object({
+  scope: z.enum(['UPCOMING', 'PAST', 'ALL']).default('UPCOMING'),
+  status: z.enum(['SCHEDULED', 'RESCHEDULED', 'COMPLETED', 'CANCELLED']).optional()
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Bugs for the Developers team (migration 20270122000300)
+// ---------------------------------------------------------------------------
+export const DEV_BUG_STATUSES = ['PENDING', 'IN_PROGRESS', 'RESOLVED', 'REJECTED'] as const;
+export const bugSubmitSchema = z.object({
+  title: trimmed(200).min(3, 'Give the issue a title (at least 3 characters).'),
+  description: trimmed(5000).min(10, 'Describe the issue (at least 10 characters).'),
+  steps: optionalText(5000),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
+  clientRequestId: z.string().trim().min(8).max(80)
+}).strict();
+export const bugListQuerySchema = z.object({
+  status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'CLOSED']).optional(),
+  assignee: z.union([z.enum(['ME', 'UNASSIGNED']), uuidSchema]).optional(),
+  search: trimmed(120).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50)
+}).strict();
+export const bugAssignSchema = z.object({ developerId: uuidSchema.nullable() }).strict();
+export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note: optionalText(3000) }).strict()
+  .refine(v => !['RESOLVED', 'REJECTED'].includes(v.status) || (v.note ?? '').trim().length >= 5,
+    { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['note'] });
+export const bugCommentSchema = z.object({ note: trimmed(3000).min(1, 'Write a comment.') }).strict();
+export const devTeamSetSchema = z.object({ profileId: uuidSchema, member: z.boolean() }).strict();

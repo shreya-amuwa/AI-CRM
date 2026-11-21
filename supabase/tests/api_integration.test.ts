@@ -11347,52 +11347,41 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
-// --- Live meeting availability of the CEO: Enter / Exit Meeting, requests that wait (migration 20270116000400) ---------------
+// --- Enter / Exit Meeting for every employee except the Super Admin (migration 20270122000100) ---------------------------------
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
-  // a weekday (Monday-Saturday, the default working days) 40+ days ahead, 11:00 India time
-  const day = new Date(Date.now() + 40 * 86_400_000);
-  while (day.getUTCDay() === 0) day.setUTCDate(day.getUTCDate() + 1);
-  const at = (hh: number, mm = 0) => new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hh - 5, mm - 30)).toISOString();
-  const statusOf = async (id: string) => (await db.query(`select status, starts_at from public.meetings where id = $1`, [id])).rows[0];
+  const soon = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 
-  let r = await api('a', 'GET', '/meetings/presence');
-  check(r.status === 200 && r.json.data.some((p: any) => p.hostId === saId && p.status === 'AVAILABLE'), 'live availability: a member sees the CEO AVAILABLE', r);
-  r = await api('a', 'POST', '/meetings/presence/enter', {});
-  check(r.status === 403, 'live availability: a member cannot Enter a meeting for the CEO', r);
-  r = await api('sa', 'POST', '/meetings/presence/enter', {});
-  check(r.status === 200 && r.json.data.status === 'BUSY', 'live availability: the CEO enters a meeting: BUSY', r);
-  r = await api('a', 'GET', '/meetings/presence');
-  check(r.json.data.find((p: any) => p.hostId === saId)?.status === 'BUSY' && r.json.data.find((p: any) => p.hostId === saId)?.pending === null,
-    'live availability: the member now sees BUSY (and not the CEO\'s queue)', r);
-  r = await api('a', 'POST', '/meetings/presence/exit', {});
-  check(r.status === 403, 'live availability: a member cannot Exit for the CEO', r);
-
-  r = await api('a', 'POST', '/meetings', { title: 'LAX Budget review', description: 'Pune office budget', hostId: saId, startsAt: at(11), endsAt: at(12), mode: 'GOOGLE_MEET' });
-  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a request while BUSY is saved as PENDING AVAILABILITY', r);
-  const reqA = r.json.data.id as string;
-  r = await api('a', 'POST', '/meetings', { title: 'LAX Second request', description: 'Hiring plan for Q1', hostId: saId, startsAt: at(11), endsAt: at(11, 30), mode: 'PHONE' });
-  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'live availability: a second request for the same time is saved too (not refused)', r);
-  const reqB = r.json.data.id as string;
+  let r = await api('sa', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 403, 'employee availability: the Super Admin cannot Enter Meeting through the API', r);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 403, 'employee availability: nor Exit Meeting', r);
   r = await api('sa', 'GET', '/meetings/presence');
-  check(r.json.data.find((p: any) => p.hostId === saId)?.pending?.length >= 2, 'live availability: the CEO sees the waiting queue', r);
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'employee availability: the Super Admin has no status of their own', r);
 
-  r = await api('sa', 'POST', '/meetings/presence/exit', {});
-  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.some((x: any) => x.id === reqA) && r.json.data.scheduled.some((x: any) => x.id === reqB),
-    'live availability: Exit Meeting: AVAILABLE, and both waiting requests are scheduled', r);
-  const a = await statusOf(reqA);
-  const b = await statusOf(reqB);
-  check(a.status === 'SCHEDULED' && b.status === 'SCHEDULED' && new Date(a.starts_at).toISOString() === at(11) && new Date(b.starts_at).toISOString() === at(12),
-    'live availability: in queue order and without overlap (A 11:00-12:00, B moved to 12:00)', { a, b });
-  r = await api('a', 'GET', `/meetings/${reqB}`);
-  check(r.status === 200 && r.json.data.status === 'SCHEDULED', 'live availability: the member sees the confirmed meeting', r);
-  const notes = (await db.query(`select type from public.notifications where recipient_id = $1 and entity_id = any($2::uuid[])`, [memberId, [reqA, reqB]])).rows.map((x: any) => x.type);
-  check(notes.filter((t: string) => t === 'MEETING_SCHEDULED').length === 2 && notes.includes('MEETING_MOVED'),
-    'live availability: the member is notified of each confirmed time, and of the moved one', notes);
-  r = await api('sa', 'POST', '/meetings/presence/exit', {});
-  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled.length === 0, 'live availability: a second Exit changes nothing', r);
-  await db.query(`delete from public.meetings where title like 'LAX %'`);
+  r = await api('a', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0]?.hostId === memberId && r.json.data[0].status === 'AVAILABLE', 'employee availability: a member sees their own status', r);
+  r = await api('a', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'employee availability: a member enters a meeting: BUSY', r);
+  r = await api('tl2', 'GET', `/meetings/presence?ids=${memberId},${saId}`);
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].status === 'BUSY' && r.json.data[0].meeting === null,
+    'employee availability: a colleague sees them BUSY (no meeting details; the Super Admin is not listed)', r);
+  r = await api('tl2', 'GET', '/meetings/presence?ids=not-an-id');
+  check(r.status === 422, 'employee availability: ids must be ids', r);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
+  check(r.status === 409 && /in a meeting right now/.test(r.json.error?.message ?? ''), 'employee availability: booking a BUSY colleague into a meeting starting soon is refused', r);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX later', startsAt: soon(240), endsAt: soon(270), mode: 'PHONE', attendeeIds: [memberId] });
+  check(r.status === 201 && r.json.data.status === 'SCHEDULED', 'employee availability: a later meeting can still be booked', r);
+  r = await api('a', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE', 'employee availability: Exit Meeting: AVAILABLE', r);
+  const log = (await db.query(`select entered_at, exited_at from public.meeting_presence_log where host_id = $1 order by entered_at desc limit 1`, [memberId])).rows[0];
+  check(!!log?.entered_at && !!log?.exited_at && new Date(log.exited_at) >= new Date(log.entered_at), 'employee availability: entry and exit times are recorded', log);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon after', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
+  check(r.status === 201, 'employee availability: after the exit the same booking works', r);
+  r = await api('a', 'POST', '/meetings', { title: 'EPX ask the CEO', description: 'Pune office budget', hostId: saId, startsAt: soon(3 * 24 * 60), endsAt: soon(3 * 24 * 60 + 30), mode: 'GOOGLE_MEET' });
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'employee availability: asking the CEO for time is a request, as before', r);
+  await db.query(`delete from public.meetings where title like 'EPX %'`);
 }
 
 // --- Chat: @mentions in groups, reactions, Delete Inbox (migration 20270116000300) -------------------------------------------
@@ -11535,6 +11524,118 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('sa', 'POST', '/ai-studio/projects', { name: 'AI Past Project', deadlineAt: new Date(Date.now() - 3600000).toISOString() });
   q = await api('sa', 'GET', '/ai-studio/projects');
   check(q.status === 200 && !q.json.data.some((p: any) => p.name === 'AI Past Project'), 'AI Studio deadline: a refused deadline saves no project', q);
+}
+
+// ---------------------------------------------------------------------------
+// Client meetings (migration 20270122000200)
+// ---------------------------------------------------------------------------
+{
+  const inDays = (d: number, h = 0) => new Date(Date.now() + d * 86_400_000 + h * 3_600_000).toISOString();
+  const form = (over: Record<string, unknown> = {}) => ({
+    clientName: 'Meera Shah', clientEmail: 'Meera@Shah.example', companyName: 'Shah Traders', title: 'CMX Walkthrough', agenda: 'Demo and pricing',
+    startsAt: inDays(6), endsAt: inDays(6, 1), mode: 'ONLINE', meetLink: 'https://meet.example.com/abc', clientRequestId: 'cmx-key-0001', ...over
+  });
+  let r = await api('a', 'POST', '/meetings/client', form());
+  check(r.status === 201 && r.json.data.kind === 'CLIENT_MEETING' && r.json.data.clientCompany === 'Shah Traders' && r.json.data.client?.email === 'meera@shah.example'
+    && r.json.data.duplicate === false, 'client meetings API: an employee creates a client meeting', r);
+  const id = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings/client', form());
+  check(r.status === 201 && r.json.data.id === id && r.json.data.duplicate === true, 'client meetings API: the same form again returns the first meeting', r);
+  const queued = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'CONFIRMED' and to_profile_id is null`, [id])).rows[0].n;
+  check(queued === 1, 'client meetings API: one invitation to the client in the e-mail outbox', queued);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0002', meetLink: null }));
+  check(r.status === 422, 'client meetings API: online without a link is refused', r);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0003', mode: 'OFFLINE', meetLink: null }));
+  check(r.status === 422, 'client meetings API: offline without a place is refused', r);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0004', clientEmail: 'nope' }));
+  check(r.status === 422, 'client meetings API: a bad client e-mail is refused', r);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0005', extra: true }));
+  check(r.status === 422, 'client meetings API: unknown fields are refused', r);
+  r = await api(null, 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0006' }));
+  check(r.status === 401, 'client meetings API: not for visitors', r);
+  r = await api('a', 'GET', '/meetings/client?scope=UPCOMING');
+  check(r.status === 200 && r.json.data.some((m: any) => m.id === id), 'client meetings API: listed for the one who booked it', r);
+  r = await api('tl2', 'GET', '/meetings/client?scope=ALL');
+  check(r.status === 200 && !r.json.data.some((m: any) => m.id === id), 'client meetings API: not for someone else', r);
+  r = await api('a', 'GET', `/meetings/${id}/mails`);
+  check(r.status === 200 && r.json.data.some((x: any) => x.external && x.kind === 'CONFIRMED' && x.toEmail === 'meera@shah.example'), 'client meetings API: the delivery log', r);
+  r = await api('tl2', 'GET', `/meetings/${id}/mails`);
+  check(r.status === 404, 'client meetings API: an outsider cannot read the e-mails', r);
+  const mailId = (await db.query(`select id from public.meeting_mail_outbox where meeting_id = $1 and kind = 'CONFIRMED' and to_profile_id is null`, [id])).rows[0].id;
+  await db.query(`update public.meeting_mail_outbox set status = 'FAILED', attempts = 5, last_error = 'mailbox unavailable' where id = $1`, [mailId]);
+  r = await api('tl2', 'POST', `/meetings/mails/${mailId}/retry`, {});
+  check(r.status === 404, 'client meetings API: an outsider cannot send it again', r);
+  r = await api('a', 'POST', `/meetings/mails/${mailId}/retry`, {});
+  check(r.status === 200, 'client meetings API: the one who booked it sends a failed invitation again', r);
+  const after = (await db.query(`select status, attempts from public.meeting_mail_outbox where id = $1`, [mailId])).rows[0];
+  check(after.status !== 'FAILED' || after.attempts < 5, 'client meetings API: the e-mail is queued again', after);
+  r = await api('a', 'POST', `/meetings/${id}/cancel`, { reason: 'Client postponed' });
+  check(r.status === 200 && r.json.data.status === 'CANCELLED', 'client meetings API: cancelled', r);
+  const cancelMail = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'CANCELLED' and to_profile_id is null`, [id])).rows[0].n;
+  check(cancelMail === 1, 'client meetings API: the cancellation e-mail to the client is queued', cancelMail);
+  await db.query(`delete from public.meetings where title like 'CMX %'`);
+}
+
+// ---------------------------------------------------------------------------
+// Bugs for the Developers team (migration 20270122000300)
+// ---------------------------------------------------------------------------
+{
+  // the API database has nobody named like the three developers: make one Team Lead a developer for this block
+  const devId = deliveryLead as string;
+  await db.query(`insert into public.dev_team_members (profile_id) values ($1) on conflict do nothing`, [devId]);
+  let r = await api('tl2', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === true && r.json.data.developers.some((d: any) => d.id === devId), 'bugs API: a developer has the Bugs section', r);
+  r = await api('a', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === false && r.json.data.developers.length === 0, 'bugs API: an employee does not (and sees no developer list)', r);
+  r = await api('sa', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === false, 'bugs API: nor the Super Admin', r);
+
+  const form = { title: 'BGX Report page is blank', description: 'The monthly report page shows nothing after login.', steps: '1. Open Reports', attachmentIds: [], clientRequestId: 'bgx-key-0001' };
+  r = await api('a', 'POST', '/bugs', form);
+  check(r.status === 201 && r.json.data.status === 'PENDING' && r.json.data.reference.startsWith('BUG-') && r.json.data.reporterName && r.json.data.duplicate === false,
+    'bugs API: an employee reports a bug', r);
+  const bugId = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', form);
+  check(r.status === 201 && r.json.data.id === bugId && r.json.data.duplicate === true, 'bugs API: the same form again is the same bug', r);
+  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0002', description: 'short' });
+  check(r.status === 422, 'bugs API: a description is required', r);
+  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0003', reporterName: 'Someone else' });
+  check(r.status === 422, 'bugs API: the reporter is never taken from the request', r);
+  r = await api(null, 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0004' });
+  check(r.status === 401, 'bugs API: not for visitors', r);
+
+  r = await api('a', 'GET', '/bugs');
+  check(r.status === 403, 'bugs API: an employee cannot open the Bugs section', r);
+  r = await api('th', 'GET', `/bugs/${bugId}`);
+  check(r.status === 403, 'bugs API: nor another employee open a bug', r);
+  r = await api('sa', 'GET', '/bugs');
+  check(r.status === 403, 'bugs API: nor the Super Admin', r);
+  r = await api('tl2', 'GET', '/bugs?status=OPEN&assignee=UNASSIGNED');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugId) && r.json.data.counts.UNASSIGNED >= 1, 'bugs API: the developer sees the new bug', r);
+  r = await api('tl2', 'POST', `/bugs/${bugId}/assign`, { developerId: devId });
+  check(r.status === 200 && r.json.data.assigneeId === devId, 'bugs API: assigned to a developer', r);
+  r = await api('tl2', 'POST', `/bugs/${bugId}/assign`, { developerId: deliveryMember });
+  check(r.status === 422, 'bugs API: only to a developer', r);
+  r = await api('tl2', 'POST', `/bugs/${bugId}/comment`, { note: 'Reproduced on staging' });
+  check(r.status === 201 && r.json.data.history.some((h: any) => h.internal && h.note === 'Reproduced on staging'), 'bugs API: an internal comment', r);
+  r = await api('tl2', 'POST', `/bugs/${bugId}/status`, { status: 'RESOLVED' });
+  check(r.status === 422, 'bugs API: resolving needs a note', r);
+  r = await api('tl2', 'POST', `/bugs/${bugId}/status`, { status: 'RESOLVED', note: 'Fixed in release 2.4' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED' && r.json.data.resolutionNote === 'Fixed in release 2.4', 'bugs API: resolved', r);
+  r = await api('a', 'POST', `/bugs/${bugId}/status`, { status: 'REJECTED', note: 'I changed my mind' });
+  check(r.status === 403, 'bugs API: the reporter cannot change the status', r);
+  r = await api('a', 'GET', '/bugs/mine');
+  check(r.status === 200 && r.json.data.some((b: any) => b.id === bugId && b.status === 'RESOLVED' && b.resolutionNote === 'Fixed in release 2.4'), 'bugs API: the reporter sees the resolution', r);
+  r = await api('a', 'GET', `/bugs/mine/${bugId}`);
+  check(r.status === 200 && !r.json.data.history.some((h: any) => h.internal), 'bugs API: but never the internal comment', r);
+  r = await api('th', 'GET', `/bugs/mine/${bugId}`);
+  check(r.status === 404, 'bugs API: someone else\'s bug is not found', r);
+  r = await api('sa', 'GET', '/bugs/team');
+  check(r.status === 200 && r.json.data.some((m: any) => m.id === devId), 'bugs API: the Super Admin sees the developers list', r);
+  r = await api('tl2', 'GET', '/bugs/team');
+  check(r.status === 403, 'bugs API: a developer does not manage the list', r);
+  await db.query(`delete from public.dev_bugs where title like 'BGX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

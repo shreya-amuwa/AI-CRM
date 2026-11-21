@@ -5710,9 +5710,9 @@ export interface HrEmployeeFileUploadTicket {
 // ---------------------------------------------------------------------------
 // Meetings (Google Calendar, booking links, CEO approval)
 // ---------------------------------------------------------------------------
-export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING';
+export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING' | 'CLIENT_MEETING';
 export type CalendarMeetingMode = 'GOOGLE_MEET' | 'ONLINE_LINK' | 'IN_PERSON' | 'PHONE';
-/** PENDING_AVAILABILITY (migration 20270116000400): asked for while the CEO was in a meeting; scheduled automatically when they are free. */
+/** PENDING_AVAILABILITY (migration 20270116000400): no longer set since 20270122000100 (the Super Admin has no Enter / Exit); kept because the database still allows it. */
 export type CalendarMeetingStatus = 'REQUESTED' | 'PROPOSED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED' | 'PENDING_AVAILABILITY';
 export type CalendarMeetingSyncStatus = 'PENDING' | 'SYNCED' | 'FAILED' | 'NOT_CONNECTED' | 'SKIPPED';
 
@@ -5783,6 +5783,8 @@ export interface Meeting {
   rescheduledByName: string | null;
   rescheduleReason: string | null;
   rescheduleCount: number;
+  /** A client meeting (20270122000200): the client's company. */
+  clientCompany?: string | null;
   attendees: MeetingAttendee[];
 }
 
@@ -6610,3 +6612,49 @@ export interface SalesRolePersonDashboard {
     deals?: { id: string; name: string; company: string | null; stage: string; dealAmount: number | null; closedAt: string }[];
   };
 }
+
+// ---------------------------------------------------------------------------
+// Client meetings (migration 20270122000200): a meeting of kind CLIENT_MEETING with the client as its outside guest
+// ---------------------------------------------------------------------------
+export interface ClientMeetingInput {
+  clientName: string; clientEmail: string; companyName: string; title: string; agenda: string;
+  startsAt: string; endsAt: string; timezone?: string | null; mode: 'ONLINE' | 'OFFLINE'; meetLink?: string | null; location?: string | null;
+  hostId?: string | null; clientRequestId: string;
+}
+/** The meeting as created; duplicate: the same form was already sent (no second meeting, no second e-mail). */
+export type ClientMeetingResult = Meeting & { client: { name: string | null; email: string } | null; duplicate: boolean };
+/** One e-mail of a meeting and how its delivery went (meeting_mail_outbox). */
+export interface MeetingMail {
+  id: number; toEmail: string; toName: string | null; kind: string; external: boolean;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED'; attempts: number; lastError: string | null; sentAt: string | null; createdAt: string; meetingVersion: number;
+  /** a later new-time or cancellation e-mail to the same person replaced it (it is not sent again) */
+  superseded: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Bugs for the Developers team (migration 20270122000300)
+// ---------------------------------------------------------------------------
+export type DevBugStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'REJECTED';
+export interface DevBugRow {
+  id: string; reference: string; title: string; status: DevBugStatus; reporterName: string; department: string | null; designation: string | null;
+  assigneeId: string | null; assigneeName: string | null; attachmentCount: number; createdAt: string; updatedAt: string; resolvedAt: string | null;
+  /** the reporter's own list carries the resolution note */
+  resolutionNote?: string | null;
+}
+export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; at: string }
+export interface DevBug {
+  id: string; reference: string; title: string; description: string; steps: string | null; status: DevBugStatus;
+  reporterId: string; reporterName: string; department: string | null; designation: string | null;
+  assigneeId: string | null; assigneeName: string | null; resolutionNote: string | null; resolvedAt: string | null; createdAt: string; updatedAt: string;
+  attachments: { id: string; name: string; mime: string; size: number }[];
+  /** internal comments only for the developers */
+  history: DevBugHistoryEntry[];
+  duplicate?: boolean;
+}
+export interface DevBugList {
+  total: number;
+  counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number };
+  items: DevBugRow[];
+}
+export interface DevBugAccess { isDeveloper: boolean; developers: { id: string; name: string }[] }
+export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; department: string | null; addedAt: string }

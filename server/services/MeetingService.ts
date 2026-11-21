@@ -1,9 +1,9 @@
 import type {
-  CeoPresence, CeoPresenceExit, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
 } from '../../shared/contracts.js';
 import {
   calendarMeetingCancelSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
-  meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingProposalAnswerSchema,
+  clientMeetingListQuerySchema, clientMeetingSchema, meetingMailIdSchema, meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingPresenceQuerySchema, meetingProposalAnswerSchema,
   meetingRescheduleSchema, meetingResponseSchema, uuidSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
@@ -40,27 +40,31 @@ export class MeetingService {
   detail(id: string): Promise<MeetingDetail> { return this.repo.detail(parse(uuidSchema, id)); }
   approvals(): Promise<Meeting[]> { return this.repo.pendingApprovals(); }
 
-  // ---- Live availability of the CEO: Enter / Exit Meeting (the database lets only the Super Admin change their own)
-  presence(): Promise<CeoPresence[]> { return this.repo.presence(); }
+  // ---- Employee availability: Enter / Exit Meeting (migration 20270122000100). Every employee but the Super Admin changes their own;
+  // the database refuses the Super Admin and anyone acting for someone else.
+  /** Without ids: the caller's own status ([] for the Super Admin). With ids: those colleagues' BUSY / AVAILABLE status. */
+  presence(query: unknown): Promise<CeoPresence[]> {
+    return this.repo.presence(parse(meetingPresenceQuerySchema, query ?? {}).ids ?? null);
+  }
   presenceEnter(body: unknown): Promise<CeoPresence> {
     return this.repo.presenceEnter(parse(meetingPresenceEnterSchema, body ?? {}).meetingId ?? null);
   }
-  /**
-   * Exit Meeting: AVAILABLE, and the requests that waited are scheduled by the database (queue order, working hours, held meetings).
-   * The CEO's Google busy times for the next 31 days are passed in so no request lands on them; without Google, the CRM calendar alone decides.
-   */
-  async presenceExit(actor: Actor): Promise<CeoPresenceExit> {
-    const from = new Date();
-    const to = new Date(from.getTime() + 31 * 86_400_000);
-    const busy = actor.role === 'SUPER_ADMIN' ? (await googleBusy([actor.id], from, to).catch(() => ({} as Record<string, { start: string; end: string }[]>)))[actor.id] ?? [] : [];
-    return this.after(this.repo.presenceExit(busy.map(b => ({ start: b.start, end: b.end }))));
-  }
+  presenceExit(): Promise<CeoPresenceExit> { return this.repo.presenceExit(); }
   /** The meeting requests with the CEO: the Super Admin sees everyone's, an employee only their own. */
   ceoRequests(query: unknown): Promise<CeoRequestList> {
     const q = parse(ceoRequestsQuerySchema, query ?? {});
     return this.repo.ceoRequests(q.section, q.limit, q.offset);
   }
   directory(query: unknown): Promise<MeetingDirectoryEntry[]> { return this.repo.directory(parse(meetingDirectoryQuerySchema, query).search ?? null); }
+
+  /** Client Meeting: saved, and the invitation to the client queued; the e-mail worker then runs at once (the scheduled run retries). */
+  createClient(body: unknown): Promise<ClientMeetingResult> { return this.after(this.repo.clientCreate(parse(clientMeetingSchema, body))); }
+  clientList(query: unknown): Promise<ClientMeetingResult[]> {
+    const q = parse(clientMeetingListQuerySchema, query ?? {});
+    return this.repo.clientList(q.scope, q.status ?? null);
+  }
+  mailLog(id: string): Promise<MeetingMail[]> { return this.repo.mailLog(parse(uuidSchema, id)); }
+  mailRetry(id: string): Promise<{ id: number; status: string }> { return this.after(this.repo.mailRetry(parse(meetingMailIdSchema, id))); }
 
   create(body: unknown): Promise<Meeting> {
     const i = parse(meetingCreateSchema, body);
