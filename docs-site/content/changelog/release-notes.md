@@ -21,6 +21,15 @@ This changelog documents verified product releases, architectural updates, and w
 
 ---
 
+## Release: Incentive withdrawals
+**Area:** Sales, Accounts
+
+### Added
+- **Withdraw** on My Income: save payout details (bank, UPI or international), ask for a withdrawal, follow it and download the payout slip. My Income now shows **My Earnings** next to **Balance** (withdrawn so far, available to withdraw). See [Withdraw your income](/sales/withdraw-your-income).
+- **Accounts > Finance > Payout requests**: pay (reference, date, TDS) or reject withdrawals, and pay final settlements to people who left. See [Pay payout requests](/accounts/pay-payout-requests).
+
+---
+
 ## Release: Sales incentives and My Income
 **Area:** Sales, Super Admin
 

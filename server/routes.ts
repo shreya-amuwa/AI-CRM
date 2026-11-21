@@ -38,6 +38,7 @@ import {
   documentsController as documents,
   hrController as hr,
   hrDocumentController as hrDocs,
+  payoutController as payouts,
   hrEmployeeFilesController as hrFiles,
   generatedInvoiceController as generatedInvoices,
   workflowController as workflow,
@@ -800,6 +801,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/hr/documents', handler: hrDocs.list },
   { method: 'POST', path: '/hr/documents', handler: hrDocs.generate, options: S },
   { method: 'GET', path: '/hr/documents/:id/download', handler: hrDocs.download },
+  // incentive payouts (20270123000100): the payout slip PDF (base64 in the JSON answer)
+  { method: 'GET', path: '/payouts/:id/slip', handler: payouts.slip },
   // Documents on an employee's HR profile, stored in R2 (HR staff upload / delete; the employee may read their own - the database checks)
   { method: 'GET', path: '/hr/employee-files', handler: hrFiles.list },
   { method: 'POST', path: '/hr/employee-file-uploads', handler: hrFiles.beginUpload, options: S },

@@ -41,7 +41,7 @@ const setup = () => {
 };
 const handlers: Record<string, (a: any) => any> = {
   income_summary: () => ({
-    startsOn: state.eligible ? '2026-10-01' : '2026-12-05', eligible: state.eligible, today: 50, month: 100, total: 1250.5, balance: 1250.5,
+    startsOn: state.eligible ? '2026-10-01' : '2026-12-05', eligible: state.eligible, today: 50, month: 100, total: 1250.5, balance: 1250.5, withdrawn: 0, available: 1250.5, withdrawOpensOn: '2026-10-01', withdrawOpen: true, startAfterDays: 15, openRequest: null,
     targets: [{ ruleId: 'r-wa', name: 'WA 500', serviceName: 'WhatsApp API', targetUnits: 1000, unitsDone: 412 }],
     activity: { businessThisMonth: 240000, demosCompletedThisMonth: 3, visitsCompletedThisMonth: 2 }
   }),
@@ -80,6 +80,7 @@ const handlers: Record<string, (a: any) => any> = {
   },
   incentive_split_set: a => { state.split = a.p_telecaller_pct; return { departmentId: a.p_department, telecallerPct: a.p_telecaller_pct }; },
   incentive_settings_set: a => { state.days = a.p_days; return { startAfterDays: a.p_days }; },
+  payout_my_requests: () => [],
   ba_demo_set_authorised: a => ({ id: a.p_demo, status: 'COMPLETED', authorisedPersonAttended: !!a.p_attended })
 };
 const chain: any = { on: () => chain, subscribe: () => chain };

@@ -11638,6 +11638,32 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
 }
 
+// ---------------------------------------------------------------------------
+// Incentive payouts (20270123000100): the payout slip PDF, for the person and Accounts only, only once paid
+{
+  const { rows: [m] } = await db.query(`select id, department_id from public.profiles where email = 'a@amuwa.com'`);
+  const memberId = m.id as string;
+  const { rows: [rq] } = await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot, status, channel, reference, paid_on, tds_amount, net_amount, decided_at)
+     values ($1, 1234.50, '{"full":{"kind":"UPI","holderName":"Api Member","upiId":"api.member@okhdfcbank"},"masked":{"kind":"UPI","holderName":"Api Member","upiId":"••••bank"}}',
+             'PAID', 'MANUAL', 'UTR-API-1', current_date, 50.25, 1184.25, now()) returning id`, [memberId]);
+  const { rows: [open] } = await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot) values ($1, 600, '{"full":{},"masked":{}}') returning id`, [memberId]);
+  r = await api('a', 'GET', `/payouts/${rq.id}/slip`);
+  const pdf = r.status === 200 ? Buffer.from(r.json.data.contentBase64, 'base64') : Buffer.alloc(0);
+  check(r.status === 200 && r.json.data.fileName.startsWith('Payout-PO-') && r.json.data.fileName.endsWith('.pdf') && pdf.subarray(0, 4).toString() === '%PDF',
+    'payouts API: the person downloads their payout slip (a PDF)', r.status);
+  r = await api('accm', 'GET', `/payouts/${rq.id}/slip`);
+  check(r.status === 200, 'payouts API: Accounts downloads it too', r.status);
+  r = await api('b', 'GET', `/payouts/${rq.id}/slip`);
+  check(r.status === 403, 'payouts API: a colleague cannot', r);
+  r = await api('a', 'GET', `/payouts/${open.id}/slip`);
+  check(r.status === 409, 'payouts API: no slip before it is paid', r);
+  const { rows: [aud] } = await db.query(`select count(*)::int as n from public.audit_logs where action = 'PAYOUT_SLIP_DOWNLOADED' and entity_id = $1`, [rq.id]);
+  check(aud.n === 2, 'payouts API: every slip download is audited', aud);
+  await db.query(`delete from public.payout_requests where id in ($1, $2)`, [rq.id, open.id]);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
