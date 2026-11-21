@@ -6669,3 +6669,222 @@ export interface DevBugList {
 /** developers: who the Team Lead can assign to (empty for everyone else) */
 export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[] }
 export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; isLead: boolean; department: string | null; addedAt: string }
+
+// ---------------------------------------------------------------------------
+// Post-meeting summaries and the CEO's Meeting Decisions (migration 20270124000200)
+// ---------------------------------------------------------------------------
+export type MeetingSummaryStatus = 'PENDING' | 'DRAFT' | 'SUBMITTED' | 'REVISION_REQUESTED' | 'REVISED';
+export type MeetingSummaryOwnerMethod =
+  | 'SENIORITY' | 'HOST' | 'CREATOR' | 'SELECTED' | 'DELEGATED' | 'TRANSFERRED' | 'ROUTED' | 'ESCALATED' | 'NO_LEADER' | 'SELECTION_REQUIRED';
+export type MeetingDecisionStatus = 'PROPOSED' | 'APPROVED' | 'IN_PROGRESS' | 'IMPLEMENTED' | 'ON_HOLD';
+export type MeetingActionStatus = 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED' | 'CANCELLED';
+export type MeetingActionPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export type MeetingBlockerCategory = 'PENDING_APPROVAL' | 'RESOURCE' | 'OPERATIONAL' | 'CUSTOMER_ESCALATION' | 'DEPENDENCY' | 'CEO_DECISION' | 'OTHER';
+/** A colleague as a summary shows them: rank 4 CEO, 3 Operations Head, 2 Department Head, 1 Team Lead, 0 member. */
+export interface MeetingSummaryPerson {
+  id: string;
+  name: string;
+  rank: number;
+  roleLabel: string;
+  position: string | null;
+  active: boolean;
+  department: string | null;
+  team: string | null;
+}
+export interface MeetingSummaryAttendee extends MeetingSummaryPerson {
+  invited: boolean;
+  response: string | null;
+  /** null: not confirmed yet. */
+  attended: boolean | null;
+}
+export interface MeetingSummaryDecision {
+  id?: string;
+  key: string;
+  title: string;
+  description: string | null;
+  departmentId: string | null;
+  department?: string | null;
+  teamId: string | null;
+  team?: string | null;
+  decidedBy: string | null;
+  decidedByName?: string | null;
+  status: MeetingDecisionStatus;
+  ceoFollowUp?: boolean;
+  ceoFollowUpNote?: string | null;
+}
+export interface MeetingSummaryAction {
+  id?: string;
+  key: string;
+  title: string;
+  description: string | null;
+  assigneeId: string;
+  assigneeName?: string | null;
+  dueDate: string | null;
+  priority: MeetingActionPriority;
+  status: MeetingActionStatus;
+  decisionKey: string | null;
+  overdue?: boolean;
+  completedAt?: string | null;
+  updatedAt?: string | null;
+}
+export interface MeetingSummaryBlocker {
+  id?: string;
+  key: string;
+  category: MeetingBlockerCategory;
+  description: string;
+  needsCeoAttention: boolean;
+  ceoFollowUp?: boolean;
+  ceoFollowUpNote?: string | null;
+}
+export interface MeetingSummaryContent {
+  purposeNote: string | null;
+  executiveSummary: string | null;
+  discussionPoints: string[];
+  noDecisions: boolean;
+  noBlockers: boolean;
+  nextSteps: string | null;
+  followUp: { required: boolean; date: string | null; outcome: string | null };
+  decisions: MeetingSummaryDecision[];
+  actions: MeetingSummaryAction[];
+  blockers: MeetingSummaryBlocker[];
+}
+export interface MeetingSummaryRevision {
+  revisionNo: number;
+  kind: 'SUBMITTED' | 'REVISED';
+  changeNote: string | null;
+  actor: string | null;
+  createdAt: string;
+  snapshot: MeetingSummaryContent & { submittedBy?: string; submittedAt?: string; attended?: string[] };
+}
+export interface MeetingSummary {
+  id: string;
+  status: MeetingSummaryStatus;
+  overdue: boolean;
+  dueAt: string;
+  isHistorical: boolean;
+  owner: MeetingSummaryPerson | null;
+  ownerMethod: MeetingSummaryOwnerMethod | null;
+  ownerReason: string | null;
+  ownerAssignedBy: string | null;
+  ownerAssignedAt: string | null;
+  selectionRequired: boolean;
+  candidates: MeetingSummaryPerson[];
+  attendanceConfirmedAt: string | null;
+  attendanceConfirmedBy: string | null;
+  revisionNo: number;
+  version: number;
+  submittedAt: string | null;
+  firstSubmittedAt: string | null;
+  submittedBy: string | null;
+  updatedAt: string;
+  canRead: boolean;
+  content: MeetingSummaryContent | null;
+  comments: { id: number; kind: 'CLARIFICATION' | 'RESPONSE' | 'FOLLOW_UP'; body: string; author: string | null; createdAt: string }[] | null;
+  revisions: MeetingSummaryRevision[] | null;
+  history: { kind: string; note: string | null; actor: string | null; createdAt: string }[] | null;
+  assignable: { id: string; name: string; roleLabel: string }[] | null;
+  routeTargets: MeetingSummaryPerson[] | null;
+}
+/** One meeting's summary as the viewer may see it (outcome fields only: no guests, links or locations). */
+export interface MeetingSummaryView {
+  meetingId: string;
+  eligible: boolean;
+  started: boolean;
+  ended: boolean;
+  meeting: {
+    id: string; reference: string; title: string; purpose: string | null; kind: string; status: string;
+    startsAt: string; endsAt: string; timezone: string;
+    department: string | null; departmentId: string | null; division: string | null; team: string | null;
+    host: MeetingSummaryPerson | null; organiser: MeetingSummaryPerson | null;
+  };
+  attendance: MeetingSummaryAttendee[];
+  can: { confirmAttendance: boolean; edit: boolean; submit: boolean; amend: boolean; assignOwner: boolean; clarify: boolean; flag: boolean; reply: boolean; updateActions: boolean };
+  summary: MeetingSummary | null;
+}
+export interface MeetingSummaryRow {
+  meetingId: string;
+  reference: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  meetingStatus: string;
+  department: string | null;
+  departmentId: string | null;
+  team: string | null;
+  teamId: string | null;
+  owner: MeetingSummaryPerson | null;
+  ownerMethod: MeetingSummaryOwnerMethod | null;
+  hostName: string | null;
+  attendees: number;
+  invited: number;
+  status: MeetingSummaryStatus;
+  overdue: boolean;
+  dueAt: string;
+  isHistorical: boolean;
+  awaitingAttendance: boolean;
+  decisions: number;
+  actions: number;
+  openActions: number;
+  blockers: number;
+  needsAttention: boolean;
+  submittedAt: string | null;
+  revisionNo: number;
+  version: number;
+}
+export type MeetingSummaryTab = 'PENDING' | 'DRAFT' | 'SUBMITTED' | 'OVERDUE' | 'ALL';
+export interface MeetingSummaryList {
+  items: MeetingSummaryRow[];
+  total: number;
+  counts: Record<'PENDING' | 'DRAFT' | 'SUBMITTED' | 'OVERDUE', number>;
+}
+export interface MyMeetingAction {
+  id: string;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  priority: MeetingActionPriority;
+  status: MeetingActionStatus;
+  overdue: boolean;
+  meetingId: string;
+  meetingTitle: string;
+  meetingStartsAt: string;
+  ownerName: string | null;
+}
+export interface MeetingReportsOverview {
+  held: number;
+  submitted: number;
+  revisionRequested: number;
+  pending: number;
+  overdue: number;
+  decisions: number;
+  openActions: number;
+  overdueActions: number;
+  attention: number;
+  latestDecisions: { id: string; title: string; description: string | null; status: MeetingDecisionStatus; ceoFollowUp: boolean; decidedByName: string | null;
+    department: string | null; meetingId: string; meetingTitle: string; meetingStartsAt: string }[];
+  attentionItems: { type: 'BLOCKER' | 'DECISION'; id: string; text: string; category: MeetingBlockerCategory | null; flagged: boolean; meetingId: string; meetingTitle: string }[];
+  departments: { id: string; name: string }[];
+  teams: { id: string; name: string; departmentId: string }[];
+  leaders: MeetingSummaryPerson[];
+  overdueHours: number;
+}
+export interface MeetingReportList { items: MeetingSummaryRow[]; total: number }
+export interface MeetingReportAction {
+  id: string;
+  title: string;
+  description: string | null;
+  status: MeetingActionStatus;
+  priority: MeetingActionPriority;
+  dueDate: string | null;
+  overdue: boolean;
+  assigneeName: string | null;
+  decision: string | null;
+  meetingId: string;
+  meetingTitle: string;
+  meetingStartsAt: string;
+  ownerName: string | null;
+  department: string | null;
+  updatedAt: string;
+}
+export interface MeetingReportActionList { items: MeetingReportAction[]; total: number }

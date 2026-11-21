@@ -22,6 +22,8 @@ import { GOOGLE_SENDS, ICS_KINDS, linkSecret, manageToken, meetingIcs, renderMee
 
 export interface MeetingsRunSummary {
   reminders: number;
+  /** Post-meeting summary notices sent by this run (attendance to confirm, owners told, overdue). */
+  summaryNotices?: number;
   synced: number;
   syncFailed: number;
   mailed: number;
@@ -197,6 +199,9 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
   try {
     const rem = await db.rpc('mtg_enqueue_reminders');
     summary.reminders = Number(rem.data) || 0;
+    // post-meeting summaries: "confirm attendance" once a meeting ended, "overdue" once (20270124000200; absent before it runs)
+    const sweep = await db.rpc('mms_sweep');
+    if (!sweep.error && sweep.data) summary.summaryNotices = Object.values(sweep.data as Record<string, number>).reduce((n, v) => n + (Number(v) || 0), 0);
 
     const cfg = googleConfig(process.env, appUrl());
     if (cfg) {

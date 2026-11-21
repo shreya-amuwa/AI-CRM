@@ -40,3 +40,31 @@ export function useOpenMeetingRequest(show: (id?: string) => void) {
     return () => window.removeEventListener(OPEN_MEETING_EVENT, on);
   }, [show]);
 }
+
+/**
+ * A meeting summary / report notification (submitted, revised, an action item given) opens Meetings on that meeting's summary report:
+ * the CEO in Meeting Decisions, everyone else in Meeting summaries (20270124000200).
+ */
+export const OPEN_MEETING_REPORT_EVENT = 'crm:open-meeting-report';
+let pendingReport: string | null = null;
+export const openMeetingReport = (meetingId?: string) => {
+  pendingReport = meetingId ?? null;
+  // the dashboards switch to Meetings on the plain "open meeting" event (without a meeting: the drawer is not opened)
+  window.dispatchEvent(new CustomEvent<{ id?: string }>(OPEN_MEETING_EVENT, { detail: {} }));
+  window.dispatchEvent(new CustomEvent(OPEN_MEETING_REPORT_EVENT));
+};
+export const takePendingMeetingReport = (): string | null => {
+  const p = pendingReport;
+  pendingReport = null;
+  return p;
+};
+export function useOpenMeetingReportRequest(cb: (meetingId: string) => void) {
+  useEffect(() => {
+    const on = () => {
+      const id = takePendingMeetingReport();
+      if (id) cb(id);
+    };
+    window.addEventListener(OPEN_MEETING_REPORT_EVENT, on);
+    return () => window.removeEventListener(OPEN_MEETING_REPORT_EVENT, on);
+  }, [cb]);
+}

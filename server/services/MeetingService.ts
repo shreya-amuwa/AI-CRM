@@ -1,12 +1,17 @@
 import type {
-  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings
+  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings,
+  MeetingReportActionList, MeetingReportList, MeetingReportsOverview, MeetingSummaryList, MeetingSummaryView, MyMeetingAction
 } from '../../shared/contracts.js';
 import {
   calendarMeetingCancelSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
   clientMeetingListQuerySchema, clientMeetingSchema, meetingMailIdSchema, meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingPresenceQuerySchema, meetingProposalAnswerSchema,
-  meetingRescheduleSchema, meetingResponseSchema, uuidSchema
+  meetingRescheduleSchema, meetingResponseSchema, uuidSchema,
+  meetingActionUpdateSchema, meetingAttendanceSchema, meetingReportActionsQuerySchema, meetingReportsOverviewQuerySchema, meetingReportsQuerySchema,
+  meetingSummaryClarifySchema, meetingSummaryDraftSchema, meetingSummaryFlagSchema, meetingSummaryListQuerySchema, meetingSummaryOwnerSchema,
+  meetingSummaryReplySchema, meetingSummarySubmitSchema
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
+import { assertSuperAdmin } from '../authz/policies.js';
 import { automationSettings } from '../automations/config.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
@@ -109,6 +114,66 @@ export class MeetingService {
   }
   saveBookingLink(body: unknown): Promise<MeetingBookingLink> { return this.repo.saveBookingLink(parse(meetingBookingLinkSchema, body)); }
   setDelegates(body: unknown): Promise<MeetingSettings> { return this.repo.setDelegates(parse(meetingDelegatesSchema, body).delegateIds); }
+
+  // ---- Post-meeting summaries (20270124000200). The database decides who is responsible, who may write, read or confirm attendance;
+  // the CEO reports are refused here early for anyone but the Super Admin, and again in the database.
+  summary(id: string): Promise<MeetingSummaryView> { return this.repo.summary(parse(uuidSchema, id)); }
+  confirmAttendance(id: string, body: unknown): Promise<MeetingSummaryView> {
+    const i = parse(meetingAttendanceSchema, body);
+    return this.repo.confirmAttendance(parse(uuidSchema, id), [...new Set(i.attendedIds)], i.version ?? null);
+  }
+  assignSummaryOwner(id: string, body: unknown): Promise<MeetingSummaryView> {
+    const i = parse(meetingSummaryOwnerSchema, body);
+    return this.repo.assignSummaryOwner(parse(uuidSchema, id), i.ownerId, i.reason ?? null, i.version ?? null);
+  }
+  saveSummaryDraft(id: string, body: unknown): Promise<MeetingSummaryView> {
+    const i = parse(meetingSummaryDraftSchema, body);
+    return this.repo.saveSummary(parse(uuidSchema, id), i.summary, false, i.version, null);
+  }
+  /** Submit (or amend) the summary: the meeting is completed in the same database transaction. */
+  submitSummary(id: string, body: unknown): Promise<MeetingSummaryView> {
+    const i = parse(meetingSummarySubmitSchema, body);
+    return this.repo.saveSummary(parse(uuidSchema, id), i.summary, true, i.version, i.changeNote ?? null);
+  }
+  clarifySummary(actor: Actor, id: string, body: unknown): Promise<MeetingSummaryView> {
+    assertSuperAdmin(actor);
+    return this.repo.clarifySummary(parse(uuidSchema, id), parse(meetingSummaryClarifySchema, body).message);
+  }
+  replySummary(id: string, body: unknown): Promise<MeetingSummaryView> {
+    return this.repo.replySummary(parse(uuidSchema, id), parse(meetingSummaryReplySchema, body).message);
+  }
+  flagSummaryItem(actor: Actor, id: string, body: unknown): Promise<MeetingSummaryView> {
+    assertSuperAdmin(actor);
+    const i = parse(meetingSummaryFlagSchema, body);
+    return this.repo.flagSummaryItem(parse(uuidSchema, id), i.itemType, i.itemId, i.flag, i.note ?? null);
+  }
+  updateSummaryAction(id: string, body: unknown): Promise<{ id: string; status: string }> {
+    const i = parse(meetingActionUpdateSchema, body);
+    return this.repo.updateSummaryAction(parse(uuidSchema, id), i.status, i.note ?? null);
+  }
+  summaries(query: unknown): Promise<MeetingSummaryList> {
+    const q = parse(meetingSummaryListQuerySchema, query ?? {});
+    return this.repo.summaries(q.scope, q.tab, q.limit, q.offset);
+  }
+  myActions(): Promise<MyMeetingAction[]> { return this.repo.myActions(); }
+  reportsOverview(actor: Actor, query: unknown): Promise<MeetingReportsOverview> {
+    assertSuperAdmin(actor);
+    return this.repo.reportsOverview(parse(meetingReportsOverviewQuerySchema, query ?? {}));
+  }
+  reports(actor: Actor, query: unknown): Promise<MeetingReportList> {
+    assertSuperAdmin(actor);
+    const { limit, offset, ...filters } = parse(meetingReportsQuerySchema, query ?? {});
+    return this.repo.reports(filters, limit, offset);
+  }
+  report(actor: Actor, id: string): Promise<MeetingSummaryView> {
+    assertSuperAdmin(actor);
+    return this.repo.report(parse(uuidSchema, id));
+  }
+  reportActions(actor: Actor, query: unknown): Promise<MeetingReportActionList> {
+    assertSuperAdmin(actor);
+    const { limit, offset, ...filters } = parse(meetingReportActionsQuerySchema, query ?? {});
+    return this.repo.reportActions(filters, limit, offset);
+  }
 
   // ---- Google Calendar of the signed-in employee
   async googleStatus(): Promise<GoogleCalendarStatus> {

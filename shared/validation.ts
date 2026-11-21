@@ -3503,3 +3503,116 @@ export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note
     { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['note'] });
 export const bugCommentSchema = z.object({ note: trimmed(3000).min(1, 'Write a comment.') }).strict();
 export const devTeamSetSchema = z.object({ profileId: uuidSchema, member: z.boolean(), lead: z.boolean().optional() }).strict();
+
+// ---------------------------------------------------------------------------
+// Post-meeting summaries and the CEO's Meeting Decisions (migration 20270124000200). The database checks every rule again.
+// ---------------------------------------------------------------------------
+const meetingSummaryItemKey = z.string().uuid('Every entry needs its key.');
+export const meetingSummaryDecisionSchema = z.object({
+  key: meetingSummaryItemKey,
+  title: z.string().trim().min(2, 'Give the decision a title.').max(200),
+  description: optionalText(2000),
+  departmentId: uuidSchema.nullable().optional(),
+  teamId: uuidSchema.nullable().optional(),
+  decidedBy: uuidSchema.nullable().optional(),
+  status: z.enum(['PROPOSED', 'APPROVED', 'IN_PROGRESS', 'IMPLEMENTED', 'ON_HOLD']).default('APPROVED')
+}).strict();
+export const meetingSummaryActionSchema = z.object({
+  key: meetingSummaryItemKey,
+  title: z.string().trim().min(2, 'Give the action item a title.').max(200),
+  description: optionalText(2000),
+  assigneeId: uuidSchema,
+  dueDate: isoDate.nullable().optional(),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'DONE', 'BLOCKED', 'CANCELLED']).default('PENDING'),
+  decisionKey: uuidSchema.nullable().optional()
+}).strict();
+export const meetingSummaryBlockerSchema = z.object({
+  key: meetingSummaryItemKey,
+  category: z.enum(['PENDING_APPROVAL', 'RESOURCE', 'OPERATIONAL', 'CUSTOMER_ESCALATION', 'DEPENDENCY', 'CEO_DECISION', 'OTHER']).default('OTHER'),
+  description: z.string().trim().min(2, 'Describe the blocker.').max(2000),
+  needsCeoAttention: z.boolean().default(false)
+}).strict();
+export const meetingSummaryContentSchema = z.object({
+  purposeNote: optionalText(1000),
+  executiveSummary: optionalText(8000),
+  discussionPoints: z.array(z.string().trim().max(500, 'Keep each discussion point under 500 characters.')).max(50).default([]),
+  noDecisions: z.boolean().default(false),
+  decisions: z.array(meetingSummaryDecisionSchema).max(50).default([]),
+  actions: z.array(meetingSummaryActionSchema).max(100).default([]),
+  noBlockers: z.boolean().default(false),
+  blockers: z.array(meetingSummaryBlockerSchema).max(50).default([]),
+  nextSteps: optionalText(4000),
+  followUp: z.object({ required: z.boolean().default(false), date: isoDate.nullable().optional(), outcome: optionalText(1000) }).strict().optional()
+}).strict()
+  .refine(v => !(v.noDecisions && v.decisions.length), { message: 'Remove the decisions or untick "No decisions were made".', path: ['decisions'] })
+  .refine(v => !(v.noBlockers && v.blockers.length), { message: 'Remove the blockers or untick "No blockers".', path: ['blockers'] });
+export const meetingSummaryDraftSchema = z.object({ summary: meetingSummaryContentSchema, version: z.number().int().min(1) }).strict();
+/** Submitting also needs the executive summary, the decisions (or "no decisions") and the blockers (or "no blockers"). */
+export const meetingSummarySubmitSchema = z.object({
+  summary: meetingSummaryContentSchema,
+  version: z.number().int().min(1),
+  changeNote: optionalText(1000)
+}).strict().superRefine((v, ctx) => {
+  const s = v.summary;
+  if (!s.executiveSummary || s.executiveSummary.length < 20) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'executiveSummary'], message: 'Write the executive summary: what happened in the meeting (at least 20 characters).' });
+  }
+  if (!s.decisions.length && !s.noDecisions) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'decisions'], message: 'Record the decisions taken, or tick "No decisions were made".' });
+  }
+  if (!s.blockers.length && !s.noBlockers) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'blockers'], message: 'Record the issues or blockers, or tick "No blockers".' });
+  }
+  if (s.followUp?.required && !s.followUp.date) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'followUp', 'date'], message: 'Give the target date of the follow-up.' });
+  }
+});
+export const meetingAttendanceSchema = z.object({
+  attendedIds: z.array(uuidSchema).min(1, 'Mark at least one colleague who attended.').max(200),
+  version: z.number().int().min(1).optional()
+}).strict();
+export const meetingSummaryOwnerSchema = z.object({ ownerId: uuidSchema, reason: optionalText(500), version: z.number().int().min(1).optional() }).strict();
+export const meetingSummaryClarifySchema = z.object({ message: z.string().trim().min(5, 'Write the question.').max(2000) }).strict();
+export const meetingSummaryReplySchema = z.object({ message: z.string().trim().min(2, 'Write the answer.').max(2000) }).strict();
+export const meetingSummaryFlagSchema = z.object({
+  itemType: z.enum(['DECISION', 'BLOCKER']),
+  itemId: uuidSchema,
+  flag: z.boolean(),
+  note: optionalText(1000)
+}).strict();
+export const meetingActionUpdateSchema = z.object({
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'DONE', 'BLOCKED', 'CANCELLED']),
+  note: optionalText(1000)
+}).strict();
+export const meetingSummaryListQuerySchema = z.object({
+  scope: z.enum(['MINE', 'TEAM']).default('MINE'),
+  tab: z.enum(['PENDING', 'DRAFT', 'SUBMITTED', 'OVERDUE', 'ALL']).default('PENDING'),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();
+const meetingReportFilters = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  departmentId: uuidSchema.optional(),
+  teamId: uuidSchema.optional(),
+  leaderId: uuidSchema.optional(),
+  leaderRank: z.coerce.number().int().min(1).max(4).optional()
+};
+export const meetingReportsOverviewQuerySchema = z.object(meetingReportFilters).strict()
+  .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export const meetingReportsQuerySchema = z.object({
+  ...meetingReportFilters,
+  status: z.enum(['SUBMITTED', 'PENDING', 'OVERDUE', 'REVISION_REQUESTED', 'DRAFT']).optional(),
+  attention: booleanParam.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict().refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export const meetingReportActionsQuerySchema = z.object({
+  ...meetingReportFilters,
+  status: z.enum(['OPEN', 'OVERDUE', 'DONE', 'ALL']).default('OPEN'),
+  assigneeId: uuidSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict().refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export type MeetingSummaryContentInput = z.infer<typeof meetingSummaryContentSchema>;
