@@ -11710,6 +11710,134 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.payout_requests where id in ($1, $2)`, [rq.id, open.id]);
 }
 
+// ---------------------------------------------------------------------------
+// Incentive payouts through RazorpayX (20270125000100): a local stand-in for RazorpayX; no real Razorpay is called and no real keys exist
+{
+  const { createHmac } = await import('node:crypto');
+  const rzp = { contacts: 0, funds: 0, payouts: new Map<string, any>(), keys: new Map<string, string>(), fail: null as null | { status: number; description: string }, auth: [] as string[], lose: false };
+  const rzpSrv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      rzp.auth.push(String(req.headers.authorization || ''));
+      const send = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+      const b = raw ? JSON.parse(raw) : {};
+      if (rzp.fail) return send(rzp.fail.status, { error: { code: 'BAD_REQUEST_ERROR', description: rzp.fail.description } });
+      if (req.method === 'POST' && req.url === '/v1/contacts') { rzp.contacts++; return send(201, { id: `cont_${rzp.contacts}`, name: b.name }); }
+      if (req.method === 'POST' && req.url === '/v1/fund_accounts') { rzp.funds++; return send(201, { id: `fa_${rzp.funds}`, account_type: b.account_type }); }
+      if (req.method === 'POST' && req.url === '/v1/payouts') {
+        const key = String(req.headers['x-payout-idempotency'] || '');
+        const known = rzp.keys.get(key);
+        if (known) return send(200, rzp.payouts.get(known));
+        const p = { id: `pout_${rzp.payouts.size + 1}`, status: 'processing', utr: null, amount: b.amount, mode: b.mode, fund_account_id: b.fund_account_id, reference_id: b.reference_id };
+        rzp.payouts.set(p.id, p); rzp.keys.set(key, p.id);
+        // Razorpay took it, but the answer is lost on the way back
+        if (rzp.lose) return send(504, { error: { description: 'Gateway timeout' } });
+        return send(200, p);
+      }
+      const m = req.url?.match(/^\/v1\/payouts\/([^/?]+)$/);
+      if (req.method === 'GET' && m && rzp.payouts.has(m[1])) return send(200, rzp.payouts.get(m[1]));
+      send(404, { error: { description: 'not found' } });
+    });
+  });
+  await new Promise<void>(r => rzpSrv.listen(0, r));
+  const { rows: [m] } = await db.query(`select id, department_id from public.profiles where email = 'a@amuwa.com'`);
+  const memberId = m.id as string;
+  await db.query(`update public.payout_requests set status = 'REJECTED', reason = 'api test cleanup' where profile_id = $1 and status in ('REQUESTED','PROCESSING')`, [memberId]);
+  await db.query(`insert into public.payout_methods (profile_id, kind, holder_name, upi_id) values ($1, 'UPI', 'Api Member', 'api.member@okhdfcbank')
+                  on conflict (profile_id) do update set kind = 'UPI', upi_id = 'api.member@okhdfcbank', rzp_contact_id = null, rzp_fund_account_id = null`, [memberId]);
+  const newRequest = async (amount: number) => (await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot) values ($1, $2,
+       '{"full":{"kind":"UPI","holderName":"Api Member","upiId":"api.member@okhdfcbank"},"masked":{"kind":"UPI","holderName":"Api Member","upiId":"••••bank"}}') returning id`,
+    [memberId, amount])).rows[0].id as string;
+
+  // not set up: the status says so and paying is refused
+  for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
+  const r1 = await newRequest(1234.50);
+  r = await api('accm', 'GET', '/payouts/razorpay/status');
+  check(r.status === 200 && r.json.data.configured === false, 'razorpay API: not set up without the four settings', r);
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 0 });
+  check(r.status === 409, 'razorpay API: paying through Razorpay is refused until it is set up', r);
+
+  process.env.RAZORPAYX_KEY_ID = 'rzp_test_key';
+  process.env.RAZORPAYX_KEY_SECRET = 'rzp_test_secret';
+  process.env.RAZORPAYX_ACCOUNT_NUMBER = '7878780080316316';
+  process.env.RAZORPAYX_WEBHOOK_SECRET = 'whsec_test_0123456789abcdef';
+  process.env.RAZORPAYX_BASE_URL = `http://127.0.0.1:${(rzpSrv.address() as any).port}/v1`;
+  r = await api('accm', 'GET', '/payouts/razorpay/status');
+  check(r.status === 200 && r.json.data.configured === true, 'razorpay API: set up once the settings exist', r);
+  r = await api('a', 'POST', `/payouts/${r1}/razorpay`, { tds: 0 });
+  check(r.status === 403, 'razorpay API: only Accounts sends a payout', r);
+
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 50.25 });
+  const sent = [...rzp.payouts.values()][0];
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && sent?.amount === 118425 && sent?.mode === 'UPI' && rzp.contacts === 1 && rzp.funds === 1,
+    'razorpay API: Accounts sends 1,234.50 - TDS 50.25 = 118425 paise by UPI; contact and fund account made once', { r, sent });
+  check(rzp.auth.every(a => a === `Basic ${Buffer.from('rzp_test_key:rzp_test_secret').toString('base64')}`), 'razorpay API: every call carries the key (Basic auth)');
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 50.25 });
+  check(r.status === 409 && rzp.payouts.size === 1, 'razorpay API: pressing again sends nothing more', r);
+
+  // the webhook: a bad signature, then processed, then the same event again
+  const hook = async (body: unknown, eventId: string, secret = process.env.RAZORPAYX_WEBHOOK_SECRET!) => {
+    const raw = JSON.stringify(body);
+    const sig = createHmac('sha256', secret).update(raw).digest('hex');
+    return api(null, 'POST', '/internal/razorpay/payouts', undefined, raw, { 'x-razorpay-signature': sig, 'x-razorpay-event-id': eventId });
+  };
+  const processed = { event: 'payout.processed', payload: { payout: { entity: { id: sent.id, status: 'processed', utr: 'UTR-RZP-1' } } } };
+  r = await hook(processed, 'evt_api_1', 'wrong-secret-0123456789');
+  check(r.status === 401, 'razorpay API: a webhook with a bad signature is refused', r);
+  r = await hook(processed, 'evt_api_1');
+  const { rows: [paid] } = await db.query(`select status, reference, net_amount, expense_id from public.payout_requests where id = $1`, [r1]);
+  check(r.status === 200 && paid.status === 'PAID' && paid.reference === 'UTR-RZP-1' && Number(paid.net_amount) === 1184.25 && paid.expense_id,
+    'razorpay API: payout.processed marks it paid with the UTR and records the expense', { r, paid });
+  r = await hook(processed, 'evt_api_1');
+  check(r.status === 200 && r.json.data.ignored === true, 'razorpay API: the same event twice changes nothing', r);
+  r = await hook({ event: 'payout.reversed', payload: { payout: { entity: { id: sent.id, status: 'reversed', utr: 'UTR-RZP-1', status_details: { description: 'Account closed' } } } } }, 'evt_api_2');
+  const { rows: [rev] } = await db.query(`select status, reason, expense_id from public.payout_requests where id = $1`, [r1]);
+  check(rev.status === 'REVERSED' && rev.reason === 'Account closed' && rev.expense_id === null, 'razorpay API: payout.reversed after it was paid: REVERSED, the expense removed', rev);
+
+  // Razorpay refuses before a payout exists: back to waiting with Razorpay's message; a retry later reuses the same contact
+  const r2 = await newRequest(700);
+  rzp.fail = { status: 400, description: 'Insufficient balance' };
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay`, { tds: 0 });
+  const { rows: [back] } = await db.query(`select status from public.payout_requests where id = $1`, [r2]);
+  check(r.status === 422 && /Insufficient balance/.test(r.json.error.message) && back.status === 'REQUESTED', 'razorpay API: refused by Razorpay: back to waiting, with the reason', { r, back });
+  rzp.fail = null;
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay`, { tds: 0 });
+  check(r.status === 200 && rzp.contacts === 1, 'razorpay API: the second try reuses the Razorpay contact', { r, contacts: rzp.contacts });
+
+  // a missed webhook: Check status asks Razorpay
+  const p2 = [...rzp.payouts.values()].find((p: any) => p.amount === 70000);
+  p2.status = 'processed'; p2.utr = 'UTR-RZP-2';
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: Check status settles a payout whose webhook was missed', r);
+  r = await api('a', 'POST', `/payouts/${r2}/razorpay/check`);
+  check(r.status === 403, 'razorpay API: only Accounts checks', r);
+
+  // Razorpay accepted the payout but its answer was lost: the request stays being sent (never back to waiting, never payable by hand);
+  // Check status sends it again with the same idempotency key, which gives back the same payout - one payout in all
+  const r3 = await newRequest(600);
+  rzp.lose = true;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay`, { tds: 0 });
+  const { rows: [lost] } = await db.query(`select status, rzp_status from public.payout_requests where id = $1`, [r3]);
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && lost.status === 'PROCESSING' && lost.rzp_status === 'sending',
+    'razorpay API: an answer lost after Razorpay took it leaves the withdrawal being sent, not waiting', { r, lost });
+  rzp.lose = false;
+  const before = rzp.payouts.size;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && rzp.payouts.size === before, 'razorpay API: Check status sends it again with the same key: still one payout', { r, size: rzp.payouts.size, before });
+  const p3 = [...rzp.payouts.values()].find((p: any) => p.amount === 60000);
+  p3.status = 'processed'; p3.utr = 'UTR-RZP-3';
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: and settles it once Razorpay has paid it', r);
+
+  await db.query(`delete from public.department_expenses where id in (select expense_id from public.payout_requests where id = any($1::uuid[]))`, [[r1, r2, r3]]);
+  await db.query(`delete from public.payout_requests where id = any($1::uuid[])`, [[r1, r2, r3]]);
+  await db.query(`delete from public.razorpay_events where event_id like 'evt_api_%'`);
+  for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
+  rzpSrv.close();
+}
+
 {
   console.log('--- meeting summaries (20270124000200): attendance, the responsible leader, submission, the CEO reports');
   const idOf = async (who: string) => (await api(who, 'GET', '/me')).json.data.id as string;
