@@ -26,6 +26,11 @@ signed in and on the page they were on, and only **Log out** signs them out.
 * Dashboards that kept the page only in memory returned to the Overview. They now use `useRememberedPage(name, fallback, validPages)`
   (`src/hooks/useRememberedPage.ts`): Team Member, Team Lead, Accounts, Super Admin, AI Studio workspace, Department Head (every kind), Technical
   Support and Meta Verifier.
+* **Attendance, Meeting Request (Meetings) and Bugs** are pages every dashboard shows over its own content area (the "overlay" in
+  `src/components/layout/shell.tsx`). They were kept only in memory, so a refresh on Meeting Request returned to the Overview. They are now
+  remembered with `useRememberedOverlay` (`src/hooks/useRememberedOverlay.ts`), per signed-in person and per dashboard (the first four parts of
+  the address). Choosing one of the dashboard's own pages leaves the overlay. A page asked for by a notification or link (`/?tab=meetings`, a
+  tapped reminder) wins over the remembered one. Signing out forgets it too.
 * The Super Admin / department view in `App.tsx` remembers the **tab and sub-department per department**; **Back to all departments** clears it,
   so opening a department from the hub still starts at its dashboard.
 * **The installed app always opens at `/`.** The last dashboard address is remembered (`amuwa.lastPath`) and the person is returned to it when it
@@ -36,7 +41,21 @@ signed in and on the page they were on, and only **Log out** signs them out.
   derive the type from the list (`const PAGES = [...] as const; type Page = (typeof PAGES)[number]`). A new department-panel tab is restored after a
   refresh only when it is added to `src/components/layout/restorableTabs.ts`; otherwise a refresh opens the dashboard, as before.
 
+## The page behind a pop-up does not scroll
+
+Turning the wheel over a drawer or dialog used to scroll the page behind it, except for the few pop-ups that asked for the lock. Now
+`src/lib/overlayScrollLock.ts` (started once in `src/main.tsx`, so it also covers the customers' dashboard and the booking pages) watches the
+page: while an element that covers at least 90% of the window is shown on top of it, the page is locked (`src/lib/scrollLock.ts`); when it
+closes or is hidden, scrolling is given back. No pop-up has to ask for the lock, so new ones are covered too.
+
+What counts as a pop-up: `position: fixed`, covering at least 90% of the window in width and height, visible, taking the pointer, and stacked
+at z-index 10 or more. A toast layer that lets clicks through, a decorative background behind the page, a fixed header, the desktop sidebar,
+and an invisible or transparent layer never lock the page. The pop-up's own content still scrolls. If a new full-screen pop-up should lock the
+page, give it `fixed inset-0` with a z-index of 10 or more (the usual `z-50`).
+
 ## Tests
 
 `supabase/tests/session_persistence.test.ts` (storage, last address, restorable tabs, transient errors, the department choice) and
-`supabase/tests/ui_session_persistence.test.mjs` (a real browser: refresh, reopen, another person, an old stored page, signing out).
+`supabase/tests/ui_session_persistence.test.mjs` (a real browser: refresh, reopen, another person, an old stored page, signing out, and the
+overlay pages Meeting Request / Attendance / Bugs) and `supabase/tests/ui_scroll.test.mjs` (a real browser: the page behind a drawer is locked and
+unlocked, nested pop-ups, and the things that must not lock it).

@@ -8,6 +8,7 @@ import { attendanceRequested } from '../attendance/attendanceEvents';
 import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 import { useBugAccess } from '../bugs/bugUi';
+import { useRememberedOverlay } from '../../hooks/useRememberedOverlay';
 import { useOpenBugsRequest } from '../bugs/bugEvents';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
@@ -19,6 +20,7 @@ export const MEETINGS_NAV_ID = '__meetings';
 // Bugs (20270122000300): the Developers team's section, added to the menu ONLY of the developers the database names
 const BugsPage = React.lazy(() => import('../bugs/BugsPage'));
 export const BUGS_NAV_ID = '__bugs';
+const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID] as const;
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
 export const meetingsRequested = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'meetings';
 
@@ -382,7 +384,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // (Meetings works the same way)
   // a tapped reminder opens the CRM on /?open=attendance
   const bugAccess = useBugAccess();
-  const [overlay, setOverlay] = useState<null | typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID>(() => (meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null));
+  // remembered across a refresh (per person and dashboard), so Meeting Request / Attendance / Bugs stay open instead of returning to the Overview
+  const [overlay, setOverlay] = useRememberedOverlay<typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID>(OVERLAYS, meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null);
   const shownActive = overlay ?? active;
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);

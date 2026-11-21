@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 const StaffApp = React.lazy(() => import('./App'));
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { installChunkReload } from './lib/chunkReload';
+import { watchOverlays } from './lib/overlayScrollLock';
 import './index.css';
 
 const ClientApp = React.lazy(() => import('./client/ClientApp'));
@@ -11,6 +12,8 @@ const PublicBooking = React.lazy(() => import('./components/meetings/PublicBooki
 const StaffSetPassword = React.lazy(() => import('./components/auth/StaffSetPassword').then(m => ({ default: m.StaffSetPassword })));
 
 installChunkReload();
+// the page behind any pop-up, dialog or drawer never scrolls (staff app, customers' dashboard and booking pages alike)
+watchOverlays();
 
 // The candidate portal (/candidate) and the public careers pages (/careers) are no longer served on the CRM domain; old links and bookmarks
 // land on the CRM's own home page. The candidate API and the HR recruitment screens are unchanged.

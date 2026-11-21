@@ -82,5 +82,104 @@ for (const [name, vp, h, scrolls] of [
   await page.close();
 }
 
+
+// 3. the page behind ANY pop-up does not scroll (src/lib/overlayScrollLock.ts watches the page, so no pop-up has to ask for the lock)
+{
+  const longPage = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0"><div style="height:4000px;background:linear-gradient(#fff,#ccc)">page</div><div id="host"></div></body>`;
+  const drawer = `<div id="drawer" class="fixed" style="position:fixed;inset:0;z-index:60"><div style="position:absolute;inset:0;background:rgba(15,23,42,.4)"></div><div style="position:absolute;right:0;top:0;height:100%;width:28rem;background:#fff;overflow-y:auto"><div style="height:2000px">drawer</div></div></div>`;
+  const scrollY = (page) => page.evaluate(() => Math.round(window.scrollY));
+  const frame = (page) => page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const wheelOver = async (page, x, y) => { await page.mouse.move(x, y); await page.mouse.wheel(0, 600); await page.waitForTimeout(150); };
+  const vp = { width: 1280, height: 800 };
+  const fresh = async (watch) => {
+    const page = await browser.newPage({ viewport: vp });
+    await page.setContent(longPage);
+    await page.addScriptTag({ content: bundle });
+    if (watch) await page.evaluate(() => { window.__stop = window.watchOverlays(); });
+    return page;
+  };
+
+  // control: without the watcher, a drawer that did not ask for the lock lets the page behind it scroll (the bug)
+  { const page = await fresh(false);
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h; }, drawer);
+    await wheelOver(page, 300, 400);
+    check(await scrollY(page) > 0, 'control: without the lock the page behind a drawer scrolls', await scrollY(page));
+    await page.close(); }
+
+  // with the watcher: opening a drawer locks the page, closing it gives scrolling back
+  { const page = await fresh(true);
+    await wheelOver(page, 300, 400);
+    const free = await scrollY(page);
+    check(free > 0, 'no pop-up open: the page scrolls normally', free);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h; }, drawer);
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === 'hidden', 'a drawer opens: the page is locked');
+    await wheelOver(page, 300, 400);
+    check(await scrollY(page) === 0, 'wheel over the dimmed page behind the drawer does not scroll it');
+    await wheelOver(page, 1100, 400);
+    check(await scrollY(page) === 0, 'wheel over the drawer panel does not scroll the page behind it');
+    const inner = await page.evaluate(() => document.querySelector('#drawer [style*="overflow-y"]').scrollTop);
+    check(inner > 0, 'but the drawer\'s own content still scrolls', inner);
+    await page.evaluate(() => { document.getElementById('host').innerHTML = ''; });
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === '', 'the drawer closes: scrolling is given back');
+    await wheelOver(page, 300, 400);
+    check(await scrollY(page) > 0, 'and the page scrolls again', await scrollY(page));
+    // hiding (not removing) a pop-up also gives scrolling back
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h; }, drawer);
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === 'hidden', 'a drawer opens again: locked');
+    await page.evaluate(() => { document.getElementById('drawer').style.display = 'none'; });
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === '', 'a pop-up that is hidden instead of removed releases the lock');
+    // two pop-ups over each other: the lock stays until the last one closes
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h + h.replace('id="drawer"', 'id="second"'); }, drawer);
+    await frame(page);
+    await page.evaluate(() => document.getElementById('second').remove());
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === 'hidden', 'two pop-ups open, one closed: still locked');
+    await page.evaluate(() => document.getElementById('drawer').remove());
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === '', 'the last one closed: unlocked');
+    // stopping the watcher while a pop-up is open never leaves the page locked
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h; }, drawer);
+    await frame(page);
+    await page.evaluate(() => window.__stop());
+    check(await page.evaluate(() => document.body.style.overflow) === '', 'stopping the watcher releases the lock');
+    await page.close(); }
+
+  // things that only look like pop-ups must never lock the page
+  const notOverlays = [
+    ['a toast layer that lets clicks through', '<div class="fixed" style="position:fixed;inset:0;z-index:50;pointer-events:none"></div>'],
+    ['a decorative background behind the page', '<div class="fixed" style="position:fixed;inset:0;z-index:-10"></div>'],
+    ['a fixed header', '<div class="fixed" style="position:fixed;top:0;left:0;right:0;height:64px;z-index:50;background:#fff"></div>'],
+    ['the desktop sidebar', '<aside class="fixed" style="position:fixed;top:0;left:0;height:100vh;width:264px;z-index:50;background:#fff"></aside>'],
+    ['a layer that is invisible', '<div class="fixed" style="position:fixed;inset:0;z-index:60;visibility:hidden"></div>'],
+    ['a fully transparent layer', '<div class="fixed" style="position:fixed;inset:0;z-index:60;opacity:0"></div>'],
+    ['a layer inside something not displayed', '<div style="display:none"><div class="fixed" style="position:fixed;inset:0;z-index:60"></div></div>'],
+    ['a full-screen element with no stacking order', '<div class="fixed" style="position:fixed;inset:0"></div>']
+  ];
+  for (const [name, html] of notOverlays) {
+    const page = await fresh(true);
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h; }, html);
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === '', `${name} does not lock the page`);
+    await wheelOver(page, 640, 400);
+    check(await scrollY(page) > 0, `${name}: the page still scrolls`, await scrollY(page));
+    await page.close();
+  }
+
+  // a phone: the drawer covers the narrow screen
+  { const page = await browser.newPage({ viewport: { width: 390, height: 780 } });
+    await page.setContent(longPage);
+    await page.addScriptTag({ content: bundle });
+    await page.evaluate(() => { window.watchOverlays(); });
+    await page.evaluate(h => { document.getElementById('host').innerHTML = h; }, drawer);
+    await frame(page);
+    check(await page.evaluate(() => document.body.style.overflow) === 'hidden', 'phone width: a drawer locks the page');
+    await page.close(); }
+}
+
 await browser.close();
 console.log(`=== ALL SCROLLING BROWSER TESTS PASSED (${passed}) ===`);

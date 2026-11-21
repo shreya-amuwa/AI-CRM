@@ -22,6 +22,15 @@ export function write(key: string, value: string): void {
   }
 }
 
+/** Forget one remembered value (used when a person leaves an overlay page such as Attendance or Meetings). */
+export function clear(key: string): void {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    /* nothing to clear */
+  }
+}
+
 /** Forget every remembered page of this browser (used when someone signs out on purpose). */
 export function forgetRememberedPages(): void {
   try {
