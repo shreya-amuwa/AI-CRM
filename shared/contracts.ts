@@ -4007,6 +4007,8 @@ export interface BaDemo {
   rescheduleCount: number;
   feedback: string | null;
   followUpNotes: string | null;
+  /** The authorised person of the client attended (20270119000100): a completed demo earns its incentive only with this tick. */
+  authorisedPersonAttended?: boolean;
   client: string | null;
   company: string | null;
 }

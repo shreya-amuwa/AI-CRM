@@ -355,5 +355,12 @@ select test.check((select (g ->> 'amount')::numeric = 80 and (g ->> 'kept')::num
                      from jsonb_array_elements(incentive_setup() -> 'rules') r, jsonb_array_elements(r -> 'given') g
                     where r ->> 'id' = (select v from inc where k = 'rule3') and g ->> 'recipientId' = test.id('tm_a')::text),
   'after a Super Admin override the Team Lead sees what their member now gets (80) and what they keep (70)');
+select test.login('sa');
+insert into inc select 'rule4', incentive_rule_update((select v from inc where k = 'rule3')::uuid, jsonb_build_object('serviceCode', :'svc2')) ->> 'id';
 reset role;
-select test.check((select count(*) >= 3 from audit_logs where action in ('INCENTIVE_RULE_UPDATED', 'INCENTIVE_RULE_DELETED')), 'edits and deletions are on the audit trail');
+select test.check((select ended_at is not null from incentive_rules where id = (select v from inc where k = 'rule3')::uuid)
+                  and (select service_code = :'svc2' and ended_at is null from incentive_rules where id = (select v from inc where k = 'rule4')::uuid)
+                  and not exists (select 1 from incentive_allocations where rule_id = (select v from inc where k = 'rule4')::uuid),
+  'moving a sales rule to another product ends it and starts a fresh one (amounts are passed down again)');
+select test.check((select private.ba_demo_row(d) ? 'authorisedPersonAttended' from ba_demos d limit 1), 'a demo record carries the authorised-person tick');
+select test.check((select count(*) >= 4 from audit_logs where action in ('INCENTIVE_RULE_UPDATED', 'INCENTIVE_RULE_DELETED')), 'edits and deletions are on the audit trail');

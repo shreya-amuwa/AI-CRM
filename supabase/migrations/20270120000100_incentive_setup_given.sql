@@ -8,6 +8,7 @@
 --    - Delete: a rule nobody has earned from is removed; a rule with earnings is stopped instead (earned money is never erased).
 -- 2. incentive_setup() lists each person directly below the caller with what they currently get and what the caller keeps on them
 --    (it used to key on who set the amount, wrong after a Super Admin override), and gives the Super Admin the lists the rule form needs.
+-- 3. A Business Associate's demo record carries the "authorised person attended" tick, so their screen shows it.
 -- Safe to run twice; pasteable in the SQL editor.
 -- =============================================================================
 
@@ -50,9 +51,12 @@ begin
   -- a new amount / product / audience: the old version ends now and a new one starts (earnings already recorded stay as they were)
   v_spec := jsonb_build_object('name', r.name, 'eventType', r.event_type, 'serviceCode', r.service_code, 'amount', r.amount,
               'targetUnits', r.target_units, 'scopeType', r.scope_type, 'scopeValue', r.scope_value, 'monthlyCap', r.monthly_cap) || p;
-  if r.event_type = 'SALE_PAID' then
+  if r.event_type = 'SALE_PAID' and v_spec ->> 'scopeValue' is not distinct from r.scope_value
+     and nullif(v_spec ->> 'serviceCode', '') is not distinct from r.service_code then
+    -- same Operations Head and product: the amounts already passed down carry over (capped at the new amount)
     v_new := public.incentive_rule_create(v_spec || jsonb_build_object('replacesRuleId', r.id));
   else
+    -- a different product or Operations Head (or an event reward): a fresh rule; amounts are passed down again
     update public.incentive_rules set ended_at = now() where id = r.id;
     v_new := public.incentive_rule_create(v_spec - 'replacesRuleId');
   end if;
@@ -134,3 +138,15 @@ begin
 end $$;
 revoke all on function public.incentive_setup() from public, anon;
 grant execute on function public.incentive_setup() to authenticated;
+
+-- 3. A demo carries the "authorised person attended" tick (20270119000100), so the Business Associate's screen shows and sets it.
+create or replace function private.ba_demo_row(d public.ba_demos)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select jsonb_build_object('id', d.id, 'contactId', d.contact_id, 'title', d.title, 'description', d.description, 'startsAt', d.starts_at, 'endsAt', d.ends_at,
+    'mode', d.mode, 'location', d.location, 'meetingLink', d.meeting_link, 'assignedTo', d.assigned_to, 'assignee', (select p.full_name from public.profiles p where p.id = d.assigned_to),
+    'internalNotes', d.internal_notes, 'status', d.status, 'rescheduleCount', d.reschedule_count, 'feedback', d.feedback, 'followUpNotes', d.follow_up_notes,
+    'authorisedPersonAttended', d.authorised_person_attended,
+    'client', (select l.name from public.ba_contacts c join public.customers l on l.id = c.lead_id where c.id = d.contact_id),
+    'company', (select l.company from public.ba_contacts c join public.customers l on l.id = c.lead_id where c.id = d.contact_id))
+$$;
+revoke all on function private.ba_demo_row(public.ba_demos) from public, anon, authenticated;

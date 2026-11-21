@@ -3,6 +3,7 @@ import { CalendarClock, ChevronLeft, ChevronRight, Eye, List, Plus } from 'lucid
 import type { BaDemo, DemoStatus } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { businessAssociateApi } from '../../lib/api/endpoints';
+import { incomeApi } from '../../lib/income';
 import { useAuth } from '../../context/AuthContext';
 import { PageTitle } from '../layout/shell';
 import { Card, Tabs } from '../tasks/head/headParts';
@@ -99,7 +100,7 @@ export const DemoSchedulePage: React.FC<{ go: BaNavigate; initialContactId?: str
       </Card>
 
       {form && <DemoForm demo={form.demo} date={form.date} contactId={form.contactId} onClose={() => setForm(null)} onSaved={(d, created) => changed(created ? `The demo with ${d.client} is scheduled.` : d.status === 'RESCHEDULED' ? 'The demo was rescheduled.' : 'The demo was updated.')} />}
-      {detail && !form && !finish && <DemoDetail demo={detail} onClose={() => setDetail(null)} onEdit={() => { setForm({ demo: detail }); }} onFinish={status => setFinish({ demo: detail, status })} />}
+      {detail && !form && !finish && <DemoDetail demo={detail} onClose={() => setDetail(null)} onEdit={() => { setForm({ demo: detail }); }} onFinish={status => setFinish({ demo: detail, status })} onAuthorised={d => { setDetail(d); setDemos(list => list && list.map(x => (x.id === d.id ? d : x))); }} />}
       {finish && <FinishDialog demo={finish.demo} status={finish.status} onClose={() => setFinish(null)} onDone={d => changed(`The demo was marked ${STATUS_LABEL[d.status].toLowerCase()}.`)} />}
     </div>
   );
@@ -142,7 +143,7 @@ const CalendarView: React.FC<{ month: Date; setMonth: (d: Date) => void; demos: 
   );
 };
 
-const DemoDetail: React.FC<{ demo: BaDemo; onClose: () => void; onEdit: () => void; onFinish: (s: 'COMPLETED' | 'CANCELLED') => void }> = ({ demo: d, onClose, onEdit, onFinish }) => (
+const DemoDetail: React.FC<{ demo: BaDemo; onClose: () => void; onEdit: () => void; onFinish: (s: 'COMPLETED' | 'CANCELLED') => void; onAuthorised: (d: BaDemo) => void }> = ({ demo: d, onClose, onEdit, onFinish, onAuthorised }) => (
   <Dialog title={d.title} description={`${d.client}${d.company ? ` · ${d.company}` : ''}`} onClose={onClose}>
     <div className="flex items-center gap-2"><StatusBadge s={d.status} />{d.rescheduleCount > 0 && <span className="text-xs text-slate-500">Rescheduled {d.rescheduleCount}×</span>}</div>
     <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -151,6 +152,7 @@ const DemoDetail: React.FC<{ demo: BaDemo; onClose: () => void; onEdit: () => vo
       ))}
       {d.meetingLink && <div className="sm:col-span-2"><dt className="text-xs font-medium text-slate-500">Meeting link</dt><dd><a href={d.meetingLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline break-all">{d.meetingLink}</a></dd></div>}
     </dl>
+    {d.status === 'COMPLETED' && <AuthorisedTick demo={d} onChanged={onAuthorised} />}
     <div className="flex flex-wrap justify-end gap-2 pt-1">
       <button type="button" className={tcBtn.secondary} onClick={onClose}>Close</button>
       {live(d) && <>
@@ -162,9 +164,33 @@ const DemoDetail: React.FC<{ demo: BaDemo; onClose: () => void; onEdit: () => vo
   </Dialog>
 );
 
+/** "The client's authorised person attended": a completed demo earns its incentive only with this tick (20270119000100). */
+const AuthorisedTick: React.FC<{ demo: BaDemo; onChanged: (d: BaDemo) => void }> = ({ demo, onChanged }) => {
+  const [checked, setChecked] = useState(!!demo.authorisedPersonAttended);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const change = async (next: boolean) => {
+    setSaving(true); setError(null); setChecked(next);
+    try {
+      const r = await incomeApi.setDemoAuthorised(demo.id, next);
+      onChanged({ ...demo, authorisedPersonAttended: r.authorisedPersonAttended });
+    } catch (err) { setChecked(!next); setError(errorMessage(err)); } finally { setSaving(false); }
+  };
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1">
+      <label className="flex items-start gap-2 text-sm text-slate-800">
+        <input type="checkbox" className="mt-0.5" checked={checked} disabled={saving} onChange={e => void change(e.target.checked)} />
+        <span><span className="font-semibold">The client's authorised person attended</span><br /><span className="text-xs text-slate-500">The demo counts towards incentives only when the person who can decide was there.</span></span>
+      </label>
+      {error && <ErrorBanner message={error} />}
+    </div>
+  );
+};
+
 const FinishDialog: React.FC<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED'; onClose: () => void; onDone: (d: BaDemo) => void }> = ({ demo, status, onClose, onDone }) => {
   const [feedback, setFeedback] = useState('');
   const [followUp, setFollowUp] = useState('');
+  const [authorised, setAuthorised] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const busy = useRef(false);
@@ -172,13 +198,25 @@ const FinishDialog: React.FC<{ demo: BaDemo; status: 'COMPLETED' | 'CANCELLED'; 
     e.preventDefault();
     if (busy.current) return;
     busy.current = true; setSaving(true); setError(null);
-    try { onDone(await businessAssociateApi.demoStatus(demo.id, status, feedback.trim() || null, followUp.trim() || null)); } catch (err) { setError(errorMessage(err)); busy.current = false; setSaving(false); }
+    let done: BaDemo;
+    try { done = await businessAssociateApi.demoStatus(demo.id, status, feedback.trim() || null, followUp.trim() || null); } catch (err) { setError(errorMessage(err)); busy.current = false; setSaving(false); return; }
+    // the tick is saved after the demo is completed; if it fails the demo stays completed and the tick can be set from the demo's details
+    if (status === 'COMPLETED' && authorised) {
+      try { done = { ...done, authorisedPersonAttended: (await incomeApi.setDemoAuthorised(demo.id, true)).authorisedPersonAttended }; } catch { /* shown as not ticked */ }
+    }
+    onDone(done);
   };
   return (
     <Dialog title={status === 'COMPLETED' ? `Mark the demo completed` : `Cancel the demo`} description={`${demo.title} · ${demo.client}`} onClose={onClose} persistent>
       <form onSubmit={submit} className="space-y-3">
         <Field label={status === 'COMPLETED' ? 'Demo feedback' : 'Reason (optional)'} htmlFor="dm-fb"><textarea id="dm-fb" className={`${tcInput} min-h-[84px]`} maxLength={3000} value={feedback} onChange={e => setFeedback(e.target.value)} /></Field>
         <Field label="Follow-up notes" htmlFor="dm-fu"><textarea id="dm-fu" className={`${tcInput} min-h-[70px]`} maxLength={3000} value={followUp} onChange={e => setFollowUp(e.target.value)} /></Field>
+        {status === 'COMPLETED' && (
+          <label className="flex items-start gap-2 text-sm text-slate-800">
+            <input type="checkbox" className="mt-0.5" checked={authorised} onChange={e => setAuthorised(e.target.checked)} />
+            <span><span className="font-semibold">The client's authorised person attended</span><br /><span className="text-xs text-slate-500">The demo counts towards incentives only when the person who can decide was there.</span></span>
+          </label>
+        )}
         {error && <ErrorBanner message={error} />}
         <div className="flex justify-end gap-2"><button type="button" className={tcBtn.secondary} onClick={onClose} disabled={saving}>Back</button><button type="submit" className={tcBtn.primary} disabled={saving}>{saving ? 'Saving…' : status === 'COMPLETED' ? 'Mark completed' : 'Cancel the demo'}</button></div>
       </form>

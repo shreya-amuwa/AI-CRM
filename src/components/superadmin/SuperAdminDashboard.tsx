@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, Sparkles, Trophy, UserPlus, Users } from 'lucide-react';
+import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -12,6 +12,7 @@ import { useOpenChatRequest } from '../chat/chatEvents';
 import { useOpenReportsRequest } from '../reports/reportEvents';
 import { BusinessReports } from '../reports/BusinessReports';
 import { DepartmentIncome } from '../reports/DepartmentIncome';
+import { IncentiveSetup } from '../income/IncentiveSetup';
 import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
@@ -24,7 +25,7 @@ import { useRememberedPage } from '../../hooks/useRememberedPage';
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'top-performers', 'report-performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications'] as const;
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'top-performers', 'report-performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications'] as const;
 type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
@@ -33,6 +34,7 @@ type Page = (typeof SUPER_ADMIN_PAGES)[number];
  *   Departments         the department cards: open a department's own panel, lock / unlock, add one (unchanged functions)
  *   Business Reports    the existing company business report
  *   Team Members        Team Member Management in full screen: Add Team Member, Team Members (the directory), Access Control
+ *   Sales Incentives    create, edit, stop and delete the incentive rules sales staff earn from (20270120000100)
  *   Security & Audit    who did what, and what was refused (read-only)
  * Opening a department still uses the existing department panels; their "home" button brings the Super Admin back here.
  */
@@ -59,6 +61,7 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'departments', label: 'Departments', icon: Building2 },
           { id: 'team', label: 'Team Members', icon: Users },
           { id: 'income', label: 'Department Income', icon: Building2 },
+          { id: 'incentives', label: 'Sales Incentives', icon: SlidersHorizontal },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'report-performance', label: 'Reports & Performance', icon: FileBarChart },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
@@ -102,7 +105,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'top-performers' || page === 'report-performance' || page === 'team'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'team'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -131,6 +134,7 @@ export const SuperAdminDashboard: React.FC = () => {
       )}
       {page === 'team' && <TeamMemberManagement initialTab={teamTab.tab} openRequest={teamTab.n} />}
       {page === 'income' && <DepartmentIncome />}
+      {page === 'incentives' && <IncentiveSetup />}
       {page === 'top-performers' && <TopPerformersPage mode="COMPANY" />}
       {page === 'report-performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><ReportPerformance /></Suspense>}
       {page === 'reports' && <BusinessReports />}
