@@ -27,6 +27,7 @@ This changelog documents verified product releases, architectural updates, and w
 ### Added
 - **Withdraw** on My Income: save payout details (bank, UPI or international), ask for a withdrawal, follow it and download the payout slip. My Income now shows **My Earnings** next to **Balance** (withdrawn so far, available to withdraw). See [Withdraw your income](/sales/withdraw-your-income).
 - **Accounts > Finance > Payout requests**: pay (reference, date, TDS) or reject withdrawals, and pay final settlements to people who left. See [Pay payout requests](/accounts/pay-payout-requests).
+- **Pay through Razorpay**: once the company's RazorpayX is set up, Accounts sends a withdrawal with one click; it is marked paid when Razorpay confirms it.
 
 ---
 

@@ -67,3 +67,13 @@ Design: `docs/superpowers/specs/2026-11-21-incentive-payouts-design.md`.
 - Slip: `GET /api/v1/payouts/:id/slip` (PDF as base64; `payout_slip_data` checks and audits each download).
 - Screens: My Income (My Earnings, Balance, Withdraw, Withdrawals), Accounts > Finance > Payout requests. Tests: `payouts_test.sql`,
   `ui_payouts.test.mjs`, the payouts block of `api_integration.test.ts`.
+
+### Razorpay (migration `20270125000100_incentive_payouts_razorpay.sql`)
+- Server-only steps (service role; the API checks the Accountant's session first): `payout_rzp_begin` (REQUESTED → PROCESSING, TDS / net;
+  Accounts only, never their own, BANK / UPI only), `payout_rzp_link` (Razorpay contact and fund account, dropped when the details change),
+  `payout_rzp_set_id`, `payout_rzp_settle` (processed → PAID with the UTR; failed / rejected / cancelled → FAILED; reversed after PAID →
+  REVERSED, its expense removed and kept in the audit; a seen event id changes nothing), `payout_rzp_undo`, `payout_rzp_pending`,
+  `payout_rzp_lookup`.
+- API: `GET /payouts/razorpay/status`, `POST /payouts/:id/razorpay {tds}`, `POST /payouts/:id/razorpay/check`, and the signed webhook
+  `POST /internal/razorpay/payouts`. The request id is the `X-Payout-Idempotency` key. Settings: `docs/GO_LIVE_RUNBOOK.md` § RazorpayX.
+- Tests: `payouts_razorpay_test.sql`, the RazorpayX stand-in block of `api_integration.test.ts`, `ui_payouts.test.mjs`.

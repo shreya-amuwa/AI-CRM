@@ -24,12 +24,20 @@ const built = await build({
 });
 const bundle = built.outputFiles[0].text;
 const slipCalls = [];
+const rzp = { configured: false, calls: [] };
 const ok = (res, data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, data })); };
 const srv = createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const m = u.pathname.match(/^\/api\/v1\/payouts\/([^/]+)\/slip$/);
   if (m) { slipCalls.push(m[1]); return ok(res, { fileName: `Payout-PO-2611-${m[1]}.pdf`, contentBase64: Buffer.from('%PDF-1.7 test').toString('base64') }); }
   if (u.pathname === '/api/v1/crocodial/me') return ok(res, { enabled: false });
+  if (u.pathname === '/api/v1/payouts/razorpay/status') return ok(res, { configured: rzp.configured });
+  const pay = u.pathname.match(/^\/api\/v1\/payouts\/([^/]+)\/razorpay(\/check)?$/);
+  if (pay && req.method === 'POST') {
+    let raw = ''; req.on('data', c => (raw += c));
+    req.on('end', () => { rzp.calls.push({ id: pay[1], check: !!pay[2], body: raw ? JSON.parse(raw) : null }); ok(res, { id: pay[1], status: pay[2] ? 'PAID' : 'PROCESSING', razorpayStatus: pay[2] ? 'processed' : 'processing' }); });
+    return;
+  }
   if (u.pathname.startsWith('/api/v1/')) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'no fake' } })); }
   if (req.url === '/app.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(bundle); }
   if (req.url === '/app.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css); }
@@ -43,11 +51,12 @@ const check = (cond, name, extra) => { if (!cond) { console.error('not ok -', na
 let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); srv.close(); process.exit(0); }
 const errors = [];
+const dialogs = [];
 const open = async (mount, { width = 1280, before } = {}) => {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(String(e)));
-  page.on('dialog', d => d.accept());
+  page.on('dialog', d => { dialogs.push(d.message()); d.accept(); });
   await page.goto(base);
   if (before) await page.evaluate(before);
   await page.evaluate(m => window[m](), mount);
@@ -170,6 +179,43 @@ try {
   await page.getByRole('region', { name: 'Withdrawal details' }).getByText('Mark paid').first().waitFor();
   check(await page.getByRole('region', { name: 'Withdrawal details' }).getByTestId('negative-warning').isVisible(),
     'Accounts is warned when the request is now more than the person has');
+  await ctx.close();
+
+  // 4c. Razorpay: hidden until set up; then Pay through Razorpay asks first and sends the TDS; international details only by hand; Check status
+  const rzpState = () => {
+    window.__state.requests = [
+      { id: 'pr-r', profileId: 'me', name: 'Uma Upi', department: 'Sales', amount: 1234.5, status: 'REQUESTED', requestedAt: '2026-11-21T06:00:00Z', tdsAmount: 0, netAmount: null,
+        reference: null, paidOn: null, reason: null, finalSettlement: false, method: { kind: 'UPI', holderName: 'Uma', upiId: 'uma@okhdfcbank' } },
+      { id: 'pr-o', profileId: 'me2', name: 'Omar Overseas', department: 'Sales', amount: 900, status: 'REQUESTED', requestedAt: '2026-11-21T06:00:00Z', tdsAmount: 0, netAmount: null,
+        reference: null, paidOn: null, reason: null, finalSettlement: false, method: { kind: 'OTHER', holderName: 'Omar', otherDetails: 'IBAN GB00TEST' } },
+      { id: 'pr-s', profileId: 'me3', name: 'Sam Sending', department: 'Sales', amount: 800, status: 'PROCESSING', requestedAt: '2026-11-21T06:00:00Z', tdsAmount: 0, netAmount: 800,
+        reference: null, paidOn: null, reason: null, finalSettlement: false, channel: 'RAZORPAY', method: { kind: 'UPI', holderName: 'Sam', upiId: 'sam@okaxis' } }];
+  };
+  ({ ctx, page } = await open('mountAccounts', { before: rzpState }));
+  await page.getByRole('button', { name: /Uma Upi/ }).click();
+  await page.getByRole('region', { name: 'Withdrawal details' }).getByRole('button', { name: 'Mark paid' }).waitFor();
+  check(!(await page.getByRole('button', { name: 'Pay through Razorpay' }).count()) && await page.getByText('Razorpay is not set up').isVisible(),
+    'without the Razorpay settings there is no Razorpay button, and a note says why');
+  await ctx.close();
+  rzp.configured = true;
+  ({ ctx, page } = await open('mountAccounts', { before: rzpState }));
+  await page.getByRole('button', { name: /Uma Upi/ }).click();
+  let det = page.getByRole('region', { name: 'Withdrawal details' });
+  await det.getByLabel('TDS (₹)').fill('50.25');
+  await det.getByRole('button', { name: 'Pay through Razorpay' }).click();
+  await page.getByText('Sent to Razorpay.').waitFor();
+  check(dialogs.some(m => m.includes('₹1,184.25') && m.includes('uma@okhdfcbank')), 'Pay through Razorpay asks first, with the net amount and where it goes', dialogs.at(-1));
+  check(rzp.calls.at(-1).id === 'pr-r' && rzp.calls.at(-1).body.tds === 50.25 && !rzp.calls.at(-1).check, 'it sends the TDS to the server');
+  await page.getByRole('button', { name: /Omar Overseas/ }).click();
+  det = page.getByRole('region', { name: 'Withdrawal details' });
+  await det.getByRole('button', { name: 'Mark paid' }).waitFor();
+  check(await det.getByRole('button', { name: 'Pay through Razorpay' }).isDisabled(), 'international details can only be paid by hand');
+  await page.getByRole('tab', { name: /Being sent/ }).click();
+  await page.getByRole('button', { name: /Sam Sending/ }).click();
+  det = page.getByRole('region', { name: 'Withdrawal details' });
+  await det.getByRole('button', { name: 'Check status' }).click();
+  await page.getByText('Razorpay says: processed.').waitFor();
+  check(rzp.calls.at(-1).id === 'pr-s' && rzp.calls.at(-1).check, 'Check status asks Razorpay about a withdrawal being sent');
   await ctx.close();
 
   // 5. phone width, a paid request with its slip, and money to be recovered

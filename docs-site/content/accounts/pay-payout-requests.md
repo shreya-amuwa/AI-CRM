@@ -6,7 +6,7 @@ group: Finance
 roles: [Accounts Staff, Department Head, Super Admin]
 audience: internal
 status: verified
-sources: [src/components/accounts/finance/PayoutRequests.tsx, supabase/migrations/20270123000100_incentive_payouts.sql]
+sources: [src/components/accounts/finance/PayoutRequests.tsx, supabase/migrations/20270123000100_incentive_payouts.sql, supabase/migrations/20270125000100_incentive_payouts_razorpay.sql, server/services/PayoutService.ts]
 related: [sales/withdraw-your-income, accounts/finance-and-expenses]
 updated: 2026-11-21
 ---
@@ -28,6 +28,8 @@ Sales staff withdraw the incentives they earned from **My Income**. Their reques
 4. Enter the **Reference** (the UTR or UPI reference), **Paid on**, and the **TDS (₹)** you deducted (0 if none). **Net to pay** updates as you type.
 5. Click **Mark paid**. To refuse instead, click **Reject**, enter the **Reason** and click **Confirm reject**.
 
+**Through Razorpay** (when the company's RazorpayX is set up): instead of sending the money yourself, enter the **TDS (₹)** and click **Pay through Razorpay**. Confirm the amount and where it goes. The request moves to **Being sent**, then to **Paid** with the bank reference when Razorpay confirms it. If Razorpay refuses (for example the account balance is too low), you see its reason and the request is waiting again. On a request in **Being sent**, **Check status** asks Razorpay where it is. International details (**Other**) can only be paid by hand.
+
 For someone who has left the company: open **Leavers**, click the person, pay the amount shown, enter the reference and click **Pay final settlement**.
 
 ## What you should see
@@ -41,6 +43,7 @@ For someone who has left the company: open **Leavers**, click the person, pay th
 
 - Pay to the details shown on the request: they are the details the person had when they asked, even if they changed them later (you are told when that happens).
 - International details (**Other**) are paid by hand.
+- **Failed**: Razorpay could not send it; the person is told and the amount is available to them again. **Reversed**: the bank returned a payout that was paid; its expense is removed and its slip reads VOID.
 - TDS is recorded on the slip; the person's balance goes down by the full amount they asked for.
 
 ## If something goes wrong
