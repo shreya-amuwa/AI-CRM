@@ -157,6 +157,12 @@ export const PayoutRequests: React.FC = () => {
               </div>
               <div><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Pay to (the details given with this request)</p><MethodBox m={detail.method} /></div>
               {detail.status === 'REQUESTED' && <>
+                {detail.available < 0 && (
+                  <div role="alert" data-testid="negative-warning" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    Since this request was made, earnings were taken back: paying it leaves {detail.name} at {rupees(detail.available)}, recovered from their future
+                    incentives. Reject it if they should ask again for a smaller amount.
+                  </div>
+                )}
                 <PayForm amount={detail.amount} label="Mark paid" onPay={async (ref, on, tds) => { await payoutsApi.markPaid(detail.id, ref, on, tds); done('Marked paid.'); }} />
                 <RejectForm onReject={async reason => { await payoutsApi.reject(detail.id, reason); done('Rejected.'); }} />
               </>}
@@ -176,7 +182,7 @@ export const PayoutRequests: React.FC = () => {
               <div><h2 className="text-base font-bold text-slate-900">{leaver.name}</h2><p className="text-xs text-slate-500">{leaver.department ?? 'No department'} · has left · final settlement {rupees(leaver.available)}</p></div>
               <div><p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Pay to</p><MethodBox m={leaver.method} />
                 {!leaver.method && <p className="mt-1 text-xs text-slate-500">{methodLine(null)}: contact them for their details before paying.</p>}</div>
-              <PayForm amount={leaver.available} label="Pay final settlement" onPay={async (ref, on, tds) => { await payoutsApi.settle(leaver.profileId, ref, on, tds); done('Final settlement paid.'); }} />
+              <PayForm amount={leaver.available} label="Pay final settlement" onPay={async (ref, on, tds) => { await payoutsApi.settle(leaver.profileId, leaver.available, ref, on, tds); done('Final settlement paid.'); }} />
             </>}
           </section>
         )}

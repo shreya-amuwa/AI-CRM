@@ -150,13 +150,26 @@ try {
   await detail.getByLabel('Reference').fill('UTR-FINAL');
   await detail.getByRole('button', { name: 'Pay final settlement' }).click();
   await page.getByText('Final settlement paid.').waitFor();
-  check((await calls(page, 'payout_final_settlement')).at(-1).p_profile === 'gone-1', 'Accounts pays a leaver their final settlement');
+  const fs = (await calls(page, 'payout_final_settlement')).at(-1);
+  check(fs.p_profile === 'gone-1' && fs.p_amount === 900, 'Accounts pays a leaver their final settlement, confirming the amount they saw', JSON.stringify(fs));
   await page.getByRole('tab', { name: /Paid/ }).click();
   await page.getByRole('button', { name: /Meera Member/ }).click();
   await detail.getByRole('button', { name: 'Download slip' }).click();
   await page.waitForFunction(() => true);
   await page.waitForTimeout(300);
   check(slipCalls.includes('pr-a'), 'Accounts downloads the slip of a paid withdrawal');
+  await ctx.close();
+
+  // 4b. a request now larger than the balance (an earning was reversed after it was made): Accounts is warned before paying
+  ({ ctx, page } = await open('mountAccounts', { before: () => {
+    window.__state.earned = 1000;
+    window.__state.requests = [{ id: 'pr-n', profileId: 'me', name: 'Neha Negative', department: 'Sales', amount: 1500, status: 'REQUESTED', requestedAt: '2026-11-21T06:00:00Z',
+      tdsAmount: 0, netAmount: null, reference: null, paidOn: null, reason: null, finalSettlement: false, method: { kind: 'UPI', holderName: 'Neha', upiId: 'neha@okaxis' } }];
+  } }));
+  await page.getByRole('button', { name: /Neha Negative/ }).click();
+  await page.getByRole('region', { name: 'Withdrawal details' }).getByText('Mark paid').first().waitFor();
+  check(await page.getByRole('region', { name: 'Withdrawal details' }).getByTestId('negative-warning').isVisible(),
+    'Accounts is warned when the request is now more than the person has');
   await ctx.close();
 
   // 5. phone width, a paid request with its slip, and money to be recovered

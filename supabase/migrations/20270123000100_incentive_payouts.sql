@@ -292,8 +292,8 @@ begin
   if m.profile_id is null then
     raise exception 'VALIDATION_ERROR: Add your payout details first.' using errcode = 'P0001';
   end if;
-  -- one request at a time per person: lock this person's requests while checking
-  perform 1 from public.payout_requests where profile_id = me.id for update;
+  -- one request at a time per person: lock the person (their requests may not exist yet), as the final settlement does
+  perform 1 from public.profiles where id = me.id for update;
   if exists (select 1 from public.payout_requests where profile_id = me.id and status in ('REQUESTED', 'PROCESSING')) then
     raise exception 'CONFLICT: You already have a withdrawal waiting. Cancel it or wait until Accounts pays it.' using errcode = 'P0001';
   end if;
@@ -301,9 +301,18 @@ begin
   if v_amount > v_avail then
     raise exception 'VALIDATION_ERROR: You can withdraw up to ₹%.', greatest(v_avail, 0) using errcode = 'P0001';
   end if;
-  insert into public.payout_requests (profile_id, amount, method_snapshot, request_id)
-  values (me.id, v_amount, jsonb_build_object('full', private.payout_method_json(m, true), 'masked', private.payout_method_json(m, false)), p_request_id)
-  returning * into r;
+  begin
+    insert into public.payout_requests (profile_id, amount, method_snapshot, request_id)
+    values (me.id, v_amount, jsonb_build_object('full', private.payout_method_json(m, true), 'masked', private.payout_method_json(m, false)), p_request_id)
+    returning * into r;
+  exception when unique_violation then
+    -- the same press arriving twice at once, or a request from another tab: never a raw database error
+    select * into r from public.payout_requests where request_id = p_request_id and profile_id = me.id;
+    if r.id is not null then
+      return private.payout_request_json(r, true);
+    end if;
+    raise exception 'CONFLICT: You already have a withdrawal waiting. Cancel it or wait until Accounts pays it.' using errcode = 'P0001';
+  end;
   perform private.write_audit('PAYOUT_REQUESTED', 'payout_request', r.id, me.department_id, me.team_id, jsonb_build_object('amount', v_amount));
   perform private.payout_notify_accounts('PAYOUT_REQUESTED', 'Withdrawal request',
     format('%s asked to withdraw ₹%s.', me.full_name, to_char(v_amount, 'FM99,99,99,990.00')), r.id);
@@ -530,7 +539,9 @@ end $$;
 revoke all on function public.payout_leavers() from public, anon;
 grant execute on function public.payout_leavers() to authenticated;
 
-create or replace function public.payout_final_settlement(p_profile uuid, p_reference text, p_paid_on date, p_tds numeric)
+-- p_amount is the amount Accounts saw and sent: if the balance changed meanwhile the settlement is refused, so the record matches the money.
+drop function if exists public.payout_final_settlement(uuid, text, date, numeric);
+create or replace function public.payout_final_settlement(p_profile uuid, p_amount numeric, p_reference text, p_paid_on date, p_tds numeric)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   me public.profiles := private.payout_accounts_actor(p_profile);
@@ -553,6 +564,9 @@ begin
   if v_avail <= 0 then
     raise exception 'VALIDATION_ERROR: Nothing is left to pay this person.' using errcode = 'P0001';
   end if;
+  if round(coalesce(p_amount, 0), 2) <> v_avail then
+    raise exception 'CONFLICT: The amount to settle changed (now ₹%). Check it before paying.', v_avail using errcode = 'P0001';
+  end if;
   select * into m from public.payout_methods where profile_id = p_profile;
   insert into public.payout_requests (profile_id, amount, method_snapshot, final_settlement, decided_by)
   values (p_profile, v_avail, jsonb_build_object('full', private.payout_method_json(m, true), 'masked', private.payout_method_json(m, false)), true, me.id)
@@ -560,8 +574,8 @@ begin
   r := private.payout_settle(r, p_reference, p_paid_on, p_tds, 'MANUAL', me.id);
   return private.payout_request_json(r, true);
 end $$;
-revoke all on function public.payout_final_settlement(uuid, text, date, numeric) from public, anon;
-grant execute on function public.payout_final_settlement(uuid, text, date, numeric) to authenticated;
+revoke all on function public.payout_final_settlement(uuid, numeric, text, date, numeric) from public, anon;
+grant execute on function public.payout_final_settlement(uuid, numeric, text, date, numeric) to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 8. The payout slip: the values printed on it (the server draws the PDF on each download; values never change once paid)

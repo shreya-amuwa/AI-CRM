@@ -63,8 +63,9 @@ export const payoutsApi = {
     rpc<PayoutRequest>('payout_mark_paid', { p_id: id, p_reference: reference, p_paid_on: paidOn, p_tds: tds }),
   reject: (id: string, reason: string) => rpc<PayoutRequest>('payout_reject', { p_id: id, p_reason: reason }),
   leavers: () => rpc<Leaver[]>('payout_leavers'),
-  settle: (profileId: string, reference: string, paidOn: string, tds: number) =>
-    rpc<PayoutRequest>('payout_final_settlement', { p_profile: profileId, p_reference: reference, p_paid_on: paidOn, p_tds: tds }),
+  /** amount = what Accounts saw and sent; the database refuses it if the balance changed meanwhile. */
+  settle: (profileId: string, amount: number, reference: string, paidOn: string, tds: number) =>
+    rpc<PayoutRequest>('payout_final_settlement', { p_profile: profileId, p_amount: amount, p_reference: reference, p_paid_on: paidOn, p_tds: tds }),
   /** The payout slip PDF, saved by the browser (the API draws it; the database checks who may have it and logs the download). */
   async downloadSlip(id: string): Promise<void> {
     const r = await api.get<{ fileName: string; contentBase64: string }>(`/payouts/${id}/slip`);

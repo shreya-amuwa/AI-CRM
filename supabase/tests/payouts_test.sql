@@ -27,7 +27,8 @@ begin
   if exists (select 1 from public.hr_employees where profile_id = test.id(p_who)) then
     update public.hr_employees set joining_date = p_date::text where profile_id = test.id(p_who);
   else
-    insert into public.hr_employees (id, name, joining_date, profile_id) values ('TEST-PO-' || p_who, p_who, p_date::text, test.id(p_who));
+    insert into public.hr_employees (id, name, joining_date, profile_id) values ('TEST-PO-' || p_who, p_who, p_date::text, test.id(p_who))
+    on conflict (id) do update set profile_id = excluded.profile_id, joining_date = excluded.joining_date;
   end if;
   update public.employee_personal_details set joining_date = null where profile_id = test.id(p_who);
 end $$;
@@ -98,7 +99,7 @@ select payout_method_save('{"kind":"BANK","holderName":"Test Member","accountNum
 reset role;
 select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_REQUESTED' and recipient_id = test.id('acc_m') and entity_id = (select v from po where k = 'r2')::uuid),
   'Accounts staff are told about a new request');
-select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_DETAILS_CHANGED' and recipient_id = test.id('acc_m')),
+select test.check((select count(*) >= 1 from notifications where type = 'PAYOUT_DETAILS_CHANGED' and recipient_id = test.id('acc_m') and entity_id = (select v from po where k = 'r2')::uuid),
   'Accounts staff are told when details change while a request is open');
 set role authenticated;
 select test.login('tc_a');
@@ -161,15 +162,17 @@ select test.login('tm_a');
 select test.check((income_summary() ->> 'available')::numeric = 600, 'new earnings recover it first (2,600 - 2,000 = 600 available)');
 -- final settlement of someone who left
 select test.login('acc_m');
-select test.must_fail(format($$select payout_final_settlement(%L, 'UTR300', private.office_today(), 0)$$, test.id('tm_a')), 'an active person is not settled', 'VALIDATION_ERROR');
+select test.must_fail(format($$select payout_final_settlement(%L, 600, 'UTR300', private.office_today(), 0)$$, test.id('tm_a')), 'an active person is not settled', 'VALIDATION_ERROR');
 reset role;
 update profiles set status = 'SUSPENDED' where id = test.id('tm_a');
 set role authenticated;
 select test.login('acc_m');
 select test.check(exists (select 1 from jsonb_array_elements(payout_leavers()) x where x ->> 'profileId' = test.id('tm_a')::text and (x ->> 'available')::numeric = 600),
   'people who left with money to come are listed');
+select test.must_fail(format($$select payout_final_settlement(%L, 500, 'UTR300', private.office_today(), 0)$$, test.id('tm_a')),
+  'a final settlement must be the amount Accounts saw (the balance changed meanwhile)', 'CONFLICT');
 select test.check((select x ->> 'status' = 'PAID' and (x ->> 'finalSettlement')::boolean and (x ->> 'amount')::numeric = 600
-                     from (select payout_final_settlement(test.id('tm_a'), 'UTR300', private.office_today(), 0) x) y),
+                     from (select payout_final_settlement(test.id('tm_a'), 600, 'UTR300', private.office_today(), 0) x) y),
   'Accounts pays the remaining 600 as a final settlement');
 select test.check(not exists (select 1 from jsonb_array_elements(payout_leavers()) x where x ->> 'profileId' = test.id('tm_a')::text), 'and they leave the list');
 reset role;
@@ -183,9 +186,31 @@ insert into payout_methods (profile_id, kind, holder_name, other_details)
   values (test.id('sec_user'), 'OTHER', 'Test Abroad', 'Test Bank, IBAN GB00TEST0000000000, SWIFT TESTGB00, United Kingdom');
 set role authenticated;
 select test.login('acc_m');
-select payout_final_settlement(test.id('sec_user'), 'SWIFT-REF-1', private.office_today(), 0) ->> 'id' as rsec \gset
+select payout_final_settlement(test.id('sec_user'), 700, 'SWIFT-REF-1', private.office_today(), 0) ->> 'id' as rsec \gset
 reset role;
 select test.check((select not exists (select 1 from expense_allocations a where a.expense_id = r.expense_id) and r.expense_id is not null
                           and r.method_snapshot -> 'full' ->> 'kind' = 'OTHER'
                      from payout_requests r where r.id = :'rsec'),
   'someone without a department: the expense is company-wide (international details paid by hand)');
+
+\echo '   review fixes: only Accounts, masked queue, reject frees the amount'
+set role authenticated;
+select test.login('tc_a');
+select test.must_fail(format($$select payout_detail(%L)$$, (select v from po where k = 'r2')), 'a Sales member cannot open a withdrawal', 'FORBIDDEN');
+select test.must_fail(format($$select payout_mark_paid(%L, 'X1', private.office_today(), 0)$$, (select v from po where k = 'r3')), 'a Sales member cannot pay', 'FORBIDDEN');
+select test.must_fail(format($$select payout_reject(%L, 'no')$$, (select v from po where k = 'r3')), 'a Sales member cannot reject', 'FORBIDDEN');
+select test.must_fail($$select payout_leavers()$$, 'a Sales member cannot list leavers', 'FORBIDDEN');
+select test.must_fail(format($$select payout_final_settlement(%L, 1, 'X1', private.office_today(), 0)$$, test.id('sec_user')), 'a Sales member cannot settle', 'FORBIDDEN');
+select test.must_fail($$select payout_counts()$$, 'a Sales member cannot count requests', 'FORBIDDEN');
+select test.must_fail(format($$select payout_slip_data(%L)$$, (select v from po where k = 'r2')), 'a colleague cannot read someone''s slip', 'FORBIDDEN');
+select test.login('tm_a');
+select test.check((payout_slip_data((select v from po where k = 'r2')::uuid) ->> 'netAmount')::numeric = 1184.25, 'the person reads their own slip');
+select (income_summary() ->> 'available')::numeric as av_before \gset
+insert into po select 'r4', payout_request(500, 'po-req-0009') ->> 'id';
+select test.login('acc_m');
+select test.check((select x -> 'method' ->> 'accountNumber' like '••••%' from jsonb_array_elements(payout_queue('REQUESTED')) x where x ->> 'id' = (select v from po where k = 'r4')),
+  'the queue shows masked details (full details only when a request is opened)');
+select payout_reject((select v from po where k = 'r4')::uuid, 'Test reject');
+select test.login('tm_a');
+select test.check((income_summary() ->> 'available')::numeric = :av_before, 'rejecting frees the amount again');
+reset role;
