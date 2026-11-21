@@ -1,7 +1,7 @@
 /** The pages of the Sales Department Head dashboard and their addresses (kept apart from the component so they can be tested without a browser). */
 export type SalesHeadPage =
   | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'sheet-upload' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'tasks' | 'performance' | 'top-performers' | 'income' | 'reports' | 'work-reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications' | 'field-visit-leads' | 'field-tracking' | 'lead-whatsapp' | 'crocodial' | 'crocodial-me' | 'crocodial-leads' | 'work-updates'
-  | 'telecallers' | 'business-associates';
+  | 'telecallers' | 'business-associates' | 'my-income' | 'incentive-setup';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -40,7 +40,10 @@ export const PATHS: Record<SalesHeadPage, string> = {
   'work-updates': 'work-updates',
   // role-wise sections (migration 20270117000300): the list, and one person's dashboard at <list>/<profile id>
   telecallers: 'telecallers',
-  'business-associates': 'business-associates'
+  'business-associates': 'business-associates',
+  // sales incentives (20270119000100): the head's own income (the Department Income page keeps its address "income") and the setup
+  'my-income': 'my-income',
+  'incentive-setup': 'incentive-setup'
 };
 /** The role-wise pages that open one person's full-page dashboard at <path>/<profile id>. */
 export const ROLE_PAGES = ['telecallers', 'business-associates'] as const;

@@ -21,6 +21,16 @@ This changelog documents verified product releases, architectural updates, and w
 
 ---
 
+## Release: Sales incentives and My Income
+**Area:** Sales, Super Admin
+
+### Added
+- **My Income** in every Sales dashboard: today, this month, total and balance, target progress, this month's activity and the list of earnings. See [My Income](/sales/my-income).
+- **Incentive setup**: the Super Admin creates, edits, stops and deletes incentive rules; heads and Team Leads set what the people below them get; the Sales Department Head sets the telecaller and Business Associate split. See [Incentive setup](/sales/incentive-setup).
+- **The client's authorised person attended** tick on completed demos in **Demo Schedule**.
+
+---
+
 ## Release: Invoice series, customer revenue, split expenses, Department Head e-mails, Client Panel URL, hand-over queue
 **Area:** Accounts, Meta Verifier, Department Head
 

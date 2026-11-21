@@ -1,6 +1,6 @@
 # Sales incentives and "My Income" (phase 1)
 
-Migration `20270119000100_sales_incentives.sql`. Design: `docs/superpowers/specs/2026-11-20-sales-incentives-income-design.md`.
+Migrations `20270119000100_sales_incentives.sql` (database) and `20270121000100_incentive_setup_given.sql` (setup screens: edit, delete). Design: `docs/superpowers/specs/2026-11-20-sales-incentives-income-design.md`.
 Payouts (withdrawing a balance through Accounts) are phase 2; until then the balance is everything earned.
 
 ## Rules (the Super Admin)
@@ -9,8 +9,13 @@ shown as progress only), an optional monthly cap (event rewards), and who it is 
 - **Sales (`SALE_PAID`)**: a product (`crm_services.code`) and the Operations Head it is given to (amount per unit).
 - **Event rewards**: a level (`DEPARTMENT_HEAD` / `TEAM_HEAD` / `TEAM_MEMBER`), a sales sub-role (`TELECALLER`, `BUSINESS_ASSOCIATE`, …), a
   department, a team or a person.
-Rules are never edited: `incentive_rule_end` stops one at once (earnings already recorded stay) and a new one is created. The start period
-(15 days in the company by default) is `incentive_settings_set(days)`.
+`incentive_rule_end` stops a rule at once (earnings already recorded stay). `incentive_rule_update(rule, changes)` (20270121000100):
+the name, target and monthly cap change in place; a new amount, product or audience ends the old version and creates a new one with the
+same name (a sales rule with the same product and Operations Head carries the allocations, capped at the new amount), so an earning always
+keeps the rule and amount it was earned with. `incentive_rule_delete(rule)` removes a rule nobody earned from and only ends one with
+earnings. A new version records the one it replaced (`replaces_rule_id`); a sale's 100% of the order counts every version of the product's rule for
+that Operations Head, and an event reward's monthly cap counts every version (`private.incentive_lineage`). All Super Admin only, audited (`INCENTIVE_RULE_UPDATED`, `INCENTIVE_RULE_DELETED`). The start period (15 days in the company by
+default) is `incentive_settings_set(days)`.
 
 ## The cascade (sales)
 Each level passes an amount per unit to the level directly below (`incentive_allocation_set`), never more than it holds, and keeps the
@@ -35,6 +40,16 @@ each verified payment releases 50% → TM 50, TL 25, DH 75, OH 100, twice.
 
 ## Reading (the Income page)
 `income_summary()` (today, this month, total, balance, start date, target progress, this month's activity) and
-`income_earnings(from, to, limit)`: the signed-in person's own earnings only. `incentive_setup()`: the setup screen's data.
+`income_earnings(from, to, limit)`: the signed-in person's own earnings only. `incentive_setup()`: the setup screen's data - per rule, each person
+directly below the caller (`private.incentive_reports`) with what they get now and what the caller keeps on them; for the Super Admin the
+rule form's option lists and how often each rule was earned.
+
+## Screens
+- **My Income** (`src/components/income/IncomePage.tsx`): Sales Head / Operations Head (`my-income`; Department Income keeps `income`),
+  Team Lead, Telecaller, Business Associate and Sales Team Members. Calls and talk time only for people connected to Crocodial.
+- **Incentive setup** (`src/components/income/IncentiveSetup.tsx`): Super Admin (Company > Sales Incentives), Sales heads and Team Leads.
+- The Business Associate's **The client's authorised person attended** tick on completed demos (`ba_demo_set_authorised`; the demo
+  record carries `authorisedPersonAttended`).
+- Help: `docs-site/content/sales/my-income.md`, `docs-site/content/sales/incentive-setup.md`. Browser test: `supabase/tests/ui_income.test.mjs`.
 
 Tests: `supabase/tests/incentives_test.sql`.

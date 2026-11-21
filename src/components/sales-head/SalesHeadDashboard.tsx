@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Clock3, Building2, Briefcase, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, Handshake, Headphones, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
+import { Bell, Clock3, Building2, Briefcase, IndianRupee, SlidersHorizontal, MessageCircle, PhoneCall, CalendarCheck, ClipboardList, FileSpreadsheet, FileUp, Handshake, Headphones, LayoutDashboard, LineChart, MapPin, Megaphone, ReceiptIndianRupee, Target, TrendingUp, Trophy, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
@@ -33,6 +33,8 @@ import { FieldVisitLeadQueuePage } from '../field-visit/FieldVisitLeadQueue';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
+import { IncomePage } from '../income/IncomePage';
+import { IncentiveSetup } from '../income/IncentiveSetup';
 import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, parseSalesHeadPerson, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
 import { SalesRoleListPage, SalesRolePersonPage } from './roles/SalesRoleSection';
 import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamPanel';
@@ -124,6 +126,9 @@ export const SalesHeadDashboard: React.FC = () => {
           }] : []),
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'income', label: 'Department Income', icon: TrendingUp },
+          // sales incentives: what the head earns, and the amounts they pass to the people below them
+          { id: 'my-income', label: 'My Income', icon: IndianRupee },
+          { id: 'incentive-setup', label: 'Incentive setup', icon: SlidersHorizontal },
           { id: 'reports', label: 'Sales Reports', icon: ReceiptIndianRupee },
           { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
           { id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet },
@@ -189,6 +194,8 @@ export const SalesHeadDashboard: React.FC = () => {
         : <SalesRoleListPage role="BUSINESS_ASSOCIATE" onOpen={id => openPerson('business-associates', id)} />)}
       {page === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {page === 'income' && <SalesIncomePage />}
+      {page === 'my-income' && <IncomePage />}
+      {page === 'incentive-setup' && <IncentiveSetup />}
       {page === 'reports' && <SalesReports />}
       {page === 'work-reports' && <ReportsRoute />}
       {page === 'telecaller-sheets' && <ContactSheets />}
