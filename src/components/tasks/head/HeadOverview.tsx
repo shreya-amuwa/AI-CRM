@@ -43,7 +43,7 @@ interface Attention {
   go: HeadPage;
 }
 
-export const HeadOverview: React.FC<{ data: WorkTaskData; go: (p: HeadPage) => void }> = ({ data, go }) => {
+export const HeadOverview: React.FC<{ data: WorkTaskData; go: (p: HeadPage) => void; onAddLead?: () => void }> = ({ data, go, onAddLead }) => {
   const { user, profile } = useAuth();
   const waiting = useWaitingForLead();
   const tickets = useTickets();
@@ -101,7 +101,7 @@ export const HeadOverview: React.FC<{ data: WorkTaskData; go: (p: HeadPage) => v
       </div>
 
       {/* the department's people (today's attendance), customers, leads and invoices */}
-      <HeadDeptStats go={go} />
+      <HeadDeptStats go={go} onAddLead={onAddLead} />
 
       {data.loading ? (
         <LoadingLine label="Loading your department…" />

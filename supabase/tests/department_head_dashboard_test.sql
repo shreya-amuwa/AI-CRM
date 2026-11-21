@@ -10,6 +10,8 @@
 reset role;
 \i supabase/migrations/20270125000100_department_head_dashboard.sql
 \i supabase/migrations/20270125000100_department_head_dashboard.sql
+\i supabase/migrations/20270126000100_department_head_lead_owners.sql
+\i supabase/migrations/20270126000100_department_head_lead_owners.sql
 
 -- a clean slate for this suite (re-runnable): only the rows this suite makes
 delete from member_invoices where invoice_number like 'DHD-%';
@@ -277,7 +279,10 @@ select test.must_fail_state($$select head_attendance_list()$$, 'a Team Lead is r
 select test.must_fail_state($$select head_customer_list()$$, 'a Team Lead is refused the customer list', '42501');
 select test.must_fail_state($$select head_invoice_list()$$, 'a Team Lead is refused the invoice list', '42501');
 select test.login('wkr_dhp');
-select test.check((select head_lead_owners() = '[]'::jsonb), 'a Support-side head is offered no lead owners (leads belong to the Sales side)');
+select test.check((select head_lead_owners() -> 0 ->> 'role' = 'Myself'
+                          and exists (select 1 from jsonb_array_elements(head_lead_owners()) x where x ->> 'id' in (test.id('tsk_tl1')::text, test.id('tsk_m1')::text))
+                          and not exists (select 1 from jsonb_array_elements(head_lead_owners()) x where x ->> 'id' in (test.id('wkr_tms')::text, test.id('tsk_tls')::text, test.id('dhd_b1')::text))),
+  'a Support-side head is offered themself and the Support Team Leads and members of the department, none of the Sales people and no one from another department');
 select test.login('wkr_tms');
 select test.must_fail_state($$select head_lead_list()$$, 'a Team Member is refused the lead list', '42501');
 select test.must_fail_state($$select head_lead_owners()$$, 'a Team Member is refused the owners list', '42501');
@@ -291,6 +296,69 @@ select test.check((select count(*) = 0 from pg_proc p join pg_namespace n on n.o
                      and has_function_privilege('authenticated', p.oid, 'execute')), 'none of this migration''s private helpers can be called by a signed-in user');
 
 -- ---------------------------------------------------------------------------
+\echo '   8. Add lead: the Team Lead flow still works, the head's version is bound to the head's department, and nothing is created twice'
+reset role;
+set role authenticated;
+-- the Team Lead's own flow (no owner chosen: the lead is the Team Lead's, in the Team Lead's department) is unchanged
+select test.login('tsk_tls');
+insert into dhd select 'TLL', to_jsonb(create_lead('{"name":"DHD TL Lead","phone":"9300000001","leadSource":"Walk-in"}'::jsonb, array['AI_CALLING']));
+reset role;
+select test.check((select c.owner_id = test.id('tsk_tls') and c.department_id = test.dept('wkr-a') from customers c where c.id = (select (v #>> '{}')::uuid from dhd where k = 'TLL')),
+  'a Team Lead still adds their own lead exactly as before');
+set role authenticated;
+-- the head's lead appears in the head's list and the statistics move with it
+select test.login('wkr_dhs');
+insert into dhd select 'before', head_lead_list(null, null, null, 100, 0) -> 'summary';
+insert into dhd select 'DH1', to_jsonb(create_lead(format('{"name":"DHD Head Lead","phone":"9300000002","leadSource":"Referral","ownerId":"%s"}', test.id('wkr_tms'))::jsonb, array['AI_CALLING']));
+select test.check((select exists (select 1 from jsonb_array_elements(head_lead_list(null, null, null, 100, 0) -> 'items') x where x ->> 'name' = 'DHD Head Lead' and x ->> 'state' = 'NEW')), 'the new lead is in the head''s list at once');
+select test.check((select (head_lead_list() -> 'summary' ->> 'total')::int = (b.v ->> 'total')::int + 1 and (head_lead_list() -> 'summary' ->> 'new')::int = (b.v ->> 'new')::int + 1
+                          and (head_dashboard_overview() -> 'leads' ->> 'total')::int = (b.v ->> 'total')::int + 1 from dhd b where b.k = 'before'),
+  'the lead statistics (the list''s and the Overview''s) went up by one');
+-- the same form sent twice (a double click, a retry) is one lead
+select test.check((select (create_lead_once(format('{"name":"DHD Once Lead","phone":"9300000003","leadSource":"Walk-in","ownerId":"%s"}', test.id('tsk_tls'))::jsonb, array['AI_CALLING'], '5e5e5e5e-0000-4000-8000-000000000001') ->> 'existing')::boolean = false), 'the first send creates the lead');
+select test.check((select (create_lead_once(format('{"name":"DHD Once Lead","phone":"9300000003","leadSource":"Walk-in","ownerId":"%s"}', test.id('tsk_tls'))::jsonb, array['AI_CALLING'], '5e5e5e5e-0000-4000-8000-000000000001') ->> 'existing')::boolean), 'the same request again returns the lead it already made');
+reset role;
+select test.check((select count(*) = 1 from customers where name = 'DHD Once Lead'), 'and only one lead exists');
+set role authenticated;
+-- a department sent in the request is ignored: the lead goes where its owner is
+select test.login('wkr_dhs');
+insert into dhd select 'DEP', to_jsonb(create_lead(format('{"name":"DHD Sneaky Lead","phone":"9300000004","leadSource":"Walk-in","ownerId":"%s","departmentId":"%s","department_id":"%s","teamId":"%s"}',
+  test.id('wkr_tms'), test.dept('wkr-b'), test.dept('wkr-b'), test.team('wkr-b', 'Sales'))::jsonb, array['AI_CALLING']));
+reset role;
+select test.check((select c.department_id = test.dept('wkr-a') and c.team_id = test.team('wkr-a', 'Sales') and c.owner_id = test.id('wkr_tms') from customers c where c.id = (select (v #>> '{}')::uuid from dhd where k = 'DEP')),
+  'a department or team id smuggled into the request changes nothing: the lead is in the head''s department, in the owner''s team');
+set role authenticated;
+-- who may NOT create a lead for whom
+select test.login('wkr_dhb');
+select test.must_fail_state(format($$select create_lead('{"name":"DHD Cross Lead","phone":"9300000005","leadSource":"Walk-in","ownerId":"%s"}', array['AI_CALLING'])$$, test.id('wkr_tms')),
+  'the head of another department cannot give a lead to a wkr-a employee', '42501');
+select test.login('wkr_tms');
+select test.must_fail_state(format($$select create_lead('{"name":"DHD Cross Lead 2","phone":"9300000006","leadSource":"Walk-in","ownerId":"%s"}', array['AI_CALLING'])$$, test.id('tsk_tls')),
+  'a Team Member cannot give a lead to someone else', '42501');
+select test.login('tsk_tls');
+select test.must_fail_state(format($$select create_lead('{"name":"DHD Cross Lead 3","phone":"9300000007","leadSource":"Walk-in","ownerId":"%s"}', array['AI_CALLING'])$$, test.id('dhd_b1')),
+  'a Team Lead cannot give a lead to an employee of another department', '42501');
+select test.login('wkr_dhs');
+select test.must_fail_state(format($$select create_lead('{"name":"DHD Cross Lead 4","phone":"9300000008","leadSource":"Walk-in","ownerId":"%s"}', array['AI_CALLING'])$$, test.id('dhd_b1')),
+  'a head cannot give a lead to an employee of another department', '42501');
+reset role;
+set role anon;
+select test.must_fail($$select create_lead('{"name":"DHD Anon Lead","phone":"9300000009","leadSource":"Walk-in"}', array['AI_CALLING'])$$, 'a signed-out caller cannot create a lead', 'permission denied');
+reset role;
+select test.check((select count(*) = 0 from customers where name like 'DHD Cross Lead%' or name = 'DHD Anon Lead'), 'and none of the refused leads exist');
+-- the support-side head's lead
+set role authenticated;
+select test.login('wkr_dhp');
+insert into dhd select 'SUP', to_jsonb(create_lead(format('{"name":"DHD Support Lead","phone":"9300000010","leadSource":"Referral","ownerId":"%s"}', test.id('tsk_tl1'))::jsonb, array['AI_CALLING']));
+reset role;
+select test.check((select c.department_id = test.dept('wkr-a') and c.owner_id = test.id('tsk_tl1') from customers c where c.id = (select (v #>> '{}')::uuid from dhd where k = 'SUP')), 'a Support-side head adds a lead for a Support Team Lead in their department');
+set role authenticated;
+select test.login('wkr_dhp');
+select test.check((select exists (select 1 from jsonb_array_elements(head_lead_list(null, null, null, 100, 0) -> 'items') x where x ->> 'name' = 'DHD Support Lead')), 'and sees it in their lead list');
+select test.login('wkr_dhs');
+select test.check((select not exists (select 1 from jsonb_array_elements(head_lead_list(null, null, null, 100, 0) -> 'items') x where x ->> 'name' = 'DHD Support Lead')), 'while the Sales head does not (the sides stay apart)');
+reset role;
+
 \echo '   7. nothing existing changed'
 select test.check((select count(*) = 3 from customers where name in ('DHD Alpha One', 'DHD Alpha Two', 'DHD Beta One')), 'the customers made for this suite are all still there');
 select test.check((select count(*) = 5 from member_invoices where invoice_number like 'DHD-%'), 'and so are the invoices (nothing was written by the dashboard functions)');
