@@ -246,6 +246,10 @@ declare
   v_dept uuid := private.head_dept();
   v_me uuid := private.my_id();
 begin
+  -- leads belong to the Sales side: a head of the Support side is offered no one
+  if private.active_head_division() = 'SUPPORT' then
+    return '[]'::jsonb;
+  end if;
   return coalesce((
     select jsonb_agg(o.item order by o.ord, o.name)
       from (

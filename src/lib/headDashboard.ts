@@ -57,6 +57,8 @@ export interface CustomerDetail {
   invoiceSummary: { count: number; invoiced: number; paid: number; outstanding: number };
 }
 
+export interface CustomerTicket { id: string; ticketNo: string; subject: string; status: string; priority: string; createdAt: string; assignee: { id: string; name: string } | null }
+
 export interface HeadOverviewData {
   department: { id: string; name: string } | null;
   today: string;
@@ -84,6 +86,8 @@ export const headApi = {
   customers: (q: { search?: string; status?: CustomerStatus | null; limit?: number; offset?: number }) =>
     rpc<CustomerList>('head_customer_list', { p_search: q.search || null, p_status: q.status || null, p_limit: q.limit ?? 20, p_offset: q.offset ?? 0 }),
   customer: (id: string) => rpc<CustomerDetail>('head_customer_detail', { p_customer: id }),
+  /** The customer's support tickets: the existing Department Head function (it checks the customer is in the head's department). */
+  customerTickets: (id: string) => rpc<CustomerTicket[]>('head_customer_tickets', { p_customer: id }),
   invoices: (q: { search?: string; status?: 'PAID' | 'PENDING' | 'OVERDUE' | 'CANCELLED' | null; from?: string | null; to?: string | null; limit?: number; offset?: number }) =>
     rpc<InvoiceList>('head_invoice_list', { p_search: q.search || null, p_status: q.status || null, p_from: q.from || null, p_to: q.to || null, p_limit: q.limit ?? 20, p_offset: q.offset ?? 0 })
 };

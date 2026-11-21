@@ -19,7 +19,7 @@ for t in meetings_ceo_approval no_hardcoded_secrets sentry_scrub chat_load chat_
   rm -f "./.unit_$t.tmp.mjs"
 done
 # Browser tests: the "Same as mobile number" checkbox, and the scrolling of pop-ups / the page lock (need Playwright + Chromium, skipped when they are missing)
-for ui in docs_navigation ui_whatsapp ui_scroll ui_head_departments ui_access_control ui_audit_location ui_client_logins ui_client_journey ui_accounts_finance ui_employee_hierarchy ocr_shop_photo ui_mobile_chat ui_hr_designations ui_field_visit ui_task_hierarchy ui_task_management ui_attendance ui_staff_forgot ui_meetings ui_work_updates ui_lead_upload ui_lead_whatsapp ui_reminders ui_designstudio_roles ui_ai_website_onboarding ui_crocodial ui_crocodial_activity ui_crocodial_team ui_meeting_presence ui_chat_extras ui_sales_role_dashboards ui_ai_studio_deadlines ui_session_persistence ui_income ui_client_meetings ui_bugs ui_payouts; do
+for ui in docs_navigation ui_whatsapp ui_scroll ui_head_departments ui_access_control ui_audit_location ui_client_logins ui_client_journey ui_accounts_finance ui_employee_hierarchy ocr_shop_photo ui_mobile_chat ui_hr_designations ui_field_visit ui_task_hierarchy ui_task_management ui_attendance ui_staff_forgot ui_meetings ui_work_updates ui_department_head_dashboard ui_lead_upload ui_lead_whatsapp ui_reminders ui_designstudio_roles ui_ai_website_onboarding ui_crocodial ui_crocodial_activity ui_crocodial_team ui_meeting_presence ui_chat_extras ui_sales_role_dashboards ui_ai_studio_deadlines ui_session_persistence ui_income ui_client_meetings ui_bugs ui_payouts; do
   [ -f "supabase/tests/$ui.test.mjs" ] || continue
   echo "=== $ui"
   node "supabase/tests/$ui.test.mjs" || status=1

@@ -18,11 +18,11 @@ import {
   UserCheck,
   UserPlus,
   Users,
-  Clock3
+  Clock3,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
-import { DepartmentCustomers } from '../handover/DepartmentCustomers';
 import { ClientNotices } from '../notices/ClientNotices';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
@@ -55,6 +55,10 @@ import { OperationsDashboard } from '../operations/OperationsDashboard';
 import { WorkUpdatesPanel, useWorkUpdateCounts } from './WorkUpdates';
 import { useOpenWorkUpdateRequest } from './workUpdateEvents';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
+import { HeadAttendancePage } from '../department-head/HeadAttendancePage';
+import { HeadLeadsPage } from '../department-head/HeadLeadsPage';
+import { HeadCustomersPage } from '../department-head/HeadCustomersPage';
+import { HeadInvoicesPage } from '../department-head/HeadInvoicesPage';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -123,7 +127,10 @@ export const DepartmentHeadDashboard: React.FC = () => {
         label: 'Customers',
         items: [
           { id: 'clients', label: 'Client Hand-overs', icon: UserCheck, badge: waiting || 0 },
+          // not for the Accounts head (Accounts has its own invoice pages); leads are on the Sales side only
+          ...(!isAccounts && !supportSide ? [{ id: 'leads', label: 'Leads', icon: UserPlus }] : []),
           { id: 'customers', label: 'Customers', icon: Users },
+          ...(!isAccounts ? [{ id: 'invoices', label: 'Invoices', icon: FileText }] : []),
           { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
           { id: 'support', label: 'Support Desk', icon: Headset },
           { id: 'notices', label: 'Client Notices', icon: Megaphone }
@@ -132,6 +139,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {
         label: 'Team',
         items: [
+          { id: 'team-attendance', label: 'Team Attendance', icon: CalendarCheck },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
           { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
@@ -201,7 +209,10 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'activity' && <TeamActivityPage />}
       {nav === 'support' && <SupportDeskPage />}
       {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
-      {nav === 'customers' && <DepartmentCustomers initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
+      {nav === 'leads' && !isAccounts && !supportSide && <HeadLeadsPage />}
+      {nav === 'customers' && <HeadCustomersPage initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
+      {nav === 'invoices' && !isAccounts && <HeadInvoicesPage />}
+      {nav === 'team-attendance' && <HeadAttendancePage />}
       {nav === 'notices' && <ClientNotices />}
       {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}
       {nav === 'payments' && <AccountsConfirmations />}

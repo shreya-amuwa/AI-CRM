@@ -276,6 +276,8 @@ select test.must_fail_state($$select head_dashboard_overview()$$, 'a Team Lead i
 select test.must_fail_state($$select head_attendance_list()$$, 'a Team Lead is refused the attendance list', '42501');
 select test.must_fail_state($$select head_customer_list()$$, 'a Team Lead is refused the customer list', '42501');
 select test.must_fail_state($$select head_invoice_list()$$, 'a Team Lead is refused the invoice list', '42501');
+select test.login('wkr_dhp');
+select test.check((select head_lead_owners() = '[]'::jsonb), 'a Support-side head is offered no lead owners (leads belong to the Sales side)');
 select test.login('wkr_tms');
 select test.must_fail_state($$select head_lead_list()$$, 'a Team Member is refused the lead list', '42501');
 select test.must_fail_state($$select head_lead_owners()$$, 'a Team Member is refused the owners list', '42501');

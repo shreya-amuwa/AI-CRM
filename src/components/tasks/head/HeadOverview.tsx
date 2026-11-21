@@ -8,8 +8,9 @@ import { fmtDate } from '../TaskParts';
 import { Avatar, Card, CardHead, healthOf, HealthBadge, LoadingLine, primaryBtn, ghostBtn, StatCard } from './headParts';
 import { dayLabelsOfWeek } from './weekChart';
 import { ScopeOverviewPanel } from '../../common/ScopeOverviewPanel';
+import { HeadDeptStats } from '../../department-head/HeadDeptStats';
 
-export const HEAD_PAGES = ['overview', 'raise-issue', 'assign', 'reports', 'work-reports', 'daily', 'activity', 'clients', 'customers', 'import', 'support', 'notices', 'team', 'notifications', 'payments', 'plans', 'chat', 'income', 'performance', 'top-performers', 'telecaller-sheets', 'service-prices', 'operations', 'work-updates'] as const;
+export const HEAD_PAGES = ['overview', 'raise-issue', 'assign', 'reports', 'work-reports', 'daily', 'activity', 'clients', 'customers', 'import', 'support', 'notices', 'team', 'notifications', 'payments', 'plans', 'chat', 'income', 'performance', 'top-performers', 'telecaller-sheets', 'service-prices', 'operations', 'work-updates', 'leads', 'invoices', 'team-attendance'] as const;
 export type HeadPage = (typeof HEAD_PAGES)[number];
 
 const greeting = () => {
@@ -98,6 +99,9 @@ export const HeadOverview: React.FC<{ data: WorkTaskData; go: (p: HeadPage) => v
           </button>
         </div>
       </div>
+
+      {/* the department's people (today's attendance), customers, leads and invoices */}
+      <HeadDeptStats go={go} />
 
       {data.loading ? (
         <LoadingLine label="Loading your department…" />
