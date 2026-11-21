@@ -145,7 +145,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // a meeting notification: an open Meetings page reloads at once (a new request shows without a refresh)
           if (payload?.new?.entity_type === 'meeting') notifyMeetingsChanged();
           // a work update notification (requested, reminder, submitted): open Work Updates / Update Requests reload at once
-          if (payload?.new?.entity_type === 'work_task' && String(payload.new.type ?? '').startsWith('WORK_UPDATE')) notifyWorkUpdatesChanged();
+          if (payload?.new?.entity_type === 'work_task') notifyWorkUpdatesChanged();
           void refresh();
         }
       )

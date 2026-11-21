@@ -4,6 +4,7 @@ import {
   useWorkUpdatesLoader, workUpdatesApi, type TaskTimelineEntry, type WorkUpdateFilter, type WorkUpdateRequest
 } from '../../lib/workUpdates';
 import { fmtDate, fmtDateTime, StatusPill } from './TaskParts';
+import { WorkUpdateForm } from './WorkUpdateForm';
 import { takePendingWorkUpdate, useOpenWorkUpdateTask } from './workUpdateEvents';
 
 /**
@@ -134,54 +135,10 @@ export const FollowUpButton: React.FC<{ r: WorkUpdateRequest; onDone?: () => voi
 // ---------------------------------------------------------------------------
 // The employee answers
 // ---------------------------------------------------------------------------
-export const ResponseForm: React.FC<{ r: WorkUpdateRequest; onDone: () => void }> = ({ r, onDone }) => {
-  const [progress, setProgress] = useState('');
-  const [done, setDone] = useState('');
-  const [left, setLeft] = useState('');
-  const [blockers, setBlockers] = useState('');
-  const [expected, setExpected] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const id = `wur-${r.id}`;
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await workUpdatesApi.respond(r.id, { progress, workCompleted: done, remainingWork: left, blockers, expectedCompletion: expected || null });
-      onDone();
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form onSubmit={submit} className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 space-y-2.5" aria-label={`Submit work update for ${r.taskTitle}`}>
-      <div className="text-xs font-bold text-slate-800">Submit your work update</div>
-      <p className="text-[11px] text-slate-500">This does not change the task or its status. Mark the task as completed separately when it is.</p>
-      <label className="block text-[11px] font-medium text-slate-600" htmlFor={`${id}-p`}>Current progress *
-        <textarea id={`${id}-p`} required minLength={3} maxLength={4000} rows={3} className={`${field} mt-1`} value={progress} onChange={e => setProgress(e.target.value)} />
-      </label>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <label className="block text-[11px] font-medium text-slate-600" htmlFor={`${id}-d`}>Work completed
-          <textarea id={`${id}-d`} maxLength={4000} rows={3} className={`${field} mt-1`} value={done} onChange={e => setDone(e.target.value)} />
-        </label>
-        <label className="block text-[11px] font-medium text-slate-600" htmlFor={`${id}-l`}>Remaining work
-          <textarea id={`${id}-l`} maxLength={4000} rows={3} className={`${field} mt-1`} value={left} onChange={e => setLeft(e.target.value)} />
-        </label>
-      </div>
-      <label className="block text-[11px] font-medium text-slate-600" htmlFor={`${id}-b`}>Blockers or issues
-        <textarea id={`${id}-b`} maxLength={4000} rows={2} className={`${field} mt-1`} value={blockers} onChange={e => setBlockers(e.target.value)} />
-      </label>
-      <label className="block text-[11px] font-medium text-slate-600 sm:max-w-xs" htmlFor={`${id}-e`}>Expected completion date
-        <input id={`${id}-e`} type="date" className={`${field} mt-1`} value={expected} min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)} onChange={e => setExpected(e.target.value)} />
-      </label>
-      {error && <p className="text-[11px] text-rose-700" role="alert">{error}</p>}
-      <button type="submit" disabled={busy || progress.trim().length < 3} className={primary}><Send className="w-3.5 h-3.5" aria-hidden="true" /> {busy ? 'Sending…' : 'Submit update'}</button>
-    </form>
-  );
-};
+/** The employee answers a request with a work update (status, progress %, what was done...). The update is kept in the task's history and answers this request. */
+export const ResponseForm: React.FC<{ r: WorkUpdateRequest; onDone: () => void }> = ({ r, onDone }) => (
+  <div className="mt-3"><WorkUpdateForm taskId={r.taskId} currentStatus={r.taskStatus} currentProgress={r.taskProgress} requestId={r.id} onDone={() => onDone()} /></div>
+);
 
 // ---------------------------------------------------------------------------
 // One task: requests, answers and the timeline (inside the task details)

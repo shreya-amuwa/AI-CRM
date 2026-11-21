@@ -20,6 +20,9 @@ export const takePendingWorkUpdate = (): OpenWorkUpdateDetail | null => {
   return p;
 };
 
+/** Looks at the pending request without taking it (the task tracker opens the task; the work updates lists take it as before). */
+export const peekPendingWorkUpdate = (): OpenWorkUpdateDetail | null => pending;
+
 /** For a dashboard: switch to the page that shows work updates when something asks for it. */
 export function useOpenWorkUpdateRequest(show: () => void) {
   useEffect(() => {

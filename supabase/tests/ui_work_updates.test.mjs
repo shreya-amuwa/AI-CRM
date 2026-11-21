@@ -111,26 +111,27 @@ try {
   });
   await page.getByRole('heading', { name: /Update Requests \(1\)/ }).waitFor();
   check(await page.getByText('Prepare the Q1 plan').isVisible() && await page.getByText('Targets per team').isVisible() && await page.getByText(/Requested by/).isVisible()
-        && await page.getByText('When do you expect to finish?').isVisible() && await page.getByText(/reply by/).isVisible() && await page.getByText('In progress').isVisible(),
+        && await page.getByText('When do you expect to finish?').isVisible() && await page.getByText(/reply by/).isVisible() && await page.getByText('In progress').first().isVisible(),
     'the employee sees the task, description, requester, date, message, deadline and current task status');
-  check(await page.getByText(/does not change the task or its status/).isVisible(), 'the form says that answering does not change the task');
+  check(await page.getByText('Respond to the update request').isVisible() && await page.getByText(/kept in the task history/).isVisible(), 'the form says the update is kept in the task history');
   const submit = page.getByRole('button', { name: 'Submit update' });
-  check(await submit.isDisabled(), 'an answer needs the current progress');
-  await page.getByLabel('Current progress *').fill('Targets are 60% drafted');
-  await page.getByLabel('Work completed').fill('Three of five regions');
+  check(await submit.isDisabled(), 'an empty update cannot be submitted');
+  await page.getByLabel('Work completed since the last update *').fill('too short');
+  check(await submit.isDisabled(), 'a meaningless one-word update cannot be submitted either');
+  await page.getByLabel('Work completed since the last update *').fill('Three of five regions drafted');
   await page.getByLabel('Remaining work').fill('Two regions and the review');
-  await page.getByLabel('Blockers or issues').fill('Waiting for the Pune figures');
-  await page.getByLabel('Expected completion date').fill('2030-02-01');
+  await page.getByLabel(/Blockers or issues/).fill('Waiting for the Pune figures');
+  await page.getByLabel(/Expected completion date/).fill('2030-02-01');
   await submit.click();
   await page.getByText(/Update sent/).waitFor();
-  const ans = await lastCall(page, 'work_update_respond');
-  check(ans && ans.p_request === 'me1' && ans.p_progress === 'Targets are 60% drafted' && ans.p_expected === '2030-02-01' && ans.p_blockers === 'Waiting for the Pune figures'
-        && Object.keys(ans).sort().join() === 'p_blockers,p_completed,p_expected,p_progress,p_remaining,p_request' && noSmuggling(ans),
-    'the answer is sent for that request only, with no task status or progress, no role and no user id', ans);
+  const ans = await lastCall(page, 'submit_work_update');
+  check(ans && ans.p_request === 'me1' && ans.p_task === 'tm1' && ans.p_status === 'IN_PROGRESS' && ans.p_progress === 30 && ans.p_expected === '2030-02-01' && ans.p_blockers === 'Waiting for the Pune figures'
+        && Object.keys(ans).sort().join() === 'p_blockers,p_completed,p_expected,p_next,p_progress,p_remaining,p_request,p_status,p_task' && !/role|user|actor|employee|assignee|requested/i.test(Object.keys(ans).join(' ')),
+    'the update is sent for that task and request only, never with a role, a user id or an assignee', ans);
   const task = await page.evaluate(() => window.__state.requests.find(r => r.id === 'me1').taskStatus);
-  check(task === 'IN_PROGRESS', 'the task status is unchanged by the answer');
+  check(task === 'IN_PROGRESS', 'the task status is what the employee reported');
   await page.getByRole('button', { name: /Updates I sent/ }).click();
-  check(await page.getByText('Targets are 60% drafted').first().isVisible() && await page.getByText('Waiting for the Pune figures').first().isVisible(), 'the answer moves to "Updates I sent"');
+  check(await page.getByText('Three of five regions drafted').first().isVisible() && await page.getByText('Waiting for the Pune figures').first().isVisible(), 'the answer moves to "Updates I sent"');
   check(await page.getByText(/No one is waiting for an update from you/).isVisible(), 'and nothing is waiting any more');
 
   // phone: the answer form

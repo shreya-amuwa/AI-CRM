@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { summarize, workTasksApi, type TaskStatus, type WorkTaskData } from '../../lib/workTasks';
+import { summarize, type TaskStatus, type WorkTaskData } from '../../lib/workTasks';
 import { fmtDay, useCustomerOptions } from '../../lib/support';
-import { DueLabel, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from '../tasks/TaskParts';
+import { DueLabel, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../tasks/TaskParts';
 import { MyUpdateRequests } from '../tasks/WorkUpdates';
+import { TaskTracker } from '../tasks/TaskTracker';
+import { SubmitWorkUpdate } from '../tasks/WorkUpdateForm';
 import { Empty, ErrorBanner, KpiCard, Loading, PageHeader } from './SupportParts';
 
 const FILTERS: { id: TaskStatus | 'ALL'; label: string }[] = [
@@ -35,6 +37,8 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
       </div>
       {/* update requests from the Team Lead / Department Head; the answer never changes a task */}
       <MyUpdateRequests />
+      <TaskTracker tasks={mine} people={tasks.people} meId={profile?.id ?? ''} loading={tasks.loading} onChanged={() => void tasks.reload()}
+        filters={['ALL', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING']} title="My task tracker" emptyHint="When your Team Lead assigns you a task it appears here." />
       <div role="tablist" className="flex gap-1 overflow-x-auto">
         {FILTERS.map(f => (
           <button
@@ -96,14 +100,7 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
               </div>
               <ProgressBar value={task.progress} label={`Progress of ${task.title}`} />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <UpdateForm
-                  task={task}
-                  sendTo="Team Lead"
-                  onSubmit={async input => {
-                    await workTasksApi.submitUpdate(task.id, input);
-                    await tasks.reload();
-                  }}
-                />
+                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/60"><SubmitWorkUpdate taskId={task.id} status={task.status} progress={task.progress} onSent={() => void tasks.reload()} /></div>
                 <div className="p-3 rounded-xl border border-slate-200">
                   <div className="text-xs font-bold text-slate-800 mb-2">Update history</div>
                   <UpdateTimeline updates={tasks.updates.filter(u => u.taskId === task.id)} people={tasks.people} />

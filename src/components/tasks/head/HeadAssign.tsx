@@ -1,20 +1,17 @@
 import React, { useState } from 'react';
-import { ChevronDown, Plus, Search } from 'lucide-react';
+import { ChevronDown, Search } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
-import { isOverdue, localDateKey, workTasksApi, type DirectAssignee, type TaskPriority, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
+import { isOverdue, workTasksApi, type DirectAssignee, type WorkTask, type WorkTaskData } from '../../../lib/workTasks';
 import { DueLabel, EmptyState, fmtDate, fmtDateTime, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from '../TaskParts';
 import { TaskWorkUpdates } from '../WorkUpdates';
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, Tabs, textareaCls } from './headParts';
 import { isOperationsHead } from '../../../lib/auth/roleMapping';
 import { DirectOptions, OperationsAssign, ReceivedTasks } from './TaskHierarchy';
+import { TaskTracker } from '../TaskTracker';
+import { TaskAssignPanel, type AssignValues } from '../TaskAssignPanel';
+import type { PickerPerson } from '../PeoplePicker';
 
 type Filter = 'all' | 'progress' | 'completed' | 'overdue';
-const PRIORITIES: { id: TaskPriority; label: string; on: string }[] = [
-  { id: 'HIGH', label: 'High', on: 'bg-rose-50 text-rose-700 border-rose-200' },
-  { id: 'MEDIUM', label: 'Medium', on: 'bg-amber-50 text-amber-700 border-amber-200' },
-  { id: 'LOW', label: 'Low', on: 'bg-slate-100 text-slate-700 border-slate-300' }
-];
-
 export const HeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = props => {
   const { profile } = useAuth();
   // an Operations Head gives tasks to Department Heads (20261230000300), never straight to Team Leads
@@ -35,34 +32,22 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
     return () => { live = false; };
   }, []);
 
-  const [assigneeId, setAssigneeId] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
-  const [dueDate, setDueDate] = useState(localDateKey());
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [find, setFind] = useState(query);
   React.useEffect(() => setFind(query), [query]);
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assigneeId || !title.trim()) return;
-    setBusy(true);
-    setNotice(null);
-    try {
-      if (direct) await workTasksApi.assignDirect({ assigneeId, title: title.trim(), description, priority, dueDate });
-      else await workTasksApi.assignToTeamLead({ assigneeId, title: title.trim(), description, priority, dueDate });
-      setNotice({ ok: true, text: `Task assigned to ${direct?.find(d => d.id === assigneeId)?.name ?? nameOf(data.people, assigneeId)}.` });
-      setTitle('');
-      setDescription('');
-      await data.reload();
-    } catch (err) {
-      setNotice({ ok: false, text: err instanceof Error ? err.message : 'Could not assign the task.' });
-    } finally {
-      setBusy(false);
-    }
+  // who the panel offers: exactly what the database offered this head (direct) or the department's active team leads
+  const people: PickerPerson[] = direct
+    ? direct.map(d => ({ id: d.id, name: d.name, designation: d.role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member', team: d.team, department: d.department }))
+    : leads.map(l => ({ id: l.id, name: l.fullName, designation: l.position || 'Team Lead', team: data.teams.find(t => t.id === l.teamId)?.name ?? null }));
+  const groups = [...new Set(people.map(p => p.team).filter(Boolean) as string[])].sort().map(g => ({ id: g, label: g }));
+  const assign = async (v: AssignValues) => {
+    const assigneeId = v.assigneeIds[0]!;
+    const input = { assigneeId, title: v.title, description: v.description, priority: v.priority, dueDate: v.dueDate };
+    if (direct) await workTasksApi.assignDirect(input);
+    else await workTasksApi.assignToTeamLead(input);
+    await data.reload();
+    return `Task assigned to ${people.find(p => p.id === assigneeId)?.name ?? nameOf(data.people, assigneeId)}.`;
   };
 
   const counts = {
@@ -86,74 +71,18 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
       {profile ? <ReceivedTasks data={data} meId={profile.id} leads={leads} /> : null}
 
       <Card label="Assign a task">
-        <form onSubmit={submit} aria-label="Assign a task">
-          <CardHead title="New task" hint="The person is notified right away. A team member's own team lead is told too." />
-          <div className="px-5 pb-5 space-y-4">
-            {notice && (
-              <p role={notice.ok ? 'status' : 'alert'} className={`p-3 rounded-xl text-sm font-semibold ${notice.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                {notice.text}
-              </p>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_1.4fr_200px] gap-4">
-              <label className="block text-[13px] font-bold text-slate-700">
-                {direct ? 'Assign to *' : 'Team lead *'}
-                <select className={`${fieldCls} mt-1.5 font-medium`} value={assigneeId} onChange={e => setAssigneeId(e.target.value)} required data-testid="dh-assignee">
-                  <option value="">{direct ? 'Choose a team lead or team member' : 'Choose a team lead'}</option>
-                  {direct ? (
-                    <DirectOptions people={direct} />
-                  ) : (
-                    leads.map(l => (
-                      <option key={l.id} value={l.id}>
-                        {l.fullName}
-                        {l.teamId ? ` - ${data.teams.find(t => t.id === l.teamId)?.name || 'Team'}` : ''}
-                      </option>
-                    ))
-                  )}
-                </select>
-                {(direct ? direct.length === 0 : leads.length === 0) && (
-                  <span className="block mt-1 text-xs font-medium text-amber-700">{direct ? 'No active team leads or team members in the teams you manage yet.' : 'No active team leads in your department yet.'}</span>
-                )}
-              </label>
-              <label className="block text-[13px] font-bold text-slate-700">
-                Task *
-                <input className={`${fieldCls} mt-1.5 font-medium`} value={title} onChange={e => setTitle(e.target.value)} maxLength={200} required placeholder="e.g. Call all new WhatsApp leads" />
-              </label>
-              <label className="block text-[13px] font-bold text-slate-700">
-                Due date
-                <input type="date" className={`${fieldCls} mt-1.5 font-medium`} value={dueDate} onChange={e => setDueDate(e.target.value)} />
-              </label>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-end">
-              <label className="block text-[13px] font-bold text-slate-700">
-                Details (optional)
-                <textarea className={`${textareaCls} mt-1.5 font-medium`} rows={2} maxLength={4000} value={description} onChange={e => setDescription(e.target.value)} />
-              </label>
-              <div>
-                <div className="text-[13px] font-bold text-slate-700" id="prio-label">Priority</div>
-                <div className="mt-1.5 flex gap-2" role="radiogroup" aria-labelledby="prio-label">
-                  {PRIORITIES.map(p => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={priority === p.id}
-                      onClick={() => setPriority(p.id)}
-                      className={`h-11 px-4 rounded-xl border text-sm font-bold ${priority === p.id ? p.on : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button type="submit" disabled={busy || !assigneeId || !title.trim()} className={primaryBtn}>
-                <Plus className="w-4 h-4" aria-hidden="true" /> {busy ? 'Assigning…' : direct ? 'Assign task' : 'Assign to team lead'}
-              </button>
-            </div>
-          </div>
-        </form>
+        <CardHead title="New task" hint="The person is notified right away. A team member's own team lead is told too." />
+        <div className="px-5 pb-5">
+          <TaskAssignPanel
+            assigneeLabel={direct ? 'Assign to' : 'Team lead'} people={people} groups={groups}
+            loadingPeople={direct === undefined} emptyPeople={direct ? 'No active team leads or team members in the teams you manage yet.' : 'No active team leads in your department yet.'}
+            onSubmit={assign}
+          />
+        </div>
       </Card>
+
+      <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+        title="Task tracker" emptyHint="Tasks you assign appear here with their progress." />
 
       <section aria-label="Assigned tasks" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
