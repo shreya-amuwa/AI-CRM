@@ -5,8 +5,8 @@ import type { BugRepository } from '../repositories/BugRepository.js';
 
 /**
  * Bugs for the Developers team (migration 20270122000300). The database decides who may do what from the caller's own login: an employee
- * reports and follows their own bugs; only the developers on the list (Shreya Mande, Ashish Sinha, Siddhesh Shinde) open the Bugs section;
- * the Super Admin keeps that list. This layer only validates. Files use the existing issue upload / download routes.
+ * reports and follows their own bugs; only the developers on the list open the Bugs section: the Team Lead (Shreya Mande) sees and assigns
+ * every bug, the developers (Ashish Sinha, Siddhesh Shinde) see the unassigned ones and their own (20270122000400); the Super Admin keeps the list. This layer only validates. Files use the existing issue upload / download routes.
  */
 export class BugService {
   constructor(private readonly repo: BugRepository) {}
@@ -25,6 +25,6 @@ export class BugService {
   team(): Promise<DevTeamMember[]> { return this.repo.team(); }
   setTeam(body: unknown): Promise<DevTeamMember[]> {
     const i = parse(devTeamSetSchema, body);
-    return this.repo.setTeam(i.profileId, i.member);
+    return this.repo.setTeam(i.profileId, i.member, i.lead);
   }
 }

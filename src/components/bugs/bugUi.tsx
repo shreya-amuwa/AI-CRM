@@ -64,7 +64,7 @@ export function useBugAccess(): DevBugAccess | null {
   const [access, setAccess] = useState<DevBugAccess | null>(null);
   useEffect(() => {
     let alive = true;
-    bugsApi.access().then(a => { if (alive) setAccess(a); }, () => { if (alive) setAccess({ isDeveloper: false, developers: [] }); });
+    bugsApi.access().then(a => { if (alive) setAccess(a); }, () => { if (alive) setAccess({ isDeveloper: false, isLead: false, developers: [] }); });
     return () => { alive = false; };
   }, []);
   return access;

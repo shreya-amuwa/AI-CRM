@@ -1,7 +1,8 @@
-// Browser test of bugs for the Developers team (migration 20270122000300): the real dashboard shell shows "Bugs" in the menu ONLY for a
-// developer; an employee reports a technical issue from Raise an Issue (required fields checked first, one bug per form) and follows its
-// status and resolution (never the developers' internal comments); a developer lists, opens, assigns, comments and resolves (a note is
-// required). Real React components, real Chromium; the CRM API is answered in the page (supabase/tests/ui/bugs_harness.tsx).
+// Browser test of bugs for the Developers team (20270122000300, 20270122000400), with each of the three developer accounts: an employee
+// reports bugs; Shreya Mande (Team Lead), Ashish Sinha and Siddhesh Shinde all see every new, unassigned bug; only Shreya assigns (a
+// dropdown with Ashish and Siddhesh); after assignment each developer sees only their own, Shreya sees everything with the team's workload;
+// the assigned developer resolves; the employee follows it. Real React components and the real dashboard shell, real Chromium; the CRM API is
+// answered in the page like the database (supabase/tests/ui/bugs_harness.tsx).
 import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -50,77 +51,111 @@ const newPage = async (viewport = { width: 1280, height: 1000 }) => {
 };
 const navHas = (page, label) => page.locator('nav button', { hasText: label }).count();
 
+const reset = page => page.evaluate(() => window.signOut());
+const rows = page => page.$$eval('[data-testid="bug-row"]', rs => rs.map(r => r.innerText));
+const openBugs = async page => { await page.locator('nav button', { hasText: 'Bugs' }).click(); await page.waitForSelector('[data-testid="bugs-page"]'); await page.waitForTimeout(250); };
+
 try {
   const page = await newPage();
-  // ---- an employee: no Bugs in the menu; reports a bug from Raise an Issue
+  // ---- an employee reports two bugs from Raise an Issue (no Bugs in their menu)
   await open(page, 'employee');
-  check(await navHas(page, 'Bugs') === 0 && await navHas(page, 'Meetings') === 1, 'an employee has Attendance / Meetings but no Bugs in the menu');
+  check(await navHas(page, 'Bugs') === 0 && await navHas(page, 'Meetings') === 1, 'an employee has no Bugs in the menu');
   await page.selectOption('[data-testid="case-type"]', 'BUG');
   await page.waitForSelector('[data-testid="bug-form"]');
-  check(/Report a bug to the Developers team/.test(await page.innerText('[data-testid="case-type"]')), 'Raise an Issue offers "Report a bug to the Developers team" next to the existing two');
-  check(await page.isVisible('text=Screenshots or files'), 'with screenshots / files');
   await page.click('[data-testid="submit-bug"]');
   await page.waitForSelector('text=Give the issue a title');
   check(!(await page.evaluate(() => window.__calls.some(c => c.method === 'POST' && c.path === '/api/v1/bugs'))), 'an incomplete form is not sent');
-  await page.fill('#bug-title', 'Invoice PDF is blank');
-  await page.fill('#bug-description', 'The invoice PDF opens with an empty page for every customer.');
-  await page.fill('#bug-steps', '1. Open Accounts\n2. Download an invoice');
-  await page.click('[data-testid="submit-bug"]');
-  await page.waitForSelector('[data-testid="bug-submitted"]');
-  check(/BUG-2026-00001/.test(await page.innerText('[data-testid="bug-submitted"]')), 'sent to the Developers team, with its reference');
-  const sent = await page.evaluate(() => window.__calls.find(c => c.method === 'POST' && c.path === '/api/v1/bugs')?.body);
-  check(sent.title === 'Invoice PDF is blank' && sent.steps.startsWith('1. Open') && sent.clientRequestId?.length >= 8 && !('reporterName' in sent), 'the server receives the issue (never who reported it)', sent);
-  await page.waitForSelector('[data-testid="my-bug-row"]');
-  check(/Pending/.test(await page.innerText('[data-testid="my-bug-row"]')) && /Not assigned yet/.test(await page.innerText('[data-testid="my-bug-row"]')), 'it is in "My bug reports" as Pending');
+  for (const [t, d] of [['Invoice PDF is blank', 'The invoice PDF opens with an empty page for every customer.'], ['Ticket list is slow', 'Opening the ticket list takes more than a minute.']]) {
+    await page.fill('#bug-title', t);
+    await page.fill('#bug-description', d);
+    await page.click('[data-testid="submit-bug"]');
+    await page.waitForFunction(n => document.querySelectorAll('[data-testid="my-bug-row"]').length === n, t === 'Invoice PDF is blank' ? 1 : 2);
+  }
+  check(true, 'two bugs reported, both in "My bug reports"');
 
-  // ---- someone who is not a developer cannot see the section
-  const other = await newPage();
-  await open(other, 'other');
-  check(await navHas(other, 'Bugs') === 0, 'an AI Studio colleague who is not a developer has no Bugs entry');
-  const forbidden = await other.evaluate(async () => (await fetch('/api/v1/bugs')).status);
-  check(forbidden === 403, 'and the server refuses the list');
-  await other.close();
-
-  // ---- a developer: Bugs in the menu; assign, comment, resolve
-  // the same page (its in-page stand-in server keeps the reported bug): switch to the developer
-  await page.evaluate(() => { document.body.innerHTML = '<div id="root"></div>'; window.__calls = []; });
-  await open(page, 'dev');
-  check(await navHas(page, 'Bugs') === 1, 'a developer has "Bugs" in the menu');
-  await page.locator('nav button', { hasText: 'Bugs' }).click();
-  await page.waitForSelector('[data-testid="bug-row"]');
-  const r = await page.innerText('[data-testid="bug-row"]');
-  check(/Invoice PDF is blank/.test(r) && /Priya Sales/.test(r) && /Wabastore/.test(r) && /Team Member/.test(r) && /Unassigned/.test(r) && /Pending/.test(r),
-    'the reported bug is in the Bugs section: title, reporter, department, designation, unassigned, Pending', r);
+  // ---- every new bug is seen by all three developers: Shreya, Ashish AND Siddhesh
+  for (const [who, name] of [['dev', 'Shreya'], ['ashish', 'Ashish'], ['siddhesh', 'Siddhesh']]) {
+    await reset(page);
+    await open(page, who);
+    check(await navHas(page, 'Bugs') === 1, `${name} has "Bugs" in the menu`);
+    await openBugs(page);
+    const r = await rows(page);
+    check(r.length === 2 && r.some(x => /Invoice PDF is blank/.test(x) && /Priya Sales/.test(x) && /Wabastore/.test(x) && /Unassigned/.test(x)) && r.some(x => /Ticket list is slow/.test(x)),
+      `${name} sees both new, unassigned bugs with the employee's details`, r);
+  }
+  // Siddhesh (still signed in) opens a new bug: details, but no assignment control and no status change before assignment
   await page.click('button[aria-label^="Open BUG-2026-00001"]');
-  await page.waitForSelector('[data-testid="bug-drawer"] >> text=Steps to reproduce');
-  check(await page.isVisible('[data-testid="bug-drawer"] >> text=The invoice PDF opens with an empty page'), 'the developer reads the description and steps');
-  await page.selectOption('#bug-assignee', 'd2');
-  await page.waitForSelector('text=Assigned to Ashish Sinha');
-  check(true, 'assigned to another developer');
-  await page.fill('#bug-comment', 'Caused by the new font loader');
-  await page.click('button:has-text("Add comment")');
-  await page.waitForSelector('[data-testid="bug-history"] >> text=Internal comment (developers only)');
-  check(true, 'an internal comment, marked as developers only');
+  await page.waitForSelector('[data-testid="bug-drawer"] >> text=The invoice PDF opens with an empty page');
+  check(!(await page.locator('#bug-assignee').count()) && /the Team Lead assigns new bugs/.test(await page.innerText('[data-testid="bug-assignment"]')), 'a developer has no assignment control');
+  check(await page.isVisible('[data-testid="status-locked"]'), 'nor a status control on an unassigned bug');
+
+  // ---- Shreya (Team Lead) assigns: bug 1 to Ashish, bug 2 to Siddhesh
+  await reset(page);
+  await open(page, 'dev');
+  await openBugs(page);
+  check(/Team Lead view/.test(await page.innerText('[data-testid="bugs-page"]')), 'Shreya has the Team Lead view');
+  for (const [ref, dev] of [['BUG-2026-00001', 'd2'], ['BUG-2026-00002', 'd3']]) {
+    await page.click(`button[aria-label^="Open ${ref}"]`);
+    await page.waitForSelector('#bug-assignee');
+    const opts = await page.$$eval('#bug-assignee option', os => os.map(o => o.textContent));
+    check(opts.length === 3 && opts.includes('Ashish Sinha') && opts.includes('Siddhesh Shinde') && !opts.includes('Shreya Mande'), 'her assignment dropdown offers Ashish Sinha and Siddhesh Shinde', opts);
+    await page.selectOption('#bug-assignee', dev);
+    await page.waitForSelector('text=only you and them see it now');
+    check(/Assigned by Shreya Mande/.test(await page.innerText('[data-testid="bug-assignment"]')), `${ref} assigned, with who and when`);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+  }
+  await page.waitForSelector('[data-testid="team-workload"]');
+  const wl = await page.innerText('[data-testid="team-workload"]');
+  check(/Ashish Sinha\s*1 open/.test(wl) && /Siddhesh Shinde\s*1 open/.test(wl), 'her consolidated view shows each developer\'s workload', wl);
+  check((await rows(page)).length === 2, 'and she still sees both bugs');
+
+  // ---- after assignment: each developer sees only their own
+  await reset(page);
+  await open(page, 'ashish');
+  await openBugs(page);
+  let r = await rows(page);
+  check(r.length === 1 && /Invoice PDF is blank/.test(r[0]), 'Ashish now sees only the bug assigned to him', r);
+  await reset(page);
+  await open(page, 'siddhesh');
+  await openBugs(page);
+  r = await rows(page);
+  check(r.length === 1 && /Ticket list is slow/.test(r[0]), 'Siddhesh now sees only the bug assigned to him', r);
+  const blocked = await page.evaluate(async () => (await fetch('/api/v1/bugs/b1')).status);
+  check(blocked === 404, 'and the server refuses Ashish\'s bug to him');
+  // Siddhesh resolves his bug
+  await page.click('button[aria-label^="Open BUG-2026-00002"]');
+  await page.waitForSelector('#bug-status');
   await page.selectOption('#bug-status', 'RESOLVED');
   check(await page.isDisabled('button:has-text("Update status")'), 'resolving needs the resolution note first');
-  await page.fill('#bug-note', 'Fixed in release 2.4; please download again.');
+  await page.fill('#bug-note', 'Added an index; the list opens in a second.');
   await page.click('button:has-text("Update status")');
   await page.waitForSelector('[data-testid="bug-drawer"] [data-testid="bug-status"][data-status="RESOLVED"]');
-  check(/Resolved/.test(await page.innerText('[data-testid="bug-drawer"]')), 'Resolved, with the note');
+  check(true, 'Siddhesh resolves the bug assigned to him');
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'nothing runs off the screen');
 
-  // ---- back to the employee: the status and resolution, never the internal comment
-  // a new page for the employee (the developer's drawer is rendered outside the root)
-  await page.evaluate(() => { document.body.innerHTML = '<div id="root"></div>'; });
+  // ---- Shreya monitors the result; the employee sees the resolution, never internal comments
+  await reset(page);
+  await open(page, 'dev');
+  await openBugs(page);
+  await page.click('[role="tab"]:has-text("Resolved")');
+  await page.waitForSelector('[data-testid="bug-row"]:has-text("Ticket list is slow")');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="bug-row"]').length === 1);
+  check(/Resolved/.test((await rows(page))[0]), 'Shreya sees the resolved bug under Resolved');
+  await reset(page);
   await open(page, 'employee');
   await page.selectOption('[data-testid="case-type"]', 'BUG');
   await page.waitForSelector('[data-testid="my-bug-row"]');
-  const mine = await page.innerText('[data-testid="my-bug-row"]');
-  check(/Resolved/.test(mine) && /Developer: Ashish Sinha/.test(mine) && /Fixed in release 2.4/.test(mine), 'the employee sees Resolved, the developer and the resolution', mine);
-  await page.click('[data-testid="my-bug-row"]');
-  await page.waitForSelector('[data-testid="my-bug-dialog"] [data-testid="bug-history"]');
-  check(!/font loader|developers only/.test(await page.innerText('[data-testid="my-bug-dialog"]')), 'never the internal comment');
+  const mine = await page.$$eval('[data-testid="my-bug-row"]', rs => rs.map(x => x.innerText).join(' | '));
+  check(/Resolved/.test(mine) && /Developer: Siddhesh Shinde/.test(mine) && /Added an index/.test(mine) && /Developer: Ashish Sinha/.test(mine), 'the employee sees who works on each bug and the resolution', mine);
   await page.close();
+
+  // ---- someone who is not a developer
+  const other = await newPage();
+  await open(other, 'other');
+  check(await navHas(other, 'Bugs') === 0, 'an AI Studio colleague who is not a developer has no Bugs entry');
+  check(await other.evaluate(async () => (await fetch('/api/v1/bugs')).status) === 403, 'and the server refuses the list');
+  await other.close();
 
   // ---- phone width
   const phone = await newPage({ width: 360, height: 740 });

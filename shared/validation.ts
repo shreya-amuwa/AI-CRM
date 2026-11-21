@@ -3502,4 +3502,4 @@ export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note
   .refine(v => !['RESOLVED', 'REJECTED'].includes(v.status) || (v.note ?? '').trim().length >= 5,
     { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['note'] });
 export const bugCommentSchema = z.object({ note: trimmed(3000).min(1, 'Write a comment.') }).strict();
-export const devTeamSetSchema = z.object({ profileId: uuidSchema, member: z.boolean() }).strict();
+export const devTeamSetSchema = z.object({ profileId: uuidSchema, member: z.boolean(), lead: z.boolean().optional() }).strict();
