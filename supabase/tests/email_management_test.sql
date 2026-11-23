@@ -1,5 +1,5 @@
 -- =============================================================================
--- Email management (migration 20270127000100): idempotent sending, no copies of authentication e-mails, CC / BCC rules resolved from
+-- Email management (migration 20270129000100): idempotent sending, no copies of authentication e-mails, CC / BCC rules resolved from
 -- live assignments (assigned included, unrelated / departed / suspended excluded), suppression shared by every provider, provider
 -- pauses and quota with a CRITICAL reserve, provider events, the Super Admin's settings and who sees which e-mail history.
 -- Reuses wkr_tmp / wkr_tms (weekly_report_routing_test.sql), hr_head (hr_test.sql), sa (rls_test.sql), rr_rec1 (an HR Recruiter),
@@ -9,8 +9,8 @@
 \set QUIET 1
 \echo '--- 170. Email management: idempotency, auth privacy, CC/BCC rules, suppression, quota, events, admin, visibility'
 reset role;
-\i supabase/migrations/20270127000100_email_management.sql
-\i supabase/migrations/20270127000100_email_management.sql
+\i supabase/migrations/20270129000100_email_management.sql
+\i supabase/migrations/20270129000100_email_management.sql
 grant execute on all functions in schema test to anon, authenticated, service_role;
 
 -- fixtures: one customer, one job application, their assignments (remembered and restored at the end)

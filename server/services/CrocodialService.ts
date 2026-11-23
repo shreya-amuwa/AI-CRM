@@ -78,7 +78,8 @@ export class CrocodialService {
     return this.repo.activity(q.profileId ?? null, q.from ?? null, q.to ?? null);
   }
   /** "Sync now": the database checks the caller and the limit first; the run stops starting pages after 50 s (enough for a first read of
-   * about 40 pages) and anything left continues with the 5-minute scheduled run. */
+   * about 40 pages; Sync now has no page cap) and does the weekly full re-read when it is due. Anything left continues with the next
+   * scheduled run (hourly by default). */
   async syncNow(id: string): Promise<CrocodialSyncRunResult> {
     const c = await this.repo.syncRequest(parse(uuidSchema, id));
     const r = await runCrocodialSync({ connectionId: c.id, budgetMs: 50_000, env: this.env });

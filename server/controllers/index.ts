@@ -202,6 +202,12 @@ export const meetingsController = {
   respond: (async ctx => ok(await svc(ctx).meetings.respond(ctx.params.id, ctx.req.body))) as Handler,
   approvals: (async ctx => ok(await svc(ctx).meetings.approvals())) as Handler,
   presence: (async ctx => ok(await svc(ctx).meetings.presence(ctx.req.query))) as Handler,
+  ceoPresence: (async ctx => ok(await svc(ctx).meetings.ceoPresence())) as Handler,
+  ceoOffice: (async ctx => ok(await svc(ctx).meetings.ceoOffice())) as Handler,
+  ceoArrived: (async ctx => ok(await svc(ctx).meetings.ceoArrived(ctx.req.body))) as Handler,
+  ceoArrivalUndo: (async ctx => ok(await svc(ctx).meetings.ceoArrivalUndo(ctx.req.body))) as Handler,
+  roomLink: (async ctx => ok(await svc(ctx).meetings.roomLink())) as Handler,
+  setRoomLink: (async ctx => ok(await svc(ctx).meetings.setRoomLink(ctx.req.body))) as Handler,
   clientList: (async ctx => ok(await svc(ctx).meetings.clientList(ctx.req.query))) as Handler,
   createClient: (async ctx => ok(await svc(ctx).meetings.createClient(ctx.req.body), 201)) as Handler,
   mailLog: (async ctx => ok(await svc(ctx).meetings.mailLog(ctx.params.id))) as Handler,
@@ -240,7 +246,9 @@ export const meetingsController = {
 export const bugsController = {
   access: (async ctx => ok(await svc(ctx).bugs.access())) as Handler,
   submit: (async ctx => ok(await svc(ctx).bugs.submit(ctx.req.body), 201)) as Handler,
-  mine: (async ctx => ok(await svc(ctx).bugs.mine())) as Handler,
+  mine: (async ctx => ok(await svc(ctx).bugs.mine(ctx.req.query))) as Handler,
+  followUp: (async ctx => ok(await svc(ctx).bugs.followUp(ctx.params.id, ctx.req.body), 201)) as Handler,
+  reply: (async ctx => ok(await svc(ctx).bugs.reply(ctx.params.id, ctx.req.body), 201)) as Handler,
   myDetail: (async ctx => ok(await svc(ctx).bugs.myDetail(ctx.params.id))) as Handler,
   list: (async ctx => ok(await svc(ctx).bugs.list(ctx.req.query))) as Handler,
   detail: (async ctx => ok(await svc(ctx).bugs.detail(ctx.params.id))) as Handler,
@@ -273,6 +281,7 @@ export const employeeCasesController = {
   issueOverview: (async ctx => ok(await svc(ctx).employeeCases.issueOverview())) as Handler,
   hrIssues: (async ctx => ok(await svc(ctx).employeeCases.hrIssues(ctx.req.query))) as Handler,
   hrIssue: (async ctx => ok(await svc(ctx).employeeCases.hrIssue(ctx.params.id))) as Handler,
+  escalateIssue: (async ctx => ok(await svc(ctx).employeeCases.escalateIssue(ctx.params.id, ctx.req.body))) as Handler,
   assignIssue: (async ctx => ok(await svc(ctx).employeeCases.assignIssue(ctx.params.id, ctx.req.body))) as Handler,
   setIssueStatus: (async ctx => ok(await svc(ctx).employeeCases.setIssueStatus(ctx.params.id, ctx.req.body))) as Handler,
   respondToIssue: (async ctx => ok(await svc(ctx).employeeCases.respondToIssue(ctx.params.id, ctx.req.body))) as Handler,
@@ -309,7 +318,7 @@ export const notificationsController = {
   healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
-// Email Management (20270127000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// Email Management (20270129000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
 // the history for everyone, scoped by the database to what each person's work allows.
 export const emailController = {
   overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,

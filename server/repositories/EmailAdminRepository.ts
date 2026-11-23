@@ -4,7 +4,7 @@ import type { EmailHistoryQuery } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
 /**
- * Email Management (migration 20270127000100), as the caller: the database functions allow the Super Admin only for settings, senders,
+ * Email Management (migration 20270129000100), as the caller: the database functions allow the Super Admin only for settings, senders,
  * rules and suppression (and audit every change), and scope the history to what each person's work allows. This layer only calls them.
  */
 export class EmailAdminRepository {

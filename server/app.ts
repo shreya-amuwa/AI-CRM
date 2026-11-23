@@ -247,9 +247,9 @@ function requireDispatchSecret(header: string | undefined): void {
 
 // Attendance reminders, every 5 minutes from the Worker's scheduled run (migration 20270109000200): the database decides what is due and
 // puts it in the bell; this pushes it to the person's devices. Same secret and the same Vercel stand-down as the dispatch below.
-// Crocodial (read-only): continues the sync of the connections that are switched on - with the attendance reminders' 5-minute cron, every
-// CROCODIAL_SYNC_EVERY_MINUTES (default 15; worker/index.ts crocodialSyncDue), so a large first read still finishes the same day. Each connection is synced at most every 15 minutes
-// once it is up to date (croc_sync_due); a read in progress continues at once. Never throws.
+// Crocodial (read-only): continues the sync of the connections that are switched on - on the attendance reminders' 5-minute cron, every
+// CROCODIAL_SYNC_EVERY_MINUTES (default 60; worker/index.ts crocodialSyncDue). A connection is due once that long has passed (croc_sync_due,
+// same setting); a read in progress continues on the next such run, at most 10 pages per list each time. Never throws.
 app.post('/internal/crocodial/sync', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
@@ -300,8 +300,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
   // Lead welcome WhatsApp ("our services", once when a lead is first given to a sales person): the retries and anything left waiting.
   const leadWhatsApp = await runLeadWhatsApp().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every 15 minutes each;
-  // a long first pull continues on the next runs. Never throws.
+  // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every
+  // CROCODIAL_SYNC_EVERY_MINUTES (default 60) each; a long first pull continues on the next runs. Never throws.
   const crocodial = await crocodialSyncQuietly(15_000);
   // RazorpayX payouts still being sent after 10 minutes (a missed webhook): ask Razorpay. Never throws.
   const razorpayPayouts = await checkPendingRazorpayPayouts();
@@ -318,7 +318,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  // E-mail log retention (20270127000100): a little at a time; never fails the run
+  // E-mail log retention (20270129000100): a little at a time; never fails the run
   if (hasServiceClient()) {
     const { error } = await getServiceClient().rpc('email_purge_old');
     if (error && !/email_purge_old/.test(error.message)) log('error', 'email log purge failed', c, { message: error.message });

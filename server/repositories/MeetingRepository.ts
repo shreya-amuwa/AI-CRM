@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, Meeting, MeetingBookingLink, MeetingDetail, MeetingDirectoryEntry, MeetingSettings,
+  CeoOfficeStatus, CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, Meeting, MeetingBookingLink, MeetingDetail, MeetingDirectoryEntry, MeetingSettings,
   MeetingReportActionList, MeetingReportList, MeetingReportsOverview, MeetingSummaryList, MeetingSummaryView, MyMeetingAction
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
@@ -36,6 +36,12 @@ export class MeetingRepository {
   clientList(scope: string, status: string | null) { return this.rpc<ClientMeetingResult[]>('mtg_client_meetings', { p_scope: scope, p_status: status }); }
   mailLog(meetingId: string) { return this.rpc<MeetingMail[]>('mtg_mail_log', { p_meeting: meetingId }); }
   mailRetry(id: number) { return this.rpc<{ id: number; status: string }>('mtg_mail_retry', { p_id: id }); }
+  ceoPresence() { return this.rpc<CeoPresence[]>('mtg_ceo_presence'); }
+  ceoOffice() { return this.rpc<CeoOfficeStatus>('ceo_office_status'); }
+  ceoArrived(ceoId?: string) { return this.rpc<CeoOfficeStatus>('ceo_mark_arrived', { p_ceo: ceoId ?? null }); }
+  ceoArrivalUndo(ceoId?: string) { return this.rpc<CeoOfficeStatus>('ceo_mark_arrival_undo', { p_ceo: ceoId ?? null }); }
+  roomLink() { return this.rpc<{ roomLink: string | null }>('mtg_room_link'); }
+  setRoomLink(link: string | null) { return this.rpc<{ roomLink: string | null }>('mtg_room_link_set', { p_link: link }); }
   presence(ids: string[] | null) { return this.rpc<CeoPresence[]>('mtg_presence', { p_ids: ids }); }
   presenceEnter(meetingId: string | null) { return this.rpc<CeoPresence>('mtg_presence_enter', { p_meeting: meetingId }); }
   presenceExit() { return this.rpc<CeoPresenceExit>('mtg_presence_exit', { p_busy: null }); }
