@@ -6,7 +6,7 @@ import { meetingsApi } from '../../lib/api/meetings';
 import { listenToTables } from '../../lib/realtimeShared';
 
 /**
- * CEO office arrival (migration 20270127000300). HR presses "CEO HAS ARRIVED" on the HR dashboard; everyone asking the CEO for time sees a
+ * CEO office arrival (migration 20270128000300). HR presses "CEO HAS ARRIVED" on the HR dashboard; everyone asking the CEO for time sees a
  * red "has not arrived yet" or a green "has arrived" banner. It is information only: meeting requests are never disabled, hidden, refused
  * or decided by it (the database does not read it when a request is made). The status lives in the database and changes at once on every
  * screen (Supabase Realtime on ceo_office_arrivals), and again when the tab is shown.

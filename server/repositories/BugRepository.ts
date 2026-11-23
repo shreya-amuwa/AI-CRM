@@ -9,7 +9,7 @@ export class BugRepository {
     return unwrap(await this.db.rpc(fn, args)) as T;
   }
   access() { return this.rpc<DevBugAccess>('bug_access'); }
-  // an issue to the Developer Team with its category, priority and the affected department / employee (20270127000200)
+  // an issue to the Developer Team with its category, priority and the affected department / employee (20270128000200)
   submit(i: { title: string; description: string; steps?: string | null; attachmentIds: string[]; clientRequestId: string; category: string; priority: string;
     affectedDepartmentId?: string | null; affectedEmployeeId?: string | null }) {
     return this.rpc<DevBug>('bug_report', { p: {

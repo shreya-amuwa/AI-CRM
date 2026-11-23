@@ -1,4 +1,4 @@
-// The Super Admin's meeting queue (migration 20270127000100): the "scheduled, join now" e-mail a queued request gets when the Super Admin
+// The Super Admin's meeting queue (migration 20270128000100): the "scheduled, join now" e-mail a queued request gets when the Super Admin
 // exits a meeting (the room link when there is one, never a made-up one), and when the worker sends it: at once with a fixed room, after the
 // Google sync has added the Meet link (waiting at most ~15 minutes) with Google Meet.
 import { renderMeetingEmail, type MailMeeting } from '../../server/meetings/mail.js';

@@ -38,7 +38,7 @@ function usePresence(ids: string[] | null, enabled: boolean, ceo = false): { lis
 
 /** The signed-in person's own status (the Super Admin's carries their queue of waiting requests). */
 export const useMyPresence = (enabled = true) => usePresence(null, enabled);
-/** The CEOs' live status, for "Ask the CEO for time": a request made while BUSY joins the queue (20270127000100). */
+/** The CEOs' live status, for "Ask the CEO for time": a request made while BUSY joins the queue (20270128000100). */
 export const useCeoPresence = (enabled = true) => usePresence(null, enabled, true);
 /** The live status of some colleagues (the people being invited to a meeting). */
 export const usePresenceOf = (ids: string[]) => usePresence(ids, ids.length > 0);
@@ -106,7 +106,7 @@ export const MyAvailabilityPanel: React.FC<{
       } else {
         const r = await meetingsApi.presenceExit();
         const next = r.scheduled?.[0] as (CeoPresenceExit['scheduled'][number] & { stillWaiting?: number; startsNow?: boolean }) | undefined;
-        // it starts now, or right after a meeting you already have confirmed (never on top of it: 20270127000300)
+        // it starts now, or right after a meeting you already have confirmed (never on top of it: 20270128000300)
         const when = next && next.startsNow === false ? `at ${since(next.startsAt)}, after your next confirmed meeting` : 'and starts now';
         onDone(next
           ? `You are AVAILABLE again. The next queued meeting is confirmed ${when}: "${next.title}". The employee is e-mailed the meeting room link.${next.stillWaiting ? ` ${next.stillWaiting} more waiting.` : ''}`

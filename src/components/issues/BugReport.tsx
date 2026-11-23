@@ -12,7 +12,7 @@ import { issueFileTransport } from './issueFiles';
 import { BUG_STATUS_LABEL, BugFiles, BugHistory, BugStatusPill, BugTags, bugOpen, bugWhen } from '../bugs/bugUi';
 
 /**
- * An issue to the Developer Team (migrations 20270122000300, 20270127000200): goes only to the developers' Bugs section, never to HR.
+ * An issue to the Developer Team (migrations 20270122000300, 20270128000200): goes only to the developers' Bugs section, never to HR.
  * Used by every employee ("Raise an Issue to Developer Team") and by HR ("Report to Developer Team", with the affected department and
  * employee). The same file picker, limits and checks as issues; the reporter's name, department and designation come from their profile.
  * Below the form: the person's own issues, filtered in the database, each opening the conversation with the developers (their replies,

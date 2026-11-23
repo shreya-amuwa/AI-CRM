@@ -171,7 +171,7 @@ ${row('Reference', esc(m.reference))}</table>`;
       body = `<p>${esc(m.hostName)} cannot meet at the requested time and proposes <b>${proposed ?? 'another time'}</b> instead.${m.decisionNote ? ` Note: ${esc(m.decisionNote)}.` : ''}</p>${manage || '<p>Please reply to this e-mail to accept or decline.</p>'}`;
       break;
     case 'QUEUE_CONFIRMED': {
-      // a request that waited in the Super Admin's queue, confirmed when they exited their meeting (20270127000100): it starts now
+      // a request that waited in the Super Admin's queue, confirmed when they exited their meeting (20270128000100): it starts now
       const join = m.meetLink
         ? `<p style="margin:16px 0"><a href="${esc(m.meetLink)}" style="background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Join the meeting room</a></p>`
         : '<p>The meeting room link follows in the calendar invitation, or from Meetings in the CRM.</p>';

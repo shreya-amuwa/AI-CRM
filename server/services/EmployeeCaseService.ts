@@ -41,7 +41,7 @@ export class EmployeeCaseService {
   departments(): Promise<CaseDepartment[]> { return this.repo.departments(); }
   hrIssues(query: unknown): Promise<EmployeeIssueList> { return this.repo.hrIssues(parse(issueHrListQuerySchema, query)); }
   hrIssue(id: string): Promise<EmployeeIssueDetail> { return this.repo.hrIssue(parse(uuidSchema, id)); }
-  /** HR escalates an employee issue to the Developer Team (20270127000200): once; the database links it and tells the employee */
+  /** HR escalates an employee issue to the Developer Team (20270128000200): once; the database links it and tells the employee */
   escalateIssue(id: string, body: unknown): Promise<EmployeeIssueDetail> { return this.repo.escalateIssue(parse(uuidSchema, id), parse(issueEscalateSchema, body ?? {})); }
   assignIssue(id: string, body: unknown): Promise<EmployeeIssueDetail> { return this.repo.assignIssue(parse(uuidSchema, id), parse(issueAssignSchema, body).hrId); }
   setIssueStatus(id: string, body: unknown): Promise<EmployeeIssueDetail> {

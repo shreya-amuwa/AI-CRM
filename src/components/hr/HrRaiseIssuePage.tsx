@@ -4,7 +4,7 @@ import { takePendingIssues, useOpenIssuesRequest } from '../issues/issueEvents';
 import { EmployeeIssuesManagement } from './EmployeeIssuesManagement';
 
 /**
- * HR dashboard > Raise an Issue (migration 20270127000200). Two sections, one recipient each:
+ * HR dashboard > Raise an Issue (migration 20270128000200). Two sections, one recipient each:
  *  A. Report to Developer Team: HR's own issue to the developers (category, priority, the affected department / employee, files), its
  *     status and the developers' replies, and HR's follow-ups. The issues HR escalated from an employee issue are listed here too.
  *  B. Employee Issues – Received by HR: the existing Employee Issues workspace (filters, search, sorting, the conversation with the employee,

@@ -4,7 +4,7 @@ import { api } from './client';
 /** Bugs for the Developers team (migration 20270122000300). Files use the issue upload / download routes (employeeCasesApi). */
 export const bugsApi = {
   access: () => api.get<DevBugAccess>('/bugs/access'),
-  // an issue to the Developer Team (20270127000200: with its category, priority and, for HR, the affected department / employee)
+  // an issue to the Developer Team (20270128000200: with its category, priority and, for HR, the affected department / employee)
   submit: (b: { title: string; description: string; steps?: string | null; attachmentIds: string[]; clientRequestId: string; category?: string; priority?: string;
     affectedDepartmentId?: string | null; affectedEmployeeId?: string | null }) => api.post<DevBug>('/bugs', b),
   mine: (q: { status?: string; search?: string } = {}) => api.get<DevBugRow[]>('/bugs/mine', Object.fromEntries(Object.entries(q).filter(([, v]) => v)) as Record<string, string>),

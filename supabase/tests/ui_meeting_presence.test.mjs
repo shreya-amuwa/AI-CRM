@@ -1,4 +1,4 @@
-// Browser test of Enter / Exit Meeting (migrations 20270122000100, 20270127000100): an employee enters and exits (the header badge and the
+// Browser test of Enter / Exit Meeting (migrations 20270122000100, 20270128000100): an employee enters and exits (the header badge and the
 // panel follow), colleagues show BUSY in the New meeting form as soon as Realtime says so, a meeting starting within 30 minutes with a BUSY
 // colleague is flagged and refused; asking the CEO while they are BUSY joins the queue; the Super Admin enters and exits, sees the queue, each
 // Exit confirms exactly one, the room link is set in Settings, and the Super Admin's week lists the latest day and meeting first.
@@ -103,7 +103,7 @@ try {
     // ---- asking the CEO for time: while the CEO is AVAILABLE, an ordinary request; while BUSY, it joins the queue
     await page.click('button:has-text("Ask the CEO for time")');
     await page.waitForSelector('button:has-text("Send the request")');
-    // the CEO has not arrived yet (20270127000300): a red banner, and the request can still be sent
+    // the CEO has not arrived yet (20270128000300): a red banner, and the request can still be sent
     await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="false"]');
     const red = await page.innerText('[data-testid="ceo-arrival"]');
     check(/CEO HAS NOT ARRIVED AT THE OFFICE YET/.test(red) && /Sir has not arrived at the office yet\. You can still schedule your meeting request\. Meeting confirmation and availability will be subject to the CEO's arrival and approval\./.test(red),

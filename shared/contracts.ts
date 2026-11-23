@@ -4552,7 +4552,7 @@ export interface EmployeeIssue {
   employee: CaseEmployee;
   /** Set when a submission was recognised as one that already exists. */
   duplicate?: boolean;
-  /** Issue routing (20270127000200): an employee issue goes to HR; HR may escalate it to the Developer Team (one linked issue) */
+  /** Issue routing (20270128000200): an employee issue goes to HR; HR may escalate it to the Developer Team (one linked issue) */
   recipient?: 'HR';
   routing?: 'WITH_HR' | 'ESCALATED_TO_DEVELOPERS';
   escalation?: { bugId: string; reference: string; status: DevBugStatus; assigneeName: string | null; resolutionNote: string | null;
@@ -5874,7 +5874,7 @@ export interface CeoPresence {
 /** What Exit Meeting scheduled. */
 export interface CeoAutoScheduled { id: string; title: string; startsAt: string; endsAt: string; requestedStartsAt: string; moved: boolean; requestedBy: string | null }
 export interface CeoPresenceExit extends CeoPresence { scheduled: CeoAutoScheduled[] }
-/** CEO office arrival (20270127000300): HR marks it once a day; it only drives the banner on "Ask the CEO for time", never the requests. */
+/** CEO office arrival (20270128000300): HR marks it once a day; it only drives the banner on "Ask the CEO for time", never the requests. */
 export interface CeoOfficeCeo { ceoId: string; name: string; position: string | null; arrived: boolean; arrivedAt: string | null; markedBy: string | null; presence: 'AVAILABLE' | 'BUSY' }
 export interface CeoOfficeStatus { day: string; canMark: boolean; ceos: CeoOfficeCeo[]; duplicate?: boolean }
 
@@ -6645,7 +6645,7 @@ export interface MeetingMail {
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
 export type DevBugStatus = 'PENDING' | 'UNDER_REVIEW' | 'IN_PROGRESS' | 'NEEDS_INFO' | 'RESOLVED' | 'REJECTED' | 'CLOSED';
-/** Issue routing (20270127000200): EMPLOYEE (an employee reported it), HR_REPORT (HR reported it), HR_ESCALATION (HR escalated an employee issue) */
+/** Issue routing (20270128000200): EMPLOYEE (an employee reported it), HR_REPORT (HR reported it), HR_ESCALATION (HR escalated an employee issue) */
 export type DevBugSource = 'EMPLOYEE' | 'HR_REPORT' | 'HR_ESCALATION';
 export type DevIssueCategory = 'BUG' | 'FEATURE_REQUEST' | 'ACCESS_LOGIN' | 'DATA_ISSUE' | 'PERFORMANCE' | 'OTHER';
 export type DevIssuePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';

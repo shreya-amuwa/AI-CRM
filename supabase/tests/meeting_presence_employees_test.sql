@@ -1,5 +1,5 @@
 -- =============================================================================
--- Enter Meeting / Exit Meeting for every employee (migration 20270122000100; the Super Admin's own again from 20270127000100): Department
+-- Enter Meeting / Exit Meeting for every employee (migration 20270122000100; the Super Admin's own again from 20270128000100): Department
 -- Head, Team Lead, Team Member, BUSY / AVAILABLE with the entry and exit times, what colleagues see,
 -- no booking into a meeting starting within 30 minutes while BUSY, the former CEO queue moved to ordinary requests, and that asking the
 -- CEO for time still works. Own synthetic meetings (title 'EP %'). The Super Admin's own Enter / Exit and queue: meeting_ceo_queue_test.sql.
@@ -32,9 +32,9 @@ select test.check((select count(*) = 1 from meeting_events e join meetings m on 
 select test.check((select status = 'AVAILABLE' from meeting_presence where host_id = test.id('sa'))
                   and not exists (select 1 from meeting_presence_log where host_id = test.id('sa') and exited_at is null), 'the Super Admin is no longer BUSY; the open entry is closed');
 
--- the Super Admin's Enter / Exit and queue came back in 20270127000100 (meeting_ceo_queue_test.sql); from here on, the newest definitions
+-- the Super Admin's Enter / Exit and queue came back in 20270128000100 (meeting_ceo_queue_test.sql); from here on, the newest definitions
 reset role;
-\i supabase/migrations/20270127000100_ceo_meeting_queue.sql
+\i supabase/migrations/20270128000100_ceo_meeting_queue.sql
 set role authenticated;
 select test.login('sa');
 select test.must_fail($$insert into meeting_presence (host_id, status) values (test.id('sa'), 'BUSY')$$, 'nobody writes the status directly', 'permission denied');

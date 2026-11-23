@@ -167,7 +167,7 @@ Migration `supabase/migrations/20270122000100_meeting_presence_all_employees.sql
 > time no longer wait as "pending availability". Requests that were waiting become ordinary requests for the Super Admin to approve (nothing
 > is lost). Asking the CEO for time works as before: the Super Admin approves, proposes another time or declines.
 >
-> **Since `20270127000100`, the Super Admin has Enter / Exit again**, with a queue that confirms one request per Exit (see the next
+> **Since `20270128000100`, the Super Admin has Enter / Exit again**, with a queue that confirms one request per Exit (see the next
 > section). What follows about the Super Admin describes `20270122000100` alone.
 
 ### Who
@@ -207,9 +207,9 @@ Later times can still be booked (nobody knows when they will exit). The usual ru
 - the "employee availability" block of `api_integration.test.ts`
 - `supabase/tests/ui_meeting_presence.test.mjs`
 
-## The Super Admin's meeting queue: one confirmed per Exit (20270127000100)
+## The Super Admin's meeting queue: one confirmed per Exit (20270128000100)
 
-Migration `supabase/migrations/20270127000100_ceo_meeting_queue.sql` (run after `20270126000100`; additive, safe to run twice). It brings
+Migration `supabase/migrations/20270128000100_ceo_meeting_queue.sql` (run after `20270126000100`; additive, safe to run twice). It brings
 back Enter / Exit Meeting for the Super Admin (everyone has it now) and connects it to the requests made while they are in a meeting.
 
 - **Enter Meeting (Super Admin):** BUSY. Everyone asking the CEO for time sees *"The CEO is in a meeting right now"*, and the button reads
@@ -236,9 +236,9 @@ API: `GET /meetings/presence/ceo` (the CEOs' status), `GET` / `POST /meetings/se
 Tests: `supabase/tests/meeting_ceo_queue_test.sql`, `supabase/tests/meeting_ceo_queue.test.ts` (the e-mail and when it is sent),
 `supabase/tests/ui_meeting_presence.test.mjs` and the "CEO queue" checks of `api_integration.test.ts`.
 
-## CEO office arrival (20270127000300)
+## CEO office arrival (20270128000300)
 
-Migration `supabase/migrations/20270127000300_ceo_office_arrival.sql` (run after `20270127000200`; additive, safe to run twice).
+Migration `supabase/migrations/20270128000300_ceo_office_arrival.sql` (run after `20270128000200`; additive, safe to run twice).
 
 - **HR's button.** The HR dashboard has **CEO HAS ARRIVED** (HR staff and the Super Admin; recruiters and everyone else are refused by the database).
   - Pressing it records today's arrival (India time) once, with the time and who pressed it. A second press, or two HR people at once, changes nothing.

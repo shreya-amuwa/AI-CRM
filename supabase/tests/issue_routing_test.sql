@@ -1,5 +1,5 @@
 -- =============================================================================
--- Issue routing and escalation (migration 20270127000200):
+-- Issue routing and escalation (migration 20270128000200):
 --  - an employee raises an issue to HR OR to the Developer Team: each has exactly one recipient, nothing is sent to both;
 --  - HR reports an issue to the Developer Team (category, priority, affected department / employee, files) and follows the answers;
 --  - the conversation: a developer replies or asks for information (Pending information), the reporter follows up (back to the team);
@@ -14,8 +14,8 @@
 \echo '--- 135b. Issue routing: HR or the Developer Team, HR escalation, the conversation'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270127000200_issue_routing_escalation.sql
-\i supabase/migrations/20270127000200_issue_routing_escalation.sql
+\i supabase/migrations/20270128000200_issue_routing_escalation.sql
+\i supabase/migrations/20270128000200_issue_routing_escalation.sql
 delete from dev_bugs where title like 'IR %';
 delete from employee_issues where title like 'IR %';
 create temp table ir (k text primary key, v jsonb);

@@ -47,7 +47,7 @@ const KIND_LABEL: Record<string, string> = {
   SUBMITTED: 'Submitted', ASSIGNED: 'Assigned', STATUS_CHANGED: 'Status changed', RESPONSE: 'HR response', INFO_REQUESTED: 'More information requested', EMPLOYEE_REPLY: 'Employee reply',
   NOTE: 'Internal note', APPROVED: 'Meeting scheduled', DECLINED: 'Declined', ALTERNATIVE_PROPOSED: 'Another time proposed', ALTERNATIVE_ACCEPTED: 'Proposed time accepted',
   ALTERNATIVE_DECLINED: 'Proposed time declined', RESCHEDULED: 'Rescheduled', CANCELLED: 'Cancelled', COMPLETED: 'Completed',
-  // issue routing (20270127000200)
+  // issue routing (20270128000200)
   ESCALATED: 'Escalated to the Developer Team', DEV_UPDATE: 'Developer Team update'
 };
 const ALL_STATUS_LABELS: Record<string, string> = { ...ISSUE_STATUS_LABELS, ...MEETING_STATUS_LABELS };

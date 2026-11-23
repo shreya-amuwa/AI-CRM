@@ -53,7 +53,7 @@ export class MeetingService {
   }
   /** The CEOs' live status (Ask the CEO for time shows it; a request made while BUSY joins the queue). */
   ceoPresence(): Promise<CeoPresence[]> { return this.repo.ceoPresence(); }
-  /** CEO office arrival (20270127000300): everyone reads it; HR marks or undoes it (the database checks who) */
+  /** CEO office arrival (20270128000300): everyone reads it; HR marks or undoes it (the database checks who) */
   ceoOffice(): Promise<CeoOfficeStatus> { return this.repo.ceoOffice(); }
   ceoArrived(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoArrived(parse(ceoArrivalSchema, body ?? {}).ceoId); }
   ceoArrivalUndo(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoArrivalUndo(parse(ceoArrivalSchema, body ?? {}).ceoId); }

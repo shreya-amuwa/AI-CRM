@@ -395,7 +395,7 @@ const RequestsTab: React.FC<{ reloadKey: number; onOpen: (id: string, intent?: '
   };
   return (
     <div className="space-y-4">
-      {/* the CEO's office arrival (20270127000300): information only, asking stays open either way */}
+      {/* the CEO's office arrival (20270128000300): information only, asking stays open either way */}
       {data && !sa ? <CeoArrivalBanner /> : null}
       <div>
         <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> {data === null ? 'Meeting requests with the CEO' : sa ? 'Meeting requests from employees' : 'My Meeting Requests'}</h2>
@@ -688,7 +688,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
     <SideDrawer title={mode === 'ceo' ? 'Ask the CEO for time' : 'New meeting'} subtitle={mode === 'ceo' ? 'Only the CEO (Super Admin) approves, reschedules or rejects your request.' : 'Invite colleagues and guests; Google sends the invitations.'} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-4 text-sm">
         {error && <Notice tone="error">{error}</Notice>}
-        {/* information only: the request can be sent whether or not the CEO has arrived (20270127000300) */}
+        {/* information only: the request can be sent whether or not the CEO has arrived (20270128000300) */}
         {mode === 'ceo' && <CeoArrivalBanner ceoId={f.hostId || undefined} />}
         {mode === 'ceo' && (
           ceos.length ? (
@@ -885,7 +885,7 @@ const SettingsTab: React.FC<{ google: GoogleCalendarStatus | null; onGoogleChang
   );
 };
 
-/** The Super Admin's fixed meeting-room link (20270127000100): used for a queued meeting confirmed on Exit when Google Calendar is not
+/** The Super Admin's fixed meeting-room link (20270128000100): used for a queued meeting confirmed on Exit when Google Calendar is not
  *  connected (with Google, the meeting gets its own Google Meet link). */
 const RoomLinkEditor: React.FC<{ onFlash: (f: { tone: 'ok' | 'warn' | 'error'; text: string }) => void; google: GoogleCalendarStatus | null }> = ({ onFlash, google }) => {
   const [link, setLink] = useState('');

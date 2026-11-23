@@ -1,5 +1,5 @@
 -- =============================================================================
--- The Super Admin's meeting queue (migration 20270127000100): Enter makes the Super Admin BUSY; "Ask the CEO for time" while BUSY joins the
+-- The Super Admin's meeting queue (migration 20270128000100): Enter makes the Super Admin BUSY; "Ask the CEO for time" while BUSY joins the
 -- queue (PENDING_AVAILABILITY); EACH Exit confirms exactly ONE request (the oldest still waiting), starting at the Exit, with the Google Meet
 -- of a connected organiser or the Super Admin's fixed room link (never a made-up one); notifications and the "join now" e-mail once each; a
 -- second Exit, a withdrawn request or an empty queue confirm nothing; employees keep their own Enter / Exit. Own meetings (title 'EQ %').
@@ -9,8 +9,8 @@
 \echo '--- 133b. The Super Admin''s meeting queue (one per Exit)'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270127000100_ceo_meeting_queue.sql
-\i supabase/migrations/20270127000100_ceo_meeting_queue.sql
+\i supabase/migrations/20270128000100_ceo_meeting_queue.sql
+\i supabase/migrations/20270128000100_ceo_meeting_queue.sql
 delete from meetings where title like 'EQ %';
 delete from meeting_presence;
 delete from meeting_presence_log;

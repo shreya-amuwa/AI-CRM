@@ -6,7 +6,7 @@ import { CeoArrivalControl } from '../../../src/components/meetings/CeoArrival';
 
 /**
  * The real Meetings page (and the header badge every dashboard shows) with the CRM API answered in the page. The stand-in keeps the
- * availability like the database (20270122000100, 20270127000100): everyone, the Super Admin included, can be BUSY / AVAILABLE; asking the
+ * availability like the database (20270122000100, 20270128000100): everyone, the Super Admin included, can be BUSY / AVAILABLE; asking the
  * CEO while they are BUSY joins their queue, and each Exit of the Super Admin confirms exactly one (the oldest); a meeting starting within
  * 30 minutes with a BUSY colleague is refused. Every request is recorded in window.__calls. The test changes a
  * colleague's state "on the server" with window.__setServerStatus and then fires the Realtime event, as Supabase would.
@@ -36,7 +36,7 @@ const queue: { id: string; title: string; startsAt: string; endsAt: string; crea
 const week: any[] = [];
 let roomLink: string | null = null;
 const hrRequests: any[] = [];
-// the CEO's office arrival today (20270127000300): HR marks it; it never changes what a request does
+// the CEO's office arrival today (20270128000300): HR marks it; it never changes what a request does
 const office = { arrived: false, arrivedAt: null as string | null, markedBy: null as string | null };
 w.__setArrived = (v: boolean) => { office.arrived = v; office.arrivedAt = v ? new Date().toISOString() : null; office.markedBy = v ? 'Hema HR' : null; };
 const officeJson = (dup?: boolean) => ({ day: new Date().toISOString().slice(0, 10), canMark: !!w.__profile?.hr, ...(dup === undefined ? {} : { duplicate: dup }),

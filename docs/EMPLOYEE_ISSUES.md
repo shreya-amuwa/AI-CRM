@@ -176,9 +176,9 @@ correct (every developer sees every unassigned bug; once assigned, only the Team
   developer sees, for one email.
 - The Bugs menu asks `bug_access()` up to three times before concluding "not a developer", so a network hiccup does not hide it.
 
-## Issue routing and escalation (migration `20270127000200_issue_routing_escalation.sql`)
+## Issue routing and escalation (migration `20270128000200_issue_routing_escalation.sql`)
 
-Run after `20270127000100_ceo_meeting_queue.sql`. Additive and safe to run twice.
+Run after `20270128000100_ceo_meeting_queue.sql`. Additive and safe to run twice.
 
 ### One recipient per issue
 

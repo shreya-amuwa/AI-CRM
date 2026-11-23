@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Raise an Issue for HR, the routing of every issue, HR's escalation to the Developer Team, and the conversation with the developers
--- (docs/EMPLOYEE_ISSUES.md "Issue routing and escalation"). Run after 20270127000100_ceo_meeting_queue.sql. Additive and safe to run twice.
+-- (docs/EMPLOYEE_ISSUES.md "Issue routing and escalation"). Run after 20270128000100_ceo_meeting_queue.sql. Additive and safe to run twice.
 --
 --   * Every issue has one recipient: an issue to HR is an employee_issues row (recipient HR); an issue to the Developer Team is a dev_bugs
 --     row (recipient Developer Team). Nothing is ever sent to both automatically.

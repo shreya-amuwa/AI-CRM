@@ -11347,7 +11347,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
-// --- Enter / Exit Meeting for every employee (20270122000100) and the Super Admin's queue, one confirmed per Exit (20270127000100) ---
+// --- Enter / Exit Meeting for every employee (20270122000100) and the Super Admin's queue, one confirmed per Exit (20270128000100) ---
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
@@ -11962,7 +11962,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   rs = await api('th', 'GET', `/meetings/${appt}/summary`);
   check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
 }
-// --- Issue routing (migration 20270127000200): HR or the Developer Team, the conversation, HR's escalation (once), HR's sort / routing filter ---
+// --- Issue routing (migration 20270128000200): HR or the Developer Team, the conversation, HR's escalation (once), HR's sort / routing filter ---
 {
   const leadId = deliveryLead as string, dev1 = deliveryMember as string;
   await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, true), ($2, false)
@@ -12169,7 +12169,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
 }
-// --- CEO office arrival (migration 20270127000300): HR's button; information only, meeting requests work before and after ---
+// --- CEO office arrival (migration 20270128000300): HR's button; information only, meeting requests work before and after ---
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);

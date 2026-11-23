@@ -2167,7 +2167,7 @@ export const issueHrListQuerySchema = z
     from: caseDateTime.optional(),
     to: caseDateTime.optional(),
     search: trimmed(120).optional(),
-    // issue routing (20270127000200): the order, and whether HR escalated it to the Developer Team
+    // issue routing (20270128000200): the order, and whether HR escalated it to the Developer Team
     sort: z.enum(['NEWEST', 'OLDEST', 'PRIORITY', 'STATUS', 'DEPARTMENT', 'EMPLOYEE']).optional(),
     routing: z.enum(['ALL', 'WITH_HR', 'ESCALATED_TO_DEVELOPERS']).optional(),
     ...casePaging
@@ -3018,8 +3018,8 @@ export const ceoRequestsQuerySchema = z.object({
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
 // ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
-/** The Super Admin's fixed meeting-room link (20270127000100): https, or empty to remove it. */
-/** HR marks (or undoes) the CEO's office arrival; ceoId only when there is more than one CEO (20270127000300) */
+/** The Super Admin's fixed meeting-room link (20270128000100): https, or empty to remove it. */
+/** HR marks (or undoes) the CEO's office arrival; ceoId only when there is more than one CEO (20270128000300) */
 export const ceoArrivalSchema = z.object({ ceoId: uuidSchema.optional() }).strict();
 export const meetingRoomLinkSchema = z.object({ roomLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable()) }).strict();
 /** GET /meetings/presence?ids=a,b,c: the live status of up to 100 colleagues (20270122000100); without ids, one's own. */
@@ -3490,7 +3490,7 @@ export const clientMeetingListQuerySchema = z.object({
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
 export const DEV_BUG_STATUSES = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
-// Issue routing (migration 20270127000200): what an issue to the Developer Team is about, and how urgent
+// Issue routing (migration 20270128000200): what an issue to the Developer Team is about, and how urgent
 export const DEV_ISSUE_CATEGORIES = ['BUG', 'FEATURE_REQUEST', 'ACCESS_LOGIN', 'DATA_ISSUE', 'PERFORMANCE', 'OTHER'] as const;
 export const DEV_ISSUE_CATEGORY_LABELS: Record<(typeof DEV_ISSUE_CATEGORIES)[number], string> = {
   BUG: 'Bug / error', FEATURE_REQUEST: 'Feature request', ACCESS_LOGIN: 'Access / login', DATA_ISSUE: 'Wrong or missing data', PERFORMANCE: 'Slow / performance', OTHER: 'Other'

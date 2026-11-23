@@ -1,5 +1,5 @@
 -- =============================================================================
--- CEO office arrival (migration 20270127000300): HR presses "CEO HAS ARRIVED" (once a day, with the time and who; undo keeps the record),
+-- CEO office arrival (migration 20270128000300): HR presses "CEO HAS ARRIVED" (once a day, with the time and who; undo keeps the record),
 -- everyone reads it, nobody else writes it; it NEVER controls meeting requests (before and after the arrival, asking the CEO works the
 -- same, nothing is confirmed or rejected by it); and the queue confirmed on Exit never overlaps a meeting the CEO already has confirmed.
 -- Own meetings (title 'CA %').
@@ -9,8 +9,8 @@
 \echo '--- 133c. CEO office arrival (informational; never blocks meeting requests)'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270127000300_ceo_office_arrival.sql
-\i supabase/migrations/20270127000300_ceo_office_arrival.sql
+\i supabase/migrations/20270128000300_ceo_office_arrival.sql
+\i supabase/migrations/20270128000300_ceo_office_arrival.sql
 delete from meetings where title like 'CA %';
 delete from ceo_office_arrivals;
 delete from meeting_presence;

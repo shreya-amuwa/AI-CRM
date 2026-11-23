@@ -1,5 +1,5 @@
 -- =============================================================================
--- CEO office arrival (docs/MEETINGS_GOOGLE_CALENDAR.md "CEO office arrival"). Run after 20270127000200_issue_routing_escalation.sql.
+-- CEO office arrival (docs/MEETINGS_GOOGLE_CALENDAR.md "CEO office arrival"). Run after 20270128000200_issue_routing_escalation.sql.
 -- Additive and safe to run twice.
 --
 --   * HR presses "CEO HAS ARRIVED" on the HR dashboard: today's arrival of the CEO (a Super Admin) is recorded once, with the time and who
@@ -7,7 +7,7 @@
 --     the row is kept and marked undone.
 --   * Every signed-in employee reads the status (ceo_office_status): it only drives the banner on "Ask the CEO for time" (red "has not
 --     arrived yet" / green "has arrived"). It NEVER controls meeting requests: mtg_create, approvals and the queue do not read it.
---   * The queue confirmed on Exit (20270127000100) no longer overlaps a meeting the CEO already has confirmed: it starts at the first free
+--   * The queue confirmed on Exit (20270128000100) no longer overlaps a meeting the CEO already has confirmed: it starts at the first free
 --     moment at or after the Exit.
 -- =============================================================================
 
@@ -133,7 +133,7 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 3. The queue confirmed on Exit never overlaps a confirmed meeting (20270127000100 + the first free moment)
+-- 3. The queue confirmed on Exit never overlaps a confirmed meeting (20270128000100 + the first free moment)
 -- ---------------------------------------------------------------------------
 create or replace function private.mtg_confirm_next(p_host uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
