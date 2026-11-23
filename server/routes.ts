@@ -477,6 +477,13 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/meetings/approvals', handler: meetings.approvals },
   // live availability of the CEO: Enter / Exit Meeting (before /meetings/:id)
   { method: 'GET', path: '/meetings/presence', handler: meetings.presence },
+  { method: 'GET', path: '/meetings/presence/ceo', handler: meetings.ceoPresence },
+  // CEO office arrival (20270128000300): HR's button; the banner on Ask the CEO for time (never blocks a request)
+  { method: 'GET', path: '/meetings/ceo-office', handler: meetings.ceoOffice },
+  { method: 'POST', path: '/meetings/ceo-office/arrived', handler: meetings.ceoArrived, options: S },
+  { method: 'POST', path: '/meetings/ceo-office/undo', handler: meetings.ceoArrivalUndo, options: S },
+  { method: 'GET', path: '/meetings/settings/room-link', handler: meetings.roomLink },
+  { method: 'POST', path: '/meetings/settings/room-link', handler: meetings.setRoomLink, options: S },
   // client meetings (20270122000200): created with the invitation to the client; the e-mail log of a meeting, and sending a failed one again
   { method: 'GET', path: '/meetings/client', handler: meetings.clientList },
   { method: 'POST', path: '/meetings/client', handler: meetings.createClient, options: S },
@@ -523,6 +530,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/bugs', handler: bugs.submit, options: S },
   { method: 'GET', path: '/bugs/mine', handler: bugs.mine },
   { method: 'GET', path: '/bugs/mine/:id', handler: bugs.myDetail },
+  // the conversation (20270128000200): the reporter follows up, a developer replies or asks for information
+  { method: 'POST', path: '/bugs/mine/:id/follow-up', handler: bugs.followUp, options: S },
   { method: 'GET', path: '/bugs', handler: bugs.list },
   { method: 'GET', path: '/bugs/team', handler: bugs.team },
   { method: 'POST', path: '/bugs/team', handler: bugs.setTeam, options: S },
@@ -530,6 +539,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/bugs/:id/assign', handler: bugs.assign, options: S },
   { method: 'POST', path: '/bugs/:id/status', handler: bugs.setStatus, options: S },
   { method: 'POST', path: '/bugs/:id/comment', handler: bugs.comment, options: S },
+  { method: 'POST', path: '/bugs/:id/reply', handler: bugs.reply, options: S },
   { method: 'POST', path: '/employee/issues', handler: employeeCases.submitIssue, options: S },
   { method: 'GET', path: '/employee/issues', handler: employeeCases.myIssues },
   { method: 'POST', path: '/employee/issues/uploads', handler: employeeCases.beginUpload, options: S },
@@ -552,6 +562,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/hr/issues/:id/status', handler: employeeCases.setIssueStatus, options: S },
   { method: 'POST', path: '/hr/issues/:id/respond', handler: employeeCases.respondToIssue, options: S },
   { method: 'POST', path: '/hr/issues/:id/note', handler: employeeCases.noteOnIssue, options: S },
+  // HR escalates an employee issue to the Developer Team, once (20270128000200)
+  { method: 'POST', path: '/hr/issues/:id/escalate', handler: employeeCases.escalateIssue, options: S },
   { method: 'GET', path: '/hr/meetings/overview', handler: employeeCases.meetingOverview },
   { method: 'GET', path: '/hr/meetings', handler: employeeCases.hrMeetings },
   { method: 'GET', path: '/hr/meetings/:id', handler: employeeCases.hrMeeting },

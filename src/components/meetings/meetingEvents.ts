@@ -32,6 +32,18 @@ export const takePendingMeeting = (): string | null => {
   return p;
 };
 
+/** A meeting request to HR (Meetings > HR meeting requests): shows Meetings on that tab, on the request when one is named. */
+let pendingHr: { id?: string } | null = null;
+export const openHrMeetingRequest = (id?: string) => {
+  pendingHr = { id };
+  window.dispatchEvent(new CustomEvent<{ id?: string }>(OPEN_MEETING_EVENT, { detail: {} }));
+};
+export const takePendingHrMeetingRequest = (): { id?: string } | null => {
+  const p = pendingHr;
+  pendingHr = null;
+  return p;
+};
+
 /** For a dashboard (to show Meetings) and for the Meetings page (to open the meeting). */
 export function useOpenMeetingRequest(show: (id?: string) => void) {
   useEffect(() => {
