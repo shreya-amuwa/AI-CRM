@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'design-studio' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'design-studio' | 'unified' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -89,6 +89,12 @@ export const parseCurrentRoute = (): ParsedRoute => {
   const aiMatch = path.match(/^\/ai-studio\/dashboard\/([^/]+)(?:\/[^/]+)?$/);
   if (aiMatch) {
     return { path, type: 'ai-studio', paramId: aiMatch[1] };
+  }
+
+  // 1a2b5. /unified/dashboard/:id[/:page[/:sub]] - International / Reseller employees only (Sales and Support in one dashboard)
+  const unifiedMatch = path.match(/^\/unified\/dashboard\/([^/]+)(?:\/[^/]+){0,2}$/);
+  if (unifiedMatch) {
+    return { path, type: 'unified', paramId: unifiedMatch[1] };
   }
 
   // 1a2c. /sales-role/:id - a Sales role whose dashboard is not set up yet
@@ -199,6 +205,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
       return `/sales-head/dashboard/${user.id}`;
     case 'ai-studio':
       return `/ai-studio/dashboard/${user.id}`;
+    case 'unified':
+      return `/unified/dashboard/${user.id}`;
     case 'accounts-staff':
       return `/accounts/dashboard/${user.id}`;
     case 'admin':
@@ -364,6 +372,14 @@ export const validateRouteAccess = (
     return { allowed: false, redirectTo: `/ai-studio/dashboard/${user.id}` };
   }
 
+  // International / Reseller employees open only their own unified dashboard.
+  if (user.role === 'unified') {
+    if (route.type === 'unified' && route.paramId === user.id) {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: `/unified/dashboard/${user.id}` };
+  }
+
   // A Sales role without a dashboard yet sees the notice page, and nothing else.
   if (user.role === 'sales-role') {
     if (route.type === 'sales-role' && route.paramId === user.id) {
@@ -388,7 +404,7 @@ export const validateRouteAccess = (
 
   // If user is admin:
   if (user.role === 'admin') {
-    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head' || route.type === 'ai-studio' || route.type === 'design-studio') {
+    if (route.type === 'team-member' || route.type === 'support-member' || route.type === 'team-lead' || route.type === 'support-lead' || route.type === 'accounts-staff' || route.type === 'telecaller' || route.type === 'hr-recruiter' || route.type === 'business-associate' || route.type === 'sales-role' || route.type === 'sales-head' || route.type === 'ai-studio' || route.type === 'design-studio' || route.type === 'unified') {
       return { allowed: false, redirectTo: `/admin/dashboard/${user.departmentId || 'wabastore'}` };
     }
     return { allowed: true };

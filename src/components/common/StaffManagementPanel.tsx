@@ -21,7 +21,7 @@ import { buildHeadAssignment, type AssignableDepartment, type AssignableTeam, ty
 import {
   META_VERIFIER_LABEL, OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isMetaVerifier, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
-import { designationsForDepartment, hasNoSalesSupport, staffChoicesForDepartment, staffTeamsForDepartment } from '../../lib/auth/departmentRoles';
+import { designationsForDepartment, hasPlainRolesOnly, isUnifiedDepartment, staffChoicesForDepartment, staffTeamsForDepartment } from '../../lib/auth/departmentRoles';
 
 /**
  * Team Members & Access - create staff accounts and manage their access.
@@ -189,7 +189,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const canCreateOperationsHead = profile?.role === 'SUPER_ADMIN' && allowedRoles.includes('DEPARTMENT_HEAD');
   // Amuwa Design Studio: only Department Head, Team Lead and Team Member (no Sales / Support role, team or side; the database refuses them too).
   // AI Design Studio (slug ai-design-studio) has its own branches below (adsMode); designMode is Amuwa Design Studio (slug designstudio).
-  const designMode = hasNoSalesSupport(departmentSlug) && departmentSlug !== AI_DESIGN_STUDIO_SLUG;
+  const designMode = hasPlainRolesOnly(departmentSlug) && departmentSlug !== AI_DESIGN_STUDIO_SLUG;
   const choices = useMemo<StaffChoice[]>(
     () => staffChoicesForDepartment<StaffChoice>(departmentSlug, [...allowedRoles, ...(canCreateConsultant ? (['META_VERIFIER', 'TECHNICAL_CONSULTANT'] as const) : []), ...(canCreateOperationsHead ? (['OPERATIONS_HEAD'] as const) : [])]),
     [canCreateConsultant, canCreateOperationsHead, allowedRoles, departmentSlug]
@@ -277,7 +277,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   );
   // A Sales / Support head is never offered for Amuwa Design Studio (its head is chosen with the department itself, without a side).
   const headTeams = useMemo(() => {
-    const plain = new Set(assignable.filter(d => hasNoSalesSupport(d.slug)).map(d => d.id));
+    const plain = new Set(assignable.filter(d => hasPlainRolesOnly(d.slug)).map(d => d.id));
     return assignTeams.filter(t => !plain.has(t.departmentId) || t.division === 'GENERAL');
   }, [assignable, assignTeams]);
   // The department list at the top only chooses whose members are shown; the head starts with that department selected.
@@ -782,7 +782,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             )}
             {(designMode || adsMode) && (
               <span className="block mt-1 font-normal text-slate-500" data-testid="designstudio-roles-hint">
-                {department?.name || 'Amuwa Design Studio'} has Department Head, Team Lead and Team Member only: no Sales or Support role.
+                {isUnifiedDepartment(departmentSlug)
+                  ? `${department?.name || 'This department'} does Sales and Support together: Department Head, Team Lead and Team Member, each with one dashboard that has both.`
+                  : `${department?.name || 'Amuwa Design Studio'} has Department Head, Team Lead and Team Member only: no Sales or Support role.`}
               </span>
             )}
           </label>

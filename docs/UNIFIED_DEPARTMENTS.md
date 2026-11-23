@@ -1,12 +1,12 @@
 # International and Reseller: unified Sales + Support departments
 
 Two departments, **International** (`international`) and **Reseller** (`reseller`), whose Department Head, Team Leads and Team Members each work
-in Sales **and** Support. Delivered in three pull requests; this page describes what exists so far.
+in Sales **and** Support. Delivered in three pull requests; this page describes what exists so far (PR 1, then PR 2 at the end).
 
 | PR | Content | State |
 | --- | --- | --- |
-| 1 | Database: the departments, hierarchy, dashboard routing, Sales/Support access for unified staff, data isolation, tests | this document |
-| 2 | One dashboard with *Sales* and *Support* groups in the sidebar, for all three roles | not started |
+| 1 | Database: the departments, hierarchy, dashboard routing, Sales/Support access for unified staff, data isolation, tests | above |
+| 2 | One dashboard with *Sales* and *Support* groups in the sidebar, for all three roles; the Department Head's Sales pages; the Add Team Member form | PR 2 (section below) |
 | 3 | Overview analytics, Super Admin monitoring, browser tests | not started |
 
 Migration `supabase/migrations/20270127000100_international_reseller_departments.sql` (run after `20270126000200`; safe to run twice; nothing is
@@ -84,3 +84,59 @@ select d.slug, t.name, t.division from public.teams t join public.departments d 
 * Overview analytics, Sales-and-Support reports and the Super Admin comparison of the two departments are PR 3.
 * A Support Team Lead page that was built for a Support team's hand-over from Sales (`customer_onboarding`) is not used here: leads become customers in
   the same department and are served by the same member or Team Lead, so there is no hand-over step.
+
+# PR 2: one dashboard, Sales and Support in the same sidebar
+
+Migration `supabase/migrations/20270129000100_unified_head_sales_pages.sql` (run after `20270127000100`; safe to run twice). Tests:
+`supabase/tests/unified_head_pages_test.sql` (database), `supabase/tests/unified_dashboard.test.ts` (97 checks: sidebars, addresses, routing, form rules) and
+`supabase/tests/ui_unified_dashboard.test.mjs` (154 browser checks in Chromium).
+
+## What a person opens
+
+The Department Head, every Team Lead and every Team Member of International and Reseller open **one** component, `UnifiedDashboard`
+(`src/components/unified/`), at `/unified/dashboard/:id[/:section[/:page]]`. The person's role in the database picks the menu and the pages (as AI Studio does);
+the database decides what each page may show. Which dashboard a person opens is the `profiles.default_dashboard` value the database computed from the department
+(`unified-head` / `unified-lead` / `unified-member`), so no department name is hard-coded in the routing. Another dashboard's address is never opened (the route guard
+sends the person back to their own) and a role cannot reach another role's page by typing its address.
+
+## The sidebar (the same structure for the three roles; the entries differ by role)
+
+Attendance and Meeting Request are added first by the dashboard shell, Leave is the top bar's button, and the person's Profile is the last entry.
+
+| Section | Department Head | Team Lead | Team Member |
+| --- | --- | --- | --- |
+| Overview | department: leads, new, converted, customers, active / resolved tickets, pending tasks, team performance | the team: own leads, tickets, tasks, team scope | own leads, customers, active tickets, tasks (assigned / ongoing / completed) |
+| **Sales** | Add Lead, My Leads (Leads, Potential, Customer onboarding, Part payments), Department Leads, Lead Assignment, Sales Performance, Sales Reports | Add Lead, My Leads, Team Leads, Lead Follow-ups, Sales Performance | Add Lead, My Leads, Lead Follow-ups |
+| **Support** | Customers, Support Tickets, Customer Issues, Team Activity | Customers, Support Tickets, Team Activity | My Customers, My Support Tickets |
+| Work | Task Management (Assign tasks, Work updates, Task reports, Daily tasks), Daily Reports | Task Management, Daily Reports | Task Management, Daily Reports |
+| Team | Team Members, Team Attendance, Raise an Issue, Chat, Notification Center, Profile | Team Members, Raise an Issue, Chat, Notification Center, Profile | Raise an Issue, Chat, Notification Center, Profile |
+
+Every entry opens an **existing** page (no second Sales or Support system): `PipelineWorkspace` (leads), `LeadList` / `LeadAssign` / `SalesPerformance` /
+`SalesReports` (the Sales Department Head's pages), `HeadLeadsPage`, `HeadCustomersPage`, `SupportDeskPage`, `TeamActivityPage`, `SupportLeadCustomers` /
+`SupportLeadTickets` (the Support Team Lead's pages), `TeamCustomers`, `TeamLeadTasksView`, `HeadAssign` / `HeadReports` / `HeadDaily` / `WorkUpdatesPanel`,
+`PerformanceManagement`, `TeamMemberManagement`, `HeadAttendancePage`, and the shared Daily Reports, Chat, Raise an Issue and Notification pages. The Team Member's
+Support pages (`UnifiedMemberCustomers`, `UnifiedMemberTickets`) are the Support Team Member's own pages with the same database rules.
+
+## Database: the Department Head's Sales pages
+
+The Sales Department Head's pages (Department Leads, Lead Assignment, tasks, people, overview, reports) are guarded by `private.require_sales_head()`, which only
+accepted a head whose side is Sales. A unified head has no side, so they were refused ("This page is for the Sales Department Head") although the data rules
+already scope them to their own department. The guard now also accepts the Department Head of a unified department, and `sales_head_overview`,
+`sales_head_reports`, `division_leads_overview` and `division_support_overview` read the department's unified team. Tested: each head lists and assigns only
+their own department's people and leads, the other department's overview is refused, Team Leads and Team Members are still refused, and the Support head and the
+Sales head of another department are unchanged.
+
+## Add Team Member (Super Admin, Department Head, Team Lead)
+
+The department dropdown is read from the database, so both departments appear. For International and Reseller the form offers only Department Head, Team Lead
+and Team Member, the department's one team and no Sales / Support side, and names the dashboard ("Sales & Support Team Lead Dashboard"). The form helpers use the
+slug list `UNIFIED_DEPARTMENT_SLUGS` (a convenience, like the Design Studios list); the database decides (`departments.unified_sales_support`).
+
+## Known limits (PR 3 and later)
+
+* The **Overview** pages read the existing division-overview, pipeline-count, ticket and task data; richer analytics, reporting by Sales and Support and the Super
+  Admin's side-by-side monitoring of the two departments are PR 3. The browser test replaces the reused pages (including the Overview) by markers: it proves which
+  page each entry opens for each role, not how the reused pages render; those pages keep their own tests.
+* The Department Head's *Add Lead* opens the head's lead form (`HeadLeadsPage`); the Sales income and incentive pages are not part of these departments yet.
+* `Lead Follow-ups` for a Team Lead / Team Member reuses the member task / follow-up page (`MemberSections`); a dedicated "Sales Activity" page is not built.
+* The Sales Department Head's **income** page (`sales_head_income`) is still for Sales-side heads only.

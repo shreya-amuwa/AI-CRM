@@ -202,3 +202,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_inbox_mentions_reactions_test
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meeting_summaries_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/notification_reliability_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/unified_departments_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/unified_head_pages_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
