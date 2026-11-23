@@ -79,7 +79,8 @@ select test.check((select handling_by = test.id('sup_b') and handling_at > now()
 select test.check((select count(*) = 1 from notifications where type = 'CHAT_COVER_REPLY' and recipient_id = test.id('sup_plain') and entity_id = pg_temp.sv('conv')::uuid),
   'the RM is told once that a colleague answered their client (the second reply does not add a bell)');
 select test.check((select count(*) = 0 from notifications where type = 'CHAT_COVER_REPLY' and recipient_id = test.id('sup_b')), 'nobody is notified of their own reply');
-select test.check((select count(*) = 0 from notifications where type = 'CHAT_COVER_REPLY' and recipient_id <> test.id('sup_plain')), 'and the bell goes to the RM only (no flood)');
+select test.check((select count(*) = 0 from notifications where type = 'CHAT_COVER_REPLY' and recipient_id not in (test.id('sup_plain'), private.support_lead_of(pg_temp.sv('cust')::uuid)) and entity_id = pg_temp.sv('conv')::uuid),
+  'and the bell goes to the RM and the Team Lead only (nobody else on the desk, no flood)');
 
 \echo '   3. the RM and the others see who is handling it; the client does not'
 set role authenticated;

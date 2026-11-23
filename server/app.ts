@@ -29,6 +29,7 @@ import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices }
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
 import { runAttendanceReminders } from './automations/attendanceReminders.js';
+import { runChatUnansweredReminders } from './automations/chatWaiting.js';
 import { messageIdFrom, pushChatMessage } from './automations/chatPush.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
@@ -258,7 +259,13 @@ app.post('/internal/crocodial/sync', async c => {
 app.post('/internal/attendance/reminders', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
-  return c.json(ok(await runAttendanceReminders()));
+  const run = await runAttendanceReminders();
+  // the same run reminds the team of client messages nobody has answered (20270130000100); a failure here never stops the reminders above
+  const chatWaiting = await runChatUnansweredReminders().catch(e => {
+    log('error', 'unanswered chat reminders failed', c, { message: e instanceof Error ? e.message : 'error' });
+    return { reminded: 0, skipped: 'FAILED' };
+  });
+  return c.json(ok({ ...run, chatWaiting }));
 });
 
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
