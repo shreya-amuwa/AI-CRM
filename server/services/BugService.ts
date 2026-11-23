@@ -1,5 +1,7 @@
 import type { DevBug, DevBugAccess, DevBugList, DevBugRow, DevTeamMember } from '../../shared/contracts.js';
-import { bugAssignSchema, bugCommentSchema, bugListQuerySchema, bugStatusSchema, bugSubmitSchema, devTeamSetSchema, uuidSchema } from '../../shared/validation.js';
+import {
+  bugAssignSchema, bugCommentSchema, bugFollowUpSchema, bugListQuerySchema, bugMyListQuerySchema, bugReplySchema, bugStatusSchema, bugSubmitSchema, devTeamSetSchema, uuidSchema
+} from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
 import type { BugRepository } from '../repositories/BugRepository.js';
 
@@ -12,7 +14,15 @@ export class BugService {
   constructor(private readonly repo: BugRepository) {}
   access(): Promise<DevBugAccess> { return this.repo.access(); }
   submit(body: unknown): Promise<DevBug> { return this.repo.submit(parse(bugSubmitSchema, body)); }
-  mine(): Promise<DevBugRow[]> { return this.repo.mine(); }
+  mine(query?: unknown): Promise<DevBugRow[]> { return this.repo.mine(parse(bugMyListQuerySchema, query ?? {})); }
+  followUp(id: string, body: unknown): Promise<DevBug> {
+    const i = parse(bugFollowUpSchema, body);
+    return this.repo.followUp(parse(uuidSchema, id), i.message, i.attachmentIds);
+  }
+  reply(id: string, body: unknown): Promise<DevBug> {
+    const i = parse(bugReplySchema, body);
+    return this.repo.reply(parse(uuidSchema, id), i.message, i.requestInfo);
+  }
   myDetail(id: string): Promise<DevBug> { return this.repo.myDetail(parse(uuidSchema, id)); }
   list(query: unknown): Promise<DevBugList> { return this.repo.list(parse(bugListQuerySchema, query ?? {})); }
   detail(id: string): Promise<DevBug> { return this.repo.detail(parse(uuidSchema, id)); }

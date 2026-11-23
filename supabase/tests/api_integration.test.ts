@@ -11347,26 +11347,24 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
-// --- Enter / Exit Meeting for every employee except the Super Admin (migration 20270122000100) ---------------------------------
+// --- Enter / Exit Meeting for every employee (20270122000100) and the Super Admin's queue, one confirmed per Exit (20270128000100) ---
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
   const soon = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 
-  let r = await api('sa', 'POST', '/meetings/presence/enter', {});
-  check(r.status === 403, 'employee availability: the Super Admin cannot Enter Meeting through the API', r);
-  r = await api('sa', 'POST', '/meetings/presence/exit', {});
-  check(r.status === 403, 'employee availability: nor Exit Meeting', r);
-  r = await api('sa', 'GET', '/meetings/presence');
-  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'employee availability: the Super Admin has no status of their own', r);
+  let r = await api('sa', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0]?.hostId === saId && r.json.data[0].status === 'AVAILABLE' && r.json.data[0].isCeo === true,
+    'CEO queue: the Super Admin has a status of their own again', r);
 
   r = await api('a', 'GET', '/meetings/presence');
   check(r.status === 200 && r.json.data[0]?.hostId === memberId && r.json.data[0].status === 'AVAILABLE', 'employee availability: a member sees their own status', r);
   r = await api('a', 'POST', '/meetings/presence/enter', {});
   check(r.status === 200 && r.json.data.status === 'BUSY', 'employee availability: a member enters a meeting: BUSY', r);
   r = await api('tl2', 'GET', `/meetings/presence?ids=${memberId},${saId}`);
-  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].status === 'BUSY' && r.json.data[0].meeting === null,
-    'employee availability: a colleague sees them BUSY (no meeting details; the Super Admin is not listed)', r);
+  check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === memberId)?.status === 'BUSY'
+    && r.json.data.find((x: { hostId: string }) => x.hostId === memberId)?.meeting === null,
+    'employee availability: a colleague sees them BUSY (no meeting details)', r);
   r = await api('tl2', 'GET', '/meetings/presence?ids=not-an-id');
   check(r.status === 422, 'employee availability: ids must be ids', r);
   r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
@@ -11380,7 +11378,43 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon after', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
   check(r.status === 201, 'employee availability: after the exit the same booking works', r);
   r = await api('a', 'POST', '/meetings', { title: 'EPX ask the CEO', description: 'Pune office budget', hostId: saId, startsAt: soon(3 * 24 * 60), endsAt: soon(3 * 24 * 60 + 30), mode: 'GOOGLE_MEET' });
-  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'employee availability: asking the CEO for time is a request, as before', r);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'employee availability: asking the CEO while they are AVAILABLE is a request, as before', r);
+
+  // the Super Admin's queue: Enter, requests queue up, each Exit confirms exactly one (the oldest), with the room link and the e-mail
+  r = await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: 'http://insecure.example' });
+  check(r.status === 422 || r.status === 400, 'CEO queue: the room link must be https', r);
+  r = await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: 'https://meet.example.com/ceo-api-room' });
+  check(r.status === 200 && r.json.data.roomLink === 'https://meet.example.com/ceo-api-room', 'CEO queue: the Super Admin saves the meeting-room link', r);
+  r = await api('a', 'POST', '/meetings/settings/room-link', { roomLink: 'https://meet.example.com/not-mine' });
+  check(r.status === 403, 'CEO queue: only a CEO sets the room link', r);
+  r = await api('sa', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'CEO queue: the Super Admin enters a meeting: BUSY', r);
+  r = await api('a', 'GET', '/meetings/presence/ceo');
+  check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === saId)?.status === 'BUSY', 'CEO queue: employees see the CEO BUSY', r);
+  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 30), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: a request while the CEO is BUSY joins the queue', r);
+  const first = r.json.data.id as string;
+  await db.query(`update public.meetings set created_at = now() - interval '5 minutes' where id = $1`, [first]);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 20), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: and another', r);
+  const second = r.json.data.id as string;
+  r = await api('sa', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0].pending?.length === 2 && r.json.data[0].pending[0].id === first, 'CEO queue: the Super Admin sees the queue, oldest first', r);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled?.length === 1 && r.json.data.scheduled[0].id === first,
+    'CEO queue: Exit confirms exactly one, the oldest', r);
+  const conf = (await db.query(`select status, mode, meet_link, starts_at, ends_at from public.meetings where id = $1`, [first])).rows[0];
+  check(conf?.status === 'SCHEDULED' && conf.meet_link === 'https://meet.example.com/ceo-api-room' && Math.abs(new Date(conf.starts_at).getTime() - Date.now()) < 120_000
+    && new Date(conf.ends_at).getTime() - new Date(conf.starts_at).getTime() === 30 * 60_000, 'CEO queue: it starts now, as long as asked, in the room', conf);
+  const outbox = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'QUEUE_CONFIRMED'`, [first])).rows[0].n;
+  check(outbox === 2, 'CEO queue: the "join now" e-mail is queued once each to the employee and the Super Admin', outbox);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.scheduled?.length === 0, 'CEO queue: a second Exit confirms nothing', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [second])).rows[0]?.status === 'PENDING_AVAILABILITY', 'CEO queue: the next waits for the next Exit');
+  await api('sa', 'POST', '/meetings/presence/enter', {});
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.scheduled?.[0]?.id === second, 'CEO queue: the next Exit confirms the next one', r);
+  await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: null });
   await db.query(`delete from public.meetings where title like 'EPX %'`);
 }
 
@@ -11928,6 +11962,97 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   rs = await api('th', 'GET', `/meetings/${appt}/summary`);
   check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
 }
+// --- Issue routing (migration 20270128000200): HR or the Developer Team, the conversation, HR's escalation (once), HR's sort / routing filter ---
+{
+  const leadId = deliveryLead as string, dev1 = deliveryMember as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, true), ($2, false)
+                  on conflict (profile_id) do update set is_lead = excluded.is_lead`, [leadId, dev1]);
+  tokens.set('rd1', tokenFor(dev1));
+  const key = () => `irx-${crypto.randomUUID().slice(0, 18)}`;
+  const deptId = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0].id as string;
+
+  // an employee's issue to the Developer Team: category and priority; checked by the schema
+  let r = await api('a', 'POST', '/bugs', { title: 'IRX Export is slow', description: 'The customer export takes ten minutes.', clientRequestId: key(), category: 'PERFORMANCE', priority: 'HIGH' });
+  check(r.status === 201 && r.json.data.category === 'PERFORMANCE' && r.json.data.priority === 'HIGH' && r.json.data.source === 'EMPLOYEE', 'issue routing API: an issue to the Developer Team, with category and priority', r);
+  const bugA = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', { title: 'IRX Bad', description: 'The customer export takes ten minutes.', clientRequestId: key(), category: 'COFFEE' });
+  check(r.status === 422, 'issue routing API: an unknown category is refused', r);
+  r = await api('a', 'POST', '/bugs', { title: 'IRX Old form', description: 'An old browser sends no category or priority.', clientRequestId: key() });
+  check(r.status === 201 && r.json.data.category === 'BUG' && r.json.data.priority === 'MEDIUM', 'issue routing API: an older form without them still works (Bug, Medium)', r);
+  check((await db.query(`select count(*)::int n from public.employee_issues where title like 'IRX %'`)).rows[0].n === 0, 'issue routing API: nothing reached HR');
+  r = await api('a', 'GET', '/bugs/mine?status=OPEN&search=IRX%20Export');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === bugA, 'issue routing API: the reporter\'s list is filtered in the database', r);
+  r = await api('a', 'GET', '/bugs/mine?status=SOMETIMES');
+  check(r.status === 422, 'issue routing API: the list filter is checked', r);
+
+  // HR reports one, with the affected department and employee
+  r = await api('hrmember', 'POST', '/bugs', { title: 'IRX Payslips missing', description: 'The payslip export has no rows this month.', clientRequestId: key(), category: 'DATA_ISSUE',
+    priority: 'URGENT', affectedDepartmentId: deptId, affectedEmployeeId: memberId });
+  check(r.status === 201 && r.json.data.source === 'HR_REPORT' && r.json.data.affectedEmployeeId === memberId && r.json.data.affectedDepartment, 'issue routing API: HR reports one, about a department and an employee', r);
+  r = await api('hrmember', 'POST', '/bugs', { title: 'IRX Bad', description: 'The payslip export has no rows this month.', clientRequestId: key(), affectedEmployeeId: 'nobody' });
+  check(r.status === 422, 'issue routing API: the affected employee must be an id', r);
+
+  // the conversation: the assigned developer asks, the reporter answers
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 200, 'issue routing API: assigned', r);
+  r = await api('rd1', 'POST', `/bugs/${bugA}/reply`, { message: 'Which export: customers or leads?', requestInfo: true });
+  check(r.status === 201 && r.json.data.status === 'NEEDS_INFO', 'issue routing API: the developer asks for information: Pending Information', r);
+  r = await api('a', 'POST', `/bugs/${bugA}/reply`, { message: 'Hello' });
+  check(r.status === 403, 'issue routing API: an employee never replies as a developer', r);
+  r = await api('th', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'Me too' });
+  check(r.status === 404, 'issue routing API: nobody follows up on someone else\'s issue', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'The customers export.' });
+  check(r.status === 201 && r.json.data.status === 'IN_PROGRESS' && r.json.data.history.some((h: any) => h.kind === 'MESSAGE' && h.data.from === 'REPORTER'), 'issue routing API: the reporter answers: back to the developer', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: '' });
+  check(r.status === 422, 'issue routing API: a follow-up needs words', r);
+  r = await api('rd1', 'POST', `/bugs/${bugA}/status`, { status: 'CLOSED' });
+  check(r.status === 200 && r.json.data.status === 'CLOSED', 'issue routing API: Closed is a status', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'Still slow' });
+  check(r.status === 409, 'issue routing API: a closed issue takes no more messages', r);
+
+  // HR escalates an employee issue, once
+  r = await api('a', 'POST', '/employee/issues', { clientRequestId: crypto.randomUUID(), title: 'IRX CRM logs me out', category: 'TECHNICAL_SYSTEM', description: 'The CRM logs me out every ten minutes.', priority: 'HIGH' });
+  check(r.status === 201 && r.json.data.recipient === 'HR' && r.json.data.routing === 'WITH_HR', 'issue routing API: an issue to HR says so', r);
+  const issueId = r.json.data.id as string;
+  r = await api('a', 'POST', `/hr/issues/${issueId}/escalate`, {});
+  check(r.status === 403, 'issue routing API: an employee cannot escalate', r);
+  r = await api('hr', 'POST', `/hr/issues/${issueId}/escalate`, { category: 'NOPE' });
+  check(r.status === 422, 'issue routing API: the escalation is checked', r);
+  r = await api('hr', 'POST', `/hr/issues/${issueId}/escalate`, { note: 'Seen on two laptops.', category: 'ACCESS_LOGIN' });
+  check(r.status === 200 && r.json.data.duplicate === false && r.json.data.issue.routing === 'ESCALATED_TO_DEVELOPERS' && /^BUG-/.test(r.json.data.issue.escalation?.reference ?? ''),
+    'issue routing API: HR escalates it to the Developer Team', r);
+  const escBug = r.json.data.issue.escalation.bugId as string;
+  r = await api('hrmember', 'POST', `/hr/issues/${issueId}/escalate`, {});
+  check(r.status === 200 && r.json.data.duplicate === true && r.json.data.issue.escalation.bugId === escBug, 'issue routing API: another HR person (or a retry) gets the same one', r);
+  check((await db.query(`select count(*)::int n from public.dev_bugs where source_issue_id = $1`, [issueId])).rows[0].n === 1, 'issue routing API: one Developer Team issue only');
+  r = await api('rd1', 'GET', `/bugs/${escBug}`);
+  check(r.status === 200 && r.json.data.source === 'HR_ESCALATION' && r.json.data.affectedEmployeeId === memberId && r.json.data.priority === 'HIGH', 'issue routing API: the developers see where it came from and whom it affects', r);
+  r = await api('rd1', 'POST', `/bugs/${escBug}/status`, { status: 'UNDER_REVIEW' });
+  check(r.status === 403, 'issue routing API: only the developer it is assigned to (or the lead) changes its status', r);
+  r = await api('tl2', 'POST', `/bugs/${escBug}/status`, { status: 'RESOLVED', note: 'Sessions now last 8 hours.' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED', 'issue routing API: the lead resolves it', r);
+  r = await api('a', 'GET', `/employee/issues/${issueId}`);
+  check(r.status === 200 && r.json.data.issue.escalation?.status === 'RESOLVED' && r.json.data.events.some((e: any) => e.kind === 'DEV_UPDATE' && /8 hours/.test(e.body ?? '')),
+    'issue routing API: the employee follows the developers\' progress on their issue', r);
+  r = await api('hrmember', 'GET', `/hr/issues/${issueId}`);
+  check(r.status === 200 && r.json.data.escalationHistory.some((h: any) => h.kind === 'STATUS' && h.data.to === 'RESOLVED'), 'issue routing API: every HR person sees the developers\' answers', r);
+
+  // HR's list: sort and routing
+  r = await api('hr', 'GET', '/hr/issues?routing=ESCALATED_TO_DEVELOPERS&search=IRX&sort=PRIORITY');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === issueId, 'issue routing API: HR lists the escalated issues', r);
+  r = await api('hr', 'GET', '/hr/issues?routing=WITH_HR&search=IRX');
+  check(r.status === 200 && r.json.data.items.length === 0, '... and the ones still with HR', r);
+  r = await api('hr', 'GET', '/hr/issues?sort=RANDOM');
+  check(r.status === 422, 'issue routing API: the sort order is checked', r);
+  r = await api('hr', 'GET', '/hr/issues/overview');
+  check(r.status === 200 && r.json.data.escalated >= 1, 'issue routing API: the overview counts the escalated issues', r);
+
+  await db.query(`delete from public.dev_bugs where title like 'IRX %'`);
+  await db.query(`delete from public.employee_issues where title like 'IRX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = any($1::uuid[])`, [[leadId, dev1]]);
+}
+
 // Notification reliability (20270126000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
 // retries, a 410 switching a device off, the self and admin test notifications, the scheduler run record and Notification Health.
 {
@@ -12043,6 +12168,36 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
+}
+// --- CEO office arrival (migration 20270128000300): HR's button; information only, meeting requests work before and after ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false && r.json.data.canMark === false, 'CEO arrival API: an employee sees "not arrived" and has no button', r);
+  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: new Date(Date.now() + 23 * 86400e3 + 37 * 60e3).toISOString(),
+    endsAt: new Date(Date.now() + 23 * 86400e3 + 67 * 60e3).toISOString(), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO arrival API: a meeting request before the arrival is saved as usual', r);
+  const reqId = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO arrival API: an employee cannot mark it', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO arrival API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.arrived === true && !!ceoOf(r.json.data)?.arrivedAt, 'CEO arrival API: HR marks it, with the time', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO arrival API: a second press (another HR person) changes nothing', r);
+  check((await db.query(`select count(*)::int n from public.ceo_office_arrivals where ceo_id = $1 and undone_at is null`, [saId])).rows[0].n === 1, 'CEO arrival API: one arrival today');
+  r = await api('tl2', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === true, 'CEO arrival API: everyone sees it', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [reqId])).rows[0].status === 'REQUESTED', 'CEO arrival API: the earlier request is neither confirmed nor rejected by it');
+  r = await api('hr', 'POST', '/meetings/ceo-office/undo', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false, 'CEO arrival API: HR undoes a mistaken press', r);
+  r = await api(null, 'GET', '/meetings/ceo-office');
+  check(r.status === 401, 'CEO arrival API: not for visitors', r);
+  await db.query(`delete from public.meetings where title like 'CAX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
 }
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();

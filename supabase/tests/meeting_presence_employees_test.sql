@@ -1,12 +1,12 @@
 -- =============================================================================
--- Enter Meeting / Exit Meeting for every employee except the Super Admin (migration 20270122000100): who may use it (Department Head,
--- Team Lead, Team Member; never the Super Admin, whatever is called), BUSY / AVAILABLE with the entry and exit times, what colleagues see,
+-- Enter Meeting / Exit Meeting for every employee (migration 20270122000100; the Super Admin's own again from 20270128000100): Department
+-- Head, Team Lead, Team Member, BUSY / AVAILABLE with the entry and exit times, what colleagues see,
 -- no booking into a meeting starting within 30 minutes while BUSY, the former CEO queue moved to ordinary requests, and that asking the
--- CEO for time still works. Own synthetic meetings (title 'EP %'). Replaces meeting_live_availability_test.sql (the CEO-only version).
+-- CEO for time still works. Own synthetic meetings (title 'EP %'). The Super Admin's own Enter / Exit and queue: meeting_ceo_queue_test.sql.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
-\echo '--- 133. Employee availability (Enter / Exit Meeting, not the Super Admin)'
+\echo '--- 133. Employee availability (Enter / Exit Meeting)'
 reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270116000400_meeting_live_availability.sql
@@ -32,14 +32,12 @@ select test.check((select count(*) = 1 from meeting_events e join meetings m on 
 select test.check((select status = 'AVAILABLE' from meeting_presence where host_id = test.id('sa'))
                   and not exists (select 1 from meeting_presence_log where host_id = test.id('sa') and exited_at is null), 'the Super Admin is no longer BUSY; the open entry is closed');
 
-\echo '   the Super Admin cannot use Enter / Exit'
+-- the Super Admin's Enter / Exit and queue came back in 20270128000100 (meeting_ceo_queue_test.sql); from here on, the newest definitions
+reset role;
+\i supabase/migrations/20270128000100_ceo_meeting_queue.sql
 set role authenticated;
 select test.login('sa');
-select test.must_fail($$select mtg_presence_enter()$$, 'the Super Admin cannot Enter Meeting (the backend refuses, whatever the screen shows)', 'FORBIDDEN');
-select test.must_fail($$select mtg_presence_exit()$$, '... nor Exit Meeting', 'FORBIDDEN');
-select test.check(mtg_presence() = '[]'::jsonb, 'the Super Admin has no availability of their own');
-select test.check(jsonb_array_length(mtg_presence(array[test.id('sa')])) = 0, 'nobody sees a status for the Super Admin');
-select test.must_fail($$insert into meeting_presence (host_id, status) values (test.id('sa'), 'BUSY')$$, 'nor can anyone write the status directly', 'permission denied');
+select test.must_fail($$insert into meeting_presence (host_id, status) values (test.id('sa'), 'BUSY')$$, 'nobody writes the status directly', 'permission denied');
 select test.must_fail($$select mtg_pending_process(test.id('sa'))$$, 'the old queue functions are not callable', 'permission denied');
 
 \echo '   every other employee can'
@@ -90,7 +88,7 @@ select test.check((mtg_create(jsonb_build_object('title', 'EP soon after exit', 
 \echo '   asking the CEO for time works as before'
 select test.check((mtg_create(jsonb_build_object('title', 'EP ask the CEO', 'hostId', test.id('sa'), 'startsAt', now() + interval '2 days',
                                                  'endsAt', now() + interval '2 days 30 minutes', 'description', 'Budget discussion')) ->> 'status') = 'REQUESTED',
-  'a request for the CEO''s time is a request for the Super Admin to approve (never "pending availability")');
+  'while the Super Admin is AVAILABLE, a request for their time is a request for them to approve');
 select test.login('th_wab');
 select mtg_presence_exit();
 reset role;

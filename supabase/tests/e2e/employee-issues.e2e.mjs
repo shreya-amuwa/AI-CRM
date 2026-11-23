@@ -1,4 +1,5 @@
-// Raise an Issue (Team Member, Team Lead, Department Head: one page, one workflow) and HR's two sections (Employee Issues, Meeting Requests),
+// Raise an Issue (Team Member, Team Lead, Department Head: one page, two recipients: HR or the Developer Team), the meeting request to HR (on
+// the Meetings page since 20270128000200) and HR's sections (Employee Issues, Meeting Requests, Raise an Issue),
 // real browsers against the local stack (Postgres + PostgREST + gateway + the web app). No credentials live in this file: staff passwords come
 // from E2E_PASSWORDS (made up by the runner) and the two HR accounts made here get passwords made up at run time.
 // See supabase/tests/e2e/README.md for how to run it.
@@ -61,6 +62,15 @@ const menu = async (p, label) => {
 };
 const navLabels = async p => (await p.locator('button').allInnerTexts()).map(t => t.replace(/\s+/g, ' ').trim());
 const openRaise = async p => { await menu(p, 'Raise an Issue'); await wait(p, '[data-testid="raise-issue-page"]', 'the Raise an Issue page did not open'); };
+// the meeting request to HR: Meetings > HR meeting requests (it used to be on Raise an Issue)
+const openHrMeetings = async p => {
+  await menu(p, 'Meetings');
+  await wait(p, 'h1:has-text("Meetings")', 'the Meetings page did not open');
+  await p.getByRole('tab', { name: 'HR meeting requests' }).click();
+  await wait(p, '[data-testid="hr-meeting-requests"]', 'the HR meeting requests tab did not open');
+};
+const recipients = async p => (await p.getByTestId('case-type').locator('[role="radio"] span.font-bold').allInnerTexts()).join('|');
+const RECIPIENTS = 'Raise an Issue to HR|Raise an Issue to Developer Team';
 
 // narrows a table by search text and opens the one row whose text contains `needle` (waits for the debounced search to apply)
 const openRow = async (p, searchTestId, rowTestId, openTestId, text, needle) => {
@@ -91,7 +101,7 @@ let labels = await navLabels(TM);
 await expect(labels.some(l => /^Raise an Issue$/.test(l)), 'a Team Member has "Raise an Issue" in the sidebar');
 await expect(!labels.some(l => /Employee Issues|Meeting Requests/.test(l)), 'and no HR section');
 await openRaise(TM);
-await expect((await TM.getByTestId('case-type').locator('option').allInnerTexts()).join('|') === 'Raise an Issue|Meeting Request', 'the selector at the top offers Raise an Issue and Meeting Request');
+await expect(await recipients(TM) === RECIPIENTS, 'the page offers two recipients: HR or the Developer Team (no meeting request)');
 await TM.waitForFunction(() => /Rahul Mehta/.test(document.querySelector('[data-testid="my-details"]')?.innerText ?? ''), null, { timeout: 10000 }).catch(() => fail('the employee details did not load'));
 const det = await TM.getByTestId('my-details').innerText();
 await expect(/Rahul Mehta/.test(det) && /Sales Executive/.test(det) && /Wabastore/i.test(det) && !/EMP-|Employee ID/i.test(det), 'the employee\'s name, department and designation are shown from the profile (not typed), and no employee ID');
@@ -133,10 +143,10 @@ await openRaise(TM);
 await wait(TM, `[data-testid="my-case-row"]:has-text("${ref1}")`, 'after a reload the issue is still in the history');
 ok('and it is still there after a reload');
 
-// ------------------------------------------------------------------ 2. the same page: Meeting Request
-await TM.getByTestId('case-type').selectOption('MEETING');
+// ------------------------------------------------------------------ 2. Meetings > HR meeting requests
+await openHrMeetings(TM);
 await wait(TM, '[data-testid="meeting-form"]', 'the meeting form did not appear');
-await expect(await TM.locator('[data-testid="issue-form"]').count() === 0, 'the selector switches the form on the same page (the issue form is gone)');
+await expect(await TM.locator('[data-testid="issue-form"]').count() === 0, 'the meeting request has its own place (no issue form there)');
 await expect((await TM.locator('#meeting-category option').allInnerTexts()).slice(1).join('|') === 'HR Concern|Workplace Issue|Attendance or Leave|Salary or Payroll|Management Discussion|Personal or Confidential Concern|Other', 'meeting categories are the seven of the specification');
 await expect((await TM.locator('#meeting-mode option').allInnerTexts()).slice(1).join('|') === 'In Person|Online', 'meeting modes: In Person or Online');
 await TM.getByTestId('submit-meeting').click();
@@ -163,7 +173,7 @@ const TL = await login('lead@amuwa.com');
 labels = await navLabels(TL);
 await expect(labels.some(l => /^Raise an Issue$/.test(l)), 'a Team Lead has "Raise an Issue" in the sidebar');
 await openRaise(TL);
-await expect((await TL.getByTestId('case-type').locator('option').allInnerTexts()).join('|') === 'Raise an Issue|Meeting Request', 'the Team Lead has the same selector');
+await expect(await recipients(TL) === RECIPIENTS, 'the Team Lead has the same two recipients');
 await TL.locator('#issue-title').fill(`Payroll amount ${tag}`);
 await TL.locator('#issue-category').selectOption('SALARY_PAYROLL');
 await TL.locator('#issue-priority').selectOption('URGENT');
@@ -171,7 +181,7 @@ await TL.locator('#issue-description').fill('My last salary slip does not match 
 await TL.getByTestId('submit-issue').click();
 await wait(TL, '[data-testid="submitted-banner"]', 'the Team Lead\'s confirmation did not show');
 const ref2 = (await TL.getByTestId('submitted-reference').innerText()).trim();
-await TL.getByTestId('case-type').selectOption('MEETING');
+await openHrMeetings(TL);
 await TL.locator('#meeting-subject').fill(`Team workload ${tag}`);
 await TL.locator('#meeting-category').selectOption('MANAGEMENT');
 await TL.locator('#meeting-mode').selectOption('ONLINE');
@@ -187,14 +197,14 @@ const DH = await login('dh@amuwa.com');
 labels = await navLabels(DH);
 await expect(labels.some(l => /^Raise an Issue$/.test(l)), 'a Department Head has "Raise an Issue" in the sidebar');
 await openRaise(DH);
-await expect((await DH.getByTestId('case-type').locator('option').allInnerTexts()).join('|') === 'Raise an Issue|Meeting Request', 'the Department Head has the same selector');
+await expect(await recipients(DH) === RECIPIENTS, 'the Department Head has the same two recipients');
 await DH.locator('#issue-title').fill(`Meeting room booking ${tag}`);
 await DH.locator('#issue-category').selectOption('FACILITIES');
 await DH.locator('#issue-description').fill('We cannot book the meeting room for client calls.');
 await DH.getByTestId('submit-issue').click();
 await wait(DH, '[data-testid="submitted-banner"]', 'the Department Head\'s confirmation did not show');
 const ref3 = (await DH.getByTestId('submitted-reference').innerText()).trim();
-await DH.getByTestId('case-type').selectOption('MEETING');
+await openHrMeetings(DH);
 await DH.locator('#meeting-subject').fill(`Confidential matter ${tag}`);
 await DH.locator('#meeting-category').selectOption('PERSONAL_CONFIDENTIAL');
 await DH.locator('#meeting-mode').selectOption('IN_PERSON');
@@ -211,7 +221,7 @@ await expect((await q(`select count(*)::int n from employee_issues`))[0].n === 3
 const HR = await login(HR_HEAD, undefined, 'button:has-text("Employee Issues")');
 labels = await navLabels(HR);
 await expect(labels.includes('Employee Issues') && labels.includes('Meeting Requests') && labels.indexOf('Employee Issues') !== labels.indexOf('Meeting Requests'), 'the HR sidebar has two separate items: Employee Issues and Meeting Requests');
-await expect(!labels.some(l => /^Raise an Issue$/.test(l)), 'and no Raise an Issue item (HR works the cases)');
+await expect(labels.some(l => /^Raise an Issue$/.test(l)), 'and a Raise an Issue item (report to the Developer Team, the employee issues received)');
 await menu(HR, 'Employee Issues');
 await wait(HR, '[data-testid="employee-issues-page"]', 'the Employee Issues page did not open');
 await wait(HR, '[data-testid="issue-row"]', 'the issue table is empty');
@@ -380,8 +390,7 @@ await HR.getByTestId('meeting-search').fill('');
 
 // ------------------------------------------------------------------ 7. the employees see the outcome
 await TM.reload();
-await openRaise(TM);
-await TM.getByTestId('case-type').selectOption('MEETING');
+await openHrMeetings(TM);
 await TM.locator(`[data-testid="my-case-row"]:has-text("${mref1}")`).click();
 await wait(TM, '[data-testid="confirmed-details"]', 'the employee does not see the confirmed meeting');
 const conf = await TM.getByTestId('confirmed-details').innerText();
@@ -391,16 +400,14 @@ await TM.screenshot({ path: `${OUT}/issues-7-employee-meeting.png`, fullPage: tr
 await TM.getByRole('button', { name: 'Close' }).first().click();
 
 await TL.reload();
-await openRaise(TL);
-await TL.getByTestId('case-type').selectOption('MEETING');
+await openHrMeetings(TL);
 await TL.locator(`[data-testid="my-case-row"]:has-text("${mref2}")`).click();
 await wait(TL, '[data-testid="meeting-detail"]', 'the Team Lead\'s meeting detail did not open');
 await expect(/Declined/.test(await TL.getByTestId('meeting-detail').innerText()) && /Please talk to your Department Head first/.test(await TL.getByTestId('hr-response').innerText()), 'the Team Lead sees it declined, with HR\'s reason');
 await TL.getByRole('button', { name: 'Close' }).first().click();
 
 await DH.reload();
-await openRaise(DH);
-await DH.getByTestId('case-type').selectOption('MEETING');
+await openHrMeetings(DH);
 await DH.locator(`[data-testid="my-case-row"]:has-text("${mref3}")`).click();
 await wait(DH, '[data-testid="alternative"]', 'the Department Head does not see the proposed time');
 await expect(/4:00 pm/.test(await DH.getByTestId('alternative').innerText()) && /Room 2/.test(await DH.getByTestId('alternative').innerText()), 'the Department Head sees the proposed time and place');
@@ -428,8 +435,11 @@ const phone = await login('rahul@amuwa.com', { width: 390, height: 820 });
 await openRaise(phone);
 await expect(await overflow(phone) <= 1, `Raise an Issue fits a phone with no sideways scrolling (${await overflow(phone)}px)`);
 await phone.screenshot({ path: `${OUT}/issues-8-phone.png`, fullPage: true });
-await phone.getByTestId('case-type').selectOption('MEETING');
-await expect(await overflow(phone) <= 1, 'and so does the meeting form');
+await phone.getByTestId('recipient-dev').click();
+await wait(phone, '[data-testid="bug-form"]', 'the Developer Team form did not open on a phone');
+await expect(await overflow(phone) <= 1, 'and so does the Developer Team form');
+await openHrMeetings(phone);
+await expect(await overflow(phone) <= 1, 'and so does the meeting request to HR');
 await phone.context().close();
 const tablet = await login('rahul@amuwa.com', { width: 820, height: 1100 });
 await openRaise(tablet);

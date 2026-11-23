@@ -313,6 +313,7 @@ select test.check((select not has_table_privilege('authenticated', 'public.emplo
                      and not has_table_privilege('authenticated', 'public.employee_meeting_requests', 'update') and not has_table_privilege('authenticated', 'public.employee_case_events', 'insert') and not has_table_privilege('authenticated', 'public.employee_issue_attachments', 'select')),
   'signed-in users can only read (never write) the tables; attachments are not readable at all');
 select test.check((select not has_table_privilege('anon', 'public.employee_issues', 'select') and not has_table_privilege('anon', 'public.employee_case_events', 'select')), 'signed-out visitors have no access');
-select test.check((select count(*) = 30 and bool_and(p.prosecdef) and bool_and(not has_function_privilege('anon', p.oid, 'execute')) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+-- 30 functions of 20261210000100, + issue_hr_escalate (20270128000200)
+select test.check((select count(*) = 31 and bool_and(p.prosecdef) and bool_and(not has_function_privilege('anon', p.oid, 'execute')) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                     where n.nspname = 'public' and (p.proname like 'issue\_%' or p.proname like 'meeting\_%')), 'every new function is security definer and closed to signed-out visitors');
 \echo '=== EMPLOYEE ISSUES AND MEETING REQUESTS TESTS PASSED ==='

@@ -12,7 +12,7 @@ import { ClientNotices } from './components/notices/ClientNotices';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
-import { useOpenHrCaseRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
+import { useOpenHrCaseRequest, useOpenIssuesRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
 import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
 import { TabBar } from './components/layout/TabBar';
 
@@ -37,6 +37,7 @@ const ProbationConfirmations = lazy(() => import('./components/hr/ProbationConfi
 const RechargeReminderCalls = lazy(() => import('./components/hr/RechargeReminderCalls').then(m => ({ default: m.RechargeReminderCalls })));
 const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
 const EmployeeIssuesManagement = lazy(() => import('./components/hr/EmployeeIssuesManagement').then(m => ({ default: m.EmployeeIssuesManagement })));
+const HrRaiseIssuePage = lazy(() => import('./components/hr/HrRaiseIssuePage').then(m => ({ default: m.HrRaiseIssuePage })));
 const HrEmployeeRequestsPage = lazy(() => import('./components/employees/HrEmployeeRequestsPage').then(m => ({ default: m.HrEmployeeRequestsPage })));
 const MeetingRequestsManagement = lazy(() => import('./components/hr/MeetingRequestsManagement').then(m => ({ default: m.MeetingRequestsManagement })));
 const HrLettersPage = lazy(() => import('./components/departments/hr/HrLettersPage').then(m => ({ default: m.HrLettersPage })));
@@ -94,6 +95,9 @@ const MainAppContent: React.FC = () => {
   // and HR's Employee Issues / Meeting Requests section on one case
   const showHrCase = React.useRef<((d: OpenHrCaseDetail) => void) | null>(null);
   useOpenHrCaseRequest(React.useCallback(d => showHrCase.current?.(d), []));
+  // HR's own issues to the Developer Team (a developer's reply or a status change): HR's Raise an Issue page
+  const showHrIssues = React.useRef<(() => void) | null>(null);
+  useOpenIssuesRequest(React.useCallback(() => showHrIssues.current?.(), []));
   // a meeting notification opens Meetings in the department panel's side menu
   const showMeetings = React.useRef<(() => void) | null>(null);
   useOpenMeetingRequest(React.useCallback(() => showMeetings.current?.(), []));
@@ -512,6 +516,7 @@ const MainAppContent: React.FC = () => {
   showChat.current = () => handleTabUpdate('chat');
   showMeetings.current = () => { if (showSidebar) handleTabUpdate('my_meetings'); };
   showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
+  showHrIssues.current = () => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate('hr_raise_issue'); };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -619,6 +624,8 @@ const MainAppContent: React.FC = () => {
               <Suspense fallback={<ScreenLoader />}><PaidLeaveManagement /></Suspense>
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><EmployeeIssuesManagement /></Suspense>
+            ) : currentActiveTab === 'hr_raise_issue' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><HrRaiseIssuePage canReport={user?.role !== 'superadmin'} /></Suspense>
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><MeetingRequestsManagement /></Suspense>
             ) : (currentActiveTab === 'hr_letter_nda' || currentActiveTab === 'hr_letter_offer' || currentActiveTab === 'hr_letter_experience') && currentDeptId === 'hr' ? (
