@@ -9,10 +9,16 @@ export class BugRepository {
     return unwrap(await this.db.rpc(fn, args)) as T;
   }
   access() { return this.rpc<DevBugAccess>('bug_access'); }
-  submit(i: { title: string; description: string; steps?: string | null; attachmentIds: string[]; clientRequestId: string }) {
-    return this.rpc<DevBug>('bug_submit', { p_title: i.title, p_description: i.description, p_steps: i.steps ?? null, p_attachments: i.attachmentIds, p_client_request_id: i.clientRequestId });
+  // an issue to the Developer Team with its category, priority and the affected department / employee (20270128000200)
+  submit(i: { title: string; description: string; steps?: string | null; attachmentIds: string[]; clientRequestId: string; category: string; priority: string;
+    affectedDepartmentId?: string | null; affectedEmployeeId?: string | null }) {
+    return this.rpc<DevBug>('bug_report', { p: {
+      title: i.title, description: i.description, steps: i.steps ?? null, attachmentIds: i.attachmentIds, clientRequestId: i.clientRequestId, category: i.category,
+      priority: i.priority, affectedDepartmentId: i.affectedDepartmentId ?? null, affectedEmployeeId: i.affectedEmployeeId ?? null } });
   }
-  mine() { return this.rpc<DevBugRow[]>('bug_my_list'); }
+  mine(q: { status?: string; search?: string } = {}) { return this.rpc<DevBugRow[]>('bug_my_list', { p_status: q.status ?? null, p_search: q.search || null }); }
+  followUp(id: string, message: string, attachmentIds: string[]) { return this.rpc<DevBug>('bug_my_follow_up', { p_id: id, p_message: message, p_attachments: attachmentIds }); }
+  reply(id: string, message: string, requestInfo: boolean) { return this.rpc<DevBug>('bug_dev_reply', { p_id: id, p_message: message, p_request_info: requestInfo }); }
   myDetail(id: string) { return this.rpc<DevBug>('bug_my_detail', { p_id: id }); }
   list(i: { status?: string; assignee?: string; search?: string; page: number; pageSize: number }) {
     return this.rpc<DevBugList>('bug_dev_list', {

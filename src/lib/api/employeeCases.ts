@@ -38,7 +38,8 @@ export interface MeetingDecision {
   followUp?: string | null;
 }
 type Paging = { limit?: number; offset?: number };
-export type HrIssueFilters = Paging & { status?: string; departmentId?: string; priority?: string; category?: string; assigneeId?: string; unassigned?: boolean; from?: string; to?: string; search?: string };
+export type HrIssueFilters = Paging & { status?: string; departmentId?: string; priority?: string; category?: string; assigneeId?: string; unassigned?: boolean; from?: string; to?: string; search?: string;
+  sort?: string; routing?: string };
 export type HrMeetingFilters = Paging & { status?: string; departmentId?: string; category?: string; assigneeId?: string; unassigned?: boolean; from?: string; to?: string; search?: string };
 
 /** Drops the empty filters so the query string only carries what was chosen. */
@@ -73,6 +74,8 @@ export const employeeCasesApi = {
   setIssueStatus: (id: string, status: string, message?: string) => api.post<EmployeeIssueDetail>(`/hr/issues/${id}/status`, { status, message: message || undefined }),
   respondToIssue: (id: string, message: string, requestInfo: boolean) => api.post<EmployeeIssueDetail>(`/hr/issues/${id}/respond`, { message, requestInfo }),
   noteOnIssue: (id: string, note: string) => api.post<EmployeeIssueDetail>(`/hr/issues/${id}/note`, { note }),
+  escalateIssue: (id: string, b: { note?: string; category?: string; priority?: string }) =>
+    api.post<EmployeeIssueDetail>(`/hr/issues/${id}/escalate`, Object.fromEntries(Object.entries(b).filter(([, v]) => v))),
   // HR: meetings
   meetingOverview: () => api.get<EmployeeMeetingOverview>('/hr/meetings/overview'),
   hrMeetings: (q: HrMeetingFilters) => api.get<EmployeeMeetingList>('/hr/meetings', clean(q)),

@@ -175,3 +175,86 @@ correct (every developer sees every unassigned bug; once assigned, only the Team
 - `supabase/diagnostics/bug_developer_access_check.sql` (read-only) shows the auth user, profile, status, role, membership and what the
   developer sees, for one email.
 - The Bugs menu asks `bug_access()` up to three times before concluding "not a developer", so a network hiccup does not hide it.
+
+## Issue routing and escalation (migration `20270128000200_issue_routing_escalation.sql`)
+
+Run after `20270128000100_ceo_meeting_queue.sql`. Additive and safe to run twice.
+
+### One recipient per issue
+
+**Raise an Issue** (Team Members, Team Leads, Department Heads) offers two clearly separate options. Nothing is ever sent to both.
+
+| Option | What it creates | Who receives it |
+| --- | --- | --- |
+| **Raise an Issue to HR** | an `employee_issues` row (recipient `HR`) | HR only (Employee Issues) |
+| **Raise an Issue to Developer Team** | a `dev_bugs` row (source `EMPLOYEE`), with a category and a priority | the developers only (Bugs) |
+
+- Each issue in the employee's lists says where it is:
+  - **To: HR**;
+  - **Escalated to Developer Team · *status***;
+  - **To: Developer Team**.
+- The whole row of every list opens the issue: the employee's lists, HR's Employee Issues table and the developers' Bugs table. Buttons in a row keep working.
+- **The meeting request to HR moved** from Raise an Issue to **Meetings → HR meeting requests**. It has the same form, rules and history. Its notifications open that tab.
+
+### Developer Team issues
+
+- **Category:** Bug / error, Feature request, Access / login, Wrong or missing data, Slow / performance, Other.
+- **Priority:** Low, Medium, High, Urgent. An Urgent issue notifies the developers as urgent.
+- **Statuses:** Pending, Under Review, In Progress, Pending Information (`NEEDS_INFO`), Resolved, Rejected, Closed.
+  - "Open" means Pending, Under Review, In Progress or Pending Information.
+  - Resolving or rejecting needs a note; closing does not.
+- **The conversation** is seen by both the reporter and the developers (`dev_bug_events` kind `MESSAGE`):
+  - Any developer who sees the issue can reply (`bug_dev_reply`).
+  - Only the assigned developer or the Team Lead can **ask for information**, which sets Pending Information.
+  - The reporter **follows up** (`bug_my_follow_up`), with files. A follow-up on Pending Information or Resolved goes back to the team.
+  - A Closed issue takes no more messages.
+  - Internal comments stay developers-only, as before.
+- **Older forms** keep working: `POST /bugs` without a category or priority stores Bug, Medium.
+
+### HR: Raise an Issue (sidebar)
+
+- **A. Report to Developer Team.** HR reports an issue (source `HR_REPORT`), optionally naming the **affected department and employee** (ids checked by the database). HR also:
+  - follows its status and the developers' replies;
+  - sends follow-ups;
+  - filters by status and searches, in the database.
+- **B. Employee Issues – Received by HR.** The existing Employee Issues workspace, unchanged:
+  - search; filters by department, priority, category, assignee, dates and status;
+  - the conversation with the employee, status changes and closing.
+
+  It also gains a **sort** (newest, oldest, priority, status, department, employee), a **routing** filter (with HR / escalated) and an "Escalated" count.
+- The Super Admin sees section B only, because only an employee reports.
+
+### HR escalates an employee issue (`issue_hr_escalate`)
+
+- "Escalate to Developer Team" on an issue creates **one** linked Developer Team issue (`source_issue_id`, unique). It carries:
+  - the employee issue's title, description and priority (or the one HR picks);
+  - HR's note and the category;
+  - the employee as the affected employee.
+- A retry, a double click or another HR person gets the same issue (`duplicate: true`). Nothing is copied twice.
+- **Files are referenced, not copied.** The developers who see the Developer Team issue may open the employee issue's files (`issue_attachment_download`, audited). Reassigning the issue to another developer removes that access.
+- **The employee is told** (in-app notification and an "Escalated to the Developer Team" entry in their history). When the developers change the status, the employee's issue gets a "Developer Team update" with the resolution note, and the employee is notified.
+- **Every HR person** sees the developers' answers on the issue: replies, requests for information and status changes. They never see internal comments.
+- **What is refused:**
+  - escalating a closed issue;
+  - HR escalating their own issue;
+  - an employee escalating.
+
+### API
+
+| Route | What it does |
+| --- | --- |
+| `POST /bugs` | create an issue for the Developer Team. Takes `category`, `priority`, `affectedDepartmentId`, `affectedEmployeeId`; calls `bug_report`. |
+| `GET /bugs/mine?status=OPEN\|DONE\|<status>&search=` | the reporter's own issues |
+| `POST /bugs/mine/:id/follow-up` | the reporter's follow-up: `{ message, attachmentIds }` |
+| `POST /bugs/:id/reply` | a developer's reply: `{ message, requestInfo }` |
+| `POST /hr/issues/:id/escalate` | HR escalates an issue: `{ note?, category?, priority? }` |
+| `GET /hr/issues?sort=…&routing=WITH_HR\|ESCALATED_TO_DEVELOPERS` | HR's sorted, filtered list |
+
+### Tests
+
+- `supabase/tests/issue_routing_test.sql`
+- the "issue routing API" checks of `api_integration.test.ts`
+- `supabase/tests/issue_routing.test.ts` (the shared schemas)
+- `supabase/tests/ui_bugs.test.mjs`: the two recipients, the conversation, whole rows, HR's page and the escalation
+- `supabase/tests/ui_meeting_presence.test.mjs`: Meetings → HR meeting requests
+- `supabase/tests/e2e/employee-issues.e2e.mjs`, updated for the new layout

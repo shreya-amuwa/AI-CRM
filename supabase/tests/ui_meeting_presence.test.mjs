@@ -1,6 +1,7 @@
-// Browser test of Enter / Exit Meeting for employees (migration 20270122000100): an employee enters and exits (the header badge and the panel
-// follow), the Super Admin has no controls and the server refuses them, colleagues show BUSY in the New meeting form as soon as Realtime says
-// so, a meeting starting within 30 minutes with a BUSY colleague is flagged and refused, and Ask the CEO no longer mentions waiting.
+// Browser test of Enter / Exit Meeting (migrations 20270122000100, 20270128000100): an employee enters and exits (the header badge and the
+// panel follow), colleagues show BUSY in the New meeting form as soon as Realtime says so, a meeting starting within 30 minutes with a BUSY
+// colleague is flagged and refused; asking the CEO while they are BUSY joins the queue; the Super Admin enters and exits, sees the queue, each
+// Exit confirms exactly one, the room link is set in Settings, and the Super Admin's week lists the latest day and meeting first.
 // Real React components, real Chromium; the CRM API is answered in the page (supabase/tests/ui/meeting_presence_harness.tsx).
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -99,23 +100,170 @@ try {
     await page.waitForSelector('text=booked for');
     check(true, 'now the meeting can be booked');
 
-    // ---- asking the CEO for time: no waiting / pending availability any more
+    // ---- asking the CEO for time: while the CEO is AVAILABLE, an ordinary request; while BUSY, it joins the queue
     await page.click('button:has-text("Ask the CEO for time")');
     await page.waitForSelector('button:has-text("Send the request")');
-    check(!(await page.isVisible('text=Superadmin is currently attending another meeting')) && !(await page.isVisible('text=pending availability')),
-      'asking the CEO says nothing about the CEO being in a meeting');
+    // the CEO has not arrived yet (20270128000300): a red banner, and the request can still be sent
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="false"]');
+    const red = await page.innerText('[data-testid="ceo-arrival"]');
+    check(/CEO HAS NOT ARRIVED AT THE OFFICE YET/.test(red) && /Sir has not arrived at the office yet\. You can still schedule your meeting request\. Meeting confirmation and availability will be subject to the CEO's arrival and approval\./.test(red),
+      'before the arrival: the red banner with the exact text', red);
+    check(!(await page.isDisabled('button:has-text("Send the request")')) && !(await page.isDisabled('#mtg-date')) && !(await page.isDisabled('#mtg-time')),
+      'and nothing is disabled: date, time and Send stay open');
+    check(!(await page.locator('[data-testid="ceo-arrival-control"]').count()), 'an employee has no arrival button');
+    // HR presses CEO HAS ARRIVED elsewhere: the banner turns green at once (Realtime)
+    await page.evaluate(() => { window.__setArrived(true); window.__fireRealtime('ceo_office_arrivals'); });
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="true"]');
+    const green = await page.innerText('[data-testid="ceo-arrival"]');
+    check(/CEO HAS ARRIVED AT THE OFFICE/.test(green) && /Sir has arrived at the office\. You can schedule meetings based on the available time slots\./.test(green) && !/NOT ARRIVED/.test(green),
+      'after the arrival: the red banner is gone, the green one shows (no refresh)', green);
+    await page.waitForFunction(() => window.__calls.some(c => c.path === '/api/v1/meetings/presence/ceo'));
+    await page.waitForTimeout(100); // the Realtime listener is attached right after the first load
+    check(!(await page.isVisible('[data-testid="ceo-busy-notice"]')), 'the CEO is AVAILABLE: no queue notice');
+    await page.evaluate(() => { window.__setServerStatus(window.__ids.CEO, 'BUSY'); window.__fireRealtime('meeting_presence'); });
+    await page.waitForSelector('[data-testid="ceo-busy-notice"]');
+    check(/The CEO is in a meeting right now/.test(await page.innerText('[data-testid="ceo-busy-notice"]')), 'Realtime: the CEO enters a meeting, the form says the request joins the queue');
+    check(await page.isVisible('button:has-text("Join the queue")'), 'the button says so');
+    const later = new Date(Date.now() + 2 * 86400_000);
+    await page.fill('#mtg-title', 'Budget approval');
+    await page.fill('#mtg-date', `${later.getFullYear()}-${pad(later.getMonth() + 1)}-${pad(later.getDate())}`);
+    await page.fill('#mtg-time', '11:00');
+    await page.fill('#mtg-desc', 'Approve the Pune office budget');
+    await page.click('button:has-text("Join the queue")');
+    await page.waitForSelector('text=Your request is in the queue');
+    check(await page.evaluate(() => window.__queue.length === 1 && window.__queue[0].title === 'Budget approval'), 'the request is in the CEO\'s queue on the server');
     await page.close();
   }
-  // ---- the Super Admin: no Enter / Exit at all, and the server refuses it
+  // ---- the Super Admin: Enter / Exit, the queue, one confirmed per Exit
   {
     const page = await open('ceo');
-    await page.waitForTimeout(300);
-    check(!(await page.isVisible('[data-testid="presence-panel"]')) && !(await page.isVisible('[data-testid="presence-enter"]')) && !(await page.isVisible('[data-testid="presence-exit"]')),
-      'the Super Admin sees no Enter Meeting / Exit Meeting');
-    check(!(await page.isVisible('[data-testid="header"] [data-testid="availability"]')), 'and no availability badge');
-    const r = await page.evaluate(async () => (await fetch('/api/v1/meetings/presence/enter', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } })).status);
-    check(r === 403, 'calling the API directly is refused');
+    // the server as the member's page left it (its own stand-in): the CEO BUSY with two requests waiting, oldest first
+    await page.evaluate(() => {
+      window.__setServerStatus(window.__ids.CEO, 'BUSY');
+      const q = (id, title, by) => ({ id, title, startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 1800_000).toISOString(), createdAt: new Date().toISOString(), requestedBy: by });
+      window.__queue.push(q('00000000-0000-4000-8000-000000000798', 'Budget approval', 'Team Member A'), q('00000000-0000-4000-8000-000000000799', 'Hiring plan', 'Ravi Colleague'));
+    });
+    await page.evaluate(() => window.__fireRealtime('meeting_presence'));
+    await page.waitForSelector('[data-testid="ceo-queue"]');
+    const q = await page.innerText('[data-testid="ceo-queue"]');
+    check(/Waiting in your queue \(2\)/.test(q) && q.indexOf('Budget approval') < q.indexOf('Hiring plan'), 'the Super Admin sees the queue, oldest first', q);
+    check(await statusIn(page, '[data-testid="presence-panel"]') === 'BUSY' && await page.isVisible('[data-testid="presence-exit"]'), 'the Super Admin is BUSY and can Exit Meeting');
+    await page.click('[data-testid="presence-exit"]');
+    await page.waitForSelector('text=The next queued meeting is confirmed and starts now');
+    const t = await page.innerText('body');
+    check(/"Budget approval"/.test(t) && /1 more waiting/.test(t), 'Exit confirms exactly one (the oldest) and says how many still wait');
+    check(await page.evaluate(() => window.__queue.length === 1 && window.__queue[0].title === 'Hiring plan'), 'the next one keeps waiting for the next Exit');
+    await page.waitForSelector('[data-testid="presence-enter"]');
+    await page.click('[data-testid="presence-enter"]');
+    await page.waitForSelector('[data-testid="presence-exit"]');
+    check(/requests for your time join your queue/i.test(await page.innerText('body')), 'Enter Meeting: requests for their time queue up');
+    await page.click('[data-testid="presence-exit"]');
+    await page.waitForSelector('text="Hiring plan"');
+    check(await page.evaluate(() => window.__queue.length === 0), 'the next Exit confirms the next one');
+    await page.waitForSelector('[data-testid="presence-enter"]');
+    await page.click('[data-testid="presence-enter"]');
+    await page.waitForSelector('[data-testid="presence-exit"]');
+    await page.click('[data-testid="presence-exit"]');
+    await page.waitForSelector('text=You are AVAILABLE again: colleagues see it at once.');
+    check(true, 'an Exit with an empty queue confirms nothing');
+
+    // the meeting-room link used when Google Meet is not available
+    await page.click('[role="tab"]:has-text("Google, hours")');
+    await page.waitForSelector('#room-link');
+    await page.fill('#room-link', 'http://insecure.example');
+    check(await page.isDisabled('section:has(#room-link) button:has-text("Save")'), 'an http:// room link cannot be saved');
+    await page.fill('#room-link', 'https://meet.example.com/ceo-room');
+    await page.click('section:has(#room-link) button:has-text("Save")');
+    await page.waitForSelector('text=Meeting room link saved.');
+    check((await page.evaluate(() => window.__calls.filter(c => c.path === '/api/v1/meetings/settings/room-link' && c.method === 'POST').map(c => c.body.roomLink)))
+      .includes('https://meet.example.com/ceo-room'), 'the room link is saved on the server');
     await page.close();
+  }
+  // ---- the Super Admin's week: the latest day first, and in each day the latest meeting first
+  {
+    const page = await open('ceo');
+    await page.evaluate(() => {
+      const d = new Date(); const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+      const at = (day, h, m = 0) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + day, h, m).toISOString();
+      const mk = (id, title, s, e) => window.__full({ id, kind: 'MEETING', kindLabel: 'Meeting', title, startsAt: s, endsAt: e, mode: 'IN_PERSON', meetLink: null, location: null,
+        hostId: window.__ids.CEO, hostName: 'Asha CEO', attendees: [] });
+      window.__week.push(mk('w1', 'Monday early', at(0, 9), at(0, 10)), mk('w2', 'Monday late', at(0, 16), at(0, 17)),
+        mk('w3', 'Wednesday', at(2, 11), at(2, 12)), mk('w4', 'Friday early', at(4, 10), at(4, 11)), mk('w5', 'Friday late', at(4, 15, 30), at(4, 16)));
+    });
+    await page.click('button:has-text("This week")');
+    await page.waitForSelector('section[aria-label] span.truncate:has-text("Friday late")');
+    const order = await page.evaluate(() => [...document.querySelectorAll('section[aria-label] button span.font-semibold.truncate')].map(e => e.textContent));
+    check(JSON.stringify(order) === JSON.stringify(['Friday late', 'Friday early', 'Wednesday', 'Monday late', 'Monday early']),
+      'the Super Admin\'s week: latest day first, latest meeting first in each day', order);
+    const days = await page.evaluate(() => [...document.querySelectorAll('section[aria-label]')].map(e => e.getAttribute('aria-label')));
+    check(/Sun/i.test(days[0]) && /Mon/i.test(days[6]), 'Sunday on top, Monday at the bottom', days);
+    await page.close();
+  }
+  // ---- everyone else keeps Monday first, earliest first
+  {
+    const page = await open('member');
+    await page.evaluate(() => {
+      const d = new Date(); const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+      const at = (day, h) => new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + day, h).toISOString();
+      const mk = (id, title, s, e) => window.__full({ id, kind: 'MEETING', kindLabel: 'Meeting', title, startsAt: s, endsAt: e, mode: 'IN_PERSON', meetLink: null, location: null,
+        hostId: window.__ids.ME, hostName: 'Team Member A', attendees: [] });
+      window.__week.push(mk('x1', 'Tuesday late', at(1, 15), at(1, 16)), mk('x2', 'Tuesday early', at(1, 9), at(1, 10)), mk('x3', 'Thursday', at(3, 9), at(3, 10)));
+    });
+    await page.click('button:has-text("This week")');
+    await page.waitForSelector('section[aria-label] span.truncate:has-text("Thursday")');
+    const order = await page.evaluate(() => [...document.querySelectorAll('section[aria-label] button span.font-semibold.truncate')].map(e => e.textContent));
+    check(JSON.stringify(order) === JSON.stringify(['Tuesday early', 'Tuesday late', 'Thursday']), 'an employee\'s week is unchanged: earliest first', order);
+    await page.close();
+  }
+  // ---- HR's CEO HAS ARRIVED button: marks it once, shows when and who, can be undone; requests are never touched by it
+  {
+    const page = await open('hr');
+    await page.waitForSelector('[data-testid="ceo-arrived-button"]');
+    check(/CEO HAS ARRIVED/.test(await page.innerText('[data-testid="ceo-arrived-button"]')), 'HR has the CEO HAS ARRIVED button');
+    await page.click('[data-testid="ceo-arrived-button"]');
+    await page.waitForSelector('[data-testid="ceo-arrived-at"]');
+    check(/Arrived at \d{1,2}:\d{2}/.test(await page.innerText('[data-testid="ceo-arrived-at"]')) && /marked by Hema HR/.test(await page.innerText('[data-testid="ceo-arrived-at"]')),
+      'pressed: the arrival time and who marked it');
+    const calls = await page.evaluate(() => window.__calls.filter(c => c.method === 'POST').map(c => c.path));
+    check(calls.filter(c => c.endsWith('/ceo-office/arrived')).length === 1 && !calls.some(c => /\/meetings$|presence/.test(c)), 'one call to the server; nothing else changes');
+    await page.click('[role="tab"]:has-text("My CEO requests")');
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="true"]');
+    check(true, 'the CEO request section shows the green banner');
+    await page.click('[data-testid="ceo-arrival-undo"]');
+    await page.waitForSelector('[data-testid="ceo-arrived-button"]');
+    await page.evaluate(() => window.__fireRealtime('ceo_office_arrivals'));
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="false"]');
+    check(true, 'a mistaken press is undone: red again');
+    const denied = await page.evaluate(async () => { window.__profile = { ...window.__profile, hr: false }; return (await fetch('/api/v1/meetings/ceo-office/arrived', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } })).status; });
+    check(denied === 403, 'anyone but HR is refused by the server');
+    await page.close();
+  }
+  // ---- the meeting request to HR now lives on Meetings (it used to be on Raise an Issue); the Super Admin has no such tab
+  {
+    const page = await open('member');
+    await page.click('[role="tab"]:has-text("HR meeting requests")');
+    await page.waitForSelector('[data-testid="hr-meeting-requests"] [data-testid="meeting-form"]');
+    await page.click('[data-testid="submit-meeting"]');
+    await page.waitForSelector('#meeting-subject-error');
+    check(!(await page.evaluate(() => window.__calls.some(c => c.method === 'POST' && c.path === '/api/v1/employee/meetings'))), 'an empty HR meeting request is not sent');
+    const d = new Date(Date.now() + 3 * 86400_000);
+    await page.fill('#meeting-subject', 'Leave balance');
+    await page.selectOption('#meeting-category', 'ATTENDANCE_LEAVE');
+    await page.selectOption('#meeting-mode', 'IN_PERSON');
+    await page.fill('#meeting-date', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    await page.fill('#meeting-time', '10:30');
+    await page.fill('#meeting-description', 'I would like to understand my leave balance.');
+    await page.click('[data-testid="submit-meeting"]');
+    await page.waitForSelector('[data-testid="submitted-banner"]');
+    check(/MTG-2026-00001/.test(await page.innerText('[data-testid="submitted-banner"]')) && /HR will review/.test(await page.innerText('[data-testid="submitted-banner"]')),
+      'Meetings > HR meeting requests: the request to HR is sent, with its reference');
+    await page.waitForSelector('[data-testid="my-case-row"]:has-text("Leave balance")');
+    check(/Pending/.test(await page.innerText('[data-testid="my-case-row"]')), '... and listed as Pending');
+    await page.close();
+    const ceo = await open('ceo');
+    await ceo.waitForTimeout(300);
+    check(!(await ceo.locator('[role="tab"]:has-text("HR meeting requests")').count()), 'the Super Admin has no HR meeting requests tab');
+    await ceo.close();
   }
   // ---- phone width
   {
