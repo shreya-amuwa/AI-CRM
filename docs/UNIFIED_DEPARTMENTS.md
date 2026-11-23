@@ -87,7 +87,7 @@ select d.slug, t.name, t.division from public.teams t join public.departments d 
 
 # PR 2: one dashboard, Sales and Support in the same sidebar
 
-Migration `supabase/migrations/20270129000100_unified_head_sales_pages.sql` (run after `20270127000100`; safe to run twice). Tests:
+Migration `supabase/migrations/20270130000100_unified_head_sales_pages.sql` (run after `20270127000100`; safe to run twice). Tests:
 `supabase/tests/unified_head_pages_test.sql` (database), `supabase/tests/unified_dashboard.test.ts` (97 checks: sidebars, addresses, routing, form rules) and
 `supabase/tests/ui_unified_dashboard.test.mjs` (154 browser checks in Chromium).
 

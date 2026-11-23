@@ -1,5 +1,5 @@
 -- =============================================================================
--- International and Reseller, PR 2 (migration 20270129000100): the Department Head's Sales pages (leads, lead assignment, team people, tasks, overview,
+-- International and Reseller, PR 2 (migration 20270130000100): the Department Head's Sales pages (leads, lead assignment, team people, tasks, overview,
 -- reports) work for the head of a unified department and only for them, scoped to their own department; the existing Sales head still has them, the
 -- existing Support head and every Team Lead / Team Member still do not. Reuses the people and records of unified_departments_test.sql.
 -- =============================================================================
@@ -9,8 +9,8 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 -- earlier suites re-run older migrations (idempotency checks): apply this one again first
-\i supabase/migrations/20270129000100_unified_head_sales_pages.sql
-\i supabase/migrations/20270129000100_unified_head_sales_pages.sql
+\i supabase/migrations/20270130000100_unified_head_sales_pages.sql
+\i supabase/migrations/20270130000100_unified_head_sales_pages.sql
 
 create or replace function test.ud_leads() returns text language sql as $$
   select coalesce(string_agg(x ->> 'name', ',' order by x ->> 'name'), '') from jsonb_array_elements(sales_leads_list() -> 'items') x $$;
@@ -68,7 +68,7 @@ reset role;
 select test.check((select count(*) = 1 from pg_proc where proname = 'require_sales_head' and pronamespace = 'private'::regnamespace), 'one guard, as before');
 
 \echo '   re-running the migration changes nothing'
-\i supabase/migrations/20270129000100_unified_head_sales_pages.sql
+\i supabase/migrations/20270130000100_unified_head_sales_pages.sql
 set role authenticated;
 select test.login('i_head');
 select test.check(test.ud_leads() like '%UH Intl Lead%', 'the head still has the pages');

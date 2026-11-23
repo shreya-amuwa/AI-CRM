@@ -2971,6 +2971,8 @@ export interface ChatConversation {
   isAdmin: boolean;
   /** Client chat: false until a Team Member or Team Lead is assigned (nobody can answer yet). */
   assigned: boolean | null;
+  /** Client chat, employees only: who is handling it now (20270129000100). Never sent to the client. */
+  handler?: ChatHandler | null;
   lastSeq: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
@@ -3110,6 +3112,18 @@ export interface ChatDirectoryPerson {
   /** The employee's designation (or position); from migration 20261228000300, absent before it. */
   designation?: string | null;
   departmentId?: string | null;
+}
+/** Who is handling a client conversation or ticket right now (20270129000100). Information only; the Relationship Manager is never changed by it. */
+export interface ChatHandler { id: string; name: string; at: string; active: boolean; me: boolean }
+/** A client conversation on the shared Support desk: the department's customers for Support employees covering for a colleague. */
+export interface ChatDeskClient extends Omit<ChatMyClient, 'role'> {
+  role: ChatMyClient['role'] | 'Support desk';
+  rm: { id: string; name: string } | null;
+  handler: ChatHandler | null;
+  lastSenderName: string | null;
+  /** The client wrote last and no employee has answered yet. */
+  awaitingReply: boolean;
+  shared: true;
 }
 export interface ChatMyClient {
   customerId: string;

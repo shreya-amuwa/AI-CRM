@@ -17,7 +17,7 @@ import { useSupportInvoices, useTickets } from '../../lib/support';
 import { CustomerProfile, CustomersPage } from './CustomersPage';
 import { TasksPage } from './TasksPage';
 import { AddCustomerPage } from './AddCustomerPage';
-import { TicketsPage } from './TicketsPage';
+import { TicketsWithDesk } from './DeskTickets';
 import { InvoicesPage } from './InvoicesPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HandoverBoard } from '../handover/HandoverBoard';
@@ -185,7 +185,7 @@ export const SupportMemberDashboard: React.FC = () => {
           }}
         />
       ) : page === 'tickets' ? (
-        <TicketsPage mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
+        <TicketsWithDesk mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
       ) : page === 'chat' ? (
         <ChatRoute />
       ) : page === 'raise-issue' ? (

@@ -220,10 +220,17 @@ select test.check((select count(*) = 1 from support_tickets where customer_id = 
   'resolved and unresolved, with who resolved them');
 select test.check((select count(*) = 2 from support_ticket_escalations where ticket_id = (select id from tk where name = 'T1')), 'and the escalation trail');
 select test.check((select assignee_id = test.id('sup_b') from support_tickets where id = (select id from tk where name = 'T1')), 'watching does not make the Team Lead the owner');
+-- strict ownership for the reply check (the shared Support desk of 20270129000100 lets a Support colleague answer; see shared_client_support_access_test.sql)
+reset role;
+update access_settings set support_desk_department_wide = false where id;
+set role authenticated;
 select test.login('th_gen');
 select test.check((select count(*) = 0 from support_tickets where customer_id = (select id from tk where name = 'R')), 'a Team Lead of another team sees none of them');
 select test.check((select count(*) = 0 from support_ticket_escalations where ticket_id = (select id from tk where name = 'T1')), 'nor their escalations');
 select test.must_fail($$select reply_to_client_ticket((select id from tk where name = 'T2'), 'hi')$$, 'nor can reply', 'not found');
+reset role;
+update access_settings set support_desk_department_wide = true where id;
+set role authenticated;
 select test.login('sup_plain');
 select test.check((select count(*) = 0 from support_tickets where customer_id = (select id from tk where name = 'R')), 'another team member does not see them either');
 
@@ -315,12 +322,19 @@ select test.check((select client_ticket((select id from tk where name = 'C1')) -
 -- who may write
 select test.login('tk_n');
 select test.must_fail($$select client_send_ticket_message((select id from tk where name = 'C1'), 'not mine', null)$$, 'another client cannot write in the ticket', 'not found');
+-- strict ownership (the shared Support desk of 20270129000100 is switched off for these assertions; its own rules are in shared_client_support_access_test.sql)
+reset role;
+update access_settings set support_desk_department_wide = false where id;
+set role authenticated;
 select test.login('th_gen');
 select test.must_fail($$select send_ticket_message((select id from tk where name = 'C1'), 'hi', false, null)$$, 'a Team Lead of another team cannot write', 'not found');
 select test.must_fail($$select mark_support_ticket_read((select id from tk where name = 'C1'))$$, 'nor mark it read', 'not found');
 select test.login('sup_plain');
 select test.must_fail($$select send_ticket_message((select id from tk where name = 'C1'), 'hi', true, null)$$, 'another member cannot add notes', 'not found');
 select test.check((select count(*) = 0 from support_ticket_reads where ticket_id = (select id from tk where name = 'C1')), 'nor see who read it');
+reset role;
+update access_settings set support_desk_department_wide = true where id;
+set role authenticated;
 select test.login('sup_th');
 select send_ticket_message((select id from tk where name = 'C1'), 'Team Lead here, we are on it.', false, null);
 select test.check((select author_label = 'Team Lead' from support_ticket_updates where note = 'Team Lead here, we are on it.'), 'the Team Lead can step in, labelled as Team Lead');
@@ -416,10 +430,17 @@ select test.login('tk_n');
 select test.must_fail($$select ticket_attachments((select id from tk where name = 'A1'))$$, 'another client cannot list the files', 'not found');
 select test.must_fail($$select ticket_attachment_download((select id from af where name = 'm1'))$$, 'nor open one even with its id', 'not found');
 select test.must_fail($$select ticket_begin_upload((select id from tk where name = 'A1'), null, 'x.pdf', 'application/pdf', 100)$$, 'nor attach to the ticket', 'not found');
+-- strict ownership (the shared Support desk of 20270129000100 lets a Support colleague of the department read the files; see shared_client_support_access_test.sql)
+reset role;
+update access_settings set support_desk_department_wide = false where id;
+set role authenticated;
 select test.login('th_gen');
 select test.must_fail($$select ticket_attachments((select id from tk where name = 'A1'))$$, 'a Team Lead of another team cannot list them', 'not found');
 select test.must_fail($$select ticket_attachment_download((select id from af where name = 'm1'))$$, 'nor open one', 'not found');
 select test.must_fail($$select ticket_begin_upload((select id from tk where name = 'A1'), null, 'x.pdf', 'application/pdf', 100)$$, 'nor attach to the ticket', 'not found');
+reset role;
+update access_settings set support_desk_department_wide = true where id;
+set role authenticated;
 
 -- the RM reads them (audited) and answers with a file
 select test.login('sup_b');

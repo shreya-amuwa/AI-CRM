@@ -1700,6 +1700,8 @@ export const verifierDepartmentsSchema = z.object({ departmentIds: z.array(uuidS
 export const chatEscalateSchema = z
   .object({ messageId: uuidSchema.nullish(), targetId: uuidSchema, note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
   .strict();
+/** Take over or release "currently handling" on a client conversation (information only; the database checks who may). */
+export const chatHandlingSchema = z.object({ action: z.enum(['TAKE', 'RELEASE']) }).strict();
 export const chatSearchQuerySchema = z.object({ q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatReviewQuerySchema = z.object({ q: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatDirectSchema = z.object({ profileId: uuidSchema }).strict();

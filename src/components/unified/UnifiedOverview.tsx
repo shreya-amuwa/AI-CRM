@@ -43,7 +43,7 @@ const HeadOverview: React.FC<{ go: (p: UnifiedPage) => void }> = ({ go }) => {
   const tasks = useMyTasks();
   useEffect(() => {
     if (!departmentId) return;
-    // a unified department has one team that does both, so both reads cover it (migration 20270129000100)
+    // a unified department has one team that does both, so both reads cover it (migration 20270130000100)
     pipelineApi.divisionOverview(departmentId, 'SALES').then(setSales, e => setError(e instanceof Error ? e.message : 'Could not load the Sales figures.'));
     pipelineApi.divisionSupportOverview(departmentId, 'SUPPORT').then(setSupport, e => setError(e instanceof Error ? e.message : 'Could not load the Support figures.'));
   }, [departmentId]);
