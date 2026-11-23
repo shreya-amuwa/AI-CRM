@@ -59,8 +59,8 @@ export const ReminderBanner: React.FC = () => {
   const text = state === 'ios-needs-install'
     ? 'To get notifications on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.'
     : state === 'blocked'
-      ? "Notifications are blocked for this site. Allow them in your browser's site settings, then reload."
-      : 'Get chat messages and attendance reminders on this device.';
+      ? "Notifications are blocked for this site, so reminders cannot reach this device. Allow them in your browser's site settings (Attendance → Reminders → Notification troubleshooting), then reload."
+      : 'Enable notifications to receive Punch In, Lunch, Resume Work and Punch Out reminders.';
   return (
     <section data-testid="reminder-banner" aria-label="Notifications on this device" className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
       <div className="flex flex-wrap items-center gap-3">

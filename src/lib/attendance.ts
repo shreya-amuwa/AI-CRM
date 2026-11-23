@@ -155,7 +155,8 @@ export const attendanceApi = {
     rpc<boolean>('push_subscription_claim', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
   removeDeviceById: (id: string) => rpc<null>('push_subscription_remove_by_id', { p_id: id }),
   devices: () => rpc<PushDevice[]>('my_push_devices'),
-  testPush: () => api.post<{ sent: number; gone: number; failed: number }>('/attendance/push-test', {}),
+  /** `sent` = devices whose push service ACCEPTED the test; whether it appeared is for the person to confirm (testConfirm). */
+  testPush: () => api.post<{ sent: number; gone: number; failed: number; devices?: number; retry?: number; pushConfigured?: boolean }>('/attendance/push-test', {}),
   reminderSettings: () => rpc<ReminderSettings>('attendance_reminder_settings'),
   saveMyReminders: (enabled: boolean, punchIn: string | null, lunch: string | null, punchOut: string | null) =>
     rpc<ReminderSettings>('attendance_reminder_save_mine', { p_enabled: enabled, p_punch_in: punchIn, p_lunch: lunch, p_punch_out: punchOut }),
@@ -164,12 +165,33 @@ export const attendanceApi = {
       p_follow_up: c.followUpMinutes, p_warning: c.lunchWarningMinutes, p_days: c.days }),
   pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused }),
   /** Chat notifications on this person's devices (20270111000100). */
-  setChatPush: (enabled: boolean) => rpc<ReminderSettings>('push_chat_set', { p_enabled: enabled })
+  setChatPush: (enabled: boolean) => rpc<ReminderSettings>('push_chat_set', { p_enabled: enabled }),
+  // Notification reliability (20270126000200)
+  saveSound: (attendance: boolean, chat: boolean, general: boolean) =>
+    rpc<ReminderSettings>('notification_sound_save', { p_attendance: attendance, p_chat: chat, p_general: general }),
+  /** "I heard the test sound". */
+  soundConfirm: () => rpc<null>('notification_sound_confirm'),
+  /** "Did the test notification appear / make a sound?", for this browser's own device. */
+  testConfirm: (appeared: boolean, sound: boolean | null, endpoint: string | null) =>
+    rpc<null>('push_test_confirm', { p_appeared: appeared, p_sound: sound, p_endpoint: endpoint }),
+  /** What this browser reports about itself (permission, subscribed, audio) for Notification Health. */
+  clientCheck: (c: { clientId: string; label: string; permission: string; pushState: string; audioState: string; standalone: boolean }) =>
+    rpc<null>('notification_client_check', { p_client_id: c.clientId, p_label: c.label, p_permission: c.permission, p_push_state: c.pushState,
+      p_audio_state: c.audioState, p_standalone: c.standalone }),
+  saveResumeFollowUp: (minutes: number) => rpc<ReminderSettings>('hr_attendance_resume_follow_up_save', { p_minutes: minutes })
 };
 
-export interface PushDevice { id: string; label: string | null; createdAt: string; lastSuccessAt: string | null; active: boolean }
+export interface PushDevice {
+  id: string; label: string | null; createdAt: string; lastSuccessAt: string | null; active: boolean;
+  lastFailureAt?: string | null; lastFailureCode?: string | null; deactivatedReason?: string | null; testConfirmedAt?: string | null;
+}
 /** Reminder times are "HH:MM" (India time). Days are ISO weekdays: 1 = Monday ... 7 = Sunday. */
-export interface ReminderCompany { enabled: boolean; punchIn: string; lunch: string; punchOut: string; followUpMinutes: number; lunchWarningMinutes: number; days: number[] }
+export interface ReminderCompany {
+  enabled: boolean; punchIn: string; lunch: string; punchOut: string; followUpMinutes: number; lunchWarningMinutes: number; days: number[];
+  /** Resume Work follow-up in minutes, 0 = none (20270126000200; absent before the migration) */
+  resumeFollowUpMinutes?: number;
+  lunchAllowanceMinutes?: number;
+}
 export interface ReminderTimes { enabled: boolean; punchIn: string | null; lunch: string | null; punchOut: string | null }
 export interface ReminderSettings {
   company: ReminderCompany;
@@ -180,6 +202,9 @@ export interface ReminderSettings {
   canManage: boolean;
   /** chat messages pushed to this person's devices (default on) */
   chatPush?: boolean;
+  /** in-app sounds (20270126000200; absent before the migration) */
+  sound?: { attendance: boolean; chat: boolean; general: boolean; confirmedAt: string | null };
+  testConfirmedAt?: string | null;
 }
 
 const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });

@@ -166,6 +166,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/attendance_reminders_test.sql 2>&1
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_push_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/incentives_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/payouts_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/payouts_razorpay_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/messaging_onboarding_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/paid_leave_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/hr_assistant_recruitment_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
@@ -201,3 +202,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_role_dashboards_test.sql 2>&
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/realtime_publication_trim_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_inbox_mentions_reactions_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meeting_summaries_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/notification_reliability_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

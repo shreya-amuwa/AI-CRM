@@ -12,9 +12,10 @@ import { PageTitle } from '../../layout/shell';
  * bank or UPI, then records it here (reference, date, TDS); or rejects with a reason. People who left are paid a final settlement.
  * The database checks everything (Accounts only; nobody pays their own withdrawal; a request is handled once).
  */
-type Tab = 'REQUESTED' | 'PAID' | 'REJECTED' | 'FAILED' | 'LEAVERS';
+type Tab = 'REQUESTED' | 'PROCESSING' | 'PAID' | 'REJECTED' | 'FAILED' | 'REVERSED' | 'LEAVERS';
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'REQUESTED', label: 'Requested' }, { id: 'PAID', label: 'Paid' }, { id: 'REJECTED', label: 'Rejected' }, { id: 'FAILED', label: 'Failed' }, { id: 'LEAVERS', label: 'Leavers' }
+  { id: 'REQUESTED', label: 'Requested' }, { id: 'PROCESSING', label: 'Being sent' }, { id: 'PAID', label: 'Paid' }, { id: 'REJECTED', label: 'Rejected' },
+  { id: 'FAILED', label: 'Failed' }, { id: 'REVERSED', label: 'Reversed' }, { id: 'LEAVERS', label: 'Leavers' }
 ];
 const input = 'h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
 const msg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
@@ -42,7 +43,9 @@ const MethodBox: React.FC<{ m: PayoutMethod | null }> = ({ m }) => (
 );
 
 /** Reference, date paid and TDS, with the net shown as it is typed. */
-const PayForm: React.FC<{ amount: number; label: string; onPay: (reference: string, paidOn: string, tds: number) => Promise<void> }> = ({ amount, label, onPay }) => {
+/** Razorpay (when set up): send the net amount through RazorpayX instead of by hand; asks first, with the amount and where it goes. */
+interface RazorpayOption { configured: boolean; blockedReason: string | null; destination: string; onSend: (tds: number) => Promise<void> }
+const PayForm: React.FC<{ amount: number; label: string; onPay: (reference: string, paidOn: string, tds: number) => Promise<void>; razorpay?: RazorpayOption }> = ({ amount, label, onPay, razorpay }) => {
   const [reference, setReference] = useState('');
   const [paidOn, setPaidOn] = useState(officeToday());
   const [tds, setTds] = useState('0');
@@ -54,6 +57,13 @@ const PayForm: React.FC<{ amount: number; label: string; onPay: (reference: stri
     if (saving) return;
     setSaving(true); setError(null);
     try { await onPay(reference.trim(), paidOn, t); } catch (err) { setError(msg(err)); } finally { setSaving(false); }
+  };
+  const net = Math.round((amount - t) * 100) / 100;
+  const sendRazorpay = async () => {
+    if (!razorpay || saving) return;
+    if (!window.confirm(`Send ${rupees(net)} to ${razorpay.destination} through Razorpay now?`)) return;
+    setSaving(true); setError(null);
+    try { await razorpay.onSend(t); } catch (err) { setError(msg(err)); } finally { setSaving(false); }
   };
   return (
     <form onSubmit={submit} className="space-y-2" aria-label={label}>
@@ -70,7 +80,16 @@ const PayForm: React.FC<{ amount: number; label: string; onPay: (reference: stri
       </div>
       <p className="text-sm text-slate-700" data-testid="net-to-pay">Net to pay: <strong>{rupees(Math.round((amount - t) * 100) / 100)}</strong> (send this amount)</p>
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</div>}
-      <button type="submit" disabled={saving} className="h-10 px-4 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">{saving ? 'Saving…' : label}</button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={saving} className="h-10 px-4 rounded-xl bg-emerald-600 text-white text-sm font-bold disabled:opacity-50">{saving ? 'Saving…' : label}</button>
+        {razorpay?.configured && (
+          <button type="button" onClick={() => void sendRazorpay()} disabled={saving || !!razorpay.blockedReason} title={razorpay.blockedReason ?? undefined}
+            className="h-10 px-4 rounded-xl bg-blue-600 text-white text-sm font-bold disabled:opacity-50">Pay through Razorpay</button>
+        )}
+      </div>
+      {razorpay && !razorpay.configured && <p className="text-xs text-slate-500">Razorpay is not set up: pay by hand, then enter the reference. (The RazorpayX settings go on the server.)</p>}
+      {razorpay?.configured && razorpay.blockedReason && <p className="text-xs text-slate-500">{razorpay.blockedReason}</p>}
+      {razorpay?.configured && <p className="text-xs text-slate-500">Through Razorpay the reference and date are filled in when Razorpay confirms it.</p>}
     </form>
   );
 };
@@ -104,6 +123,8 @@ export const PayoutRequests: React.FC = () => {
   const [leaver, setLeaver] = useState<Leaver | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rzpConfigured, setRzpConfigured] = useState(false);
+  useEffect(() => { payoutsApi.razorpayStatus().then(s => setRzpConfigured(!!s.configured), () => setRzpConfigured(false)); }, []);
 
   const load = useCallback(() => {
     setError(null);
@@ -163,12 +184,23 @@ export const PayoutRequests: React.FC = () => {
                     incentives. Reject it if they should ask again for a smaller amount.
                   </div>
                 )}
-                <PayForm amount={detail.amount} label="Mark paid" onPay={async (ref, on, tds) => { await payoutsApi.markPaid(detail.id, ref, on, tds); done('Marked paid.'); }} />
+                <PayForm amount={detail.amount} label="Mark paid" onPay={async (ref, on, tds) => { await payoutsApi.markPaid(detail.id, ref, on, tds); done('Marked paid.'); }}
+                  razorpay={{
+                    configured: rzpConfigured,
+                    blockedReason: detail.method?.kind === 'OTHER' ? 'Razorpay pays Indian bank accounts and UPI IDs only: pay international details by hand.' : null,
+                    destination: methodLine(detail.method),
+                    onSend: async tds => { await payoutsApi.payViaRazorpay(detail.id, tds); done('Sent to Razorpay. It shows as paid when Razorpay confirms it.'); }
+                  }} />
                 <RejectForm onReject={async reason => { await payoutsApi.reject(detail.id, reason); done('Rejected.'); }} />
               </>}
               {detail.status === 'PAID' && <div className="space-y-2 text-sm text-slate-700">
                 <p>Paid {detail.paidOn} · ref {detail.reference} · TDS {rupees(detail.tdsAmount)} · net {rupees(detail.netAmount ?? 0)}{detail.decidedBy ? ` · by ${detail.decidedBy}` : ''}</p>
                 <button type="button" onClick={() => payoutsApi.downloadSlip(detail.id).catch(e => setError(msg(e)))} className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold">Download slip</button>
+              </div>}
+              {detail.status === 'PROCESSING' && <div className="space-y-2 text-sm text-slate-700">
+                <p>Being sent by Razorpay ({rupees(detail.netAmount ?? detail.amount)}). It moves to Paid when Razorpay confirms it.</p>
+                <button type="button" onClick={() => payoutsApi.checkRazorpay(detail.id).then(r => done(`Razorpay says: ${r.razorpayStatus}.`), e => setError(msg(e)))}
+                  className="h-9 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold">Check status</button>
               </div>}
               {detail.reason && <p className="text-sm text-rose-700">{detail.reason}</p>}
               {detail.recentEarnings.length > 0 && <div>

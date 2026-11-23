@@ -6908,3 +6908,68 @@ export interface MeetingReportAction {
   updatedAt: string;
 }
 export interface MeetingReportActionList { items: MeetingReportAction[]; total: number }
+
+// ---------------------------------------------------------------------------
+// Notification Health (migration 20270126000200). Counts, times, statuses and short failure codes only: never a device address or key.
+// "Accepted" means the push service took the message, not that the device showed it or made a sound.
+// ---------------------------------------------------------------------------
+export type NotificationHealthStatus = 'READY' | 'SETUP_REQUIRED' | 'NOTIFICATIONS_BLOCKED' | 'DEVICE_NOT_REGISTERED' | 'PUSH_UNAVAILABLE'
+  | 'DELIVERY_FAILED' | 'RETRY_PENDING' | 'REMINDERS_DISABLED' | 'COMPANY_PAUSED';
+export type NotificationSoundStatus = 'CONFIRMED' | 'AUDIO_ENABLED' | 'AUDIO_LOCKED' | 'UNKNOWN';
+export interface NotificationHealthEmployee {
+  profileId: string;
+  name: string;
+  role: string;
+  designation: string | null;
+  departmentId: string | null;
+  department: string | null;
+  status: NotificationHealthStatus;
+  remindersEnabled: boolean;
+  effective: { punchIn: string; lunch: string; punchOut: string };
+  activeDevices: number;
+  inactiveDevices: number;
+  expiredDevices: number;
+  lastAcceptedAt: string | null;
+  lastFailureAt: string | null;
+  lastFailureCode: string | null;
+  failed7d: number;
+  retryPending: number;
+  pending: number;
+  todayGenerated: number;
+  todayNoDevice: number;
+  reminderMissing: boolean;
+  noReminderToday: boolean;
+  onLeave: boolean;
+  attendanceStatus: string;
+  blockedReported: boolean;
+  lastDeviceCheckAt: string | null;
+  testConfirmedAt: string | null;
+  soundStatus: NotificationSoundStatus;
+}
+export interface NotificationHealthReport {
+  generatedAt: string;
+  today: string;
+  pushConfigured: boolean | null;
+  summary: { eligible: number; remindersEnabled: number; remindersDisabled: number; withDevice: number; withoutDevice: number; recentFailures: number;
+             reminderMissing: number; ready: number; byStatus: Partial<Record<NotificationHealthStatus, number>> };
+  queue: { pending: number; retryPending: number; accepted24h: number; failed24h: number; expired24h: number; cancelled24h: number };
+  todayReminders: { generated: number; bellWritten: number; noDevice: number; pushOff: number };
+  scheduler: {
+    lastSuccessAt: string | null; lastRunAt: string | null; lastRunOk: boolean | null; lastError: string | null; lastRunPushConfigured: boolean | null;
+    runs24h: number; failedRuns24h: number; health: 'HEALTHY' | 'DELAYED' | 'NOT_RUNNING';
+    last24h: { attempted: number; accepted: number; failed: number; retry: number; gone: number; noDevice: number; generated: number };
+  };
+  employees: NotificationHealthEmployee[];
+}
+export interface NotificationHealthDetail {
+  profileId: string;
+  name: string;
+  devices: { id: string; label: string | null; active: boolean; createdAt: string; lastSuccessAt: string | null; lastFailureAt: string | null;
+             lastFailureCode: string | null; failureCount: number; deactivatedReason: string | null; testConfirmedAt: string | null }[];
+  browsers: { label: string | null; permission: string; pushState: string; audioState: string; standalone: boolean; checkedAt: string }[];
+  deliveries: { id: number; kind: 'ATTENDANCE_REMINDER' | 'TEST'; reminderKind: string | null; step: number | null; device: string | null; status: string;
+                attempts: number; statusCode: number | null; error: string | null; createdAt: string; acceptedAt: string | null; finishedAt: string | null }[];
+  reminders: { date: string; kind: string; step: number; dueAt: string | null; sentAt: string; pushStatus: string | null; devices: number }[];
+}
+/** A test notification: `sent` = devices whose push service accepted it. */
+export interface NotificationTestResult { devices: number; sent: number; retry: number; failed: number; gone: number; pushConfigured: boolean }

@@ -14,6 +14,6 @@ export const attendanceController = {
   resolvePlaces: (async () => ok(await resolveAttendancePlaces({ limit: 3, budgetMs: 5_000 }))) as Handler,
   /** Reminders (20270109000200): the public VAPID key a browser needs to subscribe; null while push is not set up. */
   pushKey: (async () => ok({ publicKey: vapidConfig()?.publicKey ?? null })) as Handler,
-  /** "Send test notification" to the caller's own devices. */
-  pushTest: (async ({ actor }) => ok(await sendTestPush(actor.id))) as Handler
+  /** "Send test notification" to the caller's own devices: queued as the caller (rate limited in the database), then sent at once. */
+  pushTest: (async ({ actor, db }) => ok(await sendTestPush(actor.id, db))) as Handler
 };

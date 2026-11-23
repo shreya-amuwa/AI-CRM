@@ -11744,6 +11744,134 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.payout_requests where id in ($1, $2)`, [rq.id, open.id]);
 }
 
+// ---------------------------------------------------------------------------
+// Incentive payouts through RazorpayX (20270125000100): a local stand-in for RazorpayX; no real Razorpay is called and no real keys exist
+{
+  const { createHmac } = await import('node:crypto');
+  const rzp = { contacts: 0, funds: 0, payouts: new Map<string, any>(), keys: new Map<string, string>(), fail: null as null | { status: number; description: string }, auth: [] as string[], lose: false };
+  const rzpSrv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      rzp.auth.push(String(req.headers.authorization || ''));
+      const send = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+      const b = raw ? JSON.parse(raw) : {};
+      if (rzp.fail) return send(rzp.fail.status, { error: { code: 'BAD_REQUEST_ERROR', description: rzp.fail.description } });
+      if (req.method === 'POST' && req.url === '/v1/contacts') { rzp.contacts++; return send(201, { id: `cont_${rzp.contacts}`, name: b.name }); }
+      if (req.method === 'POST' && req.url === '/v1/fund_accounts') { rzp.funds++; return send(201, { id: `fa_${rzp.funds}`, account_type: b.account_type }); }
+      if (req.method === 'POST' && req.url === '/v1/payouts') {
+        const key = String(req.headers['x-payout-idempotency'] || '');
+        const known = rzp.keys.get(key);
+        if (known) return send(200, rzp.payouts.get(known));
+        const p = { id: `pout_${rzp.payouts.size + 1}`, status: 'processing', utr: null, amount: b.amount, mode: b.mode, fund_account_id: b.fund_account_id, reference_id: b.reference_id };
+        rzp.payouts.set(p.id, p); rzp.keys.set(key, p.id);
+        // Razorpay took it, but the answer is lost on the way back
+        if (rzp.lose) return send(504, { error: { description: 'Gateway timeout' } });
+        return send(200, p);
+      }
+      const m = req.url?.match(/^\/v1\/payouts\/([^/?]+)$/);
+      if (req.method === 'GET' && m && rzp.payouts.has(m[1])) return send(200, rzp.payouts.get(m[1]));
+      send(404, { error: { description: 'not found' } });
+    });
+  });
+  await new Promise<void>(r => rzpSrv.listen(0, r));
+  const { rows: [m] } = await db.query(`select id, department_id from public.profiles where email = 'a@amuwa.com'`);
+  const memberId = m.id as string;
+  await db.query(`update public.payout_requests set status = 'REJECTED', reason = 'api test cleanup' where profile_id = $1 and status in ('REQUESTED','PROCESSING')`, [memberId]);
+  await db.query(`insert into public.payout_methods (profile_id, kind, holder_name, upi_id) values ($1, 'UPI', 'Api Member', 'api.member@okhdfcbank')
+                  on conflict (profile_id) do update set kind = 'UPI', upi_id = 'api.member@okhdfcbank', rzp_contact_id = null, rzp_fund_account_id = null`, [memberId]);
+  const newRequest = async (amount: number) => (await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot) values ($1, $2,
+       '{"full":{"kind":"UPI","holderName":"Api Member","upiId":"api.member@okhdfcbank"},"masked":{"kind":"UPI","holderName":"Api Member","upiId":"••••bank"}}') returning id`,
+    [memberId, amount])).rows[0].id as string;
+
+  // not set up: the status says so and paying is refused
+  for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
+  const r1 = await newRequest(1234.50);
+  r = await api('accm', 'GET', '/payouts/razorpay/status');
+  check(r.status === 200 && r.json.data.configured === false, 'razorpay API: not set up without the four settings', r);
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 0 });
+  check(r.status === 409, 'razorpay API: paying through Razorpay is refused until it is set up', r);
+
+  process.env.RAZORPAYX_KEY_ID = 'rzp_test_key';
+  process.env.RAZORPAYX_KEY_SECRET = 'rzp_test_secret';
+  process.env.RAZORPAYX_ACCOUNT_NUMBER = '7878780080316316';
+  process.env.RAZORPAYX_WEBHOOK_SECRET = 'whsec_test_0123456789abcdef';
+  process.env.RAZORPAYX_BASE_URL = `http://127.0.0.1:${(rzpSrv.address() as any).port}/v1`;
+  r = await api('accm', 'GET', '/payouts/razorpay/status');
+  check(r.status === 200 && r.json.data.configured === true, 'razorpay API: set up once the settings exist', r);
+  r = await api('a', 'POST', `/payouts/${r1}/razorpay`, { tds: 0 });
+  check(r.status === 403, 'razorpay API: only Accounts sends a payout', r);
+
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 50.25 });
+  const sent = [...rzp.payouts.values()][0];
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && sent?.amount === 118425 && sent?.mode === 'UPI' && rzp.contacts === 1 && rzp.funds === 1,
+    'razorpay API: Accounts sends 1,234.50 - TDS 50.25 = 118425 paise by UPI; contact and fund account made once', { r, sent });
+  check(rzp.auth.every(a => a === `Basic ${Buffer.from('rzp_test_key:rzp_test_secret').toString('base64')}`), 'razorpay API: every call carries the key (Basic auth)');
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 50.25 });
+  check(r.status === 409 && rzp.payouts.size === 1, 'razorpay API: pressing again sends nothing more', r);
+
+  // the webhook: a bad signature, then processed, then the same event again
+  const hook = async (body: unknown, eventId: string, secret = process.env.RAZORPAYX_WEBHOOK_SECRET!) => {
+    const raw = JSON.stringify(body);
+    const sig = createHmac('sha256', secret).update(raw).digest('hex');
+    return api(null, 'POST', '/internal/razorpay/payouts', undefined, raw, { 'x-razorpay-signature': sig, 'x-razorpay-event-id': eventId });
+  };
+  const processed = { event: 'payout.processed', payload: { payout: { entity: { id: sent.id, status: 'processed', utr: 'UTR-RZP-1' } } } };
+  r = await hook(processed, 'evt_api_1', 'wrong-secret-0123456789');
+  check(r.status === 401, 'razorpay API: a webhook with a bad signature is refused', r);
+  r = await hook(processed, 'evt_api_1');
+  const { rows: [paid] } = await db.query(`select status, reference, net_amount, expense_id from public.payout_requests where id = $1`, [r1]);
+  check(r.status === 200 && paid.status === 'PAID' && paid.reference === 'UTR-RZP-1' && Number(paid.net_amount) === 1184.25 && paid.expense_id,
+    'razorpay API: payout.processed marks it paid with the UTR and records the expense', { r, paid });
+  r = await hook(processed, 'evt_api_1');
+  check(r.status === 200 && r.json.data.ignored === true, 'razorpay API: the same event twice changes nothing', r);
+  r = await hook({ event: 'payout.reversed', payload: { payout: { entity: { id: sent.id, status: 'reversed', utr: 'UTR-RZP-1', status_details: { description: 'Account closed' } } } } }, 'evt_api_2');
+  const { rows: [rev] } = await db.query(`select status, reason, expense_id from public.payout_requests where id = $1`, [r1]);
+  check(rev.status === 'REVERSED' && rev.reason === 'Account closed' && rev.expense_id === null, 'razorpay API: payout.reversed after it was paid: REVERSED, the expense removed', rev);
+
+  // Razorpay refuses before a payout exists: back to waiting with Razorpay's message; a retry later reuses the same contact
+  const r2 = await newRequest(700);
+  rzp.fail = { status: 400, description: 'Insufficient balance' };
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay`, { tds: 0 });
+  const { rows: [back] } = await db.query(`select status from public.payout_requests where id = $1`, [r2]);
+  check(r.status === 422 && /Insufficient balance/.test(r.json.error.message) && back.status === 'REQUESTED', 'razorpay API: refused by Razorpay: back to waiting, with the reason', { r, back });
+  rzp.fail = null;
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay`, { tds: 0 });
+  check(r.status === 200 && rzp.contacts === 1, 'razorpay API: the second try reuses the Razorpay contact', { r, contacts: rzp.contacts });
+
+  // a missed webhook: Check status asks Razorpay
+  const p2 = [...rzp.payouts.values()].find((p: any) => p.amount === 70000);
+  p2.status = 'processed'; p2.utr = 'UTR-RZP-2';
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: Check status settles a payout whose webhook was missed', r);
+  r = await api('a', 'POST', `/payouts/${r2}/razorpay/check`);
+  check(r.status === 403, 'razorpay API: only Accounts checks', r);
+
+  // Razorpay accepted the payout but its answer was lost: the request stays being sent (never back to waiting, never payable by hand);
+  // Check status sends it again with the same idempotency key, which gives back the same payout - one payout in all
+  const r3 = await newRequest(600);
+  rzp.lose = true;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay`, { tds: 0 });
+  const { rows: [lost] } = await db.query(`select status, rzp_status from public.payout_requests where id = $1`, [r3]);
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && lost.status === 'PROCESSING' && lost.rzp_status === 'sending',
+    'razorpay API: an answer lost after Razorpay took it leaves the withdrawal being sent, not waiting', { r, lost });
+  rzp.lose = false;
+  const before = rzp.payouts.size;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && rzp.payouts.size === before, 'razorpay API: Check status sends it again with the same key: still one payout', { r, size: rzp.payouts.size, before });
+  const p3 = [...rzp.payouts.values()].find((p: any) => p.amount === 60000);
+  p3.status = 'processed'; p3.utr = 'UTR-RZP-3';
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: and settles it once Razorpay has paid it', r);
+
+  await db.query(`delete from public.department_expenses where id in (select expense_id from public.payout_requests where id = any($1::uuid[]))`, [[r1, r2, r3]]);
+  await db.query(`delete from public.payout_requests where id = any($1::uuid[])`, [[r1, r2, r3]]);
+  await db.query(`delete from public.razorpay_events where event_id like 'evt_api_%'`);
+  for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
+  rzpSrv.close();
+}
+
 {
   console.log('--- meeting summaries (20270124000200): attendance, the responsible leader, submission, the CEO reports');
   const idOf = async (who: string) => (await api(who, 'GET', '/me')).json.data.id as string;
@@ -11923,6 +12051,123 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.dev_bugs where title like 'IRX %'`);
   await db.query(`delete from public.employee_issues where title like 'IRX %'`);
   await db.query(`delete from public.dev_team_members where profile_id = any($1::uuid[])`, [[leadId, dev1]]);
+}
+
+// Notification reliability (20270126000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
+// retries, a 410 switching a device off, the self and admin test notifications, the scheduler run record and Notification Health.
+{
+  console.log('--- notification reliability: outbox, retries, tests, Notification Health');
+  const { rows: [emp] } = await db.query(`select id from public.profiles where status = 'ACTIVE' and role = 'TEAM_MEMBER' order by created_at limit 1`);
+  tokens.set('nr', tokenFor(emp.id));
+  let rn = await api(null, 'GET', '/notifications/health');
+  check(rn.status === 401, 'health: 401 signed out', rn);
+  rn = await api('nr', 'GET', '/notifications/health');
+  check(rn.status === 403, 'health: a team member is refused (FORBIDDEN from the database)', rn);
+  rn = await api('sa', 'GET', '/notifications/health?issue=NOPE');
+  check(rn.status === 422, 'health: an unknown issue is a validation error', rn);
+  rn = await api('sa', 'GET', '/notifications/health');
+  check(rn.status === 200 && rn.json.data.pushConfigured === false && Array.isArray(rn.json.data.employees) && rn.json.data.employees.length > 0
+        && rn.json.data.employees.every((e: any) => e.status === 'PUSH_UNAVAILABLE' || e.status === 'REMINDERS_DISABLED' || e.status === 'COMPANY_PAUSED'),
+    'health: without VAPID keys nobody is shown as ready (PUSH_UNAVAILABLE)', rn.json?.data?.summary);
+  rn = await api('hr', 'GET', '/notifications/health?role=TEAM_MEMBER');
+  check(rn.status === 200 && rn.json.data.employees.every((e: any) => e.role === 'TEAM_MEMBER'), 'health: HR opens it with a role filter', rn.status);
+
+  // push switched on for this block: a generated VAPID key and a fake push service that answers what `plan` says
+  const subtle = globalThis.crypto.subtle;
+  const vk = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  process.env.VAPID_PRIVATE_KEY = JSON.stringify(await subtle.exportKey('jwk', vk.privateKey));
+  process.env.VAPID_SUBJECT = 'mailto:hr@example.com';
+  const savedPublic = process.env.VAPID_PUBLIC_KEY;
+  delete process.env.VAPID_PUBLIC_KEY;
+  const b64u = (b: ArrayBuffer | Uint8Array) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString('base64url');
+  const dev = async () => b64u(await subtle.exportKey('raw', (await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey));
+  const realFetch = globalThis.fetch;
+  const pushed: string[] = [];
+  const plan: number[] = [];
+  // answers for one device (the pushes run concurrently, so they reach the push service in any order)
+  const planFor: Record<string, number[]> = {};
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://push.example.com/')) {
+      pushed.push(url);
+      const device = url.split('/').pop() ?? '';
+      return new Response(null, { status: planFor[device]?.shift() ?? plan.shift() ?? 201 });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  // no real reminder may be due during this block (it would take answers from the plan)
+  const { rows: [saved] } = await db.query(`select reminders_paused_on from public.attendance_settings where id`);
+  await db.query(`update public.attendance_settings set reminders_paused_on = private.office_today() where id`);
+  try {
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
+    await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) values
+                      ($1, 'https://push.example.com/nr-phone', $2, $3, 'Chrome on Android'), ($1, 'https://push.example.com/nr-laptop', $4, $5, 'Edge on Windows')`,
+      [emp.id, await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16))), await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16)))]);
+    rn = await api('nr', 'GET', '/attendance/push-key');
+    check(rn.status === 200 && typeof rn.json.data.publicKey === 'string' && rn.json.data.publicKey.length > 80, 'push-key: the public key once VAPID is configured');
+    plan.push(201, 201);
+    rn = await api('nr', 'POST', '/attendance/push-test', {});
+    check(rn.status === 200 && rn.json.data.sent === 2 && rn.json.data.devices === 2 && pushed.length === 2, 'self test: both devices accepted by the push service', rn);
+    check((await db.query(`select 1 from public.notification_deliveries where profile_id = $1 and kind = 'TEST' and status = 'ACCEPTED_BY_PUSH_SERVICE'`, [emp.id])).rowCount === 2,
+      'self test: two deliveries ACCEPTED_BY_PUSH_SERVICE');
+
+    // a queued delivery per device: one push service is busy (503), the other says the device is gone (410)
+    await db.query(`insert into public.notification_deliveries (kind, profile_id, subscription_id, device_label, title, body, tag, url, expires_at)
+                    select 'TEST', profile_id, id, label, 'Queued', 'x', 'crm-test', '/?open=attendance', now() + interval '1 hour'
+                      from public.push_subscriptions where endpoint in ('https://push.example.com/nr-phone', 'https://push.example.com/nr-laptop') order by endpoint desc`);
+    pushed.length = 0;
+    planFor['nr-phone'] = [503];
+    planFor['nr-laptop'] = [410];
+    const reminders = () => fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: { authorization: 'Bearer dispatch-secret-0123456789' } })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    let run = await reminders();
+    check(run.status === 200 && run.json.data.mode === 'outbox' && run.json.data.push === 'on' && run.json.data.deliveries.attempted === 2
+          && run.json.data.deliveries.retry === 1 && run.json.data.deliveries.gone === 1, 'scheduled run: the outbox is sent (one retry, one gone)', run.json);
+    const states = async () => Object.fromEntries((await db.query(`select s.endpoint, n.status, s.active, s.deactivated_reason from public.notification_deliveries n
+      join public.push_subscriptions s on s.id = n.subscription_id where n.title = 'Queued' and n.profile_id = $1`, [emp.id])).rows.map((x: any) => [x.endpoint.split('/').pop(), x]));
+    let st = await states();
+    check(st['nr-phone'].status === 'RETRY_PENDING' && st['nr-laptop'].status === 'FAILED' && st['nr-laptop'].active === false
+          && st['nr-laptop'].deactivated_reason === 'EXPIRED_AT_PUSH_SERVICE', 'scheduled run: 503 waits for a retry, 410 switches the device off', st);
+    run = await reminders();
+    check(run.status === 200 && run.json.data.deliveries.attempted === 0, 'scheduled run: a retry is not sent before its time (no hammering)', run.json);
+    await db.query(`update public.notification_deliveries set next_attempt_at = now() - interval '1 second' where status = 'RETRY_PENDING' and profile_id = $1`, [emp.id]);
+    run = await reminders();
+    st = await states();
+    check(run.json.data.deliveries.accepted === 1 && st['nr-phone'].status === 'ACCEPTED_BY_PUSH_SERVICE', 'scheduled run: the retry is accepted on the next run', run.json);
+    const { rows: runs } = await db.query(`select ok, push_configured, attempted, accepted, retry, gone from public.notification_scheduler_runs order by id desc limit 3`);
+    check(runs.length === 3 && runs.every((x: any) => x.ok && x.push_configured) && runs[2].retry === 1 && runs[2].gone === 1 && runs[0].accepted === 1,
+      'every scheduled run is recorded with its counts', runs);
+
+    // HR / the Super Admin: a controlled test to one employee, and the health report now that push works
+    rn = await api('nr', 'POST', `/notifications/health/${emp.id}/test`, {});
+    check(rn.status === 403, 'admin test: an employee cannot test someone else (or themselves this way)', rn);
+    pushed.length = 0;
+    plan.push(201);
+    rn = await api('sa', 'POST', `/notifications/health/${emp.id}/test`, {});
+    check(rn.status === 200 && rn.json.data.devices === 1 && rn.json.data.sent === 1 && rn.json.data.pushConfigured === true && pushed.length === 1,
+      'admin test: sent to the one active device and accepted', rn);
+    check((await db.query(`select 1 from public.audit_logs where action = 'NOTIFICATION_TEST_SENT' and entity_id = $1`, [emp.id])).rowCount >= 1, 'admin test: audited');
+    // (the company pause of this block would rightly show everyone as COMPANY_PAUSED)
+    await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
+    rn = await api('sa', 'GET', '/notifications/health');
+    const me = rn.json.data.employees.find((e: any) => e.profileId === emp.id);
+    check(rn.status === 200 && rn.json.data.pushConfigured === true && me && me.status === 'READY' && me.activeDevices === 1 && me.expiredDevices === 1 && me.lastAcceptedAt,
+      'health: the employee is READY (a recent push-service acceptance), with the expired device counted', me);
+    check(rn.json.data.scheduler.health === 'HEALTHY' && rn.json.data.scheduler.lastSuccessAt, 'health: the scheduler is HEALTHY', rn.json.data.scheduler);
+    check(!JSON.stringify(rn.json).includes('push.example.com') && !/p256dh/.test(JSON.stringify(rn.json)), 'health: no device address or key in the answer');
+    rn = await api('hr', 'GET', `/notifications/health/${emp.id}`);
+    check(rn.status === 200 && rn.json.data.devices.length === 2 && rn.json.data.deliveries.length >= 5 && !JSON.stringify(rn.json).includes('push.example.com'),
+      'health detail: devices and deliveries without addresses', rn.status);
+    rn = await api('sa', 'GET', '/notifications/health/not-a-uuid');
+    check(rn.status === 422, 'health detail: an invalid id is a validation error', rn);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.VAPID_PRIVATE_KEY;
+    delete process.env.VAPID_SUBJECT;
+    if (savedPublic !== undefined) process.env.VAPID_PUBLIC_KEY = savedPublic;
+    await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
+  }
 }
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();

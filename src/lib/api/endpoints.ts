@@ -2,6 +2,7 @@
  * Typed API endpoints, grouped by resource. Components and hooks call these;
  * they never call fetch() or Supabase tables directly.
  */
+import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
@@ -607,7 +608,11 @@ export const notificationsApi = {
   markAllRead: () => api.post<{ updated: number }>('/notifications/read-all'),
   remove: (id: string) => api.delete<null>(`/notifications/${id}`),
   broadcast: (body: { title: string; body: string; priority?: NotificationPriority; departmentId?: string; division?: TeamDivision }) =>
-    api.post<{ recipients: number }>('/announcements', body)
+    api.post<{ recipients: number }>('/announcements', body),
+  // Notification Health (20270126000200): Super Admin and HR staff
+  health: (q: { departmentId?: string; role?: string; issue?: string } = {}) => api.get<NotificationHealthReport>('/notifications/health', { ...q }),
+  healthEmployee: (profileId: string) => api.get<NotificationHealthDetail>(`/notifications/health/${profileId}`),
+  healthTest: (profileId: string) => api.post<NotificationTestResult>(`/notifications/health/${profileId}/test`, {})
 };
 
 /** Attendance, employee details and the Department Head -> HR leave approval. */
