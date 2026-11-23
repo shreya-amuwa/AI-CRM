@@ -320,7 +320,7 @@ export const notificationsController = {
   healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
-// Email Management (20270130000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// Email Management (20270131000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
 // the history for everyone, scoped by the database to what each person's work allows.
 export const emailController = {
   overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,

@@ -3666,7 +3666,7 @@ export const notificationHealthQuerySchema = z.object({
 export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;
 
 // ---------------------------------------------------------------------------
-// Email Management (migration 20270130000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
+// Email Management (migration 20270131000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
 // (scoped by the database). The database checks every value and the caller again.
 // ---------------------------------------------------------------------------
 export const EMAIL_CATEGORIES = ['AUTH', 'CREDENTIALS', 'RECRUITMENT', 'INTERVIEW', 'HR', 'CLIENT_ONBOARDING', 'META_VERIFICATION', 'TECHNICAL', 'ACCOUNTS',

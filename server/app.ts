@@ -318,7 +318,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  // E-mail log retention (20270130000100): a little at a time; never fails the run
+  // E-mail log retention (20270131000100): a little at a time; never fails the run
   if (hasServiceClient()) {
     const { error } = await getServiceClient().rpc('email_purge_old');
     if (error && !/email_purge_old/.test(error.message)) log('error', 'email log purge failed', c, { message: error.message });

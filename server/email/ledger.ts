@@ -3,7 +3,7 @@ import type { AttemptOutcome, EmailErrorCategory } from './classify.js';
 import type { ProviderName } from './routing.js';
 
 /**
- * The shared record around every send (migration 20270130000100): email_send_begin before, email_send_finish after.
+ * The shared record around every send (migration 20270131000100): email_send_begin before, email_send_finish after.
  *
  * It FAILS OPEN: when the database cannot be reached (or the migration has not been run yet) the e-mail is still sent exactly as before
  * (no automatic CC, no shared quota or idempotency check), because a sign-in code or an invoice must not be blocked by the log. A short

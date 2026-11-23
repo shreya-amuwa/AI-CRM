@@ -610,7 +610,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/documents/:id/url', handler: documents.url },
   { method: 'DELETE', path: '/documents/:id', handler: documents.remove, options: S },
 
-  // Email Management (20270130000100)
+  // Email Management (20270131000100)
   { method: 'GET', path: '/email/admin/overview', handler: email.overview },
   { method: 'POST', path: '/email/admin/settings', handler: email.saveSettings, options: S },
   { method: 'POST', path: '/email/admin/senders', handler: email.saveSender, options: S },

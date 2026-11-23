@@ -78,8 +78,10 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100)
-check(r.status === 200 && r.json.data.length === 14 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio'), 'departments come from the database');
+// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100);
+// 16 with International and Reseller (20270127000100)
+check(r.status === 200 && r.json.data.length === 16 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio')
+  && r.json.data.some((d: any) => d.slug === 'international') && r.json.data.some((d: any) => d.slug === 'reseller'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -12182,7 +12184,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
 }
-// Email management (20270130000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
+// Email management (20270131000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
 // send per business event, no copies of authentication e-mail, the signed Resend webhook, shared suppression, the Super Admin's API.
 {
   console.log('--- email management: router, rules, idempotency, auth privacy, webhook, suppression, admin API');

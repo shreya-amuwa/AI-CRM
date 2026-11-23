@@ -68,6 +68,10 @@ export type DefaultDashboard =
   | 'ai-studio-head'
   | 'ai-studio-lead'
   | 'ai-studio-member'
+  /** International / Reseller (departments flagged unified_sales_support, migration 20270127000100): Sales and Support in one dashboard for each role. */
+  | 'unified-head'
+  | 'unified-lead'
+  | 'unified-member'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -6060,6 +6064,13 @@ export const AMUWA_DESIGN_STUDIO_SLUG = 'designstudio';
 /** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
 export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AI_DESIGN_STUDIO_SLUG, AMUWA_DESIGN_STUDIO_SLUG];
 
+// ---- International and Reseller (migration 20270127000100): Sales AND Support in one dashboard for every role ----
+/**
+ * The departments flagged unified_sales_support in the database. Used by the forms only, to offer the plain roles (Department Head, Team Lead, Team Member),
+ * the department's one team and no Sales / Support side; the database decides who may do what (the flag, private.dept_is_unified).
+ */
+export const UNIFIED_DEPARTMENT_SLUGS: readonly string[] = ['international', 'reseller'];
+
 export const ADS_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export type AdsPriority = (typeof ADS_PRIORITIES)[number];
 export const ADS_PRIORITY_LABELS: Record<AdsPriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
@@ -6992,7 +7003,7 @@ export interface NotificationHealthDetail {
 export interface NotificationTestResult { devices: number; sent: number; retry: number; failed: number; gone: number; pushConfigured: boolean }
 
 // ---------------------------------------------------------------------------
-// Email Management (migration 20270130000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
+// Email Management (migration 20270131000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
 // e-mail; DELIVERY_CONFIRMED needs the provider's own delivery event.
 // ---------------------------------------------------------------------------
 export type EmailProviderName = 'resend' | 'ses' | 'smtp' | 'brevo';
