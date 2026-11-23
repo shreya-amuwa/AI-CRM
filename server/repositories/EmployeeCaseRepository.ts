@@ -47,13 +47,18 @@ export class EmployeeCaseRepository {
   issueOverview() { return this.rpc<EmployeeIssueOverview>('issue_hr_overview'); }
   assignees() { return this.rpc<HrAssignee[]>('issue_hr_assignees'); }
   departments() { return this.rpc<CaseDepartment[]>('issue_hr_departments'); }
-  hrIssues(i: { status?: string; departmentId?: string; priority?: string; category?: string; assigneeId?: string; unassigned?: boolean; from?: string; to?: string; search?: string; limit: number; offset: number }) {
+  hrIssues(i: { status?: string; departmentId?: string; priority?: string; category?: string; assigneeId?: string; unassigned?: boolean; from?: string; to?: string; search?: string;
+    sort?: string; routing?: string; limit: number; offset: number }) {
     return this.rpc<EmployeeIssueList>('issue_hr_list', {
       p_status: i.status ?? null, p_department: i.departmentId ?? null, p_priority: i.priority ?? null, p_category: i.category ?? null, p_assignee: i.assigneeId ?? null,
-      p_unassigned: i.unassigned ?? false, p_from: i.from ?? null, p_to: i.to ?? null, p_search: i.search || null, p_limit: i.limit, p_offset: i.offset
+      p_unassigned: i.unassigned ?? false, p_from: i.from ?? null, p_to: i.to ?? null, p_search: i.search || null, p_limit: i.limit, p_offset: i.offset,
+      p_sort: i.sort ?? 'NEWEST', p_routing: i.routing ?? null
     });
   }
   hrIssue(id: string) { return this.rpc<EmployeeIssueDetail>('issue_hr_detail', { p_id: id }); }
+  escalateIssue(id: string, i: { note?: string | null; category?: string; priority?: string }) {
+    return this.rpc<EmployeeIssueDetail>('issue_hr_escalate', { p_id: id, p_note: i.note ?? null, p_category: i.category ?? null, p_priority: i.priority ?? null });
+  }
   assignIssue(id: string, hrId: string | null) { return this.rpc<EmployeeIssueDetail>('issue_hr_assign', { p_id: id, p_hr: hrId }); }
   setIssueStatus(id: string, status: string, message?: string | null) { return this.rpc<EmployeeIssueDetail>('issue_hr_set_status', { p_id: id, p_status: status, p_message: message ?? null }); }
   respondToIssue(id: string, message: string, requestInfo: boolean) { return this.rpc<EmployeeIssueDetail>('issue_hr_respond', { p_id: id, p_message: message, p_request_info: requestInfo }); }

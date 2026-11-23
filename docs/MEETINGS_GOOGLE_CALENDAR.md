@@ -166,6 +166,9 @@ Migration `supabase/migrations/20270122000100_meeting_presence_all_employees.sql
 > This replaces the CEO-only version of `20270116000400`. **The Super Admin no longer has Enter / Exit Meeting**, and requests for the CEO's
 > time no longer wait as "pending availability". Requests that were waiting become ordinary requests for the Super Admin to approve (nothing
 > is lost). Asking the CEO for time works as before: the Super Admin approves, proposes another time or declines.
+>
+> **Since `20270128000100`, the Super Admin has Enter / Exit again**, with a queue that confirms one request per Exit (see the next
+> section). What follows about the Super Admin describes `20270122000100` alone.
 
 ### Who
 
@@ -203,6 +206,59 @@ Later times can still be booked (nobody knows when they will exit). The usual ru
 - `supabase/tests/meeting_presence_employees_test.sql`
 - the "employee availability" block of `api_integration.test.ts`
 - `supabase/tests/ui_meeting_presence.test.mjs`
+
+## The Super Admin's meeting queue: one confirmed per Exit (20270128000100)
+
+Migration `supabase/migrations/20270128000100_ceo_meeting_queue.sql` (run after `20270126000100`; additive, safe to run twice). It brings
+back Enter / Exit Meeting for the Super Admin (everyone has it now) and connects it to the requests made while they are in a meeting.
+
+- **Enter Meeting (Super Admin):** BUSY. Everyone asking the CEO for time sees *"The CEO is in a meeting right now"*, and the button reads
+  **Join the queue**. The request is saved as **Queued (CEO in a meeting)** with the requested length; the one who asked gets a receipt with
+  their place in the queue. The Super Admin is not interrupted, and sees the queue, oldest first, on their availability panel.
+- **Exit Meeting (Super Admin):** AVAILABLE, and the server confirms **exactly one** request: the oldest still waiting (a withdrawn one is
+  skipped). It starts at the Exit and lasts as long as was asked. The rest keep waiting for the next Exit.
+  - **Room:** Google Meet when the meeting's organiser has Google Calendar connected (the calendar sync creates the Meet link); otherwise
+    the Super Admin's fixed **meeting room link** (Meetings → Google, hours & booking links → "Meeting room link for queued meetings",
+    https only); otherwise the mode the employee chose. No link is ever made up.
+  - **E-mail** (`QUEUE_CONFIRMED`, with the calendar file): "Your meeting is scheduled now" to the employee and to the Super Admin, once
+    each (the outbox's unique key). With Google Meet, the worker waits for the Meet link, at most about 15 minutes.
+  - **Notifications:** the employee (`MEETING_SCHEDULED`, urgent) and the Super Admin (`MEETING_QUEUE_SCHEDULED`).
+  - **History:** the meeting's `AUTO_SCHEDULED` event and the audit `MEETING_QUEUE_SCHEDULED`.
+- **No double confirmation:** confirming happens only on the BUSY → AVAILABLE change, under the Super Admin's booking lock, with
+  `for update skip locked`. A second Exit, a double click, an employee's Exit or an empty queue confirm nothing. It is all server-side;
+  nobody can write `meeting_presence` or a meeting's status directly.
+- **The Super Admin's week** (Calendar) lists the latest day first, and in each day the latest meeting first (by its date and time; the
+  creation time only breaks a tie). Everyone else keeps Monday first, earliest first.
+
+API: `GET /meetings/presence/ceo` (the CEOs' status), `GET` / `POST /meetings/settings/room-link` (`{ roomLink }`, Super Admin only);
+`POST /meetings/presence/exit` returns `scheduled` (at most one).
+
+Tests: `supabase/tests/meeting_ceo_queue_test.sql`, `supabase/tests/meeting_ceo_queue.test.ts` (the e-mail and when it is sent),
+`supabase/tests/ui_meeting_presence.test.mjs` and the "CEO queue" checks of `api_integration.test.ts`.
+
+## CEO office arrival (20270128000300)
+
+Migration `supabase/migrations/20270128000300_ceo_office_arrival.sql` (run after `20270128000200`; additive, safe to run twice).
+
+- **HR's button.** The HR dashboard has **CEO HAS ARRIVED** (HR staff and the Super Admin; recruiters and everyone else are refused by the database).
+  - Pressing it records today's arrival (India time) once, with the time and who pressed it. A second press, or two HR people at once, changes nothing.
+  - **Undo** fixes a mistaken press. The row is kept, marked undone with who undid it.
+  - Each new day starts as "not arrived".
+- **The banner** sits at the top of the CEO meeting request section ("Ask the CEO for time" and My CEO requests):
+  - Before the arrival: **🔴 CEO HAS NOT ARRIVED AT THE OFFICE YET**, "Sir has not arrived at the office yet. You can still schedule your meeting request. Meeting confirmation and availability will be subject to the CEO's arrival and approval."
+  - After the arrival: **🟢 CEO HAS ARRIVED AT THE OFFICE**, "Sir has arrived at the office. You can schedule meetings based on the available time slots."
+  - It changes at once on every screen (Supabase Realtime on `ceo_office_arrivals`).
+- **Information only.** The arrival never disables, hides or refuses meeting requests, and never confirms or rejects one.
+  - `mtg_create`, the approval and the queue do not read it.
+  - Requests made before the arrival stay as they are until the CEO (or an authorized person) decides.
+- **Busy and overlaps.**
+  - Enter / Exit Meeting still shows the CEO BUSY, and requests made while BUSY join the queue (previous section).
+  - A queued request confirmed on Exit now starts at the first free moment. If the CEO already has a confirmed meeting then, it starts right after it, never on top of it.
+  - Approvals keep refusing overlapping confirmed meetings, as before.
+
+API: `GET /meetings/ceo-office`; `POST /meetings/ceo-office/arrived` and `POST /meetings/ceo-office/undo` (`{ ceoId? }`, needed only when there is more than one CEO).
+
+Tests: `supabase/tests/ceo_office_arrival_test.sql`, the "CEO arrival API" checks of `api_integration.test.ts` and `supabase/tests/ui_meeting_presence.test.mjs`.
 
 ## Client meetings
 
