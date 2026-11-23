@@ -2167,6 +2167,9 @@ export const issueHrListQuerySchema = z
     from: caseDateTime.optional(),
     to: caseDateTime.optional(),
     search: trimmed(120).optional(),
+    // issue routing (20270127000200): the order, and whether HR escalated it to the Developer Team
+    sort: z.enum(['NEWEST', 'OLDEST', 'PRIORITY', 'STATUS', 'DEPARTMENT', 'EMPLOYEE']).optional(),
+    routing: z.enum(['ALL', 'WITH_HR', 'ESCALATED_TO_DEVELOPERS']).optional(),
     ...casePaging
   })
   .strict();
@@ -3015,6 +3018,8 @@ export const ceoRequestsQuerySchema = z.object({
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
 // ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
+/** The Super Admin's fixed meeting-room link (20270127000100): https, or empty to remove it. */
+export const meetingRoomLinkSchema = z.object({ roomLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable()) }).strict();
 /** GET /meetings/presence?ids=a,b,c: the live status of up to 100 colleagues (20270122000100); without ids, one's own. */
 export const meetingPresenceQuerySchema = z.object({
   ids: z.preprocess(v => (typeof v === 'string' ? v.split(',').map(x => x.trim()).filter(Boolean) : v), z.array(uuidSchema).min(1).max(100)).optional()
@@ -3482,20 +3487,46 @@ export const clientMeetingListQuerySchema = z.object({
 // ---------------------------------------------------------------------------
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
-export const DEV_BUG_STATUSES = ['PENDING', 'IN_PROGRESS', 'RESOLVED', 'REJECTED'] as const;
+export const DEV_BUG_STATUSES = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
+// Issue routing (migration 20270127000200): what an issue to the Developer Team is about, and how urgent
+export const DEV_ISSUE_CATEGORIES = ['BUG', 'FEATURE_REQUEST', 'ACCESS_LOGIN', 'DATA_ISSUE', 'PERFORMANCE', 'OTHER'] as const;
+export const DEV_ISSUE_CATEGORY_LABELS: Record<(typeof DEV_ISSUE_CATEGORIES)[number], string> = {
+  BUG: 'Bug / error', FEATURE_REQUEST: 'Feature request', ACCESS_LOGIN: 'Access / login', DATA_ISSUE: 'Wrong or missing data', PERFORMANCE: 'Slow / performance', OTHER: 'Other'
+};
+export const DEV_ISSUE_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export const bugSubmitSchema = z.object({
   title: trimmed(200).min(3, 'Give the issue a title (at least 3 characters).'),
   description: trimmed(5000).min(10, 'Describe the issue (at least 10 characters).'),
   steps: optionalText(5000),
   attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
-  clientRequestId: z.string().trim().min(8).max(80)
+  clientRequestId: z.string().trim().min(8).max(80),
+  category: z.enum(DEV_ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }).default('BUG'),
+  priority: z.enum(DEV_ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }).default('MEDIUM'),
+  /** optional context (HR's reports): which department / employee the problem affects */
+  affectedDepartmentId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
+  affectedEmployeeId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional())
 }).strict();
 export const bugListQuerySchema = z.object({
-  status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'CLOSED']).optional(),
+  status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(),
   assignee: z.union([z.enum(['ME', 'UNASSIGNED']), uuidSchema]).optional(),
   search: trimmed(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50)
+}).strict();
+/** GET /bugs/mine: the reporter's own issues to the Developer Team (OPEN: still being worked on, DONE: resolved, rejected or closed) */
+export const bugMyListQuerySchema = z.object({ status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(), search: trimmed(120).optional() }).strict();
+/** the reporter answers the developers */
+export const bugFollowUpSchema = z.object({
+  message: trimmed(3000).min(2, 'Write your message.'),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([])
+}).strict();
+/** a developer replies to the reporter; requestInfo: the issue waits for the reporter (Pending information) */
+export const bugReplySchema = z.object({ message: trimmed(3000).min(2, 'Write the reply.'), requestInfo: z.boolean().default(false) }).strict();
+/** HR escalates an employee issue to the Developer Team (once; the priority defaults to the issue's) */
+export const issueEscalateSchema = z.object({
+  note: optionalText(2000),
+  category: z.enum(DEV_ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }).optional(),
+  priority: z.enum(DEV_ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }).optional()
 }).strict();
 export const bugAssignSchema = z.object({ developerId: uuidSchema.nullable() }).strict();
 export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note: optionalText(3000) }).strict()

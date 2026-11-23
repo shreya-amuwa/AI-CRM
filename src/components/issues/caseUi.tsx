@@ -46,7 +46,9 @@ export const Stat: React.FC<{ label: string; value: number | null; alert?: boole
 const KIND_LABEL: Record<string, string> = {
   SUBMITTED: 'Submitted', ASSIGNED: 'Assigned', STATUS_CHANGED: 'Status changed', RESPONSE: 'HR response', INFO_REQUESTED: 'More information requested', EMPLOYEE_REPLY: 'Employee reply',
   NOTE: 'Internal note', APPROVED: 'Meeting scheduled', DECLINED: 'Declined', ALTERNATIVE_PROPOSED: 'Another time proposed', ALTERNATIVE_ACCEPTED: 'Proposed time accepted',
-  ALTERNATIVE_DECLINED: 'Proposed time declined', RESCHEDULED: 'Rescheduled', CANCELLED: 'Cancelled', COMPLETED: 'Completed'
+  ALTERNATIVE_DECLINED: 'Proposed time declined', RESCHEDULED: 'Rescheduled', CANCELLED: 'Cancelled', COMPLETED: 'Completed',
+  // issue routing (20270127000200)
+  ESCALATED: 'Escalated to the Developer Team', DEV_UPDATE: 'Developer Team update'
 };
 const ALL_STATUS_LABELS: Record<string, string> = { ...ISSUE_STATUS_LABELS, ...MEETING_STATUS_LABELS };
 const statusText = (s: string | null, forEmployee: boolean) => (!s ? '' : forEmployee && s === 'AWAITING_EMPLOYEE' ? 'Waiting for your reply' : ALL_STATUS_LABELS[s] ?? s);
@@ -55,11 +57,11 @@ const statusText = (s: string | null, forEmployee: boolean) => (!s ? '' : forEmp
 export const CaseTimeline: React.FC<{ events: CaseEvent[]; forEmployee?: boolean }> = ({ events, forEmployee = false }) => (
   <ol className="space-y-3" aria-label="Activity history" data-testid="case-timeline">
     {events.map(e => (
-      <li key={e.id} className={`rounded-xl border p-3 text-xs ${e.visibility === 'HR' ? 'border-amber-200 bg-amber-50/60' : e.side === 'HR' ? 'border-indigo-100 bg-indigo-50/40' : 'border-slate-200 bg-white'}`} data-kind={e.kind}>
+      <li key={e.id} className={`rounded-xl border p-3 text-xs ${e.visibility === 'HR' ? 'border-amber-200 bg-amber-50/60' : e.side === 'HR' ? 'border-indigo-100 bg-indigo-50/40' : e.side === 'DEVELOPER' ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200 bg-white'}`} data-kind={e.kind}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
           <span className="font-semibold text-slate-700">{KIND_LABEL[e.kind] ?? e.kind}</span>
           {e.visibility === 'HR' && <span className="inline-flex items-center gap-1 text-amber-700 font-semibold"><Lock className="w-3 h-3" aria-hidden /> HR only</span>}
-          <span>{e.side === 'HR' ? (forEmployee ? 'HR' : e.actorName ?? 'HR') : e.actorName ?? 'Employee'}</span>
+          <span>{e.side === 'HR' ? (forEmployee ? 'HR' : e.actorName ?? 'HR') : e.side === 'DEVELOPER' ? 'Developer Team' : e.actorName ?? 'Employee'}</span>
           <span>· {whenLabel(e.createdAt)}</span>
         </div>
         {e.toStatus && e.fromStatus !== e.toStatus && (

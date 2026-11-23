@@ -4,7 +4,7 @@ import type {
 } from '../../shared/contracts.js';
 import {
   calendarMeetingCancelSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
-  clientMeetingListQuerySchema, clientMeetingSchema, meetingMailIdSchema, meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingPresenceQuerySchema, meetingProposalAnswerSchema,
+  clientMeetingListQuerySchema, clientMeetingSchema, meetingMailIdSchema, meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingPresenceQuerySchema, meetingRoomLinkSchema, meetingProposalAnswerSchema,
   meetingRescheduleSchema, meetingResponseSchema, uuidSchema,
   meetingActionUpdateSchema, meetingAttendanceSchema, meetingReportActionsQuerySchema, meetingReportsOverviewQuerySchema, meetingReportsQuerySchema,
   meetingSummaryClarifySchema, meetingSummaryDraftSchema, meetingSummaryFlagSchema, meetingSummaryListQuerySchema, meetingSummaryOwnerSchema,
@@ -51,10 +51,15 @@ export class MeetingService {
   presence(query: unknown): Promise<CeoPresence[]> {
     return this.repo.presence(parse(meetingPresenceQuerySchema, query ?? {}).ids ?? null);
   }
+  /** The CEOs' live status (Ask the CEO for time shows it; a request made while BUSY joins the queue). */
+  ceoPresence(): Promise<CeoPresence[]> { return this.repo.ceoPresence(); }
+  roomLink(): Promise<{ roomLink: string | null }> { return this.repo.roomLink(); }
+  setRoomLink(body: unknown): Promise<{ roomLink: string | null }> { return this.repo.setRoomLink(parse(meetingRoomLinkSchema, body).roomLink ?? null); }
   presenceEnter(body: unknown): Promise<CeoPresence> {
     return this.repo.presenceEnter(parse(meetingPresenceEnterSchema, body ?? {}).meetingId ?? null);
   }
-  presenceExit(): Promise<CeoPresenceExit> { return this.repo.presenceExit(); }
+  /** Exit Meeting; for the Super Admin the next queued request is confirmed in the same database transaction, then its e-mails go out. */
+  presenceExit(): Promise<CeoPresenceExit> { return this.after(this.repo.presenceExit()); }
   /** The meeting requests with the CEO: the Super Admin sees everyone's, an employee only their own. */
   ceoRequests(query: unknown): Promise<CeoRequestList> {
     const q = parse(ceoRequestsQuerySchema, query ?? {});

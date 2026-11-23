@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { DashboardShell } from '../../../src/components/layout/shell';
 import RaiseIssuePage from '../../../src/components/issues/RaiseIssuePage';
+import { HrRaiseIssuePage } from '../../../src/components/hr/HrRaiseIssuePage';
 
 /**
  * The real dashboard shell (its menu adds Attendance, Meetings and, for developers only, Bugs) with the real Raise an Issue page, and the
  * CRM API answered in the page like the database (20270122000300): who is a developer, bugs, the reporter's list, assign / status /
  * comments, internal comments hidden from the reporter, and FORBIDDEN for anyone else. Every request is recorded in window.__calls.
+ * Issue routing (20270127000200): category / priority / affected department and employee, the conversation (a developer replies or asks for
+ * information, the reporter follows up), and HR's Raise an Issue page with an employee issue HR escalates (once) to the Developer Team.
  */
 const w = window as any;
 const DEVS = [{ id: 'd1', name: 'Shreya Mande', lead: true }, { id: 'd2', name: 'Ashish Sinha', lead: false }, { id: 'd3', name: 'Siddhesh Shinde', lead: false }];
@@ -18,7 +21,11 @@ const isLead = () => DEVS.some(d => d.id === w.__profile?.id && d.lead);
 const sees = (b: any) => isLead() || (isDev() && (!b.assigneeId || b.assigneeId === w.__profile?.id));
 const json = (data: unknown, code = 200) => new Response(JSON.stringify(code < 400 ? { success: true, data } : { success: false, error: data }), { status: code, headers: { 'Content-Type': 'application/json' } });
 const forbidden = () => json({ code: 'FORBIDDEN', message: 'The Bugs section is for the Developers team only.' }, 403);
+const OPEN = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO'];
+const lastMessage = (b: any) => { const m = [...b.history].reverse().find((h: any) => h.kind === 'MESSAGE'); return m ? { from: m.data.from, note: m.note, by: m.by, at: m.at } : null; };
 const row = (b: any) => ({ id: b.id, reference: b.reference, title: b.title, status: b.status, reporterName: b.reporterName, department: b.department, designation: b.designation,
+  category: b.category, priority: b.priority, source: b.source, sourceIssueReference: b.sourceIssueReference ?? null, affectedDepartment: b.affectedDepartment ?? null,
+  affectedEmployee: b.affectedEmployee ?? null, lastMessage: lastMessage(b),
   assigneeId: b.assigneeId, assigneeName: DEVS.find(d => d.id === b.assigneeId)?.name ?? null, attachmentCount: 0, createdAt: b.createdAt, updatedAt: b.createdAt,
   resolvedAt: null, resolutionNote: b.resolutionNote, assignmentStatus: b.assigneeId ? 'ASSIGNED' : 'UNASSIGNED', assignedByName: b.assignedBy ?? null, assignedAt: b.assignedAt ?? null });
 const full = (b: any, dev: boolean) => ({ ...row(b), description: b.description, steps: b.steps, reporterId: b.reporterId, attachments: [],
@@ -27,8 +34,9 @@ const counts = () => {
   const v = bugs.filter(sees);
   return { PENDING: v.filter(b => b.status === 'PENDING').length, IN_PROGRESS: v.filter(b => b.status === 'IN_PROGRESS').length,
     RESOLVED: v.filter(b => b.status === 'RESOLVED').length, REJECTED: v.filter(b => b.status === 'REJECTED').length,
-    MINE: v.filter(b => b.assigneeId === w.__profile?.id && ['PENDING', 'IN_PROGRESS'].includes(b.status)).length,
-    UNASSIGNED: v.filter(b => !b.assigneeId && ['PENDING', 'IN_PROGRESS'].includes(b.status)).length };
+    MINE: v.filter(b => b.assigneeId === w.__profile?.id && OPEN.includes(b.status)).length,
+    UNASSIGNED: v.filter(b => !b.assigneeId && OPEN.includes(b.status)).length, OPEN: v.filter(b => OPEN.includes(b.status)).length,
+    UNDER_REVIEW: v.filter(b => b.status === 'UNDER_REVIEW').length, NEEDS_INFO: v.filter(b => b.status === 'NEEDS_INFO').length, CLOSED: v.filter(b => b.status === 'CLOSED').length };
 };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -46,22 +54,39 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (dup) return json({ ...full(dup, false), duplicate: true }, 201);
     const b = { id: `b${bugs.length + 1}`, reference: `BUG-2026-${String(bugs.length + 1).padStart(5, '0')}`, title: body.title, description: body.description, steps: body.steps,
       status: 'PENDING', reporterId: me.id, reporterName: me.fullName, department: me.department, designation: me.designation, assigneeId: null, resolutionNote: null,
-      createdAt: new Date().toISOString(), requestId: body.clientRequestId, assignments: [], history: [{ id: 1, kind: 'SUBMITTED', internal: false, note: null, data: {}, by: me.fullName, at: new Date().toISOString() }] };
+      createdAt: new Date().toISOString(), requestId: body.clientRequestId, assignments: [], history: [{ id: 1, kind: 'SUBMITTED', internal: false, note: null, data: {}, by: me.fullName, at: new Date().toISOString() }],
+      category: body.category ?? 'BUG', priority: body.priority ?? 'MEDIUM', source: me.hr ? 'HR_REPORT' : 'EMPLOYEE',
+      affectedDepartment: DEPTS.find(d => d.id === body.affectedDepartmentId)?.name ?? null, affectedEmployee: PEOPLE.find(x => x.id === body.affectedEmployeeId)?.name ?? null };
     bugs.unshift(b);
     return json({ ...full(b, false), duplicate: false }, 201);
   }
-  if (p === '/bugs/mine') return json(bugs.filter(b => b.reporterId === me.id).map(row));
-  const mine = p.match(/^\/bugs\/mine\/(\w+)$/);
-  if (mine) { const b = bugs.find(x => x.id === mine[1] && x.reporterId === me.id); return b ? json(full(b, false)) : json({ code: 'NOT_FOUND', message: 'Bug not found.' }, 404); }
+  if (p === '/bugs/mine') {
+    const st = url.searchParams.get('status'), term = (url.searchParams.get('search') ?? '').toLowerCase();
+    return json(bugs.filter(b => b.reporterId === me.id && (!st || (st === 'OPEN' ? OPEN.includes(b.status) : st === 'DONE' ? !OPEN.includes(b.status) : b.status === st))
+      && (!term || b.title.toLowerCase().includes(term))).map(row));
+  }
+  const mine = p.match(/^\/bugs\/mine\/(\w+)(\/follow-up)?$/);
+  if (mine) {
+    const b = bugs.find(x => x.id === mine[1] && x.reporterId === me.id);
+    if (!b) return json({ code: 'NOT_FOUND', message: 'Bug not found.' }, 404);
+    if (mine[2]) {
+      // like bug_my_follow_up: the information asked for goes back to the team
+      if (b.status === 'CLOSED') return json({ code: 'CONFLICT', message: 'This issue is closed.' }, 409);
+      b.history.push({ id: b.history.length + 1, kind: 'MESSAGE', internal: false, note: body.message, data: { from: 'REPORTER' }, by: me.fullName, at: new Date().toISOString() });
+      if (['NEEDS_INFO', 'RESOLVED'].includes(b.status)) b.status = b.assigneeId ? 'IN_PROGRESS' : 'PENDING';
+      return json(full(b, false), 201);
+    }
+    return json(full(b, false));
+  }
   if (p === '/bugs' && method === 'GET') {
     if (!isDev()) return forbidden();
     const st = url.searchParams.get('status'), as = url.searchParams.get('assignee');
-    const items = bugs.filter(sees).filter(b => (!st || (st === 'OPEN' ? ['PENDING', 'IN_PROGRESS'].includes(b.status) : b.status === st))
+    const items = bugs.filter(sees).filter(b => (!st || (st === 'OPEN' ? OPEN.includes(b.status) : st === 'DONE' ? !OPEN.includes(b.status) : b.status === st))
       && (!as || (as === 'ME' ? b.assigneeId === me.id : as === 'UNASSIGNED' ? !b.assigneeId : b.assigneeId === as)));
     return json({ total: items.length, counts: counts(), isLead: isLead(), items: items.map(row),
       byDeveloper: isLead() ? DEVS.filter(d => !d.lead).map(d => ({ id: d.id, name: d.name, open: bugs.filter(b => b.assigneeId === d.id && ['PENDING', 'IN_PROGRESS'].includes(b.status)).length, closed: 0 })) : [] });
   }
-  const one = p.match(/^\/bugs\/(\w+)(?:\/(assign|status|comment))?$/);
+  const one = p.match(/^\/bugs\/(\w+)(?:\/(assign|status|comment|reply))?$/);
   if (one) {
     if (!isDev()) return forbidden();
     const b = bugs.find(x => x.id === one[1]);
@@ -79,14 +104,66 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       b.status = body.status; if (body.note && ['RESOLVED', 'REJECTED'].includes(body.status)) b.resolutionNote = body.note; ev('STATUS', false, body.note, { to: body.status });
     }
     if (one[2] === 'comment') ev('COMMENT', true, body.note);
-    return json(full(b, true), one[2] === 'comment' ? 201 : 200);
+    if (one[2] === 'reply') {
+      if (body.requestInfo && !isLead() && b.assigneeId !== me.id) return json({ code: 'FORBIDDEN', message: 'Only the developer the bug is assigned to, or the Team Lead, asks for information.' }, 403);
+      ev('MESSAGE', false, body.message, { from: 'DEVELOPER', requestInfo: !!body.requestInfo });
+      if (body.requestInfo) b.status = 'NEEDS_INFO';
+    }
+    return json(full(b, true), one[2] === 'comment' || one[2] === 'reply' ? 201 : 200);
   }
-  if (p === '/employee/issues' || p === '/employee/meetings') return json({ items: [], total: 0 });
+  // ---- issues to HR (the employee's own list, with one HR escalated) and HR's Employee Issues
+  if (p === '/employee/issues') return json({ items: issues.filter(i => i.employee.id === me.id).map(i => ({ ...i, description: null })), total: issues.filter(i => i.employee.id === me.id).length, limit: 10, offset: 0 });
+  if (p === '/employee/meetings') return json({ items: [], total: 0 });
+  if (p === '/departments') return json(DEPTS);
+  if (p === '/meetings/directory') return json(PEOPLE);
+  if (p === '/hr/case-assignees') return json([{ id: 'h1', name: 'Hema HR', designation: 'Department Head' }]);
+  if (p === '/hr/case-departments') return json([{ id: '00000000-0000-4000-8000-00000000dea1', name: 'Wabastore' }]);
+  if (p === '/hr/issues/overview') return json({ total: issues.length, new: issues.filter(i => i.status === 'NEW').length, inProgress: 0, awaiting: 0, resolved: 0, closed: 0, urgent: 0, escalated: issues.filter(i => i.escalation).length });
+  if (p === '/hr/issues') return json({ items: issues, total: issues.length, limit: 20, offset: 0 });
+  const hrIssue = p.match(/^\/hr\/issues\/(\w+)(\/escalate)?$/);
+  if (hrIssue) {
+    const i = issues.find(x => x.id === hrIssue[1]);
+    if (!i) return json({ code: 'NOT_FOUND', message: 'Issue not found.' }, 404);
+    let duplicate = false;
+    if (hrIssue[2]) {
+      // like issue_hr_escalate: once; a second call returns the same Developer Team issue
+      if (i.escalation) duplicate = true;
+      else {
+        const b = { id: `b${bugs.length + 1}`, reference: `BUG-2026-${String(bugs.length + 1).padStart(5, '0')}`, title: i.title, description: `${i.description}\n\nNote from HR: ${body.note ?? ''}`, steps: null,
+          status: 'PENDING', reporterId: me.id, reporterName: me.fullName, department: 'HR', designation: 'HR', assigneeId: null, resolutionNote: null, createdAt: new Date().toISOString(),
+          requestId: `esc-${i.id}`, assignments: [], history: [{ id: 1, kind: 'SUBMITTED', internal: false, note: `Escalated by HR from ${i.reference}.`, data: {}, by: me.fullName, at: new Date().toISOString() }],
+          category: body.category ?? 'BUG', priority: i.priority, source: 'HR_ESCALATION', sourceIssueReference: i.reference, affectedEmployee: i.employee.name };
+        bugs.unshift(b);
+        i.escalation = { bugId: b.id, reference: b.reference, status: 'PENDING', assigneeName: null, resolutionNote: null, updatedAt: b.createdAt, escalatedAt: b.createdAt, escalatedBy: me.fullName };
+        i.routing = 'ESCALATED_TO_DEVELOPERS';
+        if (i.status === 'NEW') i.status = 'IN_PROGRESS';
+        i.events.push({ id: i.events.length + 1, kind: 'ESCALATED', visibility: 'EMPLOYEE', side: 'HR', actorName: me.fullName, body: `HR escalated this issue to the Developer Team (${b.reference}).`, fromStatus: 'NEW', toStatus: i.status, createdAt: b.createdAt });
+      }
+      w.__escalations = (w.__escalations ?? 0) + (duplicate ? 0 : 1);
+    }
+    const b = i.escalation ? bugs.find(x => x.id === i.escalation.bugId) : null;
+    return json({ issue: i, events: i.events, attachments: [], escalationHistory: b ? full(b, false).history : [], ...(hrIssue[2] ? { duplicate } : {}) });
+  }
   return json([], 200);
 };
 
+// an employee issue to HR, about the CRM (for HR to escalate), and one HR already escalated (the employee sees where it went)
+const DEPTS = [{ id: '00000000-0000-4000-8000-00000000dea1', name: 'Wabastore', slug: 'wabastore' }, { id: '00000000-0000-4000-8000-00000000dea2', name: 'Accounts', slug: 'accounts' }];
+const PEOPLE = [{ id: 'e1', name: 'Priya Sales', email: 'p@x.example', role: 'TEAM_MEMBER', department: 'Wabastore' }, { id: '00000000-0000-4000-8000-0000000000e2', name: 'Ravi Accounts', email: 'r@x.example', role: 'TEAM_MEMBER', department: 'Accounts' }];
+const emp = { id: 'e1', name: 'Priya Sales', employeeCode: 'EMP-1', departmentId: '00000000-0000-4000-8000-00000000dea1', department: 'Wabastore', designation: 'Team Member' };
+const issue = (id: string, ref: string, title: string, extra: any = {}) => ({ id, reference: ref, title, category: 'TECHNICAL_SYSTEM', priority: 'HIGH', status: 'NEW', description: `${title}: it happens every day.`,
+  preferredResolution: null, hrResponse: null, hrResponseAt: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), resolvedAt: null, closedAt: null,
+  assignedHr: null, employee: emp, recipient: 'HR', routing: 'WITH_HR', escalation: null, events: [{ id: 1, kind: 'SUBMITTED', visibility: 'EMPLOYEE', side: 'EMPLOYEE', actorName: 'Priya Sales', body: null, fromStatus: null, toStatus: 'NEW', createdAt: new Date().toISOString() }], ...extra });
+const issues: any[] = [
+  issue('i1', 'ISS-2026-00001', 'The CRM logs me out'),
+  issue('i2', 'ISS-2026-00002', 'Leave balance looks wrong', { category: 'ATTENDANCE_LEAVE', priority: 'MEDIUM', status: 'IN_PROGRESS', routing: 'ESCALATED_TO_DEVELOPERS',
+    escalation: { bugId: 'old', reference: 'BUG-2026-00900', status: 'IN_PROGRESS', assigneeName: 'Ashish Sinha', resolutionNote: null, updatedAt: new Date().toISOString(), escalatedAt: new Date().toISOString(), escalatedBy: 'Hema HR' } })
+];
+w.__issues = issues;
+
 const Dash: React.FC = () => {
   const [page, setPage] = useState('issues');
+  if (w.__profile.hr) return <HrRaiseIssuePage canReport />;
   return (
     <DashboardShell title="Amuwa" ariaLabel="Test dashboard" groups={[{ items: [{ id: 'issues', label: 'Raise an Issue', icon: () => null }] }]} active={page} onSelect={setPage}
       user={{ name: w.__profile.fullName, role: 'Employee' }} onSignOut={() => undefined} reminders={false}>
@@ -95,8 +172,9 @@ const Dash: React.FC = () => {
   );
 };
 w.__devs = DEVS;
-w.mount = (who: 'employee' | 'dev' | 'ashish' | 'siddhesh' | 'other') => {
-  w.__profile = who === 'dev' ? { id: 'd1', fullName: 'Shreya Mande', department: 'AI Studio', designation: 'Team Lead' }
+w.mount = (who: 'employee' | 'dev' | 'ashish' | 'siddhesh' | 'other' | 'hr') => {
+  w.__profile = who === 'hr' ? { id: 'h1', fullName: 'Hema HR', department: 'HR', designation: 'Department Head', hr: true }
+    : who === 'dev' ? { id: 'd1', fullName: 'Shreya Mande', department: 'AI Studio', designation: 'Team Lead' }
     : who === 'ashish' ? { id: 'd2', fullName: 'Ashish Sinha', department: 'AI Studio', designation: 'Developer' }
     : who === 'siddhesh' ? { id: 'd3', fullName: 'Siddhesh Shinde', department: 'AI Studio', designation: 'Developer' }
     : who === 'other' ? { id: 'o1', fullName: 'AI Other', department: 'AI Studio', designation: 'Designer' }

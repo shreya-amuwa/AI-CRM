@@ -9,9 +9,10 @@ import type {
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type BookingLinkInput, type NewMeeting } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
-import { takePendingMeeting, takePendingMeetingReport, useMeetingsChanged, useOpenMeetingReportRequest, useOpenMeetingRequest } from './meetingEvents';
+import { takePendingHrMeetingRequest, takePendingMeeting, takePendingMeetingReport, useMeetingsChanged, useOpenMeetingReportRequest, useOpenMeetingRequest } from './meetingEvents';
+import { HrMeetingRequests } from '../issues/HrMeetingRequests';
 import { MeetingDecisionsTab, MySummariesTab, SummaryPanel, SummaryReportDrawer } from './MeetingSummaries';
-import { AvailabilityPill, MyAvailabilityPanel, usePresenceOf } from './CeoPresence';
+import { AvailabilityPill, MyAvailabilityPanel, useCeoPresence, usePresenceOf } from './CeoPresence';
 import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
 
 /**
@@ -45,13 +46,15 @@ const STATUS_STYLE: Record<string, string> = {
   SCHEDULED: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   DECLINED: 'bg-rose-50 text-rose-700 border-rose-200',
   CANCELLED: 'bg-slate-100 text-slate-500 border-slate-200',
-  COMPLETED: 'bg-sky-50 text-sky-800 border-sky-200'
+  COMPLETED: 'bg-sky-50 text-sky-800 border-sky-200',
+  PENDING_AVAILABILITY: 'bg-orange-50 text-orange-800 border-orange-200'
 };
 const STATUS_LABEL: Record<string, string> = {
-  REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done'
+  REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done',
+  PENDING_AVAILABILITY: 'Queued (the CEO is in a meeting)'
 };
 /** How a request for the CEO's time reads to the people involved. */
-const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
+const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PENDING_AVAILABILITY' ? 'Queued (CEO in a meeting)' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
   : m.status === 'SCHEDULED' ? (m.rescheduleCount > 0 ? 'Rescheduled' : 'Approved') : m.status === 'COMPLETED' ? 'Completed' : 'Cancelled');
 const SYNC_LABEL: Record<string, string> = {
   SYNCED: 'On Google Calendar', PENDING: 'Sending to Google…', FAILED: 'Google sync failed (retrying)', NOT_CONNECTED: 'Host has not connected Google', SKIPPED: 'Not on Google'
@@ -101,12 +104,15 @@ const GOOGLE_RETURN: Record<string, { tone: 'ok' | 'warn' | 'error'; text: strin
 // ---------------------------------------------------------------------------
 // The page
 // ---------------------------------------------------------------------------
-type Tab = 'calendar' | 'requests' | 'client' | 'summaries' | 'decisions' | 'settings';
+type Tab = 'calendar' | 'requests' | 'client' | 'summaries' | 'decisions' | 'settings' | 'hr';
 /** An internal team meeting: completed with its summary (20270124000200), not with "Mark done". */
 const isTeamMeeting = (m: Meeting) => m.kind === 'MEETING' && !m.sourceType && m.bookedVia === 'STAFF' && !m.clientCompany;
 
 export const MeetingsPage: React.FC = () => {
-  const [tab, setTab] = useState<Tab>('calendar');
+  // a meeting request to HR opened from a notification (it used to be on Raise an Issue): the HR meeting requests tab, on that request
+  const [hrPending] = useState(() => takePendingHrMeetingRequest());
+  const [hrOpenId, setHrOpenId] = useState<string | null>(hrPending?.id ?? null);
+  const [tab, setTab] = useState<Tab>(hrPending ? 'hr' : 'calendar');
   const [google, setGoogle] = useState<GoogleCalendarStatus | null>(null);
   const [approvals, setApprovals] = useState<Meeting[]>([]);
   // The CEO (Super Admin) does not ask themselves for time: their "New meeting" goes straight onto their own calendar.
@@ -127,7 +133,12 @@ export const MeetingsPage: React.FC = () => {
   useOpenMeetingReportRequest(useCallback((id: string) => setReportId(id), []));
   // live: a meeting notification (a new request, an approval, a move) reloads the page; so does coming back to the browser tab
   useMeetingsChanged(reload);
-  useOpenMeetingRequest(useCallback((id?: string) => { if (id) setOpenId(id); reload(); }, [reload]));
+  useOpenMeetingRequest(useCallback((id?: string) => {
+    const hr = takePendingHrMeetingRequest();
+    if (hr) { setTab('hr'); setHrOpenId(hr.id ?? null); }
+    if (id) setOpenId(id);
+    reload();
+  }, [reload]));
   useEffect(() => {
     const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
     window.addEventListener('focus', reload);
@@ -154,8 +165,7 @@ export const MeetingsPage: React.FC = () => {
     meetingsApi.settings().then(x => setIsCeo(x.isCeo)).catch(() => setIsCeo(false));
   }, [reloadKey]);
   useEffect(() => {
-    // today's meetings: the ones an employee can choose when entering a meeting (the Super Admin has no Enter / Exit)
-    if (isCeo) return setToday([]);
+    // today's meetings: the ones a person can choose when entering a meeting
     const d = new Date();
     const from = new Date(d.getFullYear(), d.getMonth(), d.getDate());
     meetingsApi.list(from.toISOString(), addDays(from, 1).toISOString()).then(setToday).catch(() => setToday([]));
@@ -181,12 +191,12 @@ export const MeetingsPage: React.FC = () => {
       </div>
 
       {flash && <Notice tone={flash.tone} onClose={() => setFlash(null)}>{flash.text}</Notice>}
-      {!isCeo && <MyAvailabilityPanel today={today} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} onOpen={setOpenId} />}
+      <MyAvailabilityPanel today={today} isCeo={isCeo} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} onOpen={setOpenId} />
       {google && tab !== 'settings' && <GoogleBanner status={google} onOpenSettings={() => setTab('settings')} />}
 
       <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200 overflow-x-auto">
         {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['client', 'Client meetings'],
-          ['summaries', 'Meeting summaries'], ...(isCeo ? [['decisions', 'Meeting Decisions']] : []), ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
+          ['summaries', 'Meeting summaries'], ...(isCeo ? [['decisions', 'Meeting Decisions']] : [['hr', 'HR meeting requests']]), ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
             className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
             {label}
@@ -194,10 +204,11 @@ export const MeetingsPage: React.FC = () => {
         ))}
       </div>
 
-      {tab === 'calendar' && <CalendarTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
+      {tab === 'calendar' && <CalendarTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} latestFirst={isCeo} />}
       {tab === 'requests' && <RequestsTab reloadKey={reloadKey} onOpen={openMeeting} onDone={done} onError={t => setFlash({ tone: 'error', text: t })} />}
       {tab === 'client' && <ClientMeetingsTab reloadKey={reloadKey} onOpen={id => openMeeting(id)} />}
       {tab === 'summaries' && <MySummariesTab reloadKey={reloadKey} onOpenMeeting={id => openMeeting(id)} onOpenReport={setReportId} />}
+      {tab === 'hr' && !isCeo && <HrMeetingRequests openId={hrOpenId} />}
       {tab === 'decisions' && isCeo && <MeetingDecisionsTab reloadKey={reloadKey} onOpenReport={setReportId} />}
       {tab === 'settings' && <SettingsTab google={google} onGoogleChange={setGoogle} onFlash={setFlash} />}
 
@@ -210,7 +221,9 @@ export const MeetingsPage: React.FC = () => {
       }} />}
       {composer && composer !== 'client' && <MeetingComposer mode={composer} onClose={() => setComposer(null)} onSaved={m => {
         setComposer(null);
-        done(m.status === 'REQUESTED'
+        done(m.status === 'PENDING_AVAILABILITY'
+          ? `${m.hostName} is in a meeting right now. Your request is in the queue: when they exit their meeting, the next request in the queue is confirmed to start then, and you get an e-mail with the meeting room link.`
+          : m.status === 'REQUESTED'
           ? `Request sent to ${m.hostName}. You will be told when it is approved.`
           : `${m.kindLabel} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
       }} />}
@@ -256,7 +269,9 @@ const MeetingRow: React.FC<{ m: Meeting; onOpen: (id: string) => void }> = ({ m,
   </button>
 );
 
-const CalendarTab: React.FC<{ reloadKey: number; onOpen: (id: string) => void }> = ({ reloadKey, onOpen }) => {
+/** latestFirst (the Super Admin's view): the week's latest day on top, and in each day the latest meeting first, so the newest activity is
+ *  seen without scrolling; everyone else keeps Monday to Sunday, earliest first. */
+const CalendarTab: React.FC<{ reloadKey: number; onOpen: (id: string) => void; latestFirst?: boolean }> = ({ reloadKey, onOpen, latestFirst = false }) => {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [items, setItems] = useState<Meeting[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -272,8 +287,13 @@ const CalendarTab: React.FC<{ reloadKey: number; onOpen: (id: string) => void }>
     return () => { live = false; };
   }, [weekStart, reloadKey]);
 
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
-  const visible = (items ?? []).filter(m => showClosed || !['CANCELLED', 'DECLINED'].includes(m.status));
+  const days = useMemo(() => {
+    const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    return latestFirst ? week.reverse() : week;
+  }, [weekStart, latestFirst]);
+  // by the meeting's own date and time (latest first for the Super Admin); the request's creation time only breaks a tie
+  const visible = (items ?? []).filter(m => showClosed || !['CANCELLED', 'DECLINED'].includes(m.status))
+    .slice().sort((a, b) => (Date.parse(a.startsAt) - Date.parse(b.startsAt) || Date.parse(a.createdAt) - Date.parse(b.createdAt)) * (latestFirst ? -1 : 1));
   const todayKey = dateKey(new Date());
 
   return (
@@ -614,6 +634,9 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   const [presenceIds, setPresenceIds] = useState<string[]>([]);
   const { list: presence } = usePresenceOf(presenceIds);
   const busyNow = (id: string) => !!presence?.find(p => p.hostId === id && p.status === 'BUSY');
+  // the CEO's live status: asking while BUSY puts the request in the CEO's queue
+  const { list: ceoPresence } = useCeoPresence(mode === 'ceo');
+  const ceoBusy = mode === 'ceo' && !!ceoPresence?.find(p => p.hostId === f.hostId && p.status === 'BUSY');
   useEffect(() => { if (mode === 'ceo' && !f.hostId && ceos[0]) setF(x => ({ ...x, hostId: ceos[0].id })); }, [mode, ceos, f.hostId]);
 
   // the chosen day's busy times of the CEO / the invited colleagues (CRM + their Google Calendar)
@@ -671,6 +694,12 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
               </select>
             </div>
           ) : <Notice tone="warn">No CEO account was found.</Notice>
+        )}
+        {ceoBusy && (
+          <div role="status" aria-live="polite" data-testid="ceo-busy-notice" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
+            <p className="font-bold">The CEO is in a meeting right now.</p>
+            <p className="mt-0.5">Send your request: it joins the queue. Each time the CEO exits a meeting, the next request in the queue is confirmed to start then, and you get an e-mail with the meeting room link.</p>
+          </div>
         )}
         <div>
           <label className={labelCls} htmlFor="mtg-title">{mode === 'ceo' ? 'Subject' : 'Title'}</label>
@@ -771,7 +800,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
         <div className="flex gap-2 pt-1">
           <button type="submit" disabled={saving || (mode === 'ceo' && !f.hostId)} className={btnPrimary}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : mode === 'ceo' ? <Crown className="w-4 h-4" /> : <CalendarPlus className="w-4 h-4" />}
-            {mode === 'ceo' ? 'Send the request' : 'Book the meeting'}
+            {mode === 'ceo' ? (ceoBusy ? 'Join the queue' : 'Send the request') : 'Book the meeting'}
           </button>
           <button type="button" className={btnGhost} onClick={onClose}>Cancel</button>
         </div>
@@ -846,7 +875,40 @@ const SettingsTab: React.FC<{ google: GoogleCalendarStatus | null; onGoogleChang
           <p className="text-xs text-slate-500 mt-1">Only you, the Super Admin (CEO), approve, reject or reschedule requests for your time. Nobody else can, and it cannot be delegated.</p>
         </section>
       )}
+      {s?.isCeo && <RoomLinkEditor onFlash={onFlash} google={google} />}
     </div>
+  );
+};
+
+/** The Super Admin's fixed meeting-room link (20270127000100): used for a queued meeting confirmed on Exit when Google Calendar is not
+ *  connected (with Google, the meeting gets its own Google Meet link). */
+const RoomLinkEditor: React.FC<{ onFlash: (f: { tone: 'ok' | 'warn' | 'error'; text: string }) => void; google: GoogleCalendarStatus | null }> = ({ onFlash, google }) => {
+  const [link, setLink] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { meetingsApi.roomLink().then(r => setLink(r.roomLink ?? '')).catch(() => undefined); }, []);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await meetingsApi.setRoomLink(link.trim() || null);
+      setLink(r.roomLink ?? '');
+      onFlash({ tone: 'ok', text: r.roomLink ? 'Meeting room link saved.' : 'Meeting room link removed.' });
+    } catch (e) {
+      onFlash({ tone: 'error', text: errorMessage(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-2" aria-labelledby="room-link-h">
+      <h2 id="room-link-h" className="text-sm font-bold text-slate-800 flex items-center gap-2"><Video className="w-4 h-4 text-indigo-600" /> Meeting room link for queued meetings</h2>
+      <p className="text-xs text-slate-500">When you exit a meeting, the next request in your queue is confirmed to start then and the employee is e-mailed the room link.
+        {google?.connected ? ' Your Google Calendar is connected: each such meeting gets its own Google Meet link, and this link is used only if Google is not connected for that meeting.' : ' Google Calendar is not connected, so this link is used.'}</p>
+      <div className="flex flex-wrap gap-2">
+        <label className="sr-only" htmlFor="room-link">Meeting room link</label>
+        <input id="room-link" type="url" className={`${inputCls} flex-1 min-w-[14rem]`} placeholder="https://meet.google.com/xxx-xxxx-xxx" value={link} onChange={e => setLink(e.target.value)} maxLength={500} />
+        <button type="button" className={btnPrimary} disabled={busy || (!!link.trim() && !/^https:\/\/\S+$/i.test(link.trim()))} onClick={() => void save()}>Save</button>
+      </div>
+    </section>
   );
 };
 

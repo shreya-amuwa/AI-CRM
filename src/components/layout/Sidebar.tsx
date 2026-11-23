@@ -83,6 +83,7 @@ export type ActiveTab =
   | 'hr_recruitment'
   | 'hr_training'
   | 'hr_issues'
+  | 'hr_raise_issue'
   | 'hr_meetings'
   | 'hr_reviews'
   | 'hr_field_tracking'
@@ -344,6 +345,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // paid leave of confirmed employees (balances, the ledger, corrections; the policy for the HR Department Head)
     { id: 'hr_paid_leave' as ActiveTab, label: 'Paid Leave', icon: CalendarClock },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },
+    // HR's Raise an Issue (20270127000200): report to the Developer Team, and the employee issues HR received
+    { id: 'hr_raise_issue' as ActiveTab, label: 'Raise an Issue', icon: MessageSquareWarning },
     { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
     // work-related field visit location records (the database decides: HR staff, not recruiters)
     { id: 'hr_field_tracking' as ActiveTab, label: 'Field Visit Tracking', icon: MapPin },

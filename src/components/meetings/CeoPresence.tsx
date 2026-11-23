@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { DoorOpen, Loader2, LogIn, Video } from 'lucide-react';
-import type { CeoPresence, Meeting } from '../../../shared/contracts';
+import type { CeoPresence, CeoPresenceExit, Meeting } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi } from '../../lib/api/meetings';
 import { listenToTables } from '../../lib/realtimeShared';
@@ -12,12 +12,12 @@ import { listenToTables } from '../../lib/realtimeShared';
  *  - The state lives in the database (public.meeting_presence). Every screen that shows it listens to that table through Supabase Realtime and
  *    reloads at once, so BUSY / AVAILABLE changes everywhere without a refresh; coming back to the tab reloads too (a missed event).
  */
-function usePresence(ids: string[] | null, enabled: boolean): { list: CeoPresence[] | null; reload: () => void } {
+function usePresence(ids: string[] | null, enabled: boolean, ceo = false): { list: CeoPresence[] | null; reload: () => void } {
   const [list, setList] = useState<CeoPresence[] | null>(null);
-  const key = ids ? ids.join(',') : '';
+  const key = ceo ? 'ceo' : ids ? ids.join(',') : '';
   const reload = useCallback(() => {
-    if (!enabled || (ids && !ids.length)) { setList(ids ? [] : null); return; }
-    meetingsApi.presence(ids ?? undefined).then(setList).catch(() => setList(cur => cur ?? []));
+    if (!enabled || (!ceo && ids && !ids.length)) { setList(ids ? [] : null); return; }
+    (ceo ? meetingsApi.ceoPresence() : meetingsApi.presence(ids ?? undefined)).then(setList).catch(() => setList(cur => cur ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, key]);
   useEffect(() => {
@@ -36,8 +36,10 @@ function usePresence(ids: string[] | null, enabled: boolean): { list: CeoPresenc
   return { list, reload };
 }
 
-/** The signed-in employee's own status ([] for the Super Admin, whose availability is not tracked). */
+/** The signed-in person's own status (the Super Admin's carries their queue of waiting requests). */
 export const useMyPresence = (enabled = true) => usePresence(null, enabled);
+/** The CEOs' live status, for "Ask the CEO for time": a request made while BUSY joins the queue (20270127000100). */
+export const useCeoPresence = (enabled = true) => usePresence(null, enabled, true);
 /** The live status of some colleagues (the people being invited to a meeting). */
 export const usePresenceOf = (ids: string[]) => usePresence(ids, ids.length > 0);
 
@@ -63,7 +65,7 @@ export const AvailabilityPill: React.FC<{ status: CeoPresence['status']; label?:
   );
 };
 
-/** Next to the bell on every dashboard: a reminder while the signed-in employee is marked BUSY (nothing for the Super Admin). */
+/** Next to the bell on every dashboard: a reminder while the signed-in person is marked BUSY. */
 export const MyAvailabilityBadge: React.FC = () => {
   const { list } = useMyPresence();
   const me = list?.[0];
@@ -81,10 +83,12 @@ export const MyAvailabilityBadge: React.FC = () => {
  */
 export const MyAvailabilityPanel: React.FC<{
   today: Meeting[];
+  /** the Super Admin: Exit confirms the next request waiting in their queue */
+  isCeo?: boolean;
   onDone: (text: string) => void;
   onError: (text: string) => void;
   onOpen: (id: string) => void;
-}> = ({ today, onDone, onError, onOpen }) => {
+}> = ({ today, isCeo = false, onDone, onError, onOpen }) => {
   const { list, reload } = useMyPresence();
   const [busy, setBusy] = useState(false);
   const [meetingId, setMeetingId] = useState('');
@@ -96,9 +100,16 @@ export const MyAvailabilityPanel: React.FC<{
   const act = async (enter: boolean) => {
     setBusy(true);
     try {
-      if (enter) await meetingsApi.presenceEnter(meetingId || null);
-      else await meetingsApi.presenceExit();
-      onDone(enter ? 'You are in a meeting: colleagues now see you as BUSY.' : 'You are AVAILABLE again: colleagues see it at once.');
+      if (enter) {
+        await meetingsApi.presenceEnter(meetingId || null);
+        onDone(isCeo ? 'You are in a meeting: everyone sees you as BUSY, and requests for your time join your queue.' : 'You are in a meeting: colleagues now see you as BUSY.');
+      } else {
+        const r = await meetingsApi.presenceExit();
+        const next = r.scheduled?.[0] as (CeoPresenceExit['scheduled'][number] & { stillWaiting?: number }) | undefined;
+        onDone(next
+          ? `You are AVAILABLE again. The next queued meeting is confirmed and starts now: "${next.title}". The employee is e-mailed the meeting room link.${next.stillWaiting ? ` ${next.stillWaiting} more waiting.` : ''}`
+          : 'You are AVAILABLE again: colleagues see it at once.');
+      }
       if (!enter) setMeetingId('');
       reload();
     } catch (e) {
@@ -117,7 +128,9 @@ export const MyAvailabilityPanel: React.FC<{
           </h2>
           <p className="text-xs text-slate-600 mt-1" aria-live="polite">
             {inMeeting
-              ? `In a meeting since ${since(me.since)}. Colleagues see you as BUSY and cannot book you into a meeting starting within 30 minutes.`
+              ? isCeo
+                ? `In a meeting since ${since(me.since)}. Requests for your time join your queue; Exit Meeting confirms the next one, starting then.`
+                : `In a meeting since ${since(me.since)}. Colleagues see you as BUSY and cannot book you into a meeting starting within 30 minutes.`
               : 'Colleagues see you as AVAILABLE. Press Enter Meeting when you go into a meeting.'}
           </p>
           {inMeeting && me.meeting && (
@@ -154,6 +167,19 @@ export const MyAvailabilityPanel: React.FC<{
           )}
         </div>
       </div>
+      {isCeo && !!me.pending?.length && (
+        <div className="mt-3 border-t border-slate-200 pt-3" data-testid="ceo-queue">
+          <h3 className="text-xs font-bold text-slate-800">Waiting in your queue ({me.pending.length}) — each Exit Meeting confirms the next one, oldest first</h3>
+          <ol className="mt-1.5 space-y-1 list-decimal list-inside">
+            {me.pending.map(p => (
+              <li key={p.id} className="text-xs text-slate-700">
+                <button type="button" className="font-semibold text-slate-900 hover:underline" onClick={() => onOpen(p.id)}>{p.title}</button>
+                {' '}· asked by {p.requestedBy ?? 'a colleague'} · {Math.round((new Date(p.endsAt).getTime() - new Date(p.startsAt).getTime()) / 60000)} min
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
     </section>
   );
 };

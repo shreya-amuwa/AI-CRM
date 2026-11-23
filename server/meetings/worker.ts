@@ -136,6 +136,11 @@ export interface ClaimedMail {
 export function mailDecision(o: ClaimedMail, now = Date.now()): 'SEND' | 'SKIP' | 'DEFER' {
   const m = o.meeting;
   const toOrganiser = !!o.organizerEmail && o.toEmail.trim().toLowerCase() === o.organizerEmail.trim().toLowerCase();
+  // a queued meeting confirmed on Exit: always our e-mail (it says "join now"); with Google Meet, wait (at most ~15 minutes) for the sync to
+  // add the Meet link so the e-mail carries it
+  if (o.kind === 'QUEUE_CONFIRMED') {
+    return m.mode === 'GOOGLE_MEET' && !m.meetLink && m.googleSyncStatus === 'PENDING' && now - new Date(m.updatedAt).getTime() < 15 * 60_000 ? 'DEFER' : 'SEND';
+  }
   // a client meeting: the client always gets the CRM's own invitation / change / cancellation (agenda, company, host details), Google or not
   const clientGuest = m.kind === 'CLIENT_MEETING' && !o.toProfileId;
   if (!GOOGLE_SENDS.includes(o.kind) || m.bookedVia === 'BOOKING_LINK' || toOrganiser || clientGuest) return 'SEND';
