@@ -125,6 +125,15 @@ function stubDb(begins: Record<string, any> = {}) {
   check(leads.outcome === 'PARTIAL' && leads.pages === 10 && s.stores.filter(x => x.p_resource === 'leads').at(-1).p_next_page === 11,
     'one run reads at most 10 pages of a resource (5,000 rows); the rest continues next run', leads);
 }
+{
+  // Sync now (the Super Admin, one connection) is not capped: a full read finishes in one press, within its time budget
+  let n = 0;
+  const { f } = crocodial({ leads: u => (Number(u.searchParams.get('page')) < 15 ? page([{ id: ++n }], `${B}/leads?per_page=500&page=${Number(u.searchParams.get('page')) + 1}`) : page([{ id: ++n }], null)) });
+  const s = stubDb();
+  const r = await runCrocodialSync({ db: s.db, env, fetch: f as any, sleep, minGapMs: 0, budgetMs: 60_000, connectionId: 'c1' });
+  const leads = r.connections[0].resources.find(x => x.resource === 'leads')!;
+  check(leads.outcome === 'DONE' && leads.pages === 15, 'Sync now reads past 10 pages and finishes in one press', leads);
+}
 
 // ---------------------------------------------------------------------------- the time budget
 {

@@ -79,7 +79,8 @@ async function rpc<T>(db: SupabaseClient, fn: string, args: Record<string, unkno
   return data as T;
 }
 
-/** At most this many pages (of 500 rows) of one resource per run; a longer read continues on the next run. */
+/** At most this many pages (of 500 rows) of one resource per scheduled run; a longer read continues on the next run. Sync now is not capped
+ * (only by its time budget), so a full read the Super Admin starts finishes in one press. */
 export const MAX_PAGES_PER_RUN = 10;
 
 /** How often a connection is due: CROCODIAL_SYNC_EVERY_MINUTES (5, 10, 15, 20, 30 or 60; default 60). The Worker's tick uses the same setting. */
@@ -93,7 +94,7 @@ export function syncEveryMinutes(env: NodeJS.ProcessEnv = process.env): number {
  * errors. fullEvery: the periodic full re-read ('7 days' for Sync now); null for scheduled runs, which then never re-read everything on
  * their own (only the very first pull of a connection is full).
  */
-async function syncResource(db: SupabaseClient, client: CrocodialClient, connectionId: string, resource: SyncResource, deadline: number, fullEvery: string | null): Promise<ResourceSummary> {
+async function syncResource(db: SupabaseClient, client: CrocodialClient, connectionId: string, resource: SyncResource, deadline: number, fullEvery: string | null, maxPages: number): Promise<ResourceSummary> {
   const b = await rpc<Begin>(db, 'croc_sync_begin', { p_connection: connectionId, p_resource: resource, p_full_every: fullEvery });
   if (!b.ok) return { resource, outcome: 'SKIPPED', pages: 0, rows: 0, skipped: 0, error: b.reason };
   const { schema, map } = TO_STORE[resource];
@@ -103,7 +104,7 @@ async function syncResource(db: SupabaseClient, client: CrocodialClient, connect
   let skipped = 0;
   try {
     while (url) {
-      if (Date.now() > deadline || pages >= MAX_PAGES_PER_RUN) {
+      if (Date.now() > deadline || pages >= maxPages) {
         await rpc(db, 'croc_sync_finish', { p_connection: connectionId, p_resource: resource, p_outcome: 'PARTIAL', p_pages: pages, p_skipped: skipped });
         return { resource, outcome: 'PARTIAL', pages, rows, skipped };
       }
@@ -169,8 +170,10 @@ export async function runCrocodialSync(
     }
     const client = new CrocodialClient(token, opts);
     try {
+      // Sync now (one connection): the weekly full re-read when due, and no page cap; scheduled runs: top-ups only, at most MAX_PAGES_PER_RUN
       const fullEvery = opts.connectionId ? '7 days' : null;
-      for (const r of SYNC_RESOURCES) summary.resources.push(await syncResource(db, client, c.id, r, deadline, fullEvery));
+      const maxPages = opts.connectionId ? Number.POSITIVE_INFINITY : MAX_PAGES_PER_RUN;
+      for (const r of SYNC_RESOURCES) summary.resources.push(await syncResource(db, client, c.id, r, deadline, fullEvery, maxPages));
       const failed = summary.resources.find(r => r.outcome === 'FAILED');
       summary.health = failed ? 'ERROR' : 'OK';
       await db.rpc('croc_connection_status', { p_connection: c.id, p_health: failed ? 'ERROR' : 'OK', p_error: failed ? `${failed.resource}: ${failed.error}` : null });

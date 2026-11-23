@@ -217,7 +217,7 @@ const { withPlatformHeaders, handleRequest, runScheduledDispatch, crocodialSyncD
   mock.close();
 }
 
-// ---- the Crocodial sync rides on the 5-minute cron only every CROCODIAL_SYNC_EVERY_MINUTES (default 15) --------------------------------------
+// ---- the Crocodial sync rides on the 5-minute cron only every CROCODIAL_SYNC_EVERY_MINUTES (default 60) --------------------------------------
 {
   const at = (hh: number, mm: number, ss = 0) => new Date(Date.UTC(2026, 10, 19, hh, mm, ss));
   const ticks = (env: Record<string, string>) => Array.from({ length: 12 }, (_, i) => crocodialSyncDue(at(10, i * 5), env as NodeJS.ProcessEnv)).filter(Boolean).length;

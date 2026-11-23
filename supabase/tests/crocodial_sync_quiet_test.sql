@@ -31,7 +31,7 @@ select xmin::text as x1 from crocodial_ext_calls where connection_id = :'c1' and
 select jsonb_build_array(jsonb_build_object('id', 1, 'calledBy', called_by_ext, 'lead', lead_ext, 'phone', phone_number, 'contactName', contact_name,
          'callType', call_type, 'callAt', call_at::text, 'durationSeconds', duration_seconds, 'connected', connected, 'syncedAt', external_synced_at::text)) as same
   from crocodial_ext_calls where connection_id = :'c1' and external_id = 1 \gset
-select test.check(croc_sync_store(:'c1', 'call-logs', :'same'::jsonb, null) = 0, 'storing an unchanged call writes nothing');
+select test.check(croc_sync_store(:'c1', 'call-logs', :'same'::jsonb, null) = 0, 'storing an unchanged call writes no new version');
 select test.check((select xmin::text = :'x1' from crocodial_ext_calls where connection_id = :'c1' and external_id = 1), 'the row is left exactly as it was');
 select test.check(croc_sync_store(:'c1', 'call-logs', jsonb_set(:'same'::jsonb, '{0,durationSeconds}', to_jsonb((select duration_seconds + 1 from crocodial_ext_calls where connection_id = :'c1' and external_id = 1))), null) = 1,
   'a call that changed is written');
@@ -44,6 +44,24 @@ select jsonb_build_array(jsonb_build_object('id', 3, 'calledBy', called_by_ext, 
 select croc_sync_store(:'c1', 'call-logs', :'back'::jsonb, null);
 select test.check((select missing_since is null from crocodial_ext_calls where connection_id = :'c1' and external_id = 3), 'a missing call that comes back is no longer missing');
 select croc_sync_finish(:'c1', 'call-logs', 'DONE', 1, 0);
+
+\echo '   the same for leads (the longest list of fields)'
+select croc_sync_begin(:'c1', 'leads');
+select croc_sync_store(:'c1', 'leads', jsonb_build_array(jsonb_build_object('id', 900, 'name', 'Test Lead', 'phone', '+919800000900', 'company', 'Test Co',
+  'city', 'Pune', 'status', 'new', 'source', 'web', 'assignedTo', 4138, 'createdBy', 4138, 'called', true, 'dialerOutcome', 'answered', 'remarkCount', 2,
+  'nextFollowupAt', (now() + interval '1 day')::text, 'lastInteractionAt', (now() - interval '1 hour')::text, 'createdAt', (now() - interval '5 days')::text,
+  'updatedAt', (now() - interval '1 hour')::text)), null);
+select croc_sync_finish(:'c1', 'leads', 'DONE', 1, 0);
+select croc_sync_begin(:'c1', 'leads', null);
+select xmin::text as lx from crocodial_ext_leads where connection_id = :'c1' and external_id = 900 \gset
+select jsonb_build_array(jsonb_build_object('id', 900, 'name', name, 'phone', phone_number, 'company', company, 'city', city, 'status', status, 'source', source,
+         'assignedTo', assigned_to_ext, 'createdBy', created_by_ext, 'called', called, 'dialerOutcome', dialer_outcome, 'remarkCount', remark_count,
+         'nextFollowupAt', next_followup_at::text, 'lastInteractionAt', last_interaction_at::text, 'createdAt', external_created_at::text, 'updatedAt', external_updated_at::text)) as lead_same
+  from crocodial_ext_leads where connection_id = :'c1' and external_id = 900 \gset
+select test.check(croc_sync_store(:'c1', 'leads', :'lead_same'::jsonb, null) = 0
+                  and (select xmin::text = :'lx' from crocodial_ext_leads where connection_id = :'c1' and external_id = 900), 'an unchanged lead gets no new version');
+select test.check(croc_sync_store(:'c1', 'leads', jsonb_set(:'lead_same'::jsonb, '{0,remarkCount}', '3'), null) = 1, 'a lead whose remark count changed is written');
+select croc_sync_finish(:'c1', 'leads', 'DONE', 1, 0);
 
 \echo '   Sync now still does the weekly full re-read'
 update crocodial_sync_state set last_full_at = now() - interval '8 days' where connection_id = :'c1' and resource = 'call-logs';

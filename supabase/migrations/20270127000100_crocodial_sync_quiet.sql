@@ -3,8 +3,9 @@
 --
 -- The sync used to rewrite every Crocodial row it read, changed or not (last_seen_at = now()), and re-read everything weekly from
 -- scheduled runs: every page read became a page of writes, which used up Supabase's disk I/O budget. Now:
--- * croc_sync_store: a top-up run writes only rows that changed (or that come back after being marked missing); only a full read touches
---   every row it sees (that is how rows Crocodial no longer returns are found).
+-- * croc_sync_store: a top-up run writes a new row version only for rows that changed (or that come back after being marked missing); an
+--   unchanged row gets no new version, index entries or dead tuple (Postgres still takes a brief row lock). Only a full read touches every
+--   row it sees (that is how rows Crocodial no longer returns are found).
 -- * croc_sync_begin(.., p_full_every): scheduled runs pass null, so they do a full read only the very first time; the weekly full re-read
 --   happens when the Super Admin presses Sync now (7 days, the default).
 -- * How often a connection is due is the server's setting (CROCODIAL_SYNC_EVERY_MINUTES, default 60), passed to croc_sync_due.
