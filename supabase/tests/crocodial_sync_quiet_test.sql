@@ -1,5 +1,5 @@
 -- =============================================================================
--- Crocodial sync without needless writes (migration 20270129000100): a top-up run does not rewrite rows that did not change, scheduled
+-- Crocodial sync without needless writes (migration 20270127000100): a top-up run does not rewrite rows that did not change, scheduled
 -- runs never start a full re-read on their own (only Sync now does, and the very first pull), and how often a connection is due is the
 -- caller's setting. Uses its own connection (removed at the end). Synthetic data only.
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 139b. Crocodial: quiet sync'
 reset role;
-\i supabase/migrations/20270129000100_crocodial_sync_quiet.sql
-\i supabase/migrations/20270129000100_crocodial_sync_quiet.sql
+\i supabase/migrations/20270127000100_crocodial_sync_quiet.sql
+\i supabase/migrations/20270127000100_crocodial_sync_quiet.sql
 -- its own connection, with a first (full) pull of three calls already stored
 delete from crocodial_connections where credential_ref = 'CROCODIAL_TOKEN_QUIETTEST';
 insert into crocodial_connections (name, credential_ref, enabled) values ('Quiet test', 'CROCODIAL_TOKEN_QUIETTEST', true) returning id as c1 \gset

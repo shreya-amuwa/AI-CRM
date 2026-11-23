@@ -368,7 +368,7 @@ statuses of the CRM contact sheets the Telecaller works through, and they are no
 assignments, follow-ups, field visits, the sync, mapping and permissions. **Sales Executive and Business Partner dashboards** do not exist
 yet (phase 2). When they are built, they will read calls and demos only through the same helpers.
 
-## How often it runs, and what it writes (migration `20270129000100_crocodial_sync_quiet.sql`)
+## How often it runs, and what it writes (migration `20270127000100_crocodial_sync_quiet.sql`)
 - **Once an hour by default** (`CROCODIAL_SYNC_EVERY_MINUTES`, Worker variable: 5, 10, 15, 20, 30 or 60; `0`/`off` = only Sync now). The same
   setting decides when a connection is due in the daily automations run, so the two agree.
 - **Only changes are written.** A top-up run reads what changed since the last run (10 minutes of overlap) and writes a new version only of
@@ -383,7 +383,7 @@ yet (phase 2). When they are built, they will read calls and demos only through 
 
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270129000100_crocodial_sync_quiet.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.
