@@ -99,6 +99,33 @@ function stubDb(begins: Record<string, any> = {}) {
   check(urls.every(u => u.searchParams.get('per_page') === '500' || u.pathname.endsWith('employees') || u.pathname.endsWith('branches')), 'pages of 500 rows');
 }
 
+// ---------------------------------------------------------------------------- how often, no automatic full re-read, at most 10 pages a run
+{
+  const { f } = crocodial({});
+  const seen: { due: any[]; begin: any[] } = { due: [], begin: [] };
+  const s = stubDb();
+  const inner = s.db.rpc;
+  s.db.rpc = async (fn: string, a: any) => { if (fn === 'croc_sync_due') seen.due.push(a); if (fn === 'croc_sync_begin') seen.begin.push(a); return inner(fn, a); };
+  await runCrocodialSync({ db: s.db, env, fetch: f as any, sleep, minGapMs: 0 });
+  check(seen.due[0]?.p_min_interval === '60 minutes', 'a scheduled run asks for connections not synced in the last hour (the default)', seen.due[0]);
+  check(seen.begin.length > 0 && seen.begin.every(b => 'p_full_every' in b && b.p_full_every === null), 'a scheduled run never asks for a full re-read on its own', seen.begin);
+  seen.due.length = 0; seen.begin.length = 0;
+  await runCrocodialSync({ db: s.db, env: { ...env, CROCODIAL_SYNC_EVERY_MINUTES: '30' }, fetch: f as any, sleep, minGapMs: 0 });
+  check(seen.due[0]?.p_min_interval === '30 minutes', 'the interval follows CROCODIAL_SYNC_EVERY_MINUTES', seen.due[0]);
+  seen.due.length = 0; seen.begin.length = 0;
+  await runCrocodialSync({ db: s.db, env, fetch: f as any, sleep, minGapMs: 0, connectionId: 'c1' });
+  check(seen.begin.length > 0 && seen.begin.every(b => b.p_full_every === '7 days'), 'Sync now still does the weekly full re-read when it is due', seen.begin);
+}
+{
+  let n = 0;
+  const { f } = crocodial({ leads: u => page([{ id: ++n }], `${B}/leads?per_page=500&page=${Number(u.searchParams.get('page')) + 1}`) });
+  const s = stubDb();
+  const r = await runCrocodialSync({ db: s.db, env, fetch: f as any, sleep, minGapMs: 0, budgetMs: 60_000 });
+  const leads = r.connections[0].resources.find(x => x.resource === 'leads')!;
+  check(leads.outcome === 'PARTIAL' && leads.pages === 10 && s.stores.filter(x => x.p_resource === 'leads').at(-1).p_next_page === 11,
+    'one run reads at most 10 pages of a resource (5,000 rows); the rest continues next run', leads);
+}
+
 // ---------------------------------------------------------------------------- the time budget
 {
   let n = 0;
