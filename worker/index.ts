@@ -118,13 +118,14 @@ export async function runScheduledDispatch(env: WorkerEnv): Promise<void> {
 export const REMINDERS_CRON = '*/5 * * * *';
 
 /**
- * Is this 5-minute tick one on which the Crocodial sync runs? CROCODIAL_SYNC_EVERY_MINUTES: 5, 10, 15 (default), 20, 30 or 60 = on the ticks
- * whose minute of the hour is a multiple of it (15: hh:00, hh:15, hh:30, hh:45); 0 or "off" = never (the Super Admin can still start one).
+ * Is this 5-minute tick one on which the Crocodial sync runs? CROCODIAL_SYNC_EVERY_MINUTES: 5, 10, 15, 20, 30 or 60 (default) = on the ticks
+ * whose minute of the hour is a multiple of it (60: hh:00 only; 15: hh:00, hh:15, hh:30, hh:45); 0 or "off" = never (the Super Admin can
+ * still start one). Hourly by default since 23 Nov 2026: every run used to rewrite the rows it read and used up the database's disk I/O.
  */
 export function crocodialSyncDue(at: Date, env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = (env.CROCODIAL_SYNC_EVERY_MINUTES ?? '').trim().toLowerCase();
   if (raw === '0' || raw === 'off') return false;
-  const every = [5, 10, 15, 20, 30, 60].includes(Number(raw)) ? Number(raw) : 15;
+  const every = [5, 10, 15, 20, 30, 60].includes(Number(raw)) ? Number(raw) : 60;
   // the tick's own minute, rounded down to the 5-minute grid (a run that starts a few seconds late is still the same tick)
   const minute = Math.floor(at.getUTCMinutes() / 5) * 5;
   return minute % every === 0;
@@ -146,7 +147,7 @@ export async function runScheduledReminders(env: WorkerEnv, scheduledAt?: Date):
   );
   const text = await res.text();
   // the Crocodial sync rides on the same 5-minute cron (on its own: a failure of one never stops the other), but only every
-  // CROCODIAL_SYNC_EVERY_MINUTES (default 15): a large first read every 5 minutes kept the database busy all day (19 Nov 2026)
+  // CROCODIAL_SYNC_EVERY_MINUTES (default 60): a large first read every 5 minutes kept the database busy all day (19 Nov 2026)
   if (crocodialSyncDue(scheduledAt ?? new Date())) {
     await runScheduledCrocodialSync(env, secret).catch(err => console.log(`[cron] crocodial sync failed: ${err instanceof Error ? err.message : 'error'}`));
   }
