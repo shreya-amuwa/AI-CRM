@@ -200,8 +200,14 @@ logged `[api] could not reach Supabase: TimeoutError`. Two contributions are red
   a screen listens to stays (`supabase/tests/realtime_publication_trim_test.sql` lists them). A new screen that listens to a table must publish it
   in its own migration (`alter publication supabase_realtime add table public.<name>;`).
 * **Crocodial sync.** It ran on every 5-minute tick (a large first read wrote all afternoon). It now runs every `CROCODIAL_SYNC_EVERY_MINUTES`
-  (Worker variable; 5, 10, 15 = default, 20, 30 or 60; `0` = only when the Super Admin starts one), on the ticks whose minute is a multiple of it.
+  (Worker variable; 5, 10, 15, 20, 30 or 60 = default; `0` = only when the Super Admin starts one), on the ticks whose minute is a multiple of it.
+  Each run reads at most 10 pages per list, writes only the Crocodial records that changed, and never re-reads everything on its own (only the
+  Super Admin's **Sync now** does the weekly full re-read; migration `20270127000100_crocodial_sync_quiet.sql`).
   The attendance reminders keep running every 5 minutes.
+* **One dispatcher only.** The scheduled jobs (the 5-minute reminders and Crocodial sync, the daily automations) must run from exactly one place:
+  the production Worker with `SCHEDULED_ENABLED=true` and `CRON_SECRET` set. Vercel's cron must be paused (`VERCEL_CRON_PAUSED=true`) and any
+  rehearsal or preview copy of the Worker must leave `SCHEDULED_ENABLED` unset. Two places with the switch on run every reminder and every sync
+  twice.
 
 If the database is still slow: Supabase → Reports → Database (CPU), and Project Settings → Compute and Disk (a larger compute size removes the
 CPU throttling of the smallest one).
