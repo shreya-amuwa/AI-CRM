@@ -78,8 +78,10 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100)
-check(r.status === 200 && r.json.data.length === 14 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio'), 'departments come from the database');
+// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100);
+// 16 with International and Reseller (20270127000100)
+check(r.status === 200 && r.json.data.length === 16 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio')
+  && r.json.data.some((d: any) => d.slug === 'international') && r.json.data.some((d: any) => d.slug === 'reseller'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
