@@ -68,6 +68,10 @@ export type DefaultDashboard =
   | 'ai-studio-head'
   | 'ai-studio-lead'
   | 'ai-studio-member'
+  /** International / Reseller (departments flagged unified_sales_support, migration 20270127000100): Sales and Support in one dashboard for each role. */
+  | 'unified-head'
+  | 'unified-lead'
+  | 'unified-member'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
