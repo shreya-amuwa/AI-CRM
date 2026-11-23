@@ -3629,3 +3629,70 @@ export const notificationHealthQuerySchema = z.object({
   issue: z.enum(NOTIFICATION_HEALTH_ISSUES).optional()
 }).strip();
 export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Email Management (migration 20270127000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
+// (scoped by the database). The database checks every value and the caller again.
+// ---------------------------------------------------------------------------
+export const EMAIL_CATEGORIES = ['AUTH', 'CREDENTIALS', 'RECRUITMENT', 'INTERVIEW', 'HR', 'CLIENT_ONBOARDING', 'META_VERIFICATION', 'TECHNICAL', 'ACCOUNTS',
+  'INVOICE', 'PAYMENT', 'RENEWAL', 'MEETING', 'SUPPORT', 'SALES', 'GENERAL'] as const;
+/** Never copied to anyone (one-time links, codes, passwords). */
+export const EMAIL_SENSITIVE_CATEGORIES = ['AUTH', 'CREDENTIALS'] as const;
+export const EMAIL_RULE_TARGETS = ['CUSTOMER_OWNER', 'RELATIONSHIP_MANAGER', 'META_VERIFIER', 'ACCOUNTS_OWNER', 'TECHNICAL_CONSULTANT', 'RECRUITER', 'PROFILE', 'ADDRESS'] as const;
+export const EMAIL_APPLICATIONS = ['CRM', 'CANDIDATE_PORTAL', 'CLIENT_PORTAL'] as const;
+export const EMAIL_STATUSES = ['QUEUED', 'PROCESSING', 'ACCEPTED', 'DELIVERY_CONFIRMED', 'DEFERRED', 'BOUNCED', 'COMPLAINED', 'FAILED', 'RETRY_PENDING',
+  'UNKNOWN_ACCEPTANCE', 'CANCELLED', 'EXPIRED', 'SUPPRESSED'] as const;
+const emailAddress = z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(320);
+export const emailSettingsSchema = z.object({
+  providerOrder: z.array(z.enum(['resend', 'ses', 'smtp'])).min(1).max(3).refine(a => new Set(a).size === a.length, 'Each provider once.').nullable(),
+  quotaThresholds: z.array(z.number().int().min(1).max(100)).min(1).max(6),
+  resendDailyLimit: z.number().int().min(0).max(10_000_000),
+  resendMonthlyLimit: z.number().int().min(0).max(100_000_000),
+  sesDailyLimit: z.number().int().min(0).max(100_000_000).nullable(),
+  criticalReserve: z.number().int().min(0).max(10_000),
+  maxAutoRecipients: z.number().int().min(0).max(20),
+  allowedSenderDomains: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'Enter a domain such as amuwa.com.')).min(1).max(5)
+}).strict();
+export const emailSenderSchema = z.object({
+  category: z.enum(EMAIL_CATEGORIES),
+  fromEmail: emailAddress,
+  fromName: z.string().trim().min(1).max(80).refine(v => !/[<>"\r\n]/.test(v), 'No < > or quotes in the sender name.'),
+  replyTo: emailAddress.nullable().optional(),
+  enabled: z.boolean().default(true)
+}).strict();
+export const emailRuleSchema = z.object({
+  id: uuidSchema.optional(),
+  name: z.string().trim().min(1).max(120),
+  category: z.enum(EMAIL_CATEGORIES).refine(c => !(EMAIL_SENSITIVE_CATEGORIES as readonly string[]).includes(c), 'Authentication and credential e-mails can never be copied.'),
+  application: z.enum(EMAIL_APPLICATIONS).nullable().optional(),
+  departmentId: uuidSchema.nullable().optional(),
+  workflow: z.string().trim().max(60).nullable().optional(),
+  mode: z.enum(['CC', 'BCC']),
+  target: z.enum(EMAIL_RULE_TARGETS),
+  profileIds: z.array(uuidSchema).max(20).default([]),
+  addresses: z.array(emailAddress).max(20).default([]),
+  excludeProfileIds: z.array(uuidSchema).max(50).default([]),
+  priority: z.number().int().min(1).max(1000).default(100),
+  enabled: z.boolean().default(false),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+}).strict()
+  .refine(r => r.target !== 'PROFILE' || r.profileIds.length > 0, { message: 'Choose at least one employee.', path: ['profileIds'] })
+  .refine(r => r.target !== 'ADDRESS' || r.addresses.length > 0, { message: 'Enter at least one company address.', path: ['addresses'] });
+export const emailRulePreviewSchema = z.object({ customerId: uuidSchema.optional(), applicationId: uuidSchema.optional() }).strict()
+  .refine(v => !!v.customerId || !!v.applicationId, 'Choose a customer or a job application to preview with.');
+export const emailSuppressionSchema = z.object({ email: emailAddress, active: z.boolean(), note: z.string().trim().max(300).optional() }).strict();
+export const emailProviderSchema = z.enum(['resend', 'ses', 'smtp']);
+export const emailHistoryQuerySchema = z.object({
+  application: z.enum(EMAIL_APPLICATIONS).optional(),
+  category: z.enum(EMAIL_CATEGORIES).optional(),
+  status: z.union([z.enum(EMAIL_STATUSES), z.literal('PROBLEMS')]).optional(),
+  provider: z.enum(['resend', 'ses', 'smtp', 'brevo']).optional(),
+  departmentId: uuidSchema.optional(),
+  recipient: z.string().trim().max(120).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strip();
+export type EmailHistoryQuery = z.infer<typeof emailHistoryQuerySchema>;

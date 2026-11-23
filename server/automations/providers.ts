@@ -4,6 +4,10 @@ import type { AutomationSettings } from './config.js';
 import { buildMime, formatMailbox, smtpSendRaw, SmtpError, socketConnector } from './smtpSocket.js';
 import { signRequest } from '../storage/sigv4.js';
 import type { RenderedEmail } from './templates.js';
+import { classifyResend, classifySes, classifySmtp, classifyThrown, type Classified } from '../email/classify.js';
+import { providerRoute, PROVIDER_LABEL, type ProviderName } from '../email/routing.js';
+import { defaultLedger, LedgerRefusal, SENSITIVE_CATEGORIES, type BeginAnswer, type EmailApplication, type EmailCategory, type EmailContext,
+  type EmailPriority, type FinishRequest, type Ledger } from '../email/ledger.js';
 
 /** A file sent with an e-mail (a generated invoice PDF). */
 export interface MailAttachment {
@@ -20,11 +24,18 @@ export interface SendResult {
   code: number | null;
   ref: string | null;
   detail: string;
+  /** which provider took it (or was tried last) */
+  provider?: ProviderName | null;
+  /** the classified reason when it was not taken (server/email/classify.ts) */
+  errorCategory?: string | null;
+  /** the provider may have taken it (a timeout): the queue must not send it through another provider */
+  unknownAcceptance?: boolean;
 }
 
 const TIMEOUT_MS = 15_000;
 
-async function post(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string; retryAfter: string | null }> {
+type PostResult = { status: number; text: string; retryAfter: string | null; daily?: string | null; monthly?: string | null };
+async function post(url: string, headers: Record<string, string>, body: unknown): Promise<PostResult> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json', ...headers },
@@ -32,7 +43,9 @@ async function post(url: string, headers: Record<string, string>, body: unknown)
     redirect: 'follow',
     signal: AbortSignal.timeout(TIMEOUT_MS)
   });
-  return { status: res.status, text: (await res.text()).slice(0, 1000), retryAfter: res.headers.get('retry-after') };
+  // Resend reports the account's quota use on every answer (the daily header only on the free plan); kept as reported
+  return { status: res.status, text: (await res.text()).slice(0, 1000), retryAfter: res.headers.get('retry-after'),
+           daily: res.headers.get('x-resend-daily-quota'), monthly: res.headers.get('x-resend-monthly-quota') };
 }
 
 /**
@@ -52,14 +65,15 @@ function resendGapMs(): number {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-async function resendPost(url: string, headers: Record<string, string>, body: unknown): Promise<{ status: number; text: string; retryAfter: string | null }> {
+async function resendPost(url: string, headers: Record<string, string>, body: unknown): Promise<PostResult> {
   for (let attempt = 0; ; attempt++) {
     const now = Date.now();
     const wait = Math.max(0, resendNextSlot - now);
     resendNextSlot = Math.max(now, resendNextSlot) + resendGapMs();
     if (wait) await sleep(wait);
     const r = await post(url, headers, body);
-    if (r.status !== 429 || attempt >= 1) return r;
+    // a daily / monthly quota answer does not change by waiting a second: only a rate limit is tried again
+    if (r.status !== 429 || attempt >= 1 || /quota/i.test(r.text)) return r;
     const asked = Number(r.retryAfter) * 1000;
     const pause = Number.isFinite(asked) && asked > 0 ? asked : 1000;
     if (pause > RESEND_MAX_WAIT_MS) return r;
@@ -172,11 +186,12 @@ async function sendSmtpSocket(s: AutomationSettings, to: { email: string; name: 
 }
 
 /**
- * Resend -> SMTP fallback. With EMAIL_PROVIDER=resend and the SMTP_* mailbox (meta@amuwa.com) also set, an e-mail Resend does not
- * accept goes out through the mailbox instead, so clients still get it when the Resend plan's daily / monthly limit is reached, the
- * account is refused, or Resend is down. Not used when Resend's answer is unknown (a timeout: it may have sent the e-mail, and a second
- * copy must not go out) or the request itself is wrong (an invalid address: the mailbox would refuse it too); those stay queued and are
- * retried as before. After a quota answer Resend is skipped for RESEND_PAUSE_MS so the next e-mails do not wait for the same refusal.
+ * Provider routing and failover (server/email/routing.ts, docs/EMAIL_MANAGEMENT.md). The providers are tried in the configured order
+ * (now: Resend, then the SMTP mailbox; after AWS approves SES, e.g. SES, Resend, SMTP). The next provider is tried only after a DEFINITE
+ * refusal that is about the provider, not the e-mail (quota, rate limit, keys, an unverified domain, the SES sandbox, a suspended account,
+ * a provider error, no connection): never after an ambiguous timeout (the first provider may have sent it, and a second copy must not go
+ * out), never for an invalid or suppressed recipient, refused content or an attachment too large. After a quota answer the provider is
+ * skipped for a while (here, and for every Worker instance through email_provider_state).
  */
 const PAUSE_MS = 15 * 60_000;
 const pausedUntil: Record<'resend' | 'ses', number> = { resend: 0, ses: 0 };
@@ -185,10 +200,6 @@ const pausedUntil: Record<'resend' | 'ses', number> = { resend: 0, ses: 0 };
 export function resetResendPause(): void {
   pausedUntil.resend = 0;
   pausedUntil.ses = 0;
-}
-
-function smtpFallbackOn(s: AutomationSettings): boolean {
-  return (s.email.provider === 'resend' || s.email.provider === 'ses') && !!s.email.smtp && s.email.smtpFallback === true;
 }
 
 /**
@@ -203,35 +214,159 @@ function backupSettings(s: AutomationSettings): AutomationSettings {
   return { ...s, email: { ...s.email, fromEmail: smtp.user, replyTo: s.email.replyTo || s.email.fromEmail } };
 }
 
-type ApiAttempt = { ok: boolean; res: SendResult; fallback: boolean; quota: boolean };
+type ApiAttempt = { ok: boolean; res: SendResult; fallback: boolean; quota: boolean; cls?: Classified; usage?: { daily?: string | null; monthly?: string | null } };
+
+/** What a send is about; every field optional, so existing callers keep working unchanged. */
+export interface EmailOptions {
+  category?: EmailCategory;
+  application?: EmailApplication;
+  /** the template's name, for the log (never its content) */
+  template?: string;
+  priority?: EmailPriority;
+  /**
+   * One key per business event (e.g. "decision-email:<id>"): the same event is never e-mailed twice, whichever Worker instance retries it.
+   * Also sent to Resend as Idempotency-Key.
+   */
+  idempotencyKey?: string;
+  /** carries a one-time link, a code or a password: never a copy to anyone. AUTH and CREDENTIALS are always sensitive. */
+  sensitive?: boolean;
+  /** extra copies asked for by this e-mail (refused for sensitive e-mail) */
+  cc?: string[];
+  bcc?: string[];
+  /** the record the e-mail is about: used to resolve CC / BCC rules from the live assignments and to show the e-mail to the right people */
+  context?: EmailContext;
+  /** tests only */
+  ledger?: Ledger | null;
+}
+
+const FAILOVER_LABEL: Record<ProviderName, string> = { smtp: 'the SMTP mailbox', ses: 'Amazon SES', resend: 'Resend', brevo: 'Brevo' };
+
+async function attemptWith(p: ProviderName, s: AutomationSettings, to: { email: string; name: string; display?: boolean }, mail: RenderedEmail,
+  attachments: MailAttachment[] | undefined, idempotencyKey: string | undefined, asBackup: boolean): Promise<ApiAttempt> {
+  if (p === 'resend') return sendResend(s, s.email.apiKey!, to, mail, attachments, idempotencyKey);
+  if (p === 'ses') return sendSes(s, to, mail, attachments);
+  if (p === 'brevo') {
+    const res = await sendBrevo(s, s.email.apiKey!, to, mail, attachments);
+    return { ok: res.ok, res, fallback: false, quota: false };
+  }
+  const res = await sendSmtp(asBackup ? backupSettings(s) : s, to, mail, attachments);
+  const cls = res.ok ? undefined : classifySmtp(res.code);
+  return { ok: res.ok, res, fallback: !!cls?.failover, quota: false, cls };
+}
 
 /**
- * Sends one email through the configured provider: SMTP (nodemailer, or sockets on Workers), AWS SES or Resend (each with the SMTP
- * mailbox as backup), or Brevo.
+ * Sends one e-mail through the configured providers, in order, with the shared record around it (email_send_begin / email_send_finish):
+ * one send per business event, the category's sender, the CC / BCC rules, the suppression list and the provider quotas. Authentication and
+ * credential e-mails never get a copy: the deployment's EMAIL_CC / EMAIL_BCC are dropped, and an explicit copy is refused.
  */
-export async function sendEmail(s: AutomationSettings, to: { email: string; name: string; /** Resend / SES: send as "Name <address>" so the recipient's mail app shows the name. */ display?: boolean }, mail: RenderedEmail, attachments?: MailAttachment[]): Promise<SendResult> {
-  const { provider, apiKey } = s.email;
-  if (provider === 'smtp') return sendSmtp(s, to, mail, attachments);
-  if (provider === 'resend' || provider === 'ses') {
-    const label = provider === 'ses' ? 'SES' : 'Resend';
-    const ready = provider === 'ses' ? !!s.email.ses : !!apiKey;
-    const attempt = (): Promise<ApiAttempt> => (provider === 'ses' ? sendSes(s, to, mail, attachments) : sendResend(s, apiKey!, to, mail, attachments));
-    if (smtpFallbackOn(s)) {
-      const why = !ready ? `${label} is not set up` : Date.now() < pausedUntil[provider] ? `${label} sending limit reached earlier` : null;
-      if (why) return withFallbackNote(await sendSmtp(backupSettings(s), to, mail, attachments), why);
-      const first = await attempt();
-      if (first.ok || !first.fallback) return first.res;
-      if (first.quota) pausedUntil[provider] = Date.now() + PAUSE_MS;
-      const second = await sendSmtp(backupSettings(s), to, mail, attachments);
-      if (second.ok) return withFallbackNote(second, `${label} ${first.res.detail}`);
-      // both refused: keep it queued while either may recover
-      return { ...second, retry: second.retry || first.res.retry, detail: `${label} ${first.res.detail}; SMTP fallback: ${second.detail}`.slice(0, 400) };
-    }
-    if (!ready) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
-    return (await attempt()).res;
+export async function sendEmail(s: AutomationSettings, to: { email: string; name: string; /** Resend / SES: send as "Name <address>" so the recipient's mail app shows the name. */ display?: boolean }, mail: RenderedEmail, attachments?: MailAttachment[], opts: EmailOptions = {}): Promise<SendResult> {
+  const category: EmailCategory = opts.category ?? 'GENERAL';
+  const sensitive = opts.sensitive === true || SENSITIVE_CATEGORIES.has(category);
+  if (sensitive && ((opts.cc?.length ?? 0) > 0 || (opts.bcc?.length ?? 0) > 0)) {
+    return { ok: false, retry: false, code: null, ref: null, detail: 'Authentication and credential e-mails cannot have CC or BCC recipients.', errorCategory: 'INVALID_CONTENT' };
   }
-  if (!provider || !apiKey) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.' };
-  return sendBrevo(s, apiKey, to, mail, attachments);
+  const route = providerRoute(s);
+  if (!route.order.length) return { ok: false, retry: false, code: null, ref: null, detail: 'Email sending is not configured.', errorCategory: 'NOT_CONFIGURED' };
+
+  const ledger = opts.ledger === undefined ? defaultLedger() : opts.ledger;
+  const requested = { cc: sensitive ? [] : [...s.email.cc, ...(opts.cc ?? [])], bcc: sensitive ? [] : [...s.email.bcc, ...(opts.bcc ?? [])] };
+  let plan: BeginAnswer = { logId: null, duplicate: null, cc: requested.cc, bcc: requested.bcc, suppressed: [], sender: null, providers: null };
+  if (ledger) {
+    try {
+      plan = await ledger.begin({
+        idempotencyKey: opts.idempotencyKey, application: opts.application ?? 'CRM', category, template: opts.template,
+        priority: opts.priority ?? (sensitive ? 'CRITICAL' : 'NORMAL'), sensitive, to: to.email, cc: requested.cc, bcc: requested.bcc,
+        senderEmail: s.email.fromEmail, providers: route.order, context: opts.context ?? {}
+      });
+    } catch (err) {
+      if (err instanceof LedgerRefusal) return { ok: false, retry: false, code: null, ref: null, detail: err.message, errorCategory: 'INVALID_CONTENT' };
+      throw err;
+    }
+  }
+  if (plan.duplicate === 'ACCEPTED') {
+    return { ok: true, retry: false, code: null, ref: plan.duplicateRef ?? null, detail: 'Already sent for this event (not sent again).', provider: plan.duplicateProvider ?? null };
+  }
+  if (plan.duplicate === 'IN_PROGRESS') {
+    return { ok: false, retry: true, code: null, ref: null, detail: 'This e-mail is being sent by another run right now.', errorCategory: 'IN_PROGRESS' };
+  }
+  const finish = async (r: Omit<FinishRequest, 'logId'>) => { if (ledger && plan.logId) await ledger.finish({ ...r, logId: plan.logId }); };
+  if (plan.suppressed.includes(to.email.trim().toLowerCase())) {
+    await finish({ status: 'SUPPRESSED', attempts: [], errorCategory: 'SUPPRESSED' });
+    return { ok: false, retry: false, code: null, ref: null, detail: 'Not sent: the address is on the suppression list (an earlier hard bounce or complaint).', errorCategory: 'SUPPRESSED' };
+  }
+
+  // the providers to try: the deployment's route, in the Super Admin's order when the database gave one, without those paused or out of quota
+  let order: ProviderName[] = plan.providers ? plan.providers.map(x => x.provider).filter(p => route.order.includes(p)) : route.order;
+  const refused = new Map((plan.providers ?? []).filter(x => !x.allowed).map(x => [x.provider, x.reason ?? 'PAUSED']));
+  if (plan.duplicate === 'UNKNOWN_ACCEPTANCE') {
+    // the provider may already have sent it: only the same provider may be asked again, and only Resend can recognise the repeat
+    const same = plan.duplicateProvider;
+    if (same !== 'resend' || !opts.idempotencyKey || !route.order.includes('resend')) {
+      await finish({ status: 'UNKNOWN_ACCEPTANCE', attempts: [], errorCategory: 'TIMEOUT' });
+      return { ok: false, retry: false, code: null, ref: null, unknownAcceptance: true, errorCategory: 'TIMEOUT',
+               detail: 'The provider may already have sent this e-mail (it did not answer in time). Not sent again automatically: check Email Management before sending it again.' };
+    }
+    order = ['resend'];
+    refused.delete('resend');
+  }
+
+  const sender = plan.sender;
+  const base: AutomationSettings = { ...s, email: { ...s.email, cc: plan.cc, bcc: plan.bcc,
+    ...(sender ? { fromEmail: sender.email, fromName: sender.name, replyTo: sender.replyTo || s.email.replyTo } : {}) } };
+  const attempts: FinishRequest['attempts'] = [];
+  const tried: { p: ProviderName; a: ApiAttempt }[] = [];
+  let usage: FinishRequest['usage'];
+  const notes: string[] = [];
+  if (route.intended && route.intended !== route.order[0] && order[0] === route.order[0]) notes.push(`${PROVIDER_LABEL[route.intended]} is not set up`);
+
+  for (const p of order) {
+    const pausedHere = (p === 'resend' || p === 'ses') && Date.now() < pausedUntil[p];
+    if (refused.has(p) || pausedHere) {
+      notes.push(`${PROVIDER_LABEL[p]} sending limit reached earlier`);
+      continue;
+    }
+    const startedAt = Date.now();
+    const a = await attemptWith(p, base, to, mail, attachments, opts.idempotencyKey, tried.length > 0 || p !== route.order[0] || notes.length > 0);
+    tried.push({ p, a });
+    if (p === 'resend' && a.usage && (a.usage.daily || a.usage.monthly)) usage = { provider: 'resend', ...a.usage };
+    const cls = a.cls;
+    attempts.push({ provider: p, outcome: a.ok ? 'ACCEPTED' : cls?.outcome ?? (a.res.retry ? 'RETRYABLE' : 'REJECTED'), category: cls?.category ?? null,
+                    status: a.res.code, ref: a.res.ref, ms: Date.now() - startedAt });
+    if (a.ok) break;
+    if (a.quota && (p === 'resend' || p === 'ses')) pausedUntil[p] = Date.now() + PAUSE_MS;
+    if (!a.fallback) break;
+  }
+
+  const last = tried[tried.length - 1];
+  if (!last) {
+    // every provider is paused or out of quota (normal e-mail also keeps the last few for sign-in codes): it waits for the next run
+    await finish({ status: 'RETRY_PENDING', attempts, errorCategory: [...refused.values()][0] ?? 'QUOTA_DAILY', usage });
+    return { ok: false, retry: true, code: null, ref: null, errorCategory: [...refused.values()][0] ?? 'QUOTA_DAILY',
+             detail: `No provider can send right now (${notes.join('; ') || 'paused'}). It waits for the next run.` };
+  }
+  const fallbackUsed = last.p !== route.intended && (tried.length > 1 || notes.length > 0);
+  let result: SendResult;
+  if (last.a.ok) {
+    const why = [...notes, ...tried.slice(0, -1).map(t => `${PROVIDER_LABEL[t.p]} ${t.a.res.detail}`)].join('; ');
+    result = fallbackUsed && why
+      ? { ...last.a.res, detail: `Sent through ${FAILOVER_LABEL[last.p]} (fallback): ${why}; ${last.a.res.detail}`.slice(0, 400) }
+      : last.a.res;
+  } else if (tried.length === 1 && !notes.length) {
+    result = last.a.res;
+  } else if (tried.length === 1) {
+    result = { ...last.a.res, detail: `${last.p === 'smtp' ? 'SMTP fallback failed' : `${PROVIDER_LABEL[last.p]} failed`}: ${notes.join('; ')}; ${last.a.res.detail}`.slice(0, 400) };
+  } else {
+    const label = (t: { p: ProviderName }, i: number) => (i === 0 ? PROVIDER_LABEL[t.p] : t.p === 'smtp' ? 'SMTP fallback:' : `${PROVIDER_LABEL[t.p]} fallback:`);
+    result = { ...last.a.res, retry: tried.some(t => t.a.res.retry), detail: tried.map((t, i) => `${label(t, i)} ${t.a.res.detail}`).join('; ').slice(0, 400) };
+  }
+  const unknown = last.a.cls?.outcome === 'UNKNOWN_ACCEPTANCE';
+  result = { ...result, provider: last.p, errorCategory: last.a.ok ? null : last.a.cls?.category ?? null, unknownAcceptance: unknown || undefined };
+  await finish({
+    status: last.a.ok ? 'ACCEPTED' : unknown ? 'UNKNOWN_ACCEPTANCE' : result.retry ? 'RETRY_PENDING' : 'FAILED',
+    provider: last.p, providerMessageId: last.a.ok ? last.a.res.ref : null, fallbackUsed: last.a.ok && fallbackUsed,
+    errorCategory: result.errorCategory, attempts, usage
+  });
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,15 +438,16 @@ async function sendSes(s: AutomationSettings, to: { email: string; name: string;
     });
   } catch (err) {
     // an address that is not valid: no provider would accept it
-    return { ok: false, res: { ok: false, retry: false, code: null, ref: null, detail: String((err as Error)?.message ?? 'Invalid e-mail.').slice(0, 200) }, fallback: false, quota: false };
+    return { ok: false, res: { ok: false, retry: false, code: null, ref: null, detail: String((err as Error)?.message ?? 'Invalid e-mail.').slice(0, 200) }, fallback: false, quota: false,
+             cls: { category: 'INVALID_RECIPIENT', failover: false, retry: false, outcome: 'REJECTED' } };
   }
   let r: { status: number; text: string; error: string };
   try {
     r = await sesPost(s, body);
   } catch (err) {
-    // A timeout may mean SES sent it after all: no second copy. A refused connection means it did not.
-    const timeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return { ok: false, res: networkFailure(err), fallback: !timeout, quota: false };
+    // A timeout may mean SES sent it after all: no second copy (UNKNOWN_ACCEPTANCE). A refused connection means it did not.
+    const cls = classifyThrown(err);
+    return { ok: false, res: networkFailure(err), fallback: cls.failover, quota: false, cls };
   }
   let message = '';
   let ref: string | null = null;
@@ -326,15 +462,10 @@ async function sendSes(s: AutomationSettings, to: { email: string; name: string;
   const name = r.error || (r.status === 429 ? 'TooManyRequestsException' : '');
   const quota = (r.status === 429 && /quota/i.test(message)) || name === 'SendingPausedException' || name === 'AccountSuspendedException';
   // SES did not send it. Content or request problems would be refused by the mailbox too; everything else (limits, paused account,
-  // keys, a domain or sandbox recipient not verified, SES failing) is ours or SES's, not the e-mail's.
-  const invalid = (name === 'BadRequestException' || name === 'MessageRejected') && !/not verified|not authori[sz]ed|identit/i.test(message);
-  const fallback = !invalid;
+  // keys, a domain or sandbox recipient not verified, SES failing) is ours or SES's, not the e-mail's (server/email/classify.ts).
+  const cls = classifySes(r.status, name, message);
   const detail = `HTTP ${r.status}${name ? ` ${name}` : ''}${message ? `: ${noAddresses(message).slice(0, 200)}` : ''}`;
-  return { ok: false, res: { ok: false, retry: !invalid, code: r.status, ref: null, detail }, fallback, quota };
-}
-
-function withFallbackNote(r: SendResult, why: string): SendResult {
-  return { ...r, detail: `${r.ok ? 'Sent through the SMTP mailbox (fallback)' : 'SMTP fallback failed'}: ${why}; ${r.detail}`.slice(0, 400) };
+  return { ok: false, res: { ok: false, retry: cls.retry, code: r.status, ref: null, detail }, fallback: cls.failover, quota, cls };
 }
 
 async function sendResend(
@@ -342,10 +473,13 @@ async function sendResend(
   apiKey: string,
   to: { email: string; name: string; display?: boolean },
   mail: RenderedEmail,
-  attachments?: MailAttachment[]
-): Promise<{ ok: boolean; res: SendResult; fallback: boolean; quota: boolean }> {
+  attachments?: MailAttachment[],
+  idempotencyKey?: string
+): Promise<ApiAttempt> {
   try {
-    const r = await resendPost(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), { authorization: `Bearer ${apiKey}` }, {
+    // Idempotency-Key: Resend keeps it 24 hours and answers a repeat with the original result instead of sending again
+    const headers: Record<string, string> = { authorization: `Bearer ${apiKey}`, ...(idempotencyKey ? { 'idempotency-key': idempotencyKey.slice(0, 256) } : {}) };
+    const r = await resendPost(`${s.email.apiBaseUrl ?? 'https://api.resend.com'}/emails`.replace(/([^:]\/)\/+/g, '$1'), headers, {
       from: `${s.email.fromName} <${s.email.fromEmail}>`,
       to: [to.display && to.name && to.name !== to.email ? `${to.name} <${to.email}>` : to.email],
       subject: mail.subject,
@@ -366,14 +500,18 @@ async function sendResend(
       /* not JSON */
     }
     const res = result(r.status, r.text, ref);
-    // Resend answered and did not send: 429 (rate or daily / monthly quota), 401 / 403 (key or domain refused), 5xx (Resend failing).
-    const fallback = !res.ok && (r.status === 429 || r.status === 401 || r.status === 403 || r.status >= 500);
-    const quota = r.status === 429 && /quota/i.test(`${name} ${r.text}`);
-    return { ok: res.ok, res, fallback, quota };
+    const usage = { daily: r.daily ?? null, monthly: r.monthly ?? null };
+    if (res.ok) return { ok: true, res, fallback: false, quota: false, usage };
+    let message = '';
+    try { message = String(JSON.parse(r.text)?.message ?? ''); } catch { message = r.text; }
+    // Resend answered and did not send: quota / rate (429), key or domain refused (401 / 403), Resend failing (5xx) may go to the next
+    // provider; an invalid recipient or content (422) would be refused by every provider (server/email/classify.ts)
+    const cls = classifyResend(r.status, name, message);
+    return { ok: false, res: { ...res, retry: cls.retry }, fallback: cls.failover, quota: cls.category === 'QUOTA_DAILY' || cls.category === 'QUOTA_MONTHLY', cls, usage };
   } catch (err) {
-    // A timeout may mean Resend sent it after all: no second copy. A refused connection means it did not.
-    const timeout = err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError');
-    return { ok: false, res: networkFailure(err), fallback: !timeout, quota: false };
+    // A timeout may mean Resend sent it after all: no second copy (UNKNOWN_ACCEPTANCE). A refused connection means it did not.
+    const cls = classifyThrown(err);
+    return { ok: false, res: networkFailure(err), fallback: cls.failover, quota: false, cls };
   }
 }
 

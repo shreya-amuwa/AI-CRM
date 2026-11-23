@@ -309,6 +309,24 @@ export const notificationsController = {
   healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
+// Email Management (20270127000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// the history for everyone, scoped by the database to what each person's work allows.
+export const emailController = {
+  overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,
+  saveSettings: (async ctx => ok(await svc(ctx).emailAdmin.saveSettings(ctx.req.body))) as Handler,
+  saveSender: (async ctx => ok(await svc(ctx).emailAdmin.saveSender(ctx.req.body))) as Handler,
+  deleteSender: (async ctx => ok(await svc(ctx).emailAdmin.deleteSender(ctx.params.category))) as Handler,
+  saveRule: (async ctx => ok(await svc(ctx).emailAdmin.saveRule(ctx.req.body))) as Handler,
+  deleteRule: (async ctx => ok(await svc(ctx).emailAdmin.deleteRule(ctx.params.id))) as Handler,
+  previewRule: (async ctx => ok(await svc(ctx).emailAdmin.previewRule(ctx.params.id, ctx.req.body))) as Handler,
+  suppressions: (async ctx => ok(await svc(ctx).emailAdmin.suppressions(ctx.req.query))) as Handler,
+  setSuppression: (async ctx => ok(await svc(ctx).emailAdmin.setSuppression(ctx.req.body))) as Handler,
+  checkProvider: (async ctx => ok(await svc(ctx).emailAdmin.checkProvider(ctx.actor, ctx.params.provider))) as Handler,
+  history: (async ctx => ok(await svc(ctx).emailAdmin.history(ctx.req.query))) as Handler,
+  historyDetail: (async ctx => ok(await svc(ctx).emailAdmin.historyDetail(ctx.params.id))) as Handler,
+  reviewMessage: (async ctx => ok(await svc(ctx).emailAdmin.reviewMessage(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const organizationController = {
   listDepartments: (async ctx => ok(await svc(ctx).organization.listDepartments())) as Handler,
   createDepartment: (async ctx => ok(await svc(ctx).organization.createDepartment(ctx.actor, ctx.req.body), 201)) as Handler,

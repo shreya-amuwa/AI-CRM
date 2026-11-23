@@ -32,6 +32,7 @@ import { runAttendanceReminders } from './automations/attendanceReminders.js';
 import { messageIdFrom, pushChatMessage } from './automations/chatPush.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
+import { handleResendWebhook } from './email/resendWebhook.js';
 import { checkPendingRazorpayPayouts, handleRazorpayWebhook } from './services/PayoutService.js';
 import { isPausedVercelCron } from './platform.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
@@ -317,6 +318,11 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
+  // E-mail log retention (20270127000100): a little at a time; never fails the run
+  if (hasServiceClient()) {
+    const { error } = await getServiceClient().rpc('email_purge_old');
+    if (error && !/email_purge_old/.test(error.message)) log('error', 'email log purge failed', c, { message: error.message });
+  }
   return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, crocodial, razorpayPayouts, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
@@ -328,6 +334,18 @@ app.post('/internal/auth/email-hook', async c => {
     id: c.req.header('webhook-id'),
     timestamp: c.req.header('webhook-timestamp'),
     signature: c.req.header('webhook-signature')
+  });
+  return c.json(reply.body, reply.status as 200);
+});
+
+// Resend delivery events (docs/EMAIL_MANAGEMENT.md): authenticated by Resend's Svix signature (RESEND_WEBHOOK_SECRET), not by a user token.
+app.post('/internal/email/resend-webhook', async c => {
+  await enforce([{ key: `resend-webhook:ip:${clientIp(c)}`, limit: 600, window: 60 }], 'memory');
+  const reply = await handleResendWebhook({
+    body: await c.req.text(),
+    id: c.req.header('svix-id'),
+    timestamp: c.req.header('svix-timestamp'),
+    signature: c.req.header('svix-signature')
   });
   return c.json(reply.body, reply.status as 200);
 });
@@ -747,7 +765,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

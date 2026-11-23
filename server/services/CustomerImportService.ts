@@ -42,14 +42,15 @@ function safeOrigin(origin: string | undefined): string | null {
 }
 
 /** Sends one client e-mail, or says why it was not sent (the team can send it again later). */
-async function sendClientMail(to: { email: string; name: string }, mail: RenderedEmail): Promise<{ sent: boolean; detail?: string }> {
+async function sendClientMail(to: { email: string; name: string }, mail: RenderedEmail, customerId?: string): Promise<{ sent: boolean; detail?: string }> {
   const s = clientEmailSettings(automationSettings());
   if (s.mode !== 'live') return { sent: false, detail: 'E-mails are switched off on the server (AUTOMATION_MODE is not "live").' };
   if (!liveChannels(s).includes('EMAIL')) return { sent: false, detail: 'E-mail sending is not set up on the server.' };
   if (s.testRecipients && !s.testRecipients.emails.has(to.email.toLowerCase())) {
     return { sent: false, detail: 'Test mode: only the test recipients get e-mails.' };
   }
-  const r = await sendEmail(s, to, mail);
+  // every e-mail sent here carries a set-password link or a password: never copied to anyone (CREDENTIALS), whatever EMAIL_CC / EMAIL_BCC say
+  const r = await sendEmail(s, to, mail, undefined, { category: 'CREDENTIALS', application: 'CLIENT_PORTAL', template: 'client-login', ...(customerId ? { context: { customerId } } : {}) });
   return r.ok ? { sent: true } : { sent: false, detail: r.detail ?? 'The e-mail could not be sent.' };
 }
 
@@ -133,7 +134,7 @@ export class CustomerImportService {
     const t = unwrap(await this.db.rpc('client_login_invite_target', { p_customer: customerId })) as { email: string; name: string; businessName: string };
     if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'Client logins are not set up on the server.');
     const link = await this.authAdmin.passwordLink(t.email, setPasswordUrl(origin));
-    const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({ name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'WELCOME' }));
+    const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({ name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'WELCOME' }), customerId);
     // a password link was made for a client's login: who asked, for which customer (the address and the link are not recorded)
     const info = requestInfo.getStore();
     await recordSecurityEvent({

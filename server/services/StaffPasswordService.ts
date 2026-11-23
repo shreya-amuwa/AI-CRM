@@ -70,7 +70,9 @@ export async function staffForgotPassword(body: unknown, deps?: StaffResetDeps):
     // always the CRM's own address (APP_URL), never the caller's Origin
     const link = await d.link(login.email, `${s.appUrl ?? DEFAULT_APP_URL}/set-password?purpose=reset`);
     // a one-time link: never copied to the CRM's CC / BCC lists
-    const r = await sendEmail({ ...s, email: { ...s.email, cc: [], bcc: [] } }, { email: login.email, name: login.name }, renderStaffResetEmail({ name: login.name, link }));
+    // a one-time reset link: AUTH (never copied, CRITICAL, sent at once; a fresh link each request, so no idempotency key)
+    const r = await sendEmail({ ...s, email: { ...s.email, cc: [], bcc: [] } }, { email: login.email, name: login.name }, renderStaffResetEmail({ name: login.name, link }), undefined,
+      { category: 'AUTH', priority: 'CRITICAL', template: 'staff-password-reset' });
     if (!r.ok) console.warn('[api] staff reset e-mail not sent', r.detail);
   } catch (e) {
     console.warn('[api] staff reset link failed', (e as Error)?.message);

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { Activity, BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users } from 'lucide-react';
+import { Activity, AtSign, BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -24,9 +24,10 @@ import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
 const NotificationHealth = lazy(() => import('../notifications/NotificationHealth'));
+const EmailManagement = lazy(() => import('../email/EmailManagement'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'top-performers', 'report-performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health'] as const;
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'top-performers', 'report-performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email'] as const;
 type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
@@ -78,7 +79,9 @@ export const SuperAdminDashboard: React.FC = () => {
           { ...CHAT_NAV, badge: chatUnread },
           { id: 'notifications', label: 'Notification Center', icon: Bell },
           // attendance reminders: who can receive them, what the scheduler and the push services did (20270126000200)
-          { id: 'notification-health', label: 'Notification Health', icon: Activity }
+          { id: 'notification-health', label: 'Notification Health', icon: Activity },
+          // providers, senders, CC/BCC rules and the delivery of every e-mail (20270127000100)
+          { id: 'email', label: 'Email Management', icon: AtSign }
         ]
       }
     ],
@@ -108,7 +111,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'team' || page === 'notification-health'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'team' || page === 'notification-health' || page === 'email'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -147,6 +150,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'crocodial-activity' && <CrocodialTeamPanel />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
+      {page === 'email' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><EmailManagement /></Suspense>}
       {page === 'notification-health' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><NotificationHealth /></Suspense>}
     </DashboardShell>
   );
