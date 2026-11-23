@@ -130,6 +130,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/chat/internal', handler: chat.internalList },
   { method: 'GET', path: '/chat/my-clients', handler: chat.myClients },
   { method: 'GET', path: '/chat/client-tab', handler: chat.clientTab },
+  { method: 'GET', path: '/chat/desk-clients', handler: chat.deskClients },
+  { method: 'POST', path: '/chat/conversations/:id/handling', handler: chat.setHandling, options: S },
   { method: 'GET', path: '/chat/conversations/:id/client-team', handler: chat.clientTeam },
   { method: 'POST', path: '/chat/conversations/:id/escalate', handler: chat.escalateClientMessage, options: S },
   { method: 'GET', path: '/chat/review', handler: chat.review },
@@ -608,7 +610,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/documents/:id/url', handler: documents.url },
   { method: 'DELETE', path: '/documents/:id', handler: documents.remove, options: S },
 
-  // Email Management (20270129000100)
+  // Email Management (20270130000100)
   { method: 'GET', path: '/email/admin/overview', handler: email.overview },
   { method: 'POST', path: '/email/admin/settings', handler: email.saveSettings, options: S },
   { method: 'POST', path: '/email/admin/senders', handler: email.saveSender, options: S },

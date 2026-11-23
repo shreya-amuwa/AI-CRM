@@ -117,6 +117,8 @@ export const chatController = {
   internalList: (async ctx => ok(await svc(ctx).chat.internalList(ctx.req.query))) as Handler,
   myClients: (async ctx => ok(await svc(ctx).chat.myClients(ctx.req.query))) as Handler,
   clientTab: (async ctx => ok(await svc(ctx).chat.clientTab())) as Handler,
+  deskClients: (async ctx => ok(await svc(ctx).chat.deskClients(ctx.req.query))) as Handler,
+  setHandling: (async ctx => ok(await svc(ctx).chat.setHandling(ctx.params.id, ctx.req.body))) as Handler,
   clientTeam: (async ctx => ok(await svc(ctx).chat.clientTeam(ctx.params.id))) as Handler,
   escalateClientMessage: (async ctx => ok(await svc(ctx).chat.escalate(ctx.params.id, ctx.req.body))) as Handler,
   review: (async ctx => ok(await svc(ctx).chat.review(ctx.req.query))) as Handler,
@@ -318,7 +320,7 @@ export const notificationsController = {
   healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
-// Email Management (20270129000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// Email Management (20270130000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
 // the history for everyone, scoped by the database to what each person's work allows.
 export const emailController = {
   overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,

@@ -80,7 +80,7 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'notifications', label: 'Notification Center', icon: Bell },
           // attendance reminders: who can receive them, what the scheduler and the push services did (20270126000200)
           { id: 'notification-health', label: 'Notification Health', icon: Activity },
-          // providers, senders, CC/BCC rules and the delivery of every e-mail (20270129000100)
+          // providers, senders, CC/BCC rules and the delivery of every e-mail (20270130000100)
           { id: 'email', label: 'Email Management', icon: AtSign }
         ]
       }

@@ -1700,6 +1700,8 @@ export const verifierDepartmentsSchema = z.object({ departmentIds: z.array(uuidS
 export const chatEscalateSchema = z
   .object({ messageId: uuidSchema.nullish(), targetId: uuidSchema, note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
   .strict();
+/** Take over or release "currently handling" on a client conversation (information only; the database checks who may). */
+export const chatHandlingSchema = z.object({ action: z.enum(['TAKE', 'RELEASE']) }).strict();
 export const chatSearchQuerySchema = z.object({ q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatReviewQuerySchema = z.object({ q: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatDirectSchema = z.object({ profileId: uuidSchema }).strict();
@@ -3664,7 +3666,7 @@ export const notificationHealthQuerySchema = z.object({
 export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;
 
 // ---------------------------------------------------------------------------
-// Email Management (migration 20270129000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
+// Email Management (migration 20270130000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
 // (scoped by the database). The database checks every value and the caller again.
 // ---------------------------------------------------------------------------
 export const EMAIL_CATEGORIES = ['AUTH', 'CREDENTIALS', 'RECRUITMENT', 'INTERVIEW', 'HR', 'CLIENT_ONBOARDING', 'META_VERIFICATION', 'TECHNICAL', 'ACCOUNTS',

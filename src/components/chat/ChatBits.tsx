@@ -18,6 +18,8 @@ export interface ItemData {
   time: string | null;
   unread: number;
   sub?: string;
+  /** An extra line under the preview (the shared Support desk: Relationship Manager, who is handling it, awaiting reply). */
+  meta?: string;
 }
 
 export const ConversationItem: React.FC<{ item: ItemData; selected: boolean; onClick: () => void }> = ({ item, selected, onClick }) => (
@@ -30,6 +32,7 @@ export const ConversationItem: React.FC<{ item: ItemData; selected: boolean; onC
           <span>{item.preview || item.sub || 'No messages yet'}</span>
           {item.unread > 0 ? <span className="ch-count" aria-label={`${item.unread} unread`} style={{ flex: 'none' }}>{item.unread > 99 ? '99+' : item.unread}</span> : null}
         </span>
+        {item.meta ? <span className="ch-item-bottom" data-testid="item-meta" style={{ fontSize: 11, opacity: 0.8 }}><span>{item.meta}</span></span> : null}
       </span>
     </button>
   </li>

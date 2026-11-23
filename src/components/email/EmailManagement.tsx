@@ -7,7 +7,7 @@ import { errorMessage } from '../../lib/api/client';
 import { useDepartments } from '../../context/DepartmentContext';
 
 /**
- * Super Admin → Email Management (migration 20270129000100). Real data only: provider state comes from real accepted e-mails, provider
+ * Super Admin → Email Management (migration 20270130000100). Real data only: provider state comes from real accepted e-mails, provider
  * answers and on-request checks; "Accepted" means the provider took the e-mail (delivery is confirmed only by its webhook event).
  * No key, message body, link or code is ever shown. Authentication and credential e-mails can never be copied (enforced by the server).
  */

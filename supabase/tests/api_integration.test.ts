@@ -12182,7 +12182,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
 }
-// Email management (20270129000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
+// Email management (20270130000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
 // send per business event, no copies of authentication e-mail, the signed Resend webhook, shared suppression, the Super Admin's API.
 {
   console.log('--- email management: router, rules, idempotency, auth privacy, webhook, suppression, admin API');

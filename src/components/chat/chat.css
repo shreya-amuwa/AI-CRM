@@ -115,7 +115,7 @@ span.ch-file { cursor: default; }
 .ch-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--ch-accent); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
 .ch-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 32%) minmax(0, 1fr); }
 .ch-split > * { min-height: 0; }
-.ch-list-panel { display: flex; flex-direction: column; border-right: 1px solid var(--ch-border); min-height: 0; background: var(--ch-panel); }
+.ch-list-panel { min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--ch-border); min-height: 0; background: var(--ch-panel); }
 .ch-search { padding: 8px 12px; display: flex; gap: 8px; align-items: center; background: var(--ch-panel); }
 .ch-search input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px; border: 0; background: var(--ch-surface); color: var(--ch-text); }
 .ch-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
