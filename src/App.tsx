@@ -73,6 +73,7 @@ const SalesHeadDashboard = lazy(() => import('./components/sales-head/SalesHeadD
 const SalesRolePending = lazy(() => import('./components/telecaller/SalesRolePending').then(m => ({ default: m.SalesRolePending })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
 const AccountsDashboard = lazy(() => import('./components/accounts/AccountsDashboard').then(m => ({ default: m.AccountsDashboard })));
+const UnifiedDashboard = lazy(() => import('./components/unified/UnifiedDashboard').then(m => ({ default: m.UnifiedDashboard })));
 const AiDesignStudioDashboard = lazy(() => import('./components/ai-design-studio/AiDesignStudioDashboard').then(m => ({ default: m.AiDesignStudioDashboard })));
 const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
 const DepartmentHeadDashboard = lazy(() => import('./components/tasks/DepartmentHeadDashboard').then(m => ({ default: m.DepartmentHeadDashboard })));
@@ -198,6 +199,13 @@ const MainAppContent: React.FC = () => {
         navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
+    } else if (user.role === 'unified') {
+      // /unified/dashboard/:id and its pages (…/sales/leads, …/support/tickets) stay where they are.
+      const base = `/unified/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(lastPathUnder(base) ?? base);
+        setRoute(parseCurrentRoute());
+      }
     } else if (user.role === 'ai-studio') {
       // /ai-studio/dashboard/:id and its pages (…/projects, …/daily-report) stay where they are.
       const base = `/ai-studio/dashboard/${user.id}`;
@@ -245,7 +253,7 @@ const MainAppContent: React.FC = () => {
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
     if (user?.role === 'hr' && window.location.pathname.startsWith(`/hr-recruiter/dashboard/${user.id}`)) return; // the HR Assistant's Recruitment Portal
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'hr-recruiter' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head' && user.role !== 'ai-studio' && user.role !== 'design-studio') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'hr-recruiter' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head' && user.role !== 'ai-studio' && user.role !== 'design-studio' && user.role !== 'unified') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -393,6 +401,13 @@ const MainAppContent: React.FC = () => {
     return (
       <Suspense fallback={<ScreenLoader />}>
         <AiStudioDashboard />
+      </Suspense>
+    );
+  }
+  if (user.role === 'unified') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <UnifiedDashboard />
       </Suspense>
     );
   }

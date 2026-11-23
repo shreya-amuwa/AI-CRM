@@ -1,5 +1,6 @@
 import { AI_DESIGN_STUDIO_SLUG, SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
 import type { AuthUser } from '../../types/crm';
+import { isUnifiedDepartment } from './departmentRoles';
 
 /**
  * Maps the database profile to the legacy `AuthUser` shape the existing
@@ -21,6 +22,14 @@ export function toAuthUser(profile: Profile): AuthUser {
   if (isAiStudioStaff(profile)) {
     return {
       id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'ai-studio',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
+  // International / Reseller: Sales and Support in ONE dashboard for the Department Head, the Team Leads and the Team Members. The database decides it
+  // from the department (default_dashboard unified-head / -lead / -member, migration 20270127000100); the team's division never matters.
+  if (isUnifiedStaff(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'unified',
       departmentId: departmentSlug, position: profile.position || undefined, profile
     };
   }
@@ -107,6 +116,16 @@ export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivisi
  */
 export function isAiDesignStudio(p: Pick<Profile, 'role' | 'department'>): boolean {
   return p.department?.slug === AI_DESIGN_STUDIO_SLUG && (p.role === 'DEPARTMENT_HEAD' || p.role === 'TEAM_HEAD' || p.role === 'TEAM_MEMBER');
+}
+
+const UNIFIED_DASHBOARDS = ['unified-head', 'unified-lead', 'unified-member'];
+
+/**
+ * A Department Head, Team Lead or Team Member of a department that does Sales and Support together (International, Reseller). Decided by the dashboard
+ * value the database computed from the department flag; the Super Admin has no workspace in these departments' own dashboard.
+ */
+export function isUnifiedStaff(p: Pick<Profile, 'role' | 'defaultDashboard'>): boolean {
+  return p.role !== 'SUPER_ADMIN' && UNIFIED_DASHBOARDS.includes(p.defaultDashboard as string);
 }
 
 const AI_STUDIO_DASHBOARDS = ['ai-studio-head', 'ai-studio-lead', 'ai-studio-member'];
@@ -247,6 +266,8 @@ export function defaultDashboardLabel(
   if (departmentSlug === 'ai-studio' && role !== 'SUPER_ADMIN') {
     return `AI Studio ${role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'} Dashboard${dept}`;
   }
+  // International / Reseller: one dashboard with Sales and Support for the Department Head, the Team Lead and the Team Member
+  if (isUnifiedDepartment(departmentSlug) && role !== 'SUPER_ADMIN' && !operationsHead) return `Sales & Support ${ROLE_LABELS[role]} Dashboard${dept}`;
   // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
   if (role === 'DEPARTMENT_HEAD' && operationsHead) {
     return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;

@@ -68,6 +68,10 @@ export type DefaultDashboard =
   | 'ai-studio-head'
   | 'ai-studio-lead'
   | 'ai-studio-member'
+  /** International / Reseller (departments flagged unified_sales_support, migration 20270127000100): Sales and Support in one dashboard for each role. */
+  | 'unified-head'
+  | 'unified-lead'
+  | 'unified-member'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -6059,6 +6063,13 @@ export const AI_DESIGN_STUDIO_SLUG = 'ai-design-studio';
 export const AMUWA_DESIGN_STUDIO_SLUG = 'designstudio';
 /** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
 export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AI_DESIGN_STUDIO_SLUG, AMUWA_DESIGN_STUDIO_SLUG];
+
+// ---- International and Reseller (migration 20270127000100): Sales AND Support in one dashboard for every role ----
+/**
+ * The departments flagged unified_sales_support in the database. Used by the forms only, to offer the plain roles (Department Head, Team Lead, Team Member),
+ * the department's one team and no Sales / Support side; the database decides who may do what (the flag, private.dept_is_unified).
+ */
+export const UNIFIED_DEPARTMENT_SLUGS: readonly string[] = ['international', 'reseller'];
 
 export const ADS_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export type AdsPriority = (typeof ADS_PRIORITIES)[number];
