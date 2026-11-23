@@ -478,6 +478,10 @@ export const routes: RouteDef[] = [
   // live availability of the CEO: Enter / Exit Meeting (before /meetings/:id)
   { method: 'GET', path: '/meetings/presence', handler: meetings.presence },
   { method: 'GET', path: '/meetings/presence/ceo', handler: meetings.ceoPresence },
+  // CEO office arrival (20270127000300): HR's button; the banner on Ask the CEO for time (never blocks a request)
+  { method: 'GET', path: '/meetings/ceo-office', handler: meetings.ceoOffice },
+  { method: 'POST', path: '/meetings/ceo-office/arrived', handler: meetings.ceoArrived, options: S },
+  { method: 'POST', path: '/meetings/ceo-office/undo', handler: meetings.ceoArrivalUndo, options: S },
   { method: 'GET', path: '/meetings/settings/room-link', handler: meetings.roomLink },
   { method: 'POST', path: '/meetings/settings/room-link', handler: meetings.setRoomLink, options: S },
   // client meetings (20270122000200): created with the invitation to the client; the e-mail log of a meeting, and sending a failed one again

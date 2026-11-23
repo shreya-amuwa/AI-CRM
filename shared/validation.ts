@@ -3019,6 +3019,8 @@ export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) 
 // ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
 /** The Super Admin's fixed meeting-room link (20270127000100): https, or empty to remove it. */
+/** HR marks (or undoes) the CEO's office arrival; ceoId only when there is more than one CEO (20270127000300) */
+export const ceoArrivalSchema = z.object({ ceoId: uuidSchema.optional() }).strict();
 export const meetingRoomLinkSchema = z.object({ roomLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable()) }).strict();
 /** GET /meetings/presence?ids=a,b,c: the live status of up to 100 colleagues (20270122000100); without ids, one's own. */
 export const meetingPresenceQuerySchema = z.object({

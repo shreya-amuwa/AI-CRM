@@ -1,9 +1,9 @@
 import type {
-  CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings,
+  CeoOfficeStatus, CeoPresence, CeoPresenceExit, ClientMeetingResult, MeetingMail, CeoRequestList, GoogleCalendarStatus, Meeting, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry, MeetingSettings,
   MeetingReportActionList, MeetingReportList, MeetingReportsOverview, MeetingSummaryList, MeetingSummaryView, MyMeetingAction
 } from '../../shared/contracts.js';
 import {
-  calendarMeetingCancelSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
+  calendarMeetingCancelSchema, ceoArrivalSchema, ceoRequestsQuerySchema, meetingAvailabilitySchema, meetingBookingLinkSchema, meetingBusySchema, meetingCompleteSchema, meetingCreateSchema,
   clientMeetingListQuerySchema, clientMeetingSchema, meetingMailIdSchema, meetingDecisionSchema, meetingDelegatesSchema, meetingDirectoryQuerySchema, meetingListQuerySchema, meetingPresenceEnterSchema, meetingPresenceQuerySchema, meetingRoomLinkSchema, meetingProposalAnswerSchema,
   meetingRescheduleSchema, meetingResponseSchema, uuidSchema,
   meetingActionUpdateSchema, meetingAttendanceSchema, meetingReportActionsQuerySchema, meetingReportsOverviewQuerySchema, meetingReportsQuerySchema,
@@ -53,6 +53,10 @@ export class MeetingService {
   }
   /** The CEOs' live status (Ask the CEO for time shows it; a request made while BUSY joins the queue). */
   ceoPresence(): Promise<CeoPresence[]> { return this.repo.ceoPresence(); }
+  /** CEO office arrival (20270127000300): everyone reads it; HR marks or undoes it (the database checks who) */
+  ceoOffice(): Promise<CeoOfficeStatus> { return this.repo.ceoOffice(); }
+  ceoArrived(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoArrived(parse(ceoArrivalSchema, body ?? {}).ceoId); }
+  ceoArrivalUndo(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoArrivalUndo(parse(ceoArrivalSchema, body ?? {}).ceoId); }
   roomLink(): Promise<{ roomLink: string | null }> { return this.repo.roomLink(); }
   setRoomLink(body: unknown): Promise<{ roomLink: string | null }> { return this.repo.setRoomLink(parse(meetingRoomLinkSchema, body).roomLink ?? null); }
   presenceEnter(body: unknown): Promise<CeoPresence> {

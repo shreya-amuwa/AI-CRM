@@ -103,6 +103,20 @@ try {
     // ---- asking the CEO for time: while the CEO is AVAILABLE, an ordinary request; while BUSY, it joins the queue
     await page.click('button:has-text("Ask the CEO for time")');
     await page.waitForSelector('button:has-text("Send the request")');
+    // the CEO has not arrived yet (20270127000300): a red banner, and the request can still be sent
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="false"]');
+    const red = await page.innerText('[data-testid="ceo-arrival"]');
+    check(/CEO HAS NOT ARRIVED AT THE OFFICE YET/.test(red) && /Sir has not arrived at the office yet\. You can still schedule your meeting request\. Meeting confirmation and availability will be subject to the CEO's arrival and approval\./.test(red),
+      'before the arrival: the red banner with the exact text', red);
+    check(!(await page.isDisabled('button:has-text("Send the request")')) && !(await page.isDisabled('#mtg-date')) && !(await page.isDisabled('#mtg-time')),
+      'and nothing is disabled: date, time and Send stay open');
+    check(!(await page.locator('[data-testid="ceo-arrival-control"]').count()), 'an employee has no arrival button');
+    // HR presses CEO HAS ARRIVED elsewhere: the banner turns green at once (Realtime)
+    await page.evaluate(() => { window.__setArrived(true); window.__fireRealtime('ceo_office_arrivals'); });
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="true"]');
+    const green = await page.innerText('[data-testid="ceo-arrival"]');
+    check(/CEO HAS ARRIVED AT THE OFFICE/.test(green) && /Sir has arrived at the office\. You can schedule meetings based on the available time slots\./.test(green) && !/NOT ARRIVED/.test(green),
+      'after the arrival: the red banner is gone, the green one shows (no refresh)', green);
     await page.waitForFunction(() => window.__calls.some(c => c.path === '/api/v1/meetings/presence/ceo'));
     await page.waitForTimeout(100); // the Realtime listener is attached right after the first load
     check(!(await page.isVisible('[data-testid="ceo-busy-notice"]')), 'the CEO is AVAILABLE: no queue notice');
@@ -199,6 +213,29 @@ try {
     await page.waitForSelector('section[aria-label] span.truncate:has-text("Thursday")');
     const order = await page.evaluate(() => [...document.querySelectorAll('section[aria-label] button span.font-semibold.truncate')].map(e => e.textContent));
     check(JSON.stringify(order) === JSON.stringify(['Tuesday early', 'Tuesday late', 'Thursday']), 'an employee\'s week is unchanged: earliest first', order);
+    await page.close();
+  }
+  // ---- HR's CEO HAS ARRIVED button: marks it once, shows when and who, can be undone; requests are never touched by it
+  {
+    const page = await open('hr');
+    await page.waitForSelector('[data-testid="ceo-arrived-button"]');
+    check(/CEO HAS ARRIVED/.test(await page.innerText('[data-testid="ceo-arrived-button"]')), 'HR has the CEO HAS ARRIVED button');
+    await page.click('[data-testid="ceo-arrived-button"]');
+    await page.waitForSelector('[data-testid="ceo-arrived-at"]');
+    check(/Arrived at \d{1,2}:\d{2}/.test(await page.innerText('[data-testid="ceo-arrived-at"]')) && /marked by Hema HR/.test(await page.innerText('[data-testid="ceo-arrived-at"]')),
+      'pressed: the arrival time and who marked it');
+    const calls = await page.evaluate(() => window.__calls.filter(c => c.method === 'POST').map(c => c.path));
+    check(calls.filter(c => c.endsWith('/ceo-office/arrived')).length === 1 && !calls.some(c => /\/meetings$|presence/.test(c)), 'one call to the server; nothing else changes');
+    await page.click('[role="tab"]:has-text("My CEO requests")');
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="true"]');
+    check(true, 'the CEO request section shows the green banner');
+    await page.click('[data-testid="ceo-arrival-undo"]');
+    await page.waitForSelector('[data-testid="ceo-arrived-button"]');
+    await page.evaluate(() => window.__fireRealtime('ceo_office_arrivals'));
+    await page.waitForSelector('[data-testid="ceo-arrival"][data-arrived="false"]');
+    check(true, 'a mistaken press is undone: red again');
+    const denied = await page.evaluate(async () => { window.__profile = { ...window.__profile, hr: false }; return (await fetch('/api/v1/meetings/ceo-office/arrived', { method: 'POST', body: '{}', headers: { 'Content-Type': 'application/json' } })).status; });
+    check(denied === 403, 'anyone but HR is refused by the server');
     await page.close();
   }
   // ---- the meeting request to HR now lives on Meetings (it used to be on Raise an Issue); the Super Admin has no such tab

@@ -236,6 +236,30 @@ API: `GET /meetings/presence/ceo` (the CEOs' status), `GET` / `POST /meetings/se
 Tests: `supabase/tests/meeting_ceo_queue_test.sql`, `supabase/tests/meeting_ceo_queue.test.ts` (the e-mail and when it is sent),
 `supabase/tests/ui_meeting_presence.test.mjs` and the "CEO queue" checks of `api_integration.test.ts`.
 
+## CEO office arrival (20270127000300)
+
+Migration `supabase/migrations/20270127000300_ceo_office_arrival.sql` (run after `20270127000200`; additive, safe to run twice).
+
+- **HR's button.** The HR dashboard has **CEO HAS ARRIVED** (HR staff and the Super Admin; recruiters and everyone else are refused by the database).
+  - Pressing it records today's arrival (India time) once, with the time and who pressed it. A second press, or two HR people at once, changes nothing.
+  - **Undo** fixes a mistaken press. The row is kept, marked undone with who undid it.
+  - Each new day starts as "not arrived".
+- **The banner** sits at the top of the CEO meeting request section ("Ask the CEO for time" and My CEO requests):
+  - Before the arrival: **🔴 CEO HAS NOT ARRIVED AT THE OFFICE YET**, "Sir has not arrived at the office yet. You can still schedule your meeting request. Meeting confirmation and availability will be subject to the CEO's arrival and approval."
+  - After the arrival: **🟢 CEO HAS ARRIVED AT THE OFFICE**, "Sir has arrived at the office. You can schedule meetings based on the available time slots."
+  - It changes at once on every screen (Supabase Realtime on `ceo_office_arrivals`).
+- **Information only.** The arrival never disables, hides or refuses meeting requests, and never confirms or rejects one.
+  - `mtg_create`, the approval and the queue do not read it.
+  - Requests made before the arrival stay as they are until the CEO (or an authorized person) decides.
+- **Busy and overlaps.**
+  - Enter / Exit Meeting still shows the CEO BUSY, and requests made while BUSY join the queue (previous section).
+  - A queued request confirmed on Exit now starts at the first free moment. If the CEO already has a confirmed meeting then, it starts right after it, never on top of it.
+  - Approvals keep refusing overlapping confirmed meetings, as before.
+
+API: `GET /meetings/ceo-office`; `POST /meetings/ceo-office/arrived` and `POST /meetings/ceo-office/undo` (`{ ceoId? }`, needed only when there is more than one CEO).
+
+Tests: `supabase/tests/ceo_office_arrival_test.sql`, the "CEO arrival API" checks of `api_integration.test.ts` and `supabase/tests/ui_meeting_presence.test.mjs`.
+
 ## Client meetings
 
 Migration `supabase/migrations/20270122000200_client_meetings.sql` (run after `20270122000100`; additive, safe to run twice).

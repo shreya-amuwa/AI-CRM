@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { MeetingsPage } from '../../../src/components/meetings/MeetingsPage';
 import { MyAvailabilityBadge } from '../../../src/components/meetings/CeoPresence';
+import { CeoArrivalControl } from '../../../src/components/meetings/CeoArrival';
 
 /**
  * The real Meetings page (and the header badge every dashboard shows) with the CRM API answered in the page. The stand-in keeps the
@@ -35,6 +36,11 @@ const queue: { id: string; title: string; startsAt: string; endsAt: string; crea
 const week: any[] = [];
 let roomLink: string | null = null;
 const hrRequests: any[] = [];
+// the CEO's office arrival today (20270127000300): HR marks it; it never changes what a request does
+const office = { arrived: false, arrivedAt: null as string | null, markedBy: null as string | null };
+w.__setArrived = (v: boolean) => { office.arrived = v; office.arrivedAt = v ? new Date().toISOString() : null; office.markedBy = v ? 'Hema HR' : null; };
+const officeJson = (dup?: boolean) => ({ day: new Date().toISOString().slice(0, 10), canMark: !!w.__profile?.hr, ...(dup === undefined ? {} : { duplicate: dup }),
+  ceos: [{ ceoId: CEO, name: 'Asha CEO', position: 'CEO', arrived: office.arrived, arrivedAt: office.arrivedAt, markedBy: office.markedBy, presence: get(CEO).status }] });
 const row = (id: string) => ({ hostId: id, hostName: NAMES[id], position: null, status: get(id).status, since: get(id).since, updatedAt: get(id).since, meeting: null,
   isCeo: id === CEO, pending: id === CEO && isCeo() ? queue.slice() : null, pendingCount: id === CEO ? queue.length : 0 });
 const json = (data: unknown, code = 200) => new Response(JSON.stringify(code < 400 ? { success: true, data } : { success: false, error: data }), { status: code, headers: { 'Content-Type': 'application/json' } });
@@ -53,6 +59,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     return json([row(self)]);
   }
   if (p === '/meetings/presence/ceo') return json([row(CEO)]);
+  if (p === '/meetings/ceo-office') return json(officeJson());
+  if (p === '/meetings/ceo-office/arrived' || p === '/meetings/ceo-office/undo') {
+    if (!w.__profile?.hr) return json({ code: 'FORBIDDEN', message: 'Only HR marks the CEO\'s arrival.' }, 403);
+    const undo = p.endsWith('/undo');
+    const dup = !undo && office.arrived;
+    if (undo) w.__setArrived(false); else if (!dup) { w.__setArrived(true); office.markedBy = w.__profile.fullName; }
+    return json(officeJson(undo ? undefined : dup));
+  }
   if (p === '/meetings/presence/enter') { if (get(self).status !== 'BUSY') w.__setServerStatus(self, 'BUSY'); return json(row(self)); }
   if (p === '/meetings/presence/exit') {
     // like mtg_presence_exit: only BUSY -> AVAILABLE confirms, and then exactly one (the oldest waiting)
@@ -74,7 +88,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     { id: CEO, name: 'Asha CEO', email: 'ceo@x.example', position: 'CEO', role: 'SUPER_ADMIN', department: null, isCeo: true, googleConnected: false },
     { id: COL, name: 'Ravi Colleague', email: 'ravi@x.example', position: null, role: 'TEAM_MEMBER', department: 'Wabastore', isCeo: false, googleConnected: false }]);
   if (p === '/meetings/busy') return json([]);
-  if (p === '/meetings/ceo-requests') return json({ sections: { pending: 0 }, items: [], total: 0 });
+  if (p === '/meetings/ceo-requests') return json({ isSuperAdmin: isCeo(), counts: { pending: 0, approved: 0, rejected: 0, rescheduled: 0, all: 0 }, items: [], total: 0 });
   // ---- client meetings (20270122000200): stored like the database, one per clientRequestId, with an e-mail outbox per meeting
   if (p === '/meetings/client' && method === 'POST') {
     const dup = clients.find(c => c.requestId === body.clientRequestId);
@@ -137,13 +151,15 @@ w.__mails = mails;
 w.__queue = queue;
 w.__week = week;
 w.__full = full;
-w.mount = (who: 'ceo' | 'member') => {
+w.mount = (who: 'ceo' | 'member' | 'hr') => {
   w.__profile = who === 'ceo'
     ? { id: CEO, fullName: 'Asha CEO', role: 'SUPER_ADMIN', status: 'ACTIVE' }
+    : who === 'hr' ? { id: '00000000-0000-4000-8000-0000000000d1', fullName: 'Hema HR', role: 'TEAM_MEMBER', status: 'ACTIVE', hr: true }
     : { id: ME, fullName: 'Team Member A', role: 'TEAM_MEMBER', status: 'ACTIVE' };
   createRoot(document.getElementById('root')!).render(
     <div className="p-3 space-y-3">
       <div data-testid="header">Header: <MyAvailabilityBadge /></div>
+      <CeoArrivalControl />
       <MeetingsPage />
     </div>
   );

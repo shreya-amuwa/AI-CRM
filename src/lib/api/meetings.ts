@@ -1,5 +1,5 @@
 import type {
-  CeoPresence, CeoPresenceExit, ClientMeetingInput, ClientMeetingResult, MeetingMail, CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
+  CeoOfficeStatus, CeoPresence, CeoPresenceExit, ClientMeetingInput, ClientMeetingResult, MeetingMail, CeoRequestList, CeoRequestSection, GoogleCalendarStatus, Meeting, MeetingAvailabilityWindow, MeetingBookingLink, MeetingBusyBlock, MeetingDetail, MeetingDirectoryEntry,
   MeetingSettings, PublicBookingPage, PublicBookingResult, PublicBookingView,
   MeetingActionStatus, MeetingReportActionList, MeetingReportList, MeetingReportsOverview, MeetingSummaryContent, MeetingSummaryList, MeetingSummaryTab,
   MeetingSummaryView, MyMeetingAction
@@ -47,6 +47,9 @@ export const meetingsApi = {
   mails: (id: string) => api.get<MeetingMail[]>(`/meetings/${encodeURIComponent(id)}/mails`),
   retryMail: (mailId: number) => api.post<{ id: number; status: string }>(`/meetings/mails/${mailId}/retry`, {}),
   ceoPresence: () => api.get<CeoPresence[]>('/meetings/presence/ceo'),
+  ceoOffice: () => api.get<CeoOfficeStatus>('/meetings/ceo-office'),
+  ceoArrived: (ceoId?: string) => api.post<CeoOfficeStatus>('/meetings/ceo-office/arrived', ceoId ? { ceoId } : {}),
+  ceoArrivalUndo: (ceoId?: string) => api.post<CeoOfficeStatus>('/meetings/ceo-office/undo', ceoId ? { ceoId } : {}),
   roomLink: () => api.get<{ roomLink: string | null }>('/meetings/settings/room-link'),
   setRoomLink: (roomLink: string | null) => api.post<{ roomLink: string | null }>('/meetings/settings/room-link', { roomLink }),
   presence: (ids?: string[]) => api.get<CeoPresence[]>('/meetings/presence', ids ? { ids: ids.join(',') } : undefined),

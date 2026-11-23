@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLeadStore } from '../../context/LeadStoreContext';
 import { LEAD_SOURCES, LEAD_SOURCE_LIST } from '../../data/leadSources';
 import { ConvergenceView } from './ConvergenceView';
+import { CeoArrivalControl } from '../meetings/CeoArrival';
 import { sessionManager } from '../../services/sessionManager';
 
 interface DepartmentDashboardProps {
@@ -32,6 +33,8 @@ export const DepartmentDashboard: React.FC<DepartmentDashboardProps> = ({
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* HR's "CEO HAS ARRIVED" button (20270127000300; the database lets only HR staff press it) */}
+      {departmentId === 'hr' && <CeoArrivalControl />}
       {/* Top Department Panel Header with Authentic Brand Logo */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl bg-white border border-slate-200 shadow-sm relative overflow-hidden">
         {/* Top Accent Line */}

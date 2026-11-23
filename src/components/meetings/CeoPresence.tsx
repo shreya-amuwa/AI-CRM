@@ -105,9 +105,11 @@ export const MyAvailabilityPanel: React.FC<{
         onDone(isCeo ? 'You are in a meeting: everyone sees you as BUSY, and requests for your time join your queue.' : 'You are in a meeting: colleagues now see you as BUSY.');
       } else {
         const r = await meetingsApi.presenceExit();
-        const next = r.scheduled?.[0] as (CeoPresenceExit['scheduled'][number] & { stillWaiting?: number }) | undefined;
+        const next = r.scheduled?.[0] as (CeoPresenceExit['scheduled'][number] & { stillWaiting?: number; startsNow?: boolean }) | undefined;
+        // it starts now, or right after a meeting you already have confirmed (never on top of it: 20270127000300)
+        const when = next && next.startsNow === false ? `at ${since(next.startsAt)}, after your next confirmed meeting` : 'and starts now';
         onDone(next
-          ? `You are AVAILABLE again. The next queued meeting is confirmed and starts now: "${next.title}". The employee is e-mailed the meeting room link.${next.stillWaiting ? ` ${next.stillWaiting} more waiting.` : ''}`
+          ? `You are AVAILABLE again. The next queued meeting is confirmed ${when}: "${next.title}". The employee is e-mailed the meeting room link.${next.stillWaiting ? ` ${next.stillWaiting} more waiting.` : ''}`
           : 'You are AVAILABLE again: colleagues see it at once.');
       }
       if (!enter) setMeetingId('');

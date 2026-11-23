@@ -12169,6 +12169,36 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
 }
+// --- CEO office arrival (migration 20270127000300): HR's button; information only, meeting requests work before and after ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false && r.json.data.canMark === false, 'CEO arrival API: an employee sees "not arrived" and has no button', r);
+  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: new Date(Date.now() + 23 * 86400e3 + 37 * 60e3).toISOString(),
+    endsAt: new Date(Date.now() + 23 * 86400e3 + 67 * 60e3).toISOString(), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO arrival API: a meeting request before the arrival is saved as usual', r);
+  const reqId = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO arrival API: an employee cannot mark it', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO arrival API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.arrived === true && !!ceoOf(r.json.data)?.arrivedAt, 'CEO arrival API: HR marks it, with the time', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO arrival API: a second press (another HR person) changes nothing', r);
+  check((await db.query(`select count(*)::int n from public.ceo_office_arrivals where ceo_id = $1 and undone_at is null`, [saId])).rows[0].n === 1, 'CEO arrival API: one arrival today');
+  r = await api('tl2', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === true, 'CEO arrival API: everyone sees it', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [reqId])).rows[0].status === 'REQUESTED', 'CEO arrival API: the earlier request is neither confirmed nor rejected by it');
+  r = await api('hr', 'POST', '/meetings/ceo-office/undo', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false, 'CEO arrival API: HR undoes a mistaken press', r);
+  r = await api(null, 'GET', '/meetings/ceo-office');
+  check(r.status === 401, 'CEO arrival API: not for visitors', r);
+  await db.query(`delete from public.meetings where title like 'CAX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
