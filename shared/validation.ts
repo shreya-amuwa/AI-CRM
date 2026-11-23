@@ -3664,3 +3664,53 @@ export const notificationHealthQuerySchema = z.object({
   issue: z.enum(NOTIFICATION_HEALTH_ISSUES).optional()
 }).strip();
 export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Company Notice Board (migration 20270131000200). The database checks who may publish, to whom, and every rule again.
+// ---------------------------------------------------------------------------
+export const NOTICE_CATEGORIES = ['GENERAL', 'HR', 'POLICY', 'EVENT', 'HOLIDAY', 'IT_SYSTEM', 'OPERATIONS', 'OTHER'] as const;
+export const NOTICE_CATEGORY_LABELS: Record<(typeof NOTICE_CATEGORIES)[number], string> = {
+  GENERAL: 'General', HR: 'HR', POLICY: 'Policy', EVENT: 'Event', HOLIDAY: 'Holiday / office closure', IT_SYSTEM: 'IT / CRM', OPERATIONS: 'Operations', OTHER: 'Other'
+};
+export const NOTICE_PRIORITIES = ['NORMAL', 'IMPORTANT', 'URGENT'] as const;
+export const NOTICE_AUDIENCES = ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES'] as const;
+export const NOTICE_ROLES = ['DEPARTMENT_HEAD', 'OPERATIONS_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER', 'HR', 'SUPER_ADMIN'] as const;
+const noticeTime = z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter a date and time.' }).nullable().optional());
+export const noticePublishSchema = z.object({
+  title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).'),
+  body: trimmed(10000).min(1, 'Write the notice.'),
+  category: z.enum(NOTICE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }),
+  priority: z.enum(NOTICE_PRIORITIES, { errorMap: () => ({ message: 'Choose Normal, Important or Urgent.' }) }).default('NORMAL'),
+  audienceType: z.enum(NOTICE_AUDIENCES, { errorMap: () => ({ message: 'Choose who receives the notice.' }) }),
+  departmentIds: z.array(uuidSchema).max(100).default([]),
+  roles: z.array(z.enum(NOTICE_ROLES)).max(6).default([]),
+  employeeIds: z.array(uuidSchema).max(1000).default([]),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
+  publishAt: noticeTime,
+  expiresAt: noticeTime,
+  clientRequestId: z.string().trim().min(8).max(80)
+}).strict()
+  .refine(v => v.audienceType !== 'DEPARTMENT' || v.departmentIds.length > 0, { message: 'Choose at least one department.', path: ['departmentIds'] })
+  .refine(v => v.audienceType !== 'ROLE' || v.roles.length > 0, { message: 'Choose at least one designation.', path: ['roles'] })
+  .refine(v => v.audienceType !== 'EMPLOYEES' || v.employeeIds.length > 0, { message: 'Choose at least one employee.', path: ['employeeIds'] })
+  .refine(v => !v.expiresAt || new Date(v.expiresAt).getTime() > new Date(v.publishAt ?? Date.now()).getTime(), { message: 'The expiry is after the publish date.', path: ['expiresAt'] });
+export const noticeUpdateSchema = z.object({
+  title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).').optional(),
+  body: trimmed(10000).min(1, 'Write the notice.').optional(),
+  category: z.enum(NOTICE_CATEGORIES).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).optional(),
+  expiresAt: noticeTime,
+  version: z.number().int().min(1).optional()
+}).strict();
+export const noticeListQuerySchema = z.object({
+  scope: z.enum(['INBOX', 'ALL', 'MINE']).default('INBOX'),
+  category: z.enum(NOTICE_CATEGORIES).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  unread: booleanParam.optional(),
+  includeExpired: booleanParam.optional(),
+  search: trimmed(120).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();

@@ -93,6 +93,7 @@ export type ActiveTab =
   | 'hr_letter_experience'
   | 'my_attendance'
   | 'my_meetings'
+  | 'my_notices'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -377,7 +378,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const lastTab = departmentNav[departmentNav.length - 1];
   const withChat: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
   // Attendance (Punch In / Out, lunch) is the first entry of every department's menu, as in every other dashboard
-  const navItems: typeof departmentNav = [{ id: 'my_attendance' as ActiveTab, label: 'Attendance', icon: Clock3 }, { id: 'my_meetings' as ActiveTab, label: 'Meetings', icon: CalendarDays }, ...withChat];
+  const navItems: typeof departmentNav = [{ id: 'my_attendance' as ActiveTab, label: 'Attendance', icon: Clock3 }, { id: 'my_meetings' as ActiveTab, label: 'Meetings', icon: CalendarDays },
+    // Notice Board (20270131000200): every employee reads; publishers also send
+    { id: 'my_notices' as ActiveTab, label: 'Notice Board', icon: Megaphone }, ...withChat];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section

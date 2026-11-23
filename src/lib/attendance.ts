@@ -42,6 +42,17 @@ export interface RegisterRow {
   punchIn: PunchInfo | null; punchOut: PunchInfo | null; punchOutHistory: PunchInfo[];
   workedMinutes: number | null; lunch: LunchInfo;
 }
+/** Today's Attendance Overview (20270131000100): HR and the Super Admin; the absent employees come first. */
+export type OverviewCategory = 'PRESENT' | 'ABSENT' | 'ON_LEAVE' | 'NOT_MARKED';
+export interface OverviewCounts { total: number; present: number; absent: number; onLeave: number; notMarked: number; late: number }
+export interface OverviewRow {
+  profileId: string; name: string; designation: string | null; departmentId: string | null; department: string | null; category: OverviewCategory;
+  late: boolean; lateMinutes: number; punchInAt: string | null; dayStart: string; leave: 'FULL_DAY' | 'MORNING' | 'AFTERNOON' | null;
+}
+export interface AttendanceOverview {
+  date: string; today: string; workingDay: boolean; timeZone: string; absentAfterMinutes: number; generatedAt: string; totals: OverviewCounts;
+  departments: (OverviewCounts & { id: string | null; name: string })[]; rows: OverviewRow[];
+}
 export interface AttendanceRegister {
   date: string; today: string; serverTime: string; timeZone: string; allowanceMinutes: number; maxAccuracyM: number; retentionDays: number;
   geofence: null | Record<string, unknown>; rows: RegisterRow[];
@@ -138,6 +149,8 @@ export const attendanceApi = {
   mine: (from: string, to: string) => rpc<AttendanceDayData[]>('my_attendance', { p_from: from, p_to: to }),
   /** HR / Super Admin: every employee of one office day (each read is audited). */
   register: (date: string) => rpc<AttendanceRegister>('hr_attendance_register', { p_date: date, p_department: null, p_profile: null, p_status: null }),
+  /** HR / Super Admin: Present, Absent, On leave, Not yet marked, Late, per department (each read is audited). */
+  todayOverview: (date?: string) => rpc<AttendanceOverview>('attendance_today_overview', { p_date: date ?? null }),
   hrPunches: (from: string, to: string, departmentId?: string | null) =>
     rpc<{ allowanceMinutes: number; retentionDays: number; rows: HrPunchRow[] }>('hr_attendance_punches', { p_from: from, p_to: to, p_department: departmentId || null, p_profile: null }),
   /** Ask the server to look up the place names still missing (a few at a time); harmless to call often. */

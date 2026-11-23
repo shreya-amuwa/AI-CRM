@@ -53,6 +53,8 @@ import { TicketAttachmentService } from './TicketAttachmentService.js';
 import { EmployeeCaseService } from './EmployeeCaseService.js';
 import { BugService } from './BugService.js';
 import { BugRepository } from '../repositories/BugRepository.js';
+import { NoticeService } from './NoticeService.js';
+import { NoticeRepository } from '../repositories/NoticeRepository.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
 import { WorkReportService } from './WorkReportService.js';
@@ -129,6 +131,7 @@ export function createServices(db: SupabaseClient) {
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     meetings: new MeetingService(new MeetingRepository(db)),
     bugs: new BugService(new BugRepository(db)),
+    notices: new NoticeService(new NoticeRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),

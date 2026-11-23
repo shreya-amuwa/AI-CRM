@@ -6,6 +6,7 @@ import { openAds } from '../ai-design-studio/adsEvents';
 import { openHrMeetingRequest, openMeeting, openMeetingReport } from '../meetings/meetingEvents';
 import { openWorkUpdate } from '../tasks/workUpdateEvents';
 import { openBugs } from '../bugs/bugEvents';
+import { openNotice } from '../notices/noticeEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -73,6 +74,10 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   // AI Studio: a task or a daily report opens its page of the AI Studio dashboard, on that item
   // an attendance reminder (Punch In, lunch, Punch Out) opens the person's own attendance
   if (n.entityType === 'attendance') { openAttendance(); return true; }
+  // a company notice (20270131000200): the Notice Board, on that notice
+  if (n.entityType === 'company_notice') { openNotice(n.entityId ?? undefined); return true; }
+  // the Super Admin's 11:00 alert (20270131000100): straight to Today's Attendance Overview
+  if (n.entityType === 'attendance_overview') { openAttendance('today'); return true; }
   // any task notification (assigned, an update requested / submitted, blocked, completed) opens the Task page that shows it, on that task
   if (n.entityType === 'work_task') { openWorkUpdate({ taskId: n.entityId ?? undefined }); return true; }
   // a meeting (a request, an approval, a move, a cancellation, a reminder) opens Meetings on it
