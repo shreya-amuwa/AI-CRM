@@ -12,6 +12,8 @@ import type {
   ChatMemberKey,
   ChatMessage,
   ChatMessagePage,
+  ChatDeskClient,
+  ChatHandler,
   ChatMyClient,
   ChatPublicKey,
   ChatReviewList,
@@ -50,6 +52,8 @@ export class ChatRepository {
   customerConversation(customerId: string, channel?: string | null) { return this.rpc<ChatConversation>('chat_customer_conversation', { p_customer: customerId, p_channel: channel ?? null }); }
   detail(id: string) { return this.rpc<ChatConversation>('chat_conversation_detail', { p_conversation: id }); }
   myClients(q: string | null) { return this.rpc<ChatMyClient[]>('chat_my_clients', { p_search: q }); }
+  deskClients(q: string | null) { return this.rpc<ChatDeskClient[]>('chat_desk_clients', { p_search: q }); }
+  setHandling(conversationId: string, action: 'TAKE' | 'RELEASE') { return this.rpc<ChatHandler | null>('chat_set_handling', { p_conversation: conversationId, p_action: action }); }
   clientTab() { return this.rpc<{ eligible: boolean; count: number }>('chat_client_tab', {}); }
   clientTeam(conversationId: string) { return this.rpc<{ id: string; name: string; role: string }[]>('chat_client_team', { p_conversation: conversationId }); }
   escalate(conversationId: string, messageId: string | null, targetId: string, note: string | null) {

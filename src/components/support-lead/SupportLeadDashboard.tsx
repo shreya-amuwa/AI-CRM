@@ -20,7 +20,7 @@ import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { SupportLeadCustomers } from '../support-member/SupportLeadViews';
 import { CustomerProfile } from '../support-member/CustomersPage';
-import { TicketsPage } from '../support-member/TicketsPage';
+import { TicketsWithDesk } from '../support-member/DeskTickets';
 import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
 import { NotificationsPage } from '../notifications/NotificationsPage';
@@ -82,7 +82,7 @@ const LeadTickets: React.FC = () => {
   if (customerId) {
     return <CustomerProfile customerId={customerId} tickets={tickets} tasks={tasks} invoices={invoices.invoices} people={tasks.people} onBack={() => setCustomerId(null)} />;
   }
-  return <TicketsPage mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />;
+  return <TicketsWithDesk mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />;
 };
 
 /** Invoices of the Support team's customers (read-only) and the team's invoice requests. */

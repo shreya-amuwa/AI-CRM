@@ -103,14 +103,24 @@ select test.login('chat_client');
 select chat_send_message(pg_temp.g('conv')::uuid, 'One more thing', '77777777-7777-7777-7777-777777777777');
 
 -- ---------------------------------------------------------------- everybody else is refused
+-- shared Support desk (20270129000100): with the desk switch on, a Support colleague of the department is a STAFF participant (see
+-- shared_client_support_access_test.sql); the strict, assigned-only rules below hold when the Super Admin turns the switch off
 select test.login('sup_b');
-select test.must_fail($$select chat_messages_page(pg_temp.g('conv')::uuid)$$, 'a Support colleague who is not assigned cannot read it', 'not found');
+select test.check((select jsonb_array_length(chat_messages_page(pg_temp.g('conv')::uuid) -> 'messages') = 5), 'with the shared desk on, a Support colleague of the department reads it');
+reset role;
+update access_settings set support_desk_department_wide = false where id;
+set role authenticated;
+select test.login('sup_b');
+select test.must_fail($$select chat_messages_page(pg_temp.g('conv')::uuid)$$, 'a Support colleague who is not assigned cannot read it (strict ownership)', 'not found');
 select test.must_fail($$select chat_send_message(pg_temp.g('conv')::uuid, 'hello', gen_random_uuid())$$, 'nor write in it', 'not found');
 select test.must_fail($$select chat_conversation_detail(pg_temp.g('conv')::uuid)$$, 'nor open its detail', 'not found');
 select test.must_fail($$select chat_customer_conversation(pg_temp.g('cust')::uuid)$$, 'nor open the customer''s chat', 'not found');
 select test.check((select count(*) = 0 from chat_messages), 'row level security shows them no message');
 select test.check((select count(*) = 0 from chat_conversations where kind = 'CLIENT'), 'and no client conversation');
 select test.check((select jsonb_array_length(chat_my_clients()) = 0 or not exists (select 1 from jsonb_array_elements(chat_my_clients()) x where x ->> 'customerId' = pg_temp.g('cust'))), 'the customer is not in their "my clients"');
+reset role;
+update access_settings set support_desk_department_wide = true where id;
+set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select chat_messages_page(pg_temp.g('conv')::uuid)$$, 'a Sales member cannot read it', 'not found');
 select test.must_fail($$select chat_customer_conversation(pg_temp.g('cust')::uuid)$$, 'nor open the customer''s chat (a customer nobody on their side looks after)', 'not found');
@@ -168,11 +178,16 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 update customers set owner_id = test.id('sup_b') where id = pg_temp.g('cust')::uuid;
 select test.check((select last_message_preview like 'Your assigned team was updated%' and last_seq = 6 from chat_conversations where id = pg_temp.g('conv')::uuid), 'a new owner is written into the conversation as a system line');
+-- (strict ownership: the shared Support desk of 20270129000100 is switched off for these assertions)
+update access_settings set support_desk_department_wide = false where id;
 set role authenticated;
 select test.login('sup_plain');
 select test.must_fail($$select chat_messages_page(pg_temp.g('conv')::uuid)$$, 'the previous Team Member loses access at once', 'not found');
 select test.check((select count(*) = 0 from chat_messages), 'row level security shows them nothing any more');
 select test.must_fail($$select chat_send_message(pg_temp.g('conv')::uuid, 'still here?', gen_random_uuid())$$, 'and cannot write', 'not found');
+reset role;
+update access_settings set support_desk_department_wide = true where id;
+set role authenticated;
 select test.login('sup_b');
 select test.check((select jsonb_array_length(chat_messages_page(pg_temp.g('conv')::uuid) -> 'messages') = 6), 'the new Team Member sees the thread (the customer''s history stays with the customer)');
 select test.check((select chat_send_message(pg_temp.g('conv')::uuid, 'Hello, I am your new contact', gen_random_uuid()) ->> 'senderLabel' = 'Relationship Manager'), 'and can reply');
