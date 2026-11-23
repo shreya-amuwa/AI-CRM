@@ -16,6 +16,7 @@ import {
   chatKeyRegisterSchema,
   chatReadSchema,
   chatEscalateSchema,
+  chatHandlingSchema,
   chatReviewQuerySchema,
   chatSearchQuerySchema,
   chatDirectoryQuerySchema,
@@ -58,6 +59,10 @@ export class ChatService {
   myClients(query: unknown) { return this.repo.myClients(parse(chatSearchQuerySchema, query ?? {}).q || null); }
   /** Whether this person can have client conversations (the database decides) and how many they have now. */
   clientTab() { return this.repo.clientTab(); }
+  /** The department's client conversations for Support employees covering for a colleague (20270129000100); the database decides who may. */
+  deskClients(query: unknown) { return this.repo.deskClients(parse(chatSearchQuerySchema, query ?? {}).q || null); }
+  /** Take over / release "currently handling" on a client conversation: information only, never changes the Relationship Manager. */
+  setHandling(id: string, body: unknown) { return this.repo.setHandling(parse(uuidSchema, id), parse(chatHandlingSchema, body).action); }
   clientTeam(id: string) { return this.repo.clientTeam(parse(uuidSchema, id)); }
   /** Shares a client message with the people of that client's team: a notification only, the conversation is not copied or changed. */
   escalate(id: string, body: unknown) {
