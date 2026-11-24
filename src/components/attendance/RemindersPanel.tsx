@@ -4,6 +4,7 @@ import { attendanceApi, type PushDevice, type ReminderCompany, type ReminderSett
 import { claimThisDevice, detectPushState, loadPushKey, subscribeThisDevice, type PushState } from '../../lib/push/pushSupport';
 import { DeviceGuide, DeviceStatusCheck, NotificationSoundSettings, TestConfirm } from '../notifications/DeviceSetup';
 import { playTestSound } from '../../lib/notifications/notificationSound';
+import { MeetingNoticeSettings } from './MeetingNoticeSettings';
 
 const card = 'rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-4';
 const field = 'h-10 px-3 rounded-xl border border-slate-200 text-sm bg-white w-full max-w-[10rem]';
@@ -298,6 +299,7 @@ export const RemindersPanel: React.FC = () => {
       {settings?.mine && <MyDevices />}
       {settings && <NotificationSoundSettings confirmedAt={settings.sound?.confirmedAt ?? null} />}
       {settings?.canManage && <CompanyReminders settings={settings} onSaved={setSettings} />}
+      {settings?.canManage && <MeetingNoticeSettings />}
     </div>
   );
 };

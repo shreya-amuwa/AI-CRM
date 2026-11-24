@@ -130,6 +130,14 @@ export function locationHelp(status: LocationStatus, accuracy?: number | null, m
   }
 }
 
+/** The Managing Director's meeting notices (migration 20270206000100). */
+export type MeetingNoticeSettings = { enabled: boolean; pushEnabled: boolean; remindMinutes: number[]; updatedAt: string | null };
+export const MEETING_REMINDER_CHOICES: { minutes: number; label: string }[] = [
+  { minutes: 120, label: '2 hours before' }, { minutes: 60, label: '1 hour before' }, { minutes: 30, label: '30 minutes before' },
+  { minutes: 15, label: '15 minutes before' }, { minutes: 10, label: '10 minutes before' }, { minutes: 5, label: '5 minutes before' },
+  { minutes: 0, label: 'At the start' }
+];
+
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const db = getSupabase();
   if (!db) throw new Error('The CRM is not connected to its database.');
@@ -179,6 +187,10 @@ export const attendanceApi = {
   pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused }),
   /** Chat notifications on this person's devices (20270111000100). */
   setChatPush: (enabled: boolean) => rpc<ReminderSettings>('push_chat_set', { p_enabled: enabled }),
+  // Managing Director only (the database checks): notices about team meetings and their reminders
+  meetingNotices: () => rpc<MeetingNoticeSettings>('mtg_oversight_settings_get'),
+  saveMeetingNotices: (s: Pick<MeetingNoticeSettings, 'enabled' | 'pushEnabled' | 'remindMinutes'>) =>
+    rpc<MeetingNoticeSettings>('mtg_oversight_settings_set', { p_enabled: s.enabled, p_push_enabled: s.pushEnabled, p_remind_minutes: s.remindMinutes }),
   // Notification reliability (20270126000200)
   saveSound: (attendance: boolean, chat: boolean, general: boolean) =>
     rpc<ReminderSettings>('notification_sound_save', { p_attendance: attendance, p_chat: chat, p_general: general }),

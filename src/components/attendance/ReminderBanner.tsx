@@ -13,7 +13,7 @@ const btn = 'inline-flex items-center justify-center h-9 px-3 rounded-lg text-sm
  * Attendance reminders on this device: shown at the top of every staff dashboard until the device gets reminders. It cannot be turned off
  * for good (the reminders are the point); "Not now" hides it for the rest of the day.
  */
-export const ReminderBanner: React.FC = () => {
+export const ReminderBanner: React.FC<{ purpose?: 'attendance' | 'meetings' }> = ({ purpose = 'attendance' }) => {
   const [state, setState] = useState<PushState | null>(null);
   const [hidden, setHidden] = useState(hiddenToday);
   const [busy, setBusy] = useState(false);
@@ -60,7 +60,9 @@ export const ReminderBanner: React.FC = () => {
     ? 'To get notifications on iPhone: tap Share, then Add to Home Screen, then open Amuwa CRM from your Home Screen.'
     : state === 'blocked'
       ? "Notifications are blocked for this site, so reminders cannot reach this device. Allow them in your browser's site settings (Attendance → Reminders → Notification troubleshooting), then reload."
-      : 'Enable notifications to receive Punch In, Lunch, Resume Work and Punch Out reminders.';
+      : purpose === 'meetings'
+        ? 'Enable notifications on this device to receive meeting updates and reminders, even when the CRM is closed.'
+        : 'Enable notifications to receive Punch In, Lunch, Resume Work and Punch Out reminders.';
   return (
     <section data-testid="reminder-banner" aria-label="Notifications on this device" className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-slate-800">
       <div className="flex flex-wrap items-center gap-3">
