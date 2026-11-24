@@ -12432,6 +12432,72 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.meetings where title like 'CVX %'`);
   await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
 }
+// --- HR Awards (migration 20270202000100): seven monthly awards, many nominees, one or more winners, month-wise history; HR only ---
+{
+  await db.query(`delete from public.hr_award_winners; delete from public.hr_award_nominees; delete from public.hr_award_periods`);
+  const M = '2026-10';
+  let r = await api('a', 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 403, 'awards API: an employee cannot open Awards', r);
+  r = await api(null, 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 401, 'awards API: not for visitors', r);
+  r = await api('hr', 'GET', '/hr/awards?month=October');
+  check(r.status === 422, 'awards API: the month is checked (YYYY-MM)', r);
+  r = await api('hr', 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 200 && r.json.data.awards.length === 7 && r.json.data.awards.every((a: any) => a.nominees === 0 && a.status === 'NO_NOMINEES')
+    && r.json.data.awards.map((a: any) => a.name).join('|') === ['Professionalism Excellence of the Month', 'Rising Star of the Month', 'Player of the Month',
+      'Emerging Leader of the Month', 'Department of the Month', 'Team of the Month', 'Business Icon of the Month'].join('|'), 'awards API: HR sees all seven awards for the month', r);
+  r = await api('hr', 'GET', '/hr/awards/options');
+  const opts = r.json.data;
+  check(r.status === 200 && opts.employees.length >= 3 && opts.teams.length >= 1 && opts.departments.length >= 1, 'awards API: employees, teams and departments come from the CRM', r);
+  const people = opts.employees.slice(0, 3) as { id: string; name: string }[];
+  for (const [i, p] of people.entries()) {
+    r = await api(i === 2 ? 'hrmember' : 'hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: p.id, reason: `Great month number ${i + 1}`, remarks: i === 0 ? 'Supporting note' : null });
+    check(r.status === 201 && r.json.data.totalNominees === i + 1, `awards API: nominee ${i + 1} added under the same award`, r);
+  }
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[0].id, reason: 'Again' });
+  check(r.status === 409, 'awards API: the same person twice for the same award and month is a conflict', r);
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[1].id, reason: 'x' });
+  check(r.status === 422, 'awards API: the reason is validated', r);
+  r = await api('a', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[1].id, reason: 'I want it' });
+  check(r.status === 403, 'awards API: an employee cannot nominate', r);
+  r = await api('hr', 'POST', '/hr/awards/TEAM/nominees', { month: M, nomineeType: 'TEAM', entityId: opts.teams[0].id, reason: 'Delivered together' });
+  check(r.status === 201 && r.json.data.nominees[0].nomineeType === 'TEAM' && r.json.data.nominees[0].name === opts.teams[0].name, 'awards API: a team for Team of the Month', r);
+  r = await api('hr', 'POST', '/hr/awards/DEPARTMENT/nominees', { month: M, nomineeType: 'DEPARTMENT', entityId: opts.departments[0].id, reason: 'Best results' });
+  check(r.status === 201 && r.json.data.nominees[0].nomineeType === 'DEPARTMENT', 'awards API: a department for Department of the Month', r);
+  r = await api('hr', 'GET', `/hr/awards/RISING_STAR?month=${M}`);
+  const nominees = r.json.data.nominees as { id: string; name: string; status: string }[];
+  check(r.status === 200 && nominees.length === 3 && nominees.every(n => n.status === 'NOMINATED'), 'awards API: the detail lists the three nominees (saved: read again)', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${nominees[2].id}/update`, { reason: 'Edited reason text', remarks: 'Edited remarks' });
+  check(r.status === 200 && r.json.data.nominees.find((n: any) => n.id === nominees[2].id)?.reason === 'Edited reason text', 'awards API: HR edits a nominee', r);
+  r = await api('hr', 'POST', '/hr/awards/winners', { nomineeIds: [nominees[0].id], remarks: 'Clear winner' });
+  check(r.status === 200 && r.json.data.totalWinners === 1 && r.json.data.status === 'WINNERS_DECLARED', 'awards API: one winner declared', r);
+  r = await api('hr', 'POST', '/hr/awards/winners', { nomineeIds: [nominees[0].id, nominees[1].id] });
+  check(r.status === 200 && r.json.data.totalWinners === 2 && r.json.data.totalNominees === 3
+    && r.json.data.nominees.filter((n: any) => n.status === 'WINNER').length === 2, 'awards API: a second winner for the same award; the third stays a nominee', r);
+  const winners = r.json.data.winners as { id: string; nomineeId: string }[];
+  r = await api('a', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: 'Not allowed' });
+  check(r.status === 403, 'awards API: an employee cannot revoke a winner', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${winners[1].nomineeId}/remove`, {});
+  check(r.status === 409, 'awards API: a winner cannot be removed before the declaration is revoked', r);
+  r = await api('hr', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: '' });
+  check(r.status === 422, 'awards API: revoking needs a reason', r);
+  r = await api('hr', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: 'Declared by mistake' });
+  check(r.status === 200 && r.json.data.totalWinners === 1 && r.json.data.revokedWinners.length === 1, 'awards API: HR revokes a winner (kept on record)', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${nominees[2].id}/remove`, { reason: 'Duplicate' });
+  check(r.status === 200 && r.json.data.totalNominees === 2 && r.json.data.removedNominees === 1, 'awards API: HR removes a nominee', r);
+  // another month: the same award starts empty and October stays as it was
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: '2026-11', nomineeType: 'INDIVIDUAL', entityId: people[0].id, reason: 'Another strong month' });
+  check(r.status === 201 && r.json.data.month === '2026-11' && r.json.data.totalNominees === 1, 'awards API: the next month has its own nominees', r);
+  r = await api('hr', 'GET', `/hr/awards?month=${M}`);
+  const card = r.json.data.awards.find((a: any) => a.code === 'RISING_STAR');
+  check(r.status === 200 && card.nominees === 2 && card.winners === 1 && card.winnerNames.length === 1
+    && r.json.data.history.some((h: any) => h.month === '2026-11') && r.json.data.history.some((h: any) => h.month === M), 'awards API: October is intact, both months in the history', r);
+  r = await api('sa', 'GET', `/hr/awards/RISING_STAR?month=${M}`);
+  check(r.status === 200 && r.json.data.totalWinners === 1, 'awards API: the Super Admin reads the awards', r);
+  r = await api('hr', 'GET', `/hr/awards/NOPE?month=${M}`);
+  check(r.status === 422, 'awards API: an unknown award', r);
+  await db.query(`delete from public.hr_award_winners; delete from public.hr_award_nominees; delete from public.hr_award_periods`);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

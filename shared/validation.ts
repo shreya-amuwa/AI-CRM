@@ -3781,3 +3781,34 @@ export const noticeListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   offset: z.coerce.number().int().min(0).default(0)
 }).strict();
+
+// ---------------------------------------------------------------------------
+// HR Awards (20270202000100): Award Management > Awards. The same schemas check the forms and the API; the database checks again.
+// ---------------------------------------------------------------------------
+export const HR_AWARD_CODES = ['PROFESSIONALISM_EXCELLENCE', 'RISING_STAR', 'PLAYER', 'EMERGING_LEADER', 'DEPARTMENT', 'TEAM', 'BUSINESS_ICON'] as const;
+export const HR_AWARD_NOMINEE_TYPES = ['INDIVIDUAL', 'TEAM', 'DEPARTMENT'] as const;
+/** The award month as YYYY-MM (handed to the database as the first day of that month). */
+export const awardMonthSchema = z.string().trim().regex(/^(20[2-9]\d)-(0[1-9]|1[0-2])$/, 'Choose the award month and year.');
+export const awardCodeSchema = z.enum(HR_AWARD_CODES, { errorMap: () => ({ message: 'That award does not exist.' }) });
+export const awardMonthQuerySchema = z.object({ month: awardMonthSchema }).strict();
+const awardReason = z.string().trim().min(3, 'Enter the reason for the nomination (at least 3 characters).').max(2000, 'Keep the reason under 2000 characters.');
+const awardRemarks = z.string().trim().max(2000, 'Keep the remarks under 2000 characters.').optional().nullable()
+  .transform(v => (v ? v : null));
+export const awardNominateSchema = z.object({
+  month: awardMonthSchema,
+  nomineeType: z.enum(HR_AWARD_NOMINEE_TYPES, { errorMap: () => ({ message: 'Choose the nominee type: Individual, Team or Department.' }) }),
+  entityId: z.string({ required_error: 'Choose who is nominated.' }).uuid('Choose who is nominated.'),
+  reason: awardReason,
+  remarks: awardRemarks
+}).strict();
+export const awardNomineeUpdateSchema = z.object({ reason: awardReason, remarks: awardRemarks }).strict();
+export const awardNomineeRemoveSchema = z.object({ reason: z.string().trim().max(500, 'Keep the reason under 500 characters.').optional().nullable() }).strict();
+export const awardDeclareWinnersSchema = z.object({
+  nomineeIds: z.array(uuidSchema).min(1, 'Choose at least one nominee to declare a winner.').max(200, 'Declare at most 200 winners at a time.'),
+  remarks: awardRemarks
+}).strict();
+export const awardWinnerUpdateSchema = z.object({ remarks: awardRemarks }).strict();
+export const awardWinnerRevokeSchema = z.object({
+  reason: z.string().trim().min(3, 'Enter the reason for revoking the winner (at least 3 characters).').max(500, 'Keep the reason under 500 characters.')
+}).strict();
+export type AwardNominateInput = z.input<typeof awardNominateSchema>;

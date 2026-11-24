@@ -195,6 +195,8 @@ import type {
   TeamDivision
 } from '../../../shared/contracts';
 import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType, AiWebsiteOnboardingBody } from '../../../shared/validation';
+import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
+import type { AwardNominateInput } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -1113,4 +1115,17 @@ export const emailApi = {
   history: (q: Record<string, string | number | undefined>) => api.get<EmailHistoryPage>('/email/history', Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>),
   historyDetail: (id: string) => api.get<EmailHistoryDetail>(`/email/history/${id}`),
   review: (id: string, received: boolean) => api.post<{ ok: true }>(`/email/history/${id}/review`, { received })
+};
+
+// HR Awards (20270202000100): Award Management > Awards (HR staff and the Super Admin; the database checks)
+export const hrAwardsApi = {
+  overview: (month: string) => api.get<HrAwardsOverview>('/hr/awards', { month }),
+  options: () => api.get<HrAwardOptions>('/hr/awards/options'),
+  detail: (code: string, month: string) => api.get<HrAwardDetail>(`/hr/awards/${encodeURIComponent(code)}`, { month }),
+  nominate: (code: string, body: AwardNominateInput) => api.post<HrAwardDetail>(`/hr/awards/${encodeURIComponent(code)}/nominees`, body),
+  updateNominee: (id: string, body: { reason: string; remarks?: string | null }) => api.post<HrAwardDetail>(`/hr/awards/nominees/${id}/update`, body),
+  removeNominee: (id: string, reason?: string) => api.post<HrAwardDetail>(`/hr/awards/nominees/${id}/remove`, reason ? { reason } : {}),
+  declareWinners: (nomineeIds: string[], remarks?: string) => api.post<HrAwardDetail>('/hr/awards/winners', { nomineeIds, remarks: remarks || null }),
+  updateWinner: (id: string, remarks: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/update`, { remarks: remarks || null }),
+  revokeWinner: (id: string, reason: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/revoke`, { reason })
 };
