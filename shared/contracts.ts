@@ -7078,13 +7078,16 @@ export type NoticeCategory = 'GENERAL' | 'HR' | 'POLICY' | 'EVENT' | 'HOLIDAY' |
 export type NoticePriority = 'NORMAL' | 'IMPORTANT' | 'URGENT';
 export type NoticeAudienceType = 'COMPANY' | 'DEPARTMENT' | 'ROLE' | 'EMPLOYEES';
 /** SUPER_ADMIN / HR / DEVELOPER: any audience; OPERATIONS_HEAD: only the departments they own */
-export type NoticePublisherRole = 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'HR' | 'DEVELOPER';
+/** 20270202000100: SUPER_ADMIN, HR and CRM_TEAM (Ashish, Shreya, Siddhesh by profile id) publish; the earlier OPERATIONS_HEAD / DEVELOPER only mark old notices. */
+export type NoticePublisherRole = 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'HR' | 'DEVELOPER' | 'CRM_TEAM';
 export interface CompanyNotice {
   id: string; reference: string; title: string; body: string; category: NoticeCategory; priority: NoticePriority;
   status: 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED'; expired: boolean; publishAt: string; expiresAt: string | null; releasedAt: string | null; updatedAt: string; version: number;
   publisherId: string; publisherName: string | null; publisherRole: NoticePublisherRole;
   audience: { type: NoticeAudienceType; departments: string[]; roles: string[]; employees: string[]; departmentNames: string[] };
   isRecipient: boolean; read: boolean; readAt: string | null; canManage: boolean; recipientCount: number; readCount: number;
+  /** 20270202000100: the person's own acknowledgement, and (managers only; 0 for everybody else) how many acknowledged */
+  acknowledged: boolean; acknowledgedAt: string | null; acknowledgedCount: number;
   attachments: { id: string; name: string; mime: string; size: number }[];
   /** the publisher's / Super Admin's view of an opened notice: every version */
   history?: { version: number; action: 'PUBLISHED' | 'EDITED' | 'ARCHIVED'; by: string | null; at: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null }[];
@@ -7093,8 +7096,16 @@ export interface CompanyNotice {
 export interface NoticeList { items: CompanyNotice[]; total: number; unread: number; publisherRole: NoticePublisherRole | null }
 export interface NoticeReceipts {
   noticeId: string; status: CompanyNotice['status']; total: number; read: number; unread: number;
+  acknowledged: number; notAcknowledged: number; readPercent: number; acknowledgedPercent: number; version: number;
   push: { devices: number; accepted: number; pending: number; failed: number; cancelled: number };
-  rows: { profileId: string; name: string; department: string | null; notifiedAt: string | null; readAt: string | null }[];
+  rows: { profileId: string; name: string; department: string | null; notifiedAt: string | null; readAt: string | null; acknowledgedAt: string | null; acknowledgedVersion: number | null }[];
+}
+/** 20270202000100: the popup queue (Urgent first, then Important, then Normal; the oldest first inside a priority), the acknowledgement, and the CRM team's access */
+export interface NoticePending { pending: number; items: CompanyNotice[] }
+export interface NoticeAcknowledged { noticeId: string; acknowledged: boolean; acknowledgedAt: string | null; pending: number }
+export interface NoticeManagers {
+  managers: { profileId: string; name: string; email: string | null; status: string; department: string | null; since: string }[];
+  candidates: { profileId: string; name: string; role: string; department: string | null }[];
 }
 export interface NoticeAudienceOptions {
   canPublish: boolean; role: NoticePublisherRole | null; audiences: NoticeAudienceType[];

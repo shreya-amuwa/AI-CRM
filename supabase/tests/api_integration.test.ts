@@ -12350,8 +12350,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 201 && r.json.data.duplicate === true && r.json.data.id === n1, 'notice board API: the same form again is the same notice', r);
   r = await api('hr', 'POST', '/notices', { title: 'NBX Wabastore leave rules', body: 'New leave rules for Wabastore.', category: 'HR', audienceType: 'DEPARTMENT', departmentIds: [wabastore], clientRequestId: key() });
   check(r.status === 201 && r.json.data.publisherRole === 'HR', 'notice board API: HR publishes to a department', r);
+  // 20270202000100: being in the Developers team is not the permission; the CRM team is a list of named accounts (notice_board_managers)
   r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
-  check(r.status === 201 && r.json.data.publisherRole === 'DEVELOPER', 'notice board API: a developer publishes to designations', r);
+  check(r.status === 403, 'notice board API: a developer who is not on the CRM team list is refused (403)', r);
+  r = await api('nbdev', 'GET', '/notices/managers');
+  check(r.status === 403, 'notice board API: nor can they see who the managers are (403)', r);
+  r = await api('a', 'POST', `/notices/managers/${devId}`, { enabled: true });
+  check(r.status === 403, 'notice board API: a Team Member cannot add a manager (403)', r);
+  r = await api('sa', 'POST', `/notices/managers/${devId}`, { enabled: true });
+  check(r.status === 200 && r.json.data.manager === true, 'notice board API: the Super Admin adds a person to the CRM team', r);
+  r = await api('sa', 'GET', '/notices/managers');
+  check(r.status === 200 && r.json.data.managers.some((m: any) => m.profileId === devId), 'notice board API: the list shows them', r);
+  r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'CRM_TEAM', 'notice board API: a CRM team member publishes to designations', r);
   const bell = (await db.query(`select count(*)::int n from public.notifications where type = 'COMPANY_NOTICE' and entity_id = $1`, [n1])).rows[0].n;
   check(bell === r.json.data.recipientCount || bell >= 3, 'notice board API: the targeted employees are notified in the bell');
 
@@ -12364,12 +12375,29 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.read === true && r.json.data.body === 'Everyone joins the town hall.', 'notice board API: opening it marks it read', r);
   r = await api('a', 'GET', '/notices/unread-count');
   check(r.status === 200 && r.json.data.unread === before - 1, 'notice board API: the unread count goes down', r);
+  // the popup queue and the acknowledgement (20270202000100)
+  r = await api('a', 'GET', '/notices/pending');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === n1 && n.body === 'Everyone joins the town hall.') && r.json.data.pending === r.json.data.items.length,
+    'notice board API: the popup queue lists the notices not yet acknowledged, with their text', r);
+  r = await api(null, 'GET', '/notices/pending');
+  check(r.status === 401, 'notice board API: the queue is not for visitors', r);
+  r = await api('a', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice board API: the employee acknowledges it', r);
+  r = await api('a', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice board API: acknowledging twice is harmless', r);
+  r = await api('a', 'GET', '/notices/pending');
+  check(r.status === 200 && !r.json.data.items.some((n: any) => n.id === n1), 'notice board API: an acknowledged notice leaves the queue', r);
+  r = await api('sa', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 404, 'notice board API: the publisher is not a recipient: nothing to acknowledge', r);
+  r = await api('a', 'GET', '/notices/managers');
+  check(r.status === 403, 'notice board API: an employee gets 403 from the managers list', r);
   r = await api('a', 'GET', `/notices/${n1}/receipts`);
   check(r.status === 404, 'notice board API: an employee does not see the read receipts', r);
   r = await api('a', 'POST', `/notices/${n1}/update`, { title: 'NBX Hacked' });
   check(r.status === 404, 'notice board API: nor edit the notice', r);
   r = await api('sa', 'GET', `/notices/${n1}/receipts`);
-  check(r.status === 200 && r.json.data.read >= 1 && r.json.data.total === r.json.data.read + r.json.data.unread, 'notice board API: the publisher sees who read it', r);
+  check(r.status === 200 && r.json.data.read >= 1 && r.json.data.total === r.json.data.read + r.json.data.unread && r.json.data.acknowledged >= 1
+    && r.json.data.rows.some((x: any) => x.acknowledgedAt), 'notice board API: the publisher sees who read and acknowledged it', r);
   r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Everyone joins the town hall at 5:30 pm.', version: 1 });
   check(r.status === 200 && r.json.data.version === 2, 'notice board API: the publisher edits it', r);
   r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Stale', version: 1 });
@@ -12387,6 +12415,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200, 'notice board API: the chat still answers', r);
   await db.query(`delete from public.company_notices where title like 'NBX %'`);
   await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
+  await db.query(`delete from public.notice_board_managers where profile_id = $1`, [devId]);
 }
 // --- CEO Availability (migration 20270201000100): HR sets CEO Arrived / CEO Not Arrived; stored; the same for everyone; never blocks a request ---
 {
