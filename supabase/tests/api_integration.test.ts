@@ -12301,8 +12301,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
   let r = await api('a', 'GET', '/meetings/ceo-office');
   check(r.status === 200 && ceoOf(r.json.data)?.arrived === false && r.json.data.canMark === false, 'CEO arrival API: an employee sees "not arrived" and has no button', r);
-  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: new Date(Date.now() + 23 * 86400e3 + 37 * 60e3).toISOString(),
-    endsAt: new Date(Date.now() + 23 * 86400e3 + 67 * 60e3).toISOString(), mode: 'PHONE' });
+  // a fixed time on a day no other block books (now + 23 days + 37 min collided with the Super Admin's 06:00 UTC role-request slots when the suite ran around 05:30 UTC)
+  const caxAt = (min: number) => { const d = new Date(Date.now() + 77 * 86400e3); d.setUTCHours(14, min, 0, 0); return d.toISOString(); };
+  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: caxAt(7),
+    endsAt: caxAt(37), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO arrival API: a meeting request before the arrival is saved as usual', r);
   const reqId = r.json.data.id as string;
   r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
