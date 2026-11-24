@@ -15,6 +15,7 @@ import { MeetingDecisionsTab, MySummariesTab, SummaryPanel, SummaryReportDrawer 
 import { AvailabilityPill, MyAvailabilityPanel, useCeoPresence, usePresenceOf } from './CeoPresence';
 import { CeoArrivalBanner, CeoArrivalChip, CeoNotArrivedPopup, useCeoOffice } from './CeoArrival';
 import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
+import { relabelRoles } from '../../../shared/roleNames';
 
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
@@ -52,10 +53,10 @@ const STATUS_STYLE: Record<string, string> = {
 };
 const STATUS_LABEL: Record<string, string> = {
   REQUESTED: 'Waiting for approval', PROPOSED: 'Another time proposed', SCHEDULED: 'Scheduled', DECLINED: 'Declined', CANCELLED: 'Cancelled', COMPLETED: 'Done',
-  PENDING_AVAILABILITY: 'Queued (the CEO is in a meeting)'
+  PENDING_AVAILABILITY: 'Queued (the Managing Director is in a meeting)'
 };
 /** How a request for the CEO's time reads to the people involved. */
-const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PENDING_AVAILABILITY' ? 'Queued (CEO in a meeting)' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
+const ceoStatusLabel = (m: Meeting) => (m.status === 'REQUESTED' ? 'Pending' : m.status === 'PENDING_AVAILABILITY' ? 'Queued (Managing Director in a meeting)' : m.status === 'PROPOSED' ? 'Another time proposed' : m.status === 'DECLINED' ? 'Rejected'
   : m.status === 'SCHEDULED' ? (m.rescheduleCount > 0 ? 'Rescheduled' : 'Approved') : m.status === 'COMPLETED' ? 'Completed' : 'Cancelled');
 const SYNC_LABEL: Record<string, string> = {
   SYNCED: 'On Google Calendar', PENDING: 'Sending to Google…', FAILED: 'Google sync failed (retrying)', NOT_CONNECTED: 'Host has not connected Google', SKIPPED: 'Not on Google'
@@ -182,10 +183,10 @@ export const MeetingsPage: React.FC = () => {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900 font-heading flex items-center gap-2"><CalendarDays className="w-5 h-5 text-indigo-600" /> Meetings</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{isCeo ? 'Appointments, demos, interviews, meetings and requests for your time' : 'Appointments, demos, interviews, meetings and meetings with the CEO'} — in one calendar, synced to your Google Calendar.</p>
+          <p className="text-sm text-slate-500 mt-0.5">{isCeo ? 'Appointments, demos, interviews, meetings and requests for your time' : 'Appointments, demos, interviews, meetings and meetings with the Managing Director'} — in one calendar, synced to your Google Calendar.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!isCeo && <button type="button" className={btnGhost} onClick={() => setComposer('ceo')}><Crown className="w-4 h-4 text-amber-500" /> Ask the CEO for time</button>}
+          {!isCeo && <button type="button" className={btnGhost} onClick={() => setComposer('ceo')}><Crown className="w-4 h-4 text-amber-500" /> Ask the Managing Director for time</button>}
           <button type="button" className={btnPrimary} onClick={() => setComposer('meeting')}><CalendarPlus className="w-4 h-4" /> New meeting</button>
           <button type="button" className={btnGhost} onClick={() => setComposer('client')}><Briefcase className="w-4 h-4 text-indigo-600" /> Client meeting</button>
         </div>
@@ -196,7 +197,7 @@ export const MeetingsPage: React.FC = () => {
       {google && tab !== 'settings' && <GoogleBanner status={google} onOpenSettings={() => setTab('settings')} />}
 
       <div role="tablist" aria-label="Meetings sections" className="flex gap-1 border-b border-slate-200 overflow-x-auto">
-        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My CEO requests'], ['client', 'Client meetings'],
+        {([['calendar', 'Calendar'], ['requests', isCeo ? `Requests${approvals.length ? ` (${approvals.length})` : ''}` : 'My requests to the Managing Director'], ['client', 'Client meetings'],
           ['summaries', 'Meeting summaries'], ...(isCeo ? [['decisions', 'Meeting Decisions']] : [['hr', 'HR meeting requests']]), ['settings', 'Google, hours & booking links']] as [Tab, string][]).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} type="button" onClick={() => setTab(id)}
             className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
@@ -226,7 +227,7 @@ export const MeetingsPage: React.FC = () => {
           ? `${m.hostName} is in a meeting right now. Your request is in the queue: when they exit their meeting, the next request in the queue is confirmed to start then, and you get an e-mail with the meeting room link.`
           : m.status === 'REQUESTED'
           ? `Request sent to ${m.hostName}. You will be told when it is approved.`
-          : `${m.kindLabel} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
+          : `${relabelRoles(m.kindLabel)} booked for ${fullWhen(m.startsAt, m.endsAt)}.${m.googleSyncStatus === 'NOT_CONNECTED' ? ' Connect Google Calendar to add it there with a Meet link.' : ''}`);
       }} />}
       {reportId && <SummaryReportDrawer meetingId={reportId} ceo={isCeo} onClose={() => setReportId(null)} onChanged={reload} />}
       {openId && <MeetingDrawer id={openId} intent={openIntent} onClose={() => openMeeting(null)} onChanged={text => { done(text); }} />}
@@ -258,10 +259,10 @@ const MeetingRow: React.FC<{ m: Meeting; onOpen: (id: string) => void }> = ({ m,
     <div className="flex-1 min-w-0">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="font-semibold text-slate-900 truncate">{m.title}</span>
-        {m.kind === 'CEO_MEETING' && <Crown className="w-3.5 h-3.5 text-amber-500" aria-label="Meeting with the CEO" />}
+        {m.kind === 'CEO_MEETING' && <Crown className="w-3.5 h-3.5 text-amber-500" aria-label="Meeting with the Managing Director" />}
       </div>
       <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
-        <span>{m.kindLabel}</span>
+        <span>{relabelRoles(m.kindLabel)}</span>
         <span className="inline-flex items-center gap-1"><ModeIcon mode={m.mode} />{MODE_LABEL[m.mode]}</span>
         <span className="inline-flex items-center gap-1"><Users className="w-3.5 h-3.5" />{m.hostName}{m.attendees.length ? ` +${m.attendees.length}` : ''}</span>
       </div>
@@ -399,8 +400,8 @@ const RequestsTab: React.FC<{ reloadKey: number; onOpen: (id: string, intent?: '
       {data && !sa ? <CeoArrivalBanner /> : null}
       {data && sa ? <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">Your office status today, as HR set it: <CeoArrivalChip /></div> : null}
       <div>
-        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> {data === null ? 'Meeting requests with the CEO' : sa ? 'Meeting requests from employees' : 'My Meeting Requests'}</h2>
-        <p className="text-xs text-slate-500">{sa ? 'Only you, the Super Admin (CEO), can approve, reject or reschedule a request. The employee is told with your reason.' : 'You are told here when the CEO approves, rejects or reschedules a request. You can withdraw one that is still pending.'}</p>
+        <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> {data === null ? 'Meeting requests with the Managing Director' : sa ? 'Meeting requests from employees' : 'My Meeting Requests'}</h2>
+        <p className="text-xs text-slate-500">{sa ? 'Only you, the Managing Director, can approve, reject or reschedule a request. The employee is told with your reason.' : 'You are told here when the Managing Director approves, rejects or reschedules a request. You can withdraw one that is still pending.'}</p>
       </div>
       <div role="tablist" aria-label="Request sections" className="flex flex-wrap gap-1.5">
         {SECTIONS.map(([id, label, key]) => (
@@ -469,7 +470,7 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
   // the Super Admin always says why when moving, rejecting or cancelling someone's request: the employee reads it
   const needsReason = !!m && m.kind === 'CEO_MEETING' && m.canManage;
   return (
-    <SideDrawer title={m?.title ?? 'Meeting'} subtitle={m ? `${m.reference} · ${m.kindLabel}` : undefined} onClose={onClose}>
+    <SideDrawer title={m?.title ?? 'Meeting'} subtitle={m ? `${m.reference} · ${relabelRoles(m.kindLabel)}` : undefined} onClose={onClose}>
       <div className="p-5 space-y-4 text-sm">
         {error && <Notice tone="error">{error}</Notice>}
         {!m && !error && <p className="text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</p>}
@@ -491,7 +492,7 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
               })()}
               <dt className="text-slate-500">Host</dt><dd>{m.hostName}</dd>
               {m.createdByName && m.createdBy !== m.hostId && (<><dt className="text-slate-500">{m.kind === 'CEO_MEETING' ? 'Requested by' : 'Booked by'}</dt><dd>{m.createdByName}{m.createdByDepartment ? ` · ${m.createdByDepartment}` : ''}{m.createdByDesignation ? ` · ${m.createdByDesignation}` : ''}</dd></>)}
-              {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">CEO today</dt><dd><CeoArrivalChip ceoId={m.hostId} /></dd></>)}
+              {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">Managing Director today</dt><dd><CeoArrivalChip ceoId={m.hostId} /></dd></>)}
               {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">Sent</dt><dd>{new Date(m.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>)}
               {m.rescheduleCount > 0 && m.previousStartsAt && m.previousEndsAt && (<><dt className="text-violet-700">Moved from</dt><dd className="text-violet-800">{fullWhen(m.previousStartsAt, m.previousEndsAt)}{m.rescheduledByName ? ` by ${m.rescheduledByName}` : ''}{m.rescheduleReason ? ` — ${m.rescheduleReason}` : ''}</dd></>)}
               {m.status === 'DECLINED' && m.rejectionReason ? (<><dt className="text-rose-700">Rejected</dt><dd className="text-rose-800">{m.rejectionReason}</dd></>)
@@ -693,7 +694,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   };
 
   return (
-    <SideDrawer title={mode === 'ceo' ? 'Ask the CEO for time' : 'New meeting'} subtitle={mode === 'ceo' ? 'Only the CEO (Super Admin) approves, reschedules or rejects your request.' : 'Invite colleagues and guests; Google sends the invitations.'} onClose={onClose}>
+    <SideDrawer title={mode === 'ceo' ? 'Ask the Managing Director for time' : 'New meeting'} subtitle={mode === 'ceo' ? 'Only the Managing Director approves, reschedules or rejects your request.' : 'Invite colleagues and guests; Google sends the invitations.'} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-4 text-sm">
         {showNotArrived && askedCeo ? <CeoNotArrivedPopup onContinue={() => setWarned(askedCeo.ceoId)} /> : null}
         {error && <Notice tone="error">{error}</Notice>}
@@ -704,15 +705,15 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
             <div>
               <label className={labelCls} htmlFor="mtg-ceo">With</label>
               <select id="mtg-ceo" className={inputCls} value={f.hostId} onChange={e => setF({ ...f, hostId: e.target.value })}>
-                {ceos.map(c => <option key={c.id} value={c.id}>{c.name}{c.position ? ` — ${c.position}` : ' — CEO'}</option>)}
+                {ceos.map(c => <option key={c.id} value={c.id}>{c.name}{c.position ? ` — ${c.position}` : ' — Managing Director'}</option>)}
               </select>
             </div>
-          ) : <Notice tone="warn">No CEO account was found.</Notice>
+          ) : <Notice tone="warn">No Managing Director account was found.</Notice>
         )}
         {ceoBusy && (
           <div role="status" aria-live="polite" data-testid="ceo-busy-notice" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900">
-            <p className="font-bold">The CEO is in a meeting right now.</p>
-            <p className="mt-0.5">Send your request: it joins the queue. Each time the CEO exits a meeting, the next request in the queue is confirmed to start then, and you get an e-mail with the meeting room link.</p>
+            <p className="font-bold">The Managing Director is in a meeting right now.</p>
+            <p className="mt-0.5">Send your request: it joins the queue. Each time the Managing Director exits a meeting, the next request in the queue is confirmed to start then, and you get an e-mail with the meeting room link.</p>
           </div>
         )}
         <div>
@@ -886,7 +887,7 @@ const SettingsTab: React.FC<{ google: GoogleCalendarStatus | null; onGoogleChang
       {s?.isCeo && (
         <section className="rounded-xl border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> Requests for your time</h2>
-          <p className="text-xs text-slate-500 mt-1">Only you, the Super Admin (CEO), approve, reject or reschedule requests for your time. Nobody else can, and it cannot be delegated.</p>
+          <p className="text-xs text-slate-500 mt-1">Only you, the Managing Director, approve, reject or reschedule requests for your time. Nobody else can, and it cannot be delegated.</p>
         </section>
       )}
       {s?.isCeo && <RoomLinkEditor onFlash={onFlash} google={google} />}
@@ -974,7 +975,7 @@ const HoursEditor: React.FC<{ settings: MeetingSettings; onSaved: (s: MeetingSet
 };
 
 const emptyLink = (isCeo: boolean): BookingLinkInput => ({
-  id: null, slug: '', title: isCeo ? 'Meeting with the CEO' : 'Meeting', description: null, kind: isCeo ? 'CEO_MEETING' : 'APPOINTMENT', durationMinutes: 30, bufferMinutes: 10,
+  id: null, slug: '', title: isCeo ? 'Meeting with the Managing Director' : 'Meeting', description: null, kind: isCeo ? 'CEO_MEETING' : 'APPOINTMENT', durationMinutes: 30, bufferMinutes: 10,
   minNoticeMinutes: 240, maxDaysAhead: 30, mode: 'GOOGLE_MEET', location: null, requiresApproval: isCeo, isActive: true
 });
 

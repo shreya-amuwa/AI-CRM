@@ -53,7 +53,7 @@ try {
     const dialogs = [];
     page.on('dialog', d => { dialogs.push(d.message()); d.accept('Client postponed the visit'); });
     // ---- three separate options
-    for (const b of ['Ask the CEO for time', 'New meeting', 'Client meeting']) check(await page.isVisible(`button:has-text("${b}")`), `the Meetings page offers "${b}"`);
+    for (const b of ['Ask the Managing Director for time', 'New meeting', 'Client meeting']) check(await page.isVisible(`button:has-text("${b}")`), `the Meetings page offers "${b}"`);
     await page.click('button:has-text("Client meeting")');
     await page.waitForSelector('[data-testid="client-meeting-form"]');
     check(await page.isVisible('text=The client receives a meeting invitation by e-mail'), 'Client meeting opens its own form');

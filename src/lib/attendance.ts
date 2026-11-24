@@ -203,8 +203,79 @@ export const attendanceApi = {
   clientCheck: (c: { clientId: string; label: string; permission: string; pushState: string; audioState: string; standalone: boolean }) =>
     rpc<null>('notification_client_check', { p_client_id: c.clientId, p_label: c.label, p_permission: c.permission, p_push_state: c.pushState,
       p_audio_state: c.audioState, p_standalone: c.standalone }),
-  saveResumeFollowUp: (minutes: number) => rpc<ReminderSettings>('hr_attendance_resume_follow_up_save', { p_minutes: minutes })
+  saveResumeFollowUp: (minutes: number) => rpc<ReminderSettings>('hr_attendance_resume_follow_up_save', { p_minutes: minutes }),
+
+  // ---- Team attendance, confirmed Punch Out and corrections (20270205000200)
+  /** Managers and HR: one status per employee of the people they may see (the database decides who). */
+  teamOverview: (q: { date?: string | null; departmentId?: string | null; teamId?: string | null; status?: string | null; search?: string | null } = {}) =>
+    rpc<TeamAttendance>('attendance_team_overview', { p_date: q.date || null, p_department: q.departmentId || null, p_team: q.teamId || null,
+      p_status: q.status || null, p_search: q.search || null }),
+  /** The Punch Out dialog's figures, from the server's clock. */
+  punchOutPreview: () => rpc<PunchOutPreview>('attendance_punch_out_preview'),
+  /** Punch Out after the confirmation; before the shift end the reason is required (checked again by the database). */
+  punchOutConfirmed: async (l: CapturedLocation, reason: string | null, request: string): Promise<AttendanceDayData> => {
+    try {
+      return await rpc<AttendanceDayData>('attendance_punch_out_confirmed', { ...punchArgs(l, request), p_early_reason: reason });
+    } catch (e) {
+      // before the migration is run: the existing Punch Out (same request id, so never a second punch)
+      if (e instanceof Error && /attendance_punch_out_confirmed|could not find the function/i.test(e.message)) return rpc<AttendanceDayData>('attendance_punch_out', punchArgs(l, request));
+      throw e;
+    }
+  },
+  requestCorrection: (b: { date: string; kind: CorrectionKind; time: string | null; reason: string; details: string | null }, request: string) =>
+    rpc<AttendanceCorrection>('attendance_correction_request', { p_date: b.date, p_kind: b.kind, p_time: b.time, p_reason: b.reason, p_details: b.details, p_request: request }),
+  cancelCorrection: (id: string) => rpc<AttendanceCorrection>('attendance_correction_cancel', { p_id: id }),
+  corrections: (scope: 'MINE' | 'DECIDE', status?: string | null) =>
+    rpc<{ items: AttendanceCorrection[]; pending: number }>('attendance_corrections', { p_scope: scope, p_status: status || null, p_limit: 100, p_offset: 0 }),
+  decideCorrection: (id: string, approve: boolean, note: string | null) =>
+    rpc<AttendanceCorrection>('attendance_correction_decide', { p_id: id, p_approve: approve, p_note: note })
 };
+
+/** One request id per confirmation dialog: pressing Confirm twice, or a retry after a slow network, is the same punch. */
+export const newPunchRequestId = newRequestId;
+
+export type TeamStatus = 'SHIFT_NOT_STARTED' | 'PRESENT' | 'LATE' | 'NOT_PUNCHED_IN' | 'ABSENT' | 'APPROVED_LEAVE' | 'HALF_DAY' | 'ON_BREAK'
+  | 'SHIFT_COMPLETED' | 'WEEKLY_OFF' | 'HOLIDAY';
+export const TEAM_STATUS_LABEL: Record<TeamStatus, string> = {
+  SHIFT_NOT_STARTED: 'Shift not started', PRESENT: 'Present', LATE: 'Late', NOT_PUNCHED_IN: 'Not punched in', ABSENT: 'Absent',
+  APPROVED_LEAVE: 'Approved leave', HALF_DAY: 'Half day', ON_BREAK: 'On break', SHIFT_COMPLETED: 'Shift completed', WEEKLY_OFF: 'Weekly off', HOLIDAY: 'Holiday'
+};
+export const TEAM_STATUS_TONE: Record<TeamStatus, string> = {
+  SHIFT_NOT_STARTED: 'bg-slate-100 text-slate-600', PRESENT: 'bg-emerald-50 text-emerald-800', LATE: 'bg-amber-50 text-amber-800',
+  NOT_PUNCHED_IN: 'bg-orange-50 text-orange-800', ABSENT: 'bg-rose-50 text-rose-700', APPROVED_LEAVE: 'bg-sky-50 text-sky-800', HALF_DAY: 'bg-sky-50 text-sky-800',
+  ON_BREAK: 'bg-amber-50 text-amber-800', SHIFT_COMPLETED: 'bg-slate-100 text-slate-700', WEEKLY_OFF: 'bg-slate-100 text-slate-500', HOLIDAY: 'bg-slate-100 text-slate-500'
+};
+export interface TeamAttendanceRow {
+  profileId: string; name: string; avatarUrl: string | null; designation: string | null; role: string; departmentId: string | null; department: string | null;
+  teamId: string | null; team: string | null; teamLead: string | null; status: TeamStatus; late: boolean; lateMinutes: number;
+  punchInAt: string | null; punchOutAt: string | null; dayStart: string | null; dayEnd: string | null; leave: 'FULL_DAY' | 'MORNING' | 'AFTERNOON' | null;
+  onBreak: boolean; workedMinutes: number | null; earlyOutReason: string | null; correctionPending: boolean; available: boolean;
+}
+export interface TeamAttendance {
+  date: string; today: string; serverTime: string; workingDay: boolean; graceMinutes: number; absentAfterMinutes: number;
+  totals: { total: number; scheduled: number; present: number; absent: number; notPunchedIn: number; shiftNotStarted: number; late: number;
+    onLeave: number; halfDay: number; onBreak: number; shiftCompleted: number; offToday: number };
+  departments: { id: string | null; name: string; total: number; available: number; present: number; unavailable: number; late: number }[];
+  teams: { id: string; name: string; departmentId: string }[];
+  departmentOptions: { id: string; name: string }[];
+  rows: TeamAttendanceRow[];
+  shown: number;
+}
+export interface PunchOutPreview {
+  serverTime: string; punchInAt: string | null; punchedOut: boolean; workedMinutes: number | null; breakMinutes: number; netMinutes: number;
+  shiftEnd: string | null; early: boolean; reasonRequired: boolean;
+}
+export type CorrectionKind = 'RESUME_DAY' | 'SET_PUNCH_OUT' | 'SET_PUNCH_IN';
+export const CORRECTION_KIND_LABEL: Record<CorrectionKind, string> = {
+  RESUME_DAY: 'I punched out by mistake: resume my day', SET_PUNCH_OUT: 'Correct my Punch Out time', SET_PUNCH_IN: 'I missed my Punch In'
+};
+export interface AttendanceCorrection {
+  id: string; profileId: string; employee: string; department: string | null; date: string; kind: CorrectionKind; requestedTime: string | null;
+  reason: string; details: string | null; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  original: { punchInAt: string | null; punchOutAt: string | null; punchOuts: number };
+  applied: { punchInAt: string | null; punchOutAt: string | null; punchOuts: number } | null;
+  decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; createdAt: string; canDecide: boolean; canCancel: boolean;
+}
 
 export interface PushDevice {
   id: string; label: string | null; createdAt: string; lastSuccessAt: string | null; active: boolean;

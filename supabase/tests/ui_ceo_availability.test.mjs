@@ -56,9 +56,9 @@ try {
     await page.waitForSelector('#sb aside button');
     const labels = await navLabels(page, 'sb');
     const i = labels.findIndex(l => l.startsWith('Notice Board'));
-    check(i >= 0 && labels[i + 1] === 'CEO Availability', `HR sidebar (${who}): CEO Availability is immediately below Notice Board`, labels);
-    check(labels.filter(l => l === 'CEO Availability').length === 1, `HR sidebar (${who}): the entry appears once`, labels);
-    await page.click('#sb aside button:has-text("CEO Availability")');
+    check(i >= 0 && labels[i + 1] === 'Managing Director Availability', `HR sidebar (${who}): CEO Availability is immediately below Notice Board`, labels);
+    check(labels.filter(l => l === 'Managing Director Availability').length === 1, `HR sidebar (${who}): the entry appears once`, labels);
+    await page.click('#sb aside button:has-text("Managing Director Availability")');
     check(await page.evaluate(() => window.__tab) === 'hr_ceo_availability', `HR sidebar (${who}): clicking it opens the CEO Availability screen`);
     await page.close();
   }
@@ -68,7 +68,7 @@ try {
     await mount(page, 'member', 'sidebar', 'sb', 'wabastore');
     await page.waitForSelector('#sb aside button');
     const labels = await navLabels(page, 'sb');
-    check(labels.some(l => l.startsWith('Notice Board')) && !labels.includes('CEO Availability'), 'a department that is not HR has the Notice Board and no CEO Availability entry', labels);
+    check(labels.some(l => l.startsWith('Notice Board')) && !labels.includes('Managing Director Availability'), 'a department that is not HR has the Notice Board and no CEO Availability entry', labels);
     await page.close();
   }
 
@@ -79,15 +79,15 @@ try {
     await page.waitForSelector('#sh nav button');
     const labels = await navLabels(page, 'sh');
     const i = labels.findIndex(l => l.startsWith('Notice Board'));
-    check(i >= 0 && labels[i + 1] === 'CEO Availability' && labels.filter(l => l === 'CEO Availability').length === 1, 'HR Recruiter dashboard: CEO Availability is immediately below Notice Board', labels);
-    await page.click('#sh nav button:has-text("CEO Availability")');
+    check(i >= 0 && labels[i + 1] === 'Managing Director Availability' && labels.filter(l => l === 'Managing Director Availability').length === 1, 'HR Recruiter dashboard: CEO Availability is immediately below Notice Board', labels);
+    await page.click('#sh nav button:has-text("Managing Director Availability")');
     await page.waitForSelector('[data-testid="ceo-availability-page"]');
     check(await page.isVisible('[data-testid="ceo-availability-readonly"]') && !(await page.isVisible('[data-testid="ceo-set-arrived"]')), 'HR Recruiter dashboard: the screen is read-only for a Recruiter');
     await page.close();
     const other = await newPage();
     await mount(other, 'member', 'shell', 'sh');
     await other.waitForSelector('#sh nav button');
-    check(!(await navLabels(other, 'sh')).includes('CEO Availability'), 'a dashboard that is not HR has no CEO Availability entry');
+    check(!(await navLabels(other, 'sh')).includes('Managing Director Availability'), 'a dashboard that is not HR has no CEO Availability entry');
     await other.close();
   }
 
@@ -106,7 +106,7 @@ try {
     await page.waitForSelector('#hr1 [data-status="ARRIVED"]');
     check((await writes(page)).at(-1) === '/api/v1/meetings/ceo-office/arrived', 'CEO Arrived calls the server (stored, not a frontend flag)');
     const upd = await page.textContent('#hr1 [data-testid="ceo-availability-updated"]');
-    check(/CEO Arrived/.test(upd) && /by Hema HR/.test(upd) && /\d{4}/.test(upd), 'the latest update shows the status, the date and time, and who', upd);
+    check(/Managing Director Arrived/.test(upd) && /by Hema HR/.test(upd) && /\d{4}/.test(upd), 'the latest update shows the status, the date and time, and who', upd);
     await page.waitForSelector('#hr2 [data-status="ARRIVED"]');
     check(true, 'the other HR dashboard follows at once (Realtime)');
     check(!(await page.isEnabled('#hr1 [data-testid="ceo-set-arrived"]')), 'CEO Arrived is disabled while the CEO is marked as arrived');
@@ -115,14 +115,14 @@ try {
     await page.waitForSelector('#hr2 [data-status="NOT_ARRIVED"]');
     check((await writes(page)).at(-1) === '/api/v1/meetings/ceo-office/not-arrived', 'CEO Not Arrived calls the server');
     await page.waitForSelector('#hr1 [data-status="NOT_ARRIVED"]');
-    check(/CEO Not Arrived/.test(await page.textContent('#hr1 [data-testid="ceo-availability-updated"]')), 'both dashboards show the same latest update');
+    check(/Managing Director Not Arrived/.test(await page.textContent('#hr1 [data-testid="ceo-availability-updated"]')), 'both dashboards show the same latest update');
     await page.click('#hr1 [data-testid="ceo-set-arrived"]');
     await page.waitForSelector('#hr1 [data-status="ARRIVED"]');
 
     // a refresh of a dashboard: the status is read again from the server
     await mount(page, 'hr', 'page', 'hr3');
     await page.waitForSelector('#hr3 [data-status="ARRIVED"]');
-    check(/CEO Arrived/.test(await page.textContent('#hr3 [data-testid="ceo-availability-updated"]')), 'after a refresh (a new dashboard) the stored status and its update are still there');
+    check(/Managing Director Arrived/.test(await page.textContent('#hr3 [data-testid="ceo-availability-updated"]')), 'after a refresh (a new dashboard) the stored status and its update are still there');
 
     // an HR Recruiter and an employee see it, and have no buttons
     await mount(page, 'recruiter', 'page', 'rec');
@@ -139,11 +139,11 @@ try {
   {
     const page = await newPage();
     await mount(page, 'member', 'meetings', 'mt');
-    await page.waitForSelector('button:has-text("Ask the CEO for time")');
-    await page.click('button:has-text("Ask the CEO for time")');
+    await page.waitForSelector('button:has-text("Ask the Managing Director for time")');
+    await page.click('button:has-text("Ask the Managing Director for time")');
     await page.waitForSelector('[data-testid="ceo-not-arrived-popup"]');
     const text = (await page.textContent('[data-testid="ceo-not-arrived-text"]')).trim();
-    check(text === 'CEO has not arrived yet. You can still schedule your meeting request. Please plan your preferred meeting time accordingly.', 'CEO not arrived: the popup shows the required message', text);
+    check(text === 'Managing Director has not arrived yet. You can still schedule your meeting request. Please plan your preferred meeting time accordingly.', 'CEO not arrived: the popup shows the required message', text);
     check(await page.$eval('[data-testid="ceo-not-arrived-popup"] [role="alertdialog"]', e => e.getAttribute('aria-modal')) === 'true', 'the popup is an accessible modal dialog');
     await page.click('[data-testid="ceo-not-arrived-continue"]');
     await page.waitForSelector('[data-testid="ceo-not-arrived-popup"]', { state: 'detached' });
@@ -165,8 +165,8 @@ try {
     await page.click('#hr1 [data-testid="ceo-set-arrived"]');
     await page.waitForSelector('#hr1 [data-status="ARRIVED"]');
     await mount(page, 'member', 'meetings', 'mt');
-    await page.waitForSelector('#mt button:has-text("Ask the CEO for time")');
-    await page.click('#mt button:has-text("Ask the CEO for time")');
+    await page.waitForSelector('#mt button:has-text("Ask the Managing Director for time")');
+    await page.click('#mt button:has-text("Ask the Managing Director for time")');
     await page.waitForSelector('#mtg-title');
     check(await page.isVisible('[data-testid="ceo-arrival"][data-arrived="true"]') && !(await page.isVisible('[data-testid="ceo-not-arrived-popup"]')), 'CEO arrived: the green banner, and no warning popup');
     await page.fill('#mtg-title', 'Hiring plan');

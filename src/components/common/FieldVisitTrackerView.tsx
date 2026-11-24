@@ -785,7 +785,7 @@ export const FieldVisitTrackerView: React.FC<FieldVisitTrackerViewProps> = ({
                   Automated Phone Location Radar
                 </span>
                 <p>
-                  Starting this visit registers your departure from HQ. Supervisor (Team Lead, Admin, Super Admin) will receive your live route telemetry and destination check-in status.
+                  Starting this visit registers your departure from HQ. Supervisor (Team Lead, Admin, Managing Director) will receive your live route telemetry and destination check-in status.
                 </p>
               </div>
 

@@ -82,7 +82,7 @@ const fill = async (page, name) => {
   check((await optionsOf(page)).join('|') === 'HR Assistant|HR Recruiter|HR Admin Head', 'HR Department: the Role dropdown shows exactly HR Assistant, HR Recruiter, HR Admin Head', await optionsOf(page));
   const labels = (await optionsOf(page)).join('|');
   check(!/Team Member|Team Lead|Department Head|Operations Head/.test(labels), 'and no generic role is offered');
-  check((await page.$$('select:has(option:text("Team Lead"))')).length === 0 && (await page.$$('select:has(option:text("Operations Head"))')).length === 0, 'there is no second dropdown carrying the generic roles either');
+  check((await page.$$('select:has(option:text("Team Lead"))')).length === 0 && (await page.$$('select:has(option:text("CEO"))')).length === 0, 'there is no second dropdown carrying the generic roles either');
   check(/Role \/ Designation/.test(await page.innerText('label:has(#staff-role)')), 'the dropdown is labelled Role / Designation');
   await page.close();
 }
@@ -107,7 +107,7 @@ for (const [designation, role, dash] of [['HR Assistant', 'TEAM_MEMBER', 'HR Das
   await page.selectOption('#dept', 'wabastore');
   const opts = (await optionsOf(page)).join('|');
   check(/Department Head/.test(opts) && /Team Lead/.test(opts) && /Team Member/.test(opts) && !/HR Assistant|HR Recruiter|HR Admin Head/.test(opts), 'Wabastore: the existing roles appear and no HR designation', opts);
-  const desig = await page.$$eval('select:has(option:text("Operations Head")) option, select option', os => os.map(o => o.textContent.trim()));
+  const desig = await page.$$eval('select:has(option:text("CEO")) option, select option', os => os.map(o => o.textContent.trim()));
   check(!desig.some(t => /HR Assistant|HR Recruiter|HR Admin Head/.test(t)), 'Wabastore: no HR designation in any dropdown', desig);
   await page.selectOption('#staff-role', 'TEAM_MEMBER');
   await page.selectOption('select:has(option:text("Select team…"))', '44444444-4444-4444-8444-444444444441');
@@ -124,11 +124,11 @@ for (const [designation, role, dash] of [['HR Assistant', 'TEAM_MEMBER', 'HR Das
   // HR's employee request form: choosing the HR department replaces the generic roles with the three HR designations
   const page = await open({ width: 1280, height: 1100 }, true);
   const generic = await page.$$eval('select option', os => os.map(o => o.textContent.trim()));
-  check(generic.includes('Operations Head') && generic.includes('Team Lead'), 'request form: before a department is chosen it offers the generic roles');
+  check(generic.includes('CEO') && generic.includes('Team Lead'), 'request form: before a department is chosen it offers the generic roles');
   await page.selectOption('select:has(option:text("Choose a department"))', '22222222-2222-4222-8222-222222222222');
   const hrOpts = await page.$$eval('[data-testid="hr-designation"] option', os => os.map(o => o.textContent.trim()));
   check(hrOpts.join('|') === 'HR Assistant|HR Recruiter|HR Admin Head', 'request form: HR Department shows exactly HR Assistant, HR Recruiter, HR Admin Head', hrOpts);
-  check(!(await page.$$eval('select option', os => os.map(o => o.textContent.trim()))).some(t => /^(Operations Head|Team Lead|Department Head|Team Member)$/.test(t)), 'and no generic role remains in the form');
+  check(!(await page.$$eval('select option', os => os.map(o => o.textContent.trim()))).some(t => /^(CEO|Team Lead|Department Head|Team Member)$/.test(t)), 'and no generic role remains in the form');
   await page.selectOption('[data-testid="hr-designation"]', 'HR Admin Head');
   await page.fill('input:not([type])', 'Hira Head');
   await page.fill('input[type="email"]', 'hira.head@amuwa.com');
