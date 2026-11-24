@@ -22,7 +22,7 @@ const RULES: [RegExp, NotificationCategory][] = [
   [/^(REPORT_|TOP_PERFORMERS_|AI_STUDIO_REPORT_|ADS_REPORT_)/, 'Reports'],
   [/^(DEV_BUG_|ADS_ISSUE|ADS_CLIENT_|ADS_NOTICE)/, 'Issues'],
   [/^ANNOUNCEMENT/, 'Announcements'],
-  [/^(AUTOMATION_|GOOGLE_CALENDAR_|NOTIFICATION_|FINANCE_MAIL_|USAGE_ALERT|ACTIVITY_LOGGED|OPERATIONS_SCOPE_)/, 'System']
+  [/^(AUTOMATION_|GOOGLE_CALENDAR_|NOTIFICATION_|FINANCE_MAIL_|EMAIL_|USAGE_ALERT|ACTIVITY_LOGGED|OPERATIONS_SCOPE_)/, 'System']
 ];
 
 export function categoryOf(type: string, entityType?: string | null): NotificationCategory {

@@ -31,6 +31,17 @@ begin
   raise exception 'TEST FAILED: % (statement succeeded)', p_label;
 end $$;
 grant execute on function test.must_fail_state(text, text, text) to anon, authenticated, service_role;
+-- runs the reminder and returns how many CHAT_UNANSWERED notifications THIS conversation got (other conversations in the shared test database may be waiting too)
+create or replace function test.nc_run(p_now timestamptz, p_conv uuid) returns integer language plpgsql as $$
+declare
+  b integer;
+  a integer;
+begin
+  select count(*) into b from public.notifications where type = 'CHAT_UNANSWERED' and entity_id = p_conv;
+  perform public.chat_unanswered_remind(p_now);
+  select count(*) into a from public.notifications where type = 'CHAT_UNANSWERED' and entity_id = p_conv;
+  return a - b;
+end $$;
 create temp table nc (k text primary key, v text);
 grant all on nc to authenticated, service_role;
 create function pg_temp.nv(p_k text) returns text language sql stable as $$ select v from nc where k = p_k $$;
@@ -198,26 +209,26 @@ select test.must_fail_state($$select chat_unanswered_remind()$$, 'the reminder f
 reset role;
 -- 45 minutes without an answer: level 1 (the Relationship Manager; the one handling it is the same person here)
 update chat_messages set created_at = pg_temp.nv('noon')::timestamptz - interval '45 minutes' where conversation_id = pg_temp.nv('conv')::uuid and body = 'Is anybody there?';
-select test.check((select (chat_unanswered_remind(pg_temp.nv('noon')::timestamptz) ->> 'reminded')::int >= 1), 'the reminder run finds the waiting client');
+select test.check(test.nc_run(pg_temp.nv('noon')::timestamptz, pg_temp.nv('conv')::uuid) = 1, 'the reminder run finds the waiting client');
 select test.check((select count(*) = 1 from notifications where recipient_id = test.id('sup_b') and type = 'CHAT_UNANSWERED' and entity_id = pg_temp.nv('conv')::uuid
                           and title = 'Client waiting: NC Traders (TEST)' and body = 'No reply for 45 minutes. Open the conversation and answer.' and priority = 'normal')
                   and (select count(*) = 0 from notifications where recipient_id in (test.id('sup_th'), test.id('sup_plain')) and type = 'CHAT_UNANSWERED' and entity_id = pg_temp.nv('conv')::uuid),
   'after 30 minutes the (current) Relationship Manager is reminded; the Team Lead and the previous Relationship Manager are not');
-select test.check((select (chat_unanswered_remind(pg_temp.nv('noon')::timestamptz) ->> 'reminded')::int = 0), 'running it again reminds nobody twice');
+select test.check(test.nc_run(pg_temp.nv('noon')::timestamptz, pg_temp.nv('conv')::uuid) = 0, 'running it again reminds nobody twice');
 -- 3 hours: level 2 (the Team Lead too, urgent)
 update chat_messages set created_at = pg_temp.nv('noon')::timestamptz - interval '3 hours' where conversation_id = pg_temp.nv('conv')::uuid and body = 'Is anybody there?';
-select chat_unanswered_remind(pg_temp.nv('noon')::timestamptz);
+select test.nc_run(pg_temp.nv('noon')::timestamptz, pg_temp.nv('conv')::uuid);
 select test.check((select count(*) = 1 from notifications where recipient_id = test.id('sup_th') and type = 'CHAT_UNANSWERED' and entity_id = pg_temp.nv('conv')::uuid
                           and title = 'Client still waiting: NC Traders (TEST)' and priority = 'urgent')
                   and (select count(*) = 2 from notifications where recipient_id = test.id('sup_b') and type = 'CHAT_UNANSWERED' and entity_id = pg_temp.nv('conv')::uuid),
   'after 2 hours the Team Lead is told too (urgent) and the Relationship Manager once more; the first reminder is not repeated');
-select test.check((select (chat_unanswered_remind(pg_temp.nv('noon')::timestamptz) ->> 'reminded')::int = 0), 'and a third run adds nothing');
+select test.check(test.nc_run(pg_temp.nv('noon')::timestamptz, pg_temp.nv('conv')::uuid) = 0, 'and a third run adds nothing');
 -- an answer ends it
 set role authenticated;
 select test.login('sup_b');
 select chat_send_message(pg_temp.nv('conv')::uuid, 'Sorry for the wait, here I am', '77777777-7777-7777-7777-777777777707');
 reset role;
-select test.check((select (chat_unanswered_remind(pg_temp.nv('noon')::timestamptz + interval '1 hour') ->> 'reminded')::int = 0), 'once an employee answered, nobody is reminded');
+select test.check(test.nc_run(pg_temp.nv('noon')::timestamptz + interval '1 hour', pg_temp.nv('conv')::uuid) = 0, 'once an employee answered, nobody is reminded');
 -- not at night, not for old messages
 select test.check((select (chat_unanswered_remind((date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '3 hours') at time zone 'Asia/Kolkata') ->> 'skipped') = 'OUTSIDE_HOURS'), 'at 03:00 India time nobody is reminded');
 set role authenticated;
@@ -225,4 +236,4 @@ select test.login('nc_client');
 select chat_send_message(pg_temp.nv('conv')::uuid, 'An old unanswered question', '77777777-7777-7777-7777-777777777708');
 reset role;
 update chat_messages set created_at = pg_temp.nv('noon')::timestamptz - interval '4 days' where conversation_id = pg_temp.nv('conv')::uuid and body = 'An old unanswered question';
-select test.check((select (chat_unanswered_remind(pg_temp.nv('noon')::timestamptz) ->> 'reminded')::int = 0), 'a message older than three days is not chased');
+select test.check(test.nc_run(pg_temp.nv('noon')::timestamptz, pg_temp.nv('conv')::uuid) = 0, 'a message older than three days is not chased');
