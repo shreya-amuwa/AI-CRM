@@ -153,17 +153,25 @@ for their approval): who is notified does not change.
   scheduled, a guest booked, summary submitted / revised / due / overdue (`private.meeting_push_type`). **Bell only:** answers to an
   invitation, presence, Google sync problems and other information-only types.
 * **One push per notification and device** (`notification_deliveries.notification_id` + device, unique), so a retry never sends twice.
-  Nobody is told about their own action.
-* **Lock-screen text:** the notification's title and the meeting's time (IST) only; never the agenda, minutes or participants.
+  Nobody is told about their own action. A newer notice about the same meeting replaces an older one still waiting (a late retry of a
+  reminder never covers "Meeting cancelled").
+* **Lock-screen text:** a fixed label and the meeting's title ("Meeting request: Q3 review", "In 15 minutes: Q3 review") and its time
+  (IST; for "Another time proposed", the proposed time). Never the agenda, minutes, participants, or who asked or booked (the bell's own
+  text, which can name them, is not used).
 * **Tapping it** opens that meeting: `/?open=meeting&id=…` (or, with the CRM already open, the service worker asks it to open the meeting).
-* **Expiry:** an hour after the meeting starts (at least 10 minutes from when it was queued), so a stale reminder is dropped.
+* **Expiry:** an hour after the meeting starts (at least 30 minutes from when it was queued, so retries can run), so a stale reminder is
+  dropped; summary notices a day after they were queued. Without push keys the rows are closed as expired the next time that person gets a
+  meeting notice.
 * **Reminders:** 24 hours and 1 hour before, plus **15 minutes before** and **at the start** (within 5 minutes). Each once per start time,
   so a moved meeting is reminded again and a cancelled one is not. They are created by the 5-minute scheduled run
-  (`/internal/attendance/reminders` now runs the meetings step first) and still by the daily dispatch. Guests get e-mail reminders 24 hours
-  and 1 hour before only, as before.
+  (`/internal/attendance/reminders` now creates them first: two database calls, so the attendance reminders keep their request budget;
+  Google sync and e-mails stay with the dispatch) and still by the daily dispatch. Guests get e-mail reminders 24 hours and 1 hour before,
+  as before (booked at short notice: the 1-hour e-mail at the 15-minute mark).
 * **Right after a change** (create, move, cancel, approve…), the pushes are sent at once, not at the next 5-minute run.
 * Without push keys, or without a registered device, the bell works as before. Each person's devices and a test send are under
   Attendance → **Reminders** (this includes the Managing Director, who is not listed in Notification Health).
+* Known limit: in the older department panels (side menu) a tapped push opens the CRM but not Meetings when the CRM was closed (notices
+  behave the same today); with the CRM open it opens Meetings.
 * Tests: `supabase/tests/meeting_push_test.sql`, `supabase/tests/meeting_push_open.test.ts`, and "meeting push" in
   `supabase/tests/api_integration.test.ts`.
 * Rollback: drop the trigger `notifications_meeting_push` on `public.notifications` (meetings go back to bell only); the extra column, index

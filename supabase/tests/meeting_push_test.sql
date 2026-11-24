@@ -85,12 +85,43 @@ update meetings set starts_at = now() + interval '3 minutes', ends_at = now() + 
 select mtg_enqueue_reminders();
 select test.check((select count(*) = 1 from notifications where recipient_id = test.id('sa') and type = 'MEETING_REMINDER' and entity_id = (select id from mp where k = 'm2') and title like 'Starting now:%'),
   'at the start (within 5 minutes) a "starting now" reminder');
+select test.check((select bool_and(d.status = 'CANCELLED' and d.last_error = 'SUPERSEDED') from notification_deliveries d join notifications n on n.id = d.notification_id
+                    where n.type = 'MEETING_REMINDER' and n.entity_id = (select id from mp where k = 'm2') and n.title like 'In 15 minutes:%'),
+  'the newer "starting now" replaces the 15-minute reminder still waiting (a late retry never covers a newer notice)');
+select test.check((select count(*) = 2 from notification_deliveries d join notifications n on n.id = d.notification_id
+                    where n.type = 'MEETING_REMINDER' and n.title like 'Starting now:%' and d.status = 'PENDING' and n.entity_id = (select id from mp where k = 'm2')),
+  'and is itself waiting to be sent');
 set role authenticated;
 select test.login('tm_a');
 select mtg_cancel((select id from mp where k = 'm2'), 'Off');
 reset role;
 update meetings set starts_at = now() + interval '10 minutes' where id = (select id from mp where k = 'm2');
 select test.check(mtg_enqueue_reminders() = 0, 'a cancelled meeting gets no reminders');
+
+\echo '   the lock screen never names who asked; no push about your own action; summaries and proposed times'
+insert into notifications (recipient_id, type, title, body, entity_type, entity_id, data) values
+  (test.id('sa'), 'MEETING_REQUESTED', 'Meeting request from Ravi Kumar', 'Ravi Kumar asked for a meeting about his appraisal.', 'meeting',
+   (select id from mp where k = 'm1'), jsonb_build_object('meetingId', (select id from mp where k = 'm1')));
+select test.check((select bool_and(d.title = 'Meeting request: MPush review' and d.title || d.body not like '%Ravi%' and d.title || d.body not like '%appraisal%')
+                     from notification_deliveries d join notifications n on n.id = d.notification_id where n.type = 'MEETING_REQUESTED' and d.profile_id = test.id('sa')),
+  'a request shows a fixed label and the meeting title, never the requester or the reason');
+insert into notifications (recipient_id, type, title, body, entity_type, entity_id, actor_id) values
+  (test.id('sa'), 'MEETING_QUEUE_SCHEDULED', 'Next queued meeting scheduled', 'x', 'meeting', (select id from mp where k = 'm1'), test.id('sa'));
+select test.check(not exists (select 1 from notification_deliveries d join notifications n on n.id = d.notification_id where n.type = 'MEETING_QUEUE_SCHEDULED'),
+  'a notice written about the person''s own action (written directly, not through notify) is not pushed');
+insert into notifications (recipient_id, type, title, body, entity_type, entity_id) values
+  (test.id('sa'), 'MEETING_SUMMARY_OVERDUE', 'Summary overdue', 'x', 'meeting', (select id from mp where k = 'm1'));
+select test.check((select bool_and(d.expires_at > now() + interval '23 hours') from notification_deliveries d join notifications n on n.id = d.notification_id
+                    where n.type = 'MEETING_SUMMARY_OVERDUE'), 'a summary notice (the meeting may be over) is kept a day for retries');
+update meetings set proposed_starts_at = timestamptz '2031-03-04 05:30:00+00', proposed_ends_at = timestamptz '2031-03-04 06:30:00+00'
+ where id = (select id from mp where k = 'm1');
+insert into notifications (recipient_id, type, title, body, entity_type, entity_id, data) values
+  (test.id('sa'), 'MEETING_PROPOSED', 'Another time proposed', 'x', 'meeting', (select id from mp where k = 'm1'),
+   jsonb_build_object('meetingId', (select id from mp where k = 'm1'), 'startsAt', now() + interval '4 days'));
+select test.check((select bool_and(d.body = 'Tue 04 Mar, 11:00 AM (IST)') from notification_deliveries d join notifications n on n.id = d.notification_id
+                    where n.type = 'MEETING_PROPOSED'), 'another time proposed shows the proposed time, not the one asked for');
+delete from notifications where type in ('MEETING_REQUESTED', 'MEETING_QUEUE_SCHEDULED', 'MEETING_SUMMARY_OVERDUE', 'MEETING_PROPOSED') and recipient_id = test.id('sa')
+   and entity_id = (select id from mp where k = 'm1');
 
 -- clean up
 delete from meetings where title like 'MPush %';

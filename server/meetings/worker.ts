@@ -197,7 +197,11 @@ async function mailOne(db: SupabaseClient, o: ClaimedMail): Promise<'SENT' | 'SK
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
-export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: number; db?: SupabaseClient } = {}): Promise<MeetingsRunSummary> {
+/**
+ * remindersOnly: just the reminders and summary notices (two database calls), for the 5-minute scheduled run, which shares its request
+ * budget with the attendance reminders; Google sync and e-mails stay with the dispatch and the run after a change.
+ */
+export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: number; db?: SupabaseClient; remindersOnly?: boolean } = {}): Promise<MeetingsRunSummary> {
   const summary: MeetingsRunSummary = { reminders: 0, synced: 0, syncFailed: 0, mailed: 0, mailSkipped: 0, mailFailed: 0 };
   if (!opts.db && !hasServiceClient()) return { ...summary, error: 'The service role is not configured.' };
   const db = opts.db ?? getServiceClient();
@@ -209,9 +213,11 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
     // post-meeting summaries: "confirm attendance" once a meeting ended, "overdue" once (20270124000200; absent before it runs)
     const sweep = await db.rpc('mms_sweep');
     if (!sweep.error && sweep.data) summary.summaryNotices = Object.values(sweep.data as Record<string, number>).reduce((n, v) => n + (Number(v) || 0), 0);
+    if (opts.remindersOnly) return summary;
 
     const cfg = googleConfig(process.env, appUrl());
-    if (cfg) {
+    // a claim counts an attempt: nothing is claimed once the time is up (it would be given up without being tried)
+    if (cfg && Date.now() < deadline) {
       const cache = new TokenCache(db, cfg);
       const { data } = await db.rpc('mtg_sync_claim', { p_limit: limit });
       for (const m of (data ?? []) as ClaimedMeeting[]) {
@@ -221,6 +227,7 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
       }
     }
 
+    if (Date.now() >= deadline) return summary;
     const { data: mails } = await db.rpc('mtg_mail_claim', { p_limit: limit });
     for (const o of (mails ?? []) as ClaimedMail[]) {
       if (Date.now() > deadline) break;
