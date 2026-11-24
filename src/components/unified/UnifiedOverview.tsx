@@ -33,10 +33,13 @@ function useMyTasks() {
   };
 }
 
-/** Department Head: the whole department, Sales and Support side by side. */
-const HeadOverview: React.FC<{ go: (p: UnifiedPage) => void }> = ({ go }) => {
+/**
+ * Department Head: the whole department, Sales and Support side by side. The Super Admin opens the same figures for International / Reseller from the
+ * department menu (`monitor`): the database allows exactly the Super Admin and that department's own head to read a department's overview.
+ */
+const HeadOverview: React.FC<{ go?: (p: UnifiedPage) => void; departmentId?: string; departmentName?: string; monitor?: boolean }> = ({ go, departmentId: forDepartment, departmentName, monitor }) => {
   const { profile } = useAuth();
-  const departmentId = profile?.department?.id;
+  const departmentId = forDepartment ?? profile?.department?.id;
   const [sales, setSales] = useState<DivisionLeadsOverview | null>(null);
   const [support, setSupport] = useState<DivisionSupportOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +54,7 @@ const HeadOverview: React.FC<{ go: (p: UnifiedPage) => void }> = ({ go }) => {
   const supportById = new Map((support?.members ?? []).map(m => [m.id, m]));
   return (
     <div className="space-y-8">
-      <PageTitle title={`${profile?.department?.name ?? 'Department'} overview`} subtitle="Sales and Support of your whole department, from the real records." />
+      <PageTitle title={`${departmentName ?? profile?.department?.name ?? 'Department'} overview`} subtitle={monitor ? 'Sales and Support of this department, from the real records. Other departments are not included.' : 'Sales and Support of your whole department, from the real records.'} />
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       <Section title="Sales">
         <StatCard label="Total leads" value={sales?.totals.leads ?? '-'} testId="ov-total-leads" />
@@ -66,12 +69,12 @@ const HeadOverview: React.FC<{ go: (p: UnifiedPage) => void }> = ({ go }) => {
         <StatCard label="Unassigned tickets" value={support?.totals.unassigned ?? '-'} tone="red" />
       </Section>
       <Section title="Work">
-        <StatCard label="Pending tasks" value={tasks.loading ? '-' : tasks.pending} tone="amber" testId="ov-pending-tasks" />
-        <StatCard label="Team members" value={sales?.totals.members ?? '-'} />
+        {!monitor && <StatCard label="Pending tasks" value={tasks.loading ? '-' : tasks.pending} tone="amber" testId="ov-pending-tasks" />}
+        <StatCard label="Team members" value={sales?.totals.members ?? '-'} testId="ov-members" />
       </Section>
       <section className="space-y-3" aria-label="Team performance">
         <div className="flex items-center justify-between"><h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Team performance</h2>
-          <button type="button" onClick={() => go('sales-performance')} className="text-sm font-medium text-sky-700 hover:underline">Sales performance</button></div>
+          {go && <button type="button" onClick={() => go('sales-performance')} className="text-sm font-medium text-sky-700 hover:underline">Sales performance</button>}</div>
         <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200">
           <table className="w-full text-sm">
             <thead className="text-left text-slate-500"><tr><th className="px-4 py-3">Person</th><th className="px-4 py-3">Leads added</th><th className="px-4 py-3">Leads</th><th className="px-4 py-3">Customers</th><th className="px-4 py-3">Tickets assigned</th><th className="px-4 py-3">Tickets open</th></tr></thead>
@@ -153,3 +156,8 @@ const MemberOverview: React.FC<{ go: (p: UnifiedPage) => void }> = ({ go }) => {
 
 export const UnifiedOverview: React.FC<{ who: UnifiedWho; go: (p: UnifiedPage) => void }> = ({ who, go }) =>
   who === 'HEAD' ? <HeadOverview go={go} /> : who === 'LEAD' ? <LeadOverview /> : <MemberOverview go={go} />;
+
+/** The Super Admin's view of International or Reseller (the department menu's Dashboard): the department's Sales and Support, read-only. */
+export const UnifiedDepartmentMonitor: React.FC<{ departmentId: string; departmentName: string }> = ({ departmentId, departmentName }) => (
+  <div data-testid="unified-monitor"><HeadOverview departmentId={departmentId} departmentName={departmentName} monitor /></div>
+);

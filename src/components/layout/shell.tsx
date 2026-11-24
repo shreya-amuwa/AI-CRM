@@ -1,6 +1,6 @@
 import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, Bug, CalendarDays, ChevronDown, Clock3, LogOut, Megaphone, Menu, X } from 'lucide-react';
+import { BookOpen, Bug, CalendarDays, ChevronDown, Clock3, Crown, LogOut, Megaphone, Menu, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
@@ -25,7 +25,10 @@ export const BUGS_NAV_ID = '__bugs';
 // Notice Board (20270131000200): every dashboard, everyone reads; publishers also send
 const NoticeBoard = React.lazy(() => import('../notices/NoticeBoard'));
 export const NOTICES_NAV_ID = '__notices';
-const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID] as const;
+// CEO Availability (20270201000100): the HR dashboards only, immediately below the Notice Board
+const CeoAvailabilityPage = React.lazy(() => import('../meetings/CeoAvailabilityPage'));
+export const CEO_AVAILABILITY_NAV_ID = '__ceo_availability';
+const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID] as const;
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
 export const meetingsRequested = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'meetings';
 
@@ -361,6 +364,8 @@ interface DashboardShellProps {
   flush?: boolean;
   /** The "Turn on reminders" banner (attendance reminders on this device); off for the Super Admin, who does not punch. */
   reminders?: boolean;
+  /** HR dashboards: adds CEO Availability below the Notice Board (the HR Recruiter's dashboard). */
+  ceoAvailability?: boolean;
   children: React.ReactNode;
 }
 
@@ -381,6 +386,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   wide = false,
   flush = false,
   reminders = true,
+  ceoAvailability = false,
   children
 }) => {
   // only sections marked collapsible use this; the others are always open as before
@@ -390,10 +396,12 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // a tapped reminder opens the CRM on /?open=attendance
   const bugAccess = useBugAccess();
   // remembered across a refresh (per person and dashboard), so Meeting Request / Attendance / Bugs stay open instead of returning to the Overview
-  const [overlay, setOverlay] = useRememberedOverlay<typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID | typeof NOTICES_NAV_ID>(OVERLAYS,
+  const [overlay, setOverlay] = useRememberedOverlay<typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID | typeof NOTICES_NAV_ID | typeof CEO_AVAILABILITY_NAV_ID>(OVERLAYS,
     meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null);
   const noticeUnread = useNoticeUnread();
-  const shownActive = overlay ?? active;
+  // the HR page is only for a dashboard that asks for it (a remembered value from elsewhere is ignored)
+  const shownOverlay = overlay === CEO_AVAILABILITY_NAV_ID && !ceoAvailability ? null : overlay;
+  const shownActive = shownOverlay ?? active;
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);
   useEffect(() => {
@@ -409,7 +417,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // a notice notification was clicked: show the Notice Board (it opens the notice)
   useOpenNoticeRequest(React.useCallback(() => setOverlay(NOTICES_NAV_ID), []));
   const select = (id: string) => {
-    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID || id === BUGS_NAV_ID || id === NOTICES_NAV_ID) { setOverlay(id); return; }
+    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID || id === BUGS_NAV_ID || id === NOTICES_NAV_ID || id === CEO_AVAILABILITY_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
     onSelect(id);
   };
@@ -418,7 +426,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
   const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
   const noticesItem: ShellNavItem = { id: NOTICES_NAV_ID, label: 'Notice Board', icon: Megaphone, badge: noticeUnread };
-  const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
+  const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'CEO Availability', icon: Crown };
+  const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(ceoAvailability ? [ceoAvailabilityItem] : []), ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
     ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]
     : [{ items: shared }, ...groups];
@@ -482,7 +491,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : overlay === BUGS_NAV_ID ? <BugsPage /> : overlay === NOTICES_NAV_ID ? <NoticeBoard /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{shownOverlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{shownOverlay === MEETINGS_NAV_ID ? <MeetingsPage /> : shownOverlay === BUGS_NAV_ID ? <BugsPage /> : shownOverlay === NOTICES_NAV_ID ? <NoticeBoard /> : shownOverlay === CEO_AVAILABILITY_NAV_ID ? <CeoAvailabilityPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

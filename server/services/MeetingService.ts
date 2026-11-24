@@ -56,6 +56,7 @@ export class MeetingService {
   /** CEO office arrival (20270128000300): everyone reads it; HR marks or undoes it (the database checks who) */
   ceoOffice(): Promise<CeoOfficeStatus> { return this.repo.ceoOffice(); }
   ceoArrived(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoArrived(parse(ceoArrivalSchema, body ?? {}).ceoId); }
+  ceoNotArrived(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoNotArrived(parse(ceoArrivalSchema, body ?? {}).ceoId); }
   ceoArrivalUndo(body: unknown): Promise<CeoOfficeStatus> { return this.repo.ceoArrivalUndo(parse(ceoArrivalSchema, body ?? {}).ceoId); }
   roomLink(): Promise<{ roomLink: string | null }> { return this.repo.roomLink(); }
   setRoomLink(body: unknown): Promise<{ roomLink: string | null }> { return this.repo.setRoomLink(parse(meetingRoomLinkSchema, body).roomLink ?? null); }

@@ -484,6 +484,7 @@ export const routes: RouteDef[] = [
   // CEO office arrival (20270128000300): HR's button; the banner on Ask the CEO for time (never blocks a request)
   { method: 'GET', path: '/meetings/ceo-office', handler: meetings.ceoOffice },
   { method: 'POST', path: '/meetings/ceo-office/arrived', handler: meetings.ceoArrived, options: S },
+  { method: 'POST', path: '/meetings/ceo-office/not-arrived', handler: meetings.ceoNotArrived, options: S },
   { method: 'POST', path: '/meetings/ceo-office/undo', handler: meetings.ceoArrivalUndo, options: S },
   { method: 'GET', path: '/meetings/settings/room-link', handler: meetings.roomLink },
   { method: 'POST', path: '/meetings/settings/room-link', handler: meetings.setRoomLink, options: S },
