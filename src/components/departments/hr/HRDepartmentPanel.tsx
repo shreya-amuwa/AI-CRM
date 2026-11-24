@@ -12,7 +12,6 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { useLeadStore } from '../../../context/LeadStoreContext';
 import { Employee, OfferLetter, LeaveApplication } from '../../../types/amuwaHq';
-import { AmuwaOfficialOfferLetter } from '../amuwa/AmuwaOfficialOfferLetter';
 import { EmployeeProfileModal } from '../amuwa/EmployeeProfileModal';
 import { AutomatedLetterGeneratorWorkspace } from './AutomatedLetterGeneratorWorkspace';
 import { ActiveTab } from '../../layout/Sidebar';
@@ -27,6 +26,7 @@ import { formatClock, officeInstant, officeToday } from '../../../lib/officeTime
 import { LoginGapBadge } from '../../hr/LoginGapBadge';
 import { EmployeeDirectory } from '../../hr/EmployeeDirectory';
 import { AwardsManagement } from '../../hr/AwardsManagement';
+import { OfferLetterWorkspace } from '../../hr/offers/OfferLetterWorkspace';
 import { HrEmptyState, HrPageHeader, HrSectionTitle, HrToast, hrBtn, hrCard } from '../../hr/hrUi';
 import { useMonthlyLeave } from '../../../hooks/useMonthlyLeave';
 import { LeaveReviewList, useLeaveData } from '../../leave/LeaveCenter';
@@ -336,7 +336,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
 
   // Modals state
   const [selectedProfileEmp, setSelectedProfileEmp] = useState<Employee | null>(null);
-  const [showOfferModal, setShowOfferModal] = useState(false);
+  // every "Generate Offer" opens the one Offer Letter Generator (role-based templates, 20270206000100)
+  const openOfferGenerator = () => { setActiveModule(null); setMainSection('hr_ops'); setHrSubTab('offers'); };
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
 
   // New Employee Form state
@@ -529,7 +530,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
             <button type="button" onClick={() => setShowAddEmployeeModal(true)} className={hrBtn.secondary}>
               <UserPlus className="w-4 h-4" aria-hidden="true" /> Add Employee
             </button>
-            <button type="button" onClick={() => setShowOfferModal(true)} className={hrBtn.primary}>
+            <button type="button" onClick={() => openOfferGenerator()} className={hrBtn.primary}>
               <Sparkles className="w-4 h-4" aria-hidden="true" /> Generate Offer
             </button>
           </>}
@@ -684,7 +685,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                   )}
                   {activeModule === 'recruitment' && (
                     <button
-                      onClick={() => setShowOfferModal(true)}
+                      onClick={() => openOfferGenerator()}
                       className={hrBtn.primary}
                     >
                       <Sparkles className="w-4 h-4" />
@@ -957,7 +958,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       <p className="text-xs text-slate-500 mt-0.5">Official employment contracts generated using the Automated 7-Page generator</p>
                     </div>
                     <button
-                      onClick={() => setShowOfferModal(true)}
+                      onClick={() => openOfferGenerator()}
                       className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
@@ -1692,7 +1693,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
               }`}
             >
               <FileText className="w-4 h-4" />
-              <span>Offer Letters Automated ({offerLetters.length})</span>
+              <span>Offer Letter Generation</span>
             </button>
 
             <button
@@ -1732,61 +1733,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
 
           {/* SUB-TAB 2: OFFER LETTERS AUTOMATION */}
           {hrSubTab === 'offers' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between bg-red-50 p-4 rounded-2xl border border-red-100">
-                <div>
-                  <h4 className="text-sm font-bold text-red-950">Official 7-Page Appointment Letter Generator</h4>
-                  <p className="text-xs text-red-800">Generate official 7-page Amuwa Corporation appointment letters with complete Terms &amp; Annexure A policies.</p>
-                </div>
-                <button
-                  onClick={() => setShowOfferModal(true)}
-                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold font-mono flex items-center gap-1.5 shadow-md"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Generate Official Letter</span>
-                </button>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono uppercase">
-                    <tr>
-                      <th className="p-3.5">Offer Reference &amp; Candidate</th>
-                      <th className="p-3.5">Designation &amp; Department</th>
-                      <th className="p-3.5">Salary &amp; Working Hours</th>
-                      <th className="p-3.5">Joining Date</th>
-                      <th className="p-3.5">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {offerLetters.map(off => (
-                      <tr key={off.id} className="hover:bg-slate-50/80">
-                        <td className="p-3.5">
-                          <span className="font-bold text-slate-900 block">{off.candidateName}</span>
-                          <span className="text-[11px] font-mono text-slate-400">{off.id} &bull; {off.candidateEmail}</span>
-                        </td>
-                        <td className="p-3.5 font-medium text-slate-700">
-                          {off.designation}
-                          <span className="block text-[10px] text-slate-400 font-mono">{off.departmentName}</span>
-                        </td>
-                        <td className="p-3.5 font-mono">
-                          <span className="text-slate-900 font-bold block">{off.monthlySalary} / mo ({off.annualCTC})</span>
-                          <span className="text-slate-500 text-[10px]">{off.workingHours || '09:30 AM - 06:30 PM'}</span>
-                        </td>
-                        <td className="p-3.5 font-mono text-slate-700">
-                          {off.joiningDate}
-                        </td>
-                        <td className="p-3.5">
-                          <span className="px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                            {off.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <OfferLetterWorkspace employees={employees} onToast={(msg) => { setOpToast(msg); setTimeout(() => setOpToast(null), 4500); }} />
           )}
 
           {/* SUB-TAB 3: LEAVE REGISTER */}
@@ -1864,12 +1811,6 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
           onConvert={() => { handleConvertTraineeToEmployee(selectedProfileEmp.id); setSelectedProfileEmp(null); }}
           onMarkLeft={() => { handleMarkLeft(selectedProfileEmp.id); setSelectedProfileEmp(null); }}
           onSaveContacts={selectedProfileEmp.profileId ? (contact, emergency) => saveMemberContacts(selectedProfileEmp.profileId!, contact, emergency) : undefined}
-        />
-      )}
-
-      {showOfferModal && (
-        <AmuwaOfficialOfferLetter
-          onClose={() => setShowOfferModal(false)}
         />
       )}
 

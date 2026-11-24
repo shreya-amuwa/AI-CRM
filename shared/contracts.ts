@@ -5551,7 +5551,7 @@ export interface HrDocExperienceFields {
 export type HrDocRequest =
   | { type: 'NDA'; employeeKey: string; fields: HrDocNdaFields }
   | { type: 'EXPERIENCE'; employeeKey: string; fields: HrDocExperienceFields }
-  | { type: 'OFFER'; employeeKey: string; fields: HrDocOfferFields };
+  | { type: 'OFFER'; employeeKey: string; fields: HrDocOfferFields | HrRoleOfferFields };
 /** What the HR record says about the employee (the database decides; the browser only shows it). */
 export interface HrDocPrefill {
   employee: {
@@ -7222,3 +7222,42 @@ export interface HrAwardOptions {
   teams: { id: string; name: string; departmentId: string; departmentName: string; members: number }[];
   departments: { id: string; name: string; members: number }[];
 }
+
+// ---------------------------------------------------------------------------
+// Role-based Offer Letter templates (20270206000100): HR > Offer Letter Generation
+// ---------------------------------------------------------------------------
+import type { OfferLetterhead, OfferTemplateContent } from './offerTemplates.js';
+export type { OfferBlock, OfferLetterhead, OfferTemplateContent, OfferTemplateField } from './offerTemplates.js';
+/** A role-based Offer Letter request: the template version and the values HR entered (the server loads the wording and letterhead itself). */
+export interface HrRoleOfferFields { offerTemplateId: string; templateVersion: number; values: Record<string, string> }
+export interface OfferTemplateFile { id: string; kind: 'SAMPLE' | 'LETTERHEAD'; fileName: string; mimeType: string; sizeBytes: number; uploadedBy: string | null; createdAt: string }
+export interface OfferTemplateVersion {
+  templateId: string;
+  version: number;
+  letterhead: OfferLetterhead;
+  sampleFile: OfferTemplateFile | null;
+  letterheadFile: OfferTemplateFile | null;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  content?: OfferTemplateContent;
+  /** letters issued with this version (in the version history) */
+  issued?: number;
+}
+export interface OfferTemplate {
+  id: string;
+  key: string;
+  designation: string;
+  description: string | null;
+  sortOrder: number;
+  active: boolean;
+  updatedAt: string;
+  versionCount: number;
+  current: OfferTemplateVersion & { content: OfferTemplateContent };
+  /** letters issued from this template */
+  issued: number;
+}
+export interface OfferTemplateList { canManage: boolean; templates: OfferTemplate[] }
+export interface OfferTemplateHistory extends OfferTemplate { versions: OfferTemplateVersion[] }
+/** The bundled letterheads (from the supplied samples), for the template editor. */
+export interface OfferLetterheadOption { key: string; label: string }

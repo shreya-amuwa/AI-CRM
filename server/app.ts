@@ -107,7 +107,8 @@ const tooLarge = () => {
 const defaultBodyLimit = bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge });
 // The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows); so does the Upload Leads preview.
 const importBodyLimit = bodyLimit({ maxSize: IMPORT_BODY_BYTES, onError: tooLarge });
-app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/lead-uploads/check' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
+// a template sample / letterhead (up to 2.5 MB, sent as base64) uses the larger limit too
+app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/lead-uploads/check' || relativePath(c) === '/hr/offer-templates/files' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
 // Layer 1: coarse per-IP flood protection before any auth work. On the Worker: Cloudflare's rate limiter (counts across the edge location,
 // not per isolate); elsewhere, or if it fails: the in-memory limiter.
 app.use('*', async (c, next) => {
@@ -260,7 +261,7 @@ app.post('/internal/crocodial/sync', async c => {
 app.post('/internal/attendance/reminders', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
-  // meeting reminders (24 h, 1 h, 15 min, at the start; 20270206000100) are created first, so this run's delivery step sends them too
+  // meeting reminders (24 h, 1 h, 15 min, at the start; 20270207000100) are created first, so this run's delivery step sends them too
   // (two database calls only: Google sync and e-mails stay with the dispatch, so the attendance reminders keep their request budget)
   const meetings = await runMeetingsDispatch({ budgetMs: 8_000, remindersOnly: true }).catch(e => {
     log('error', 'meeting reminders failed', c, { message: e instanceof Error ? e.message : 'error' });

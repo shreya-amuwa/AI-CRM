@@ -2,12 +2,12 @@
 -- Meeting notifications for the Managing Director (Super Admin): management awareness of internal team meetings, reminders before they
 -- start, and delivery to their phones / laptops (Task 05). docs/NOTIFICATION_ARCHITECTURE.md.
 --
--- Follows 20270206000100_meeting_push.sql, which sends the meeting notices of the people taking part (the Managing Director's own
+-- Follows 20270207000100_meeting_push.sql, which sends the meeting notices of the people taking part (the Managing Director's own
 -- invitations included) to their phones, with 15-minute and at-start reminders. This adds what a Managing Director who is NOT taking part
 -- needs; the two never notify the same person about the same thing.
 --
 -- Root causes found:
---   1. Meeting notifications only ever reached the CRM bell (fixed for participants by 20270206000100).
+--   1. Meeting notifications only ever reached the CRM bell (fixed for participants by 20270207000100).
 --   2. Meeting notices go to the people taking part (private.mtg_notify_staff): the Managing Director heard nothing about a team meeting they
 --      were not invited to. That privacy rule is right for calendars; oversight needs a separate, narrow notice.
 --   3. (In the app: the "Turn on notifications" banner was switched off on the Managing Director's dashboard, so their devices were rarely
@@ -21,7 +21,7 @@
 --     summaries), so the Managing Director does not gain the calendars of others.
 --   * Reminders to every active Managing Director NOT taking part, `meeting_oversight_settings.remind_minutes` before the start (default
 --     15 and 0), once per meeting, time and Managing Director; a reschedule starts new ones, a cancellation stops them (only SCHEDULED
---     meetings). A Managing Director who takes part gets the participants' reminders (20270206000100_meeting_push), never both.
+--     meetings). A Managing Director who takes part gets the participants' reminders (20270207000100_meeting_push), never both.
 --   * Each of these also goes to the Managing Director's devices through the existing push outbox (kind MEETING), with retries, expiry and
 --     invalid-device handling as every other push. The lock-screen text has no meeting title or participants ("Team meeting at 3:00 PM").
 -- =============================================================================

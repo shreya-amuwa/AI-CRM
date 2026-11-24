@@ -37,7 +37,7 @@ select test.check((select count(*) = 0 from meeting_mail_outbox where meeting_id
 select test.check((select count(*) = 0 from notifications where recipient_id = test.id('sa') and entity_id = (select id from mo where k = 'emp')
                      and type not like 'MEETING_OVERSIGHT%'),
   'nor an invitation notice');
--- Task 05 (20270206000200): the Managing Director is told a team meeting exists (a separate awareness notice, not an invitation);
+-- Task 05 (20270207000200): the Managing Director is told a team meeting exists (a separate awareness notice, not an invitation);
 -- the meeting stays out of their calendar, as checked below
 select test.check((select count(*) <= 1 from notifications where recipient_id = test.id('sa') and entity_id = (select id from mo where k = 'emp')
                      and type like 'MEETING_OVERSIGHT%'),

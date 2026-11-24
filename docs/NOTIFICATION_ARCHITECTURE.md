@@ -17,16 +17,16 @@ role) receives about meetings. Related: `NOTIFICATION_RELIABILITY.md`, `NOTIFICA
    `open-meeting`, `open-meeting-report`, …), or opens the CRM on the notice's URL.
 
 The outbox has these kinds: `ATTENDANCE_REMINDER`, `TEST`, `SA_ATTENDANCE`, `COMPANY_NOTICE` and `MEETING` (added by
-`20270206000200_meeting_oversight_notifications.sql`).
+`20270207000200_meeting_oversight_notifications.sql`).
 
 ## Meeting notifications (Task 05)
 
 Two migrations, which never notify the same person about the same thing:
 
-* `20270206000100_meeting_push.sql` (see `NOTIFICATION_RELIABILITY.md`): the meeting notices of the **people taking part** (invited, moved,
+* `20270207000100_meeting_push.sql` (see `NOTIFICATION_RELIABILITY.md`): the meeting notices of the **people taking part** (invited, moved,
   cancelled, approvals, summaries, reminders 24 hours, 1 hour, 15 minutes before and at the start) also go to their phones. A trigger on
   `notifications` queues them. A tap opens the meeting (`/?open=meeting&id=…`). This includes a Managing Director who is invited.
-* `20270206000200_meeting_oversight_notifications.sql` (below): **management awareness** for a Managing Director who is *not* taking
+* `20270207000200_meeting_oversight_notifications.sql` (below): **management awareness** for a Managing Director who is *not* taking
   part. A tap opens the read-only report view (`/?open=meeting-report&id=…`), because the meeting itself is not theirs to open.
 
 ### Management awareness for the Managing Director
@@ -34,9 +34,9 @@ Two migrations, which never notify the same person about the same thing:
 #### Root causes found in the audit
 
 1. Meeting notices only reached the bell. The push outbox carried attendance and company notices only, so a phone heard about a
-   meeting only while the CRM was open (fixed by `20270206000100_meeting_push`).
+   meeting only while the CRM was open (fixed by `20270207000100_meeting_push`).
 2. Meeting notices go only to the people taking part. The Managing Director heard nothing about a team meeting they were not invited to.
-3. There was no reminder close to the start: only 24 hours and 1 hour before, and only for participants (participants: `20270206000100`; Managing Director not taking part: `20270206000200`).
+3. There was no reminder close to the start: only 24 hours and 1 hour before, and only for participants (participants: `20270207000100`; Managing Director not taking part: `20270207000200`).
 4. The "Turn on notifications" banner was switched off on the Managing Director's dashboard (`reminders={false}`), so their devices
    were rarely subscribed for push at all.
 

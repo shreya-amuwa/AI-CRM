@@ -42,13 +42,13 @@ self.addEventListener('notificationclick', event => {
       // a chat message opens its conversation; a reminder opens Attendance
       const q = new URL(url).searchParams;
       if (q.get('open') === 'meeting-report') {
-        // a meeting awareness notice for the Managing Director (20270206000200) opens that meeting's read-only report view
+        // a meeting awareness notice for the Managing Director (20270207000200) opens that meeting's read-only report view
         open.postMessage({ type: 'open-meeting-report', id: q.get('id') });
       } else if (q.get('open') === 'notice') {
         // a company notice (20270131000200) opens that notice on the Notice Board
         open.postMessage({ type: 'open-notice', id: q.get('id') });
       } else if (q.get('open') === 'meeting') {
-        // a meeting notification (20270206000100) opens that meeting
+        // a meeting notification (20270207000100) opens that meeting
         open.postMessage({ type: 'open-meeting', id: q.get('id') });
       } else if (q.get('open') === 'chat') {
         open.postMessage(q.get('client') ? { type: 'open-chat', clientConversationId: q.get('client') } : { type: 'open-chat', conversationId: q.get('conversation') });

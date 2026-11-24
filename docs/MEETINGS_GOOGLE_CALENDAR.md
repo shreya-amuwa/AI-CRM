@@ -116,7 +116,7 @@ Then run `supabase/migrations/20270113000100_meetings_creator_organiser.sql` (af
 
 ### 4. Reminders
 
-Reminders and retries run with the 5-minute scheduled run (`/api/v1/internal/attendance/reminders`, Cloudflare cron `*/5 * * * *`) and with `/api/v1/internal/automations/dispatch`, so the 1-hour, 15-minute and at-start reminders are on time (20270206000100).
+Reminders and retries run with the 5-minute scheduled run (`/api/v1/internal/attendance/reminders`, Cloudflare cron `*/5 * * * *`) and with `/api/v1/internal/automations/dispatch`, so the 1-hour, 15-minute and at-start reminders are on time (20270207000100).
 
 ## Rules the database enforces
 

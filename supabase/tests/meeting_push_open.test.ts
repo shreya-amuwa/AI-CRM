@@ -1,5 +1,5 @@
 /**
- * A tapped meeting push opens that meeting (20270206000100): public/sw.js posts "open-meeting" to an open CRM window, or opens
+ * A tapped meeting push opens that meeting (20270207000100): public/sw.js posts "open-meeting" to an open CRM window, or opens
  * /?open=meeting&id=...; the app takes the meeting from the address or from the message. Run with a stand-in for the browser window.
  */
 import { readFileSync } from 'node:fs';

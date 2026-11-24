@@ -1,5 +1,5 @@
 -- =============================================================================
--- Meeting notifications for the Managing Director (migration 20270206000200): awareness of internal team meetings they are not in,
+-- Meeting notifications for the Managing Director (migration 20270207000200): awareness of internal team meetings they are not in,
 -- reminders before the start, delivery to their devices through the push outbox, and nothing for other meetings or other people.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -7,8 +7,8 @@
 \echo '--- 142. Meeting oversight: the Managing Director hears about team meetings, on their phone too'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270206000200_meeting_oversight_notifications.sql
-\i supabase/migrations/20270206000200_meeting_oversight_notifications.sql
+\i supabase/migrations/20270207000200_meeting_oversight_notifications.sql
+\i supabase/migrations/20270207000200_meeting_oversight_notifications.sql
 
 delete from meetings where title like 'MO %';
 delete from notifications where type like 'MEETING_OVERSIGHT%';
@@ -116,7 +116,7 @@ set role service_role;
 select mtg_oversight_run(now());
 reset role;
 select test.check(test.monotes('MO Board prep', 'MEETING_OVERSIGHT_REMINDER') = 0,
-  'taking part: no oversight reminder (the participants'' reminders of 20270206000100_meeting_push cover them, never both)');
+  'taking part: no oversight reminder (the participants'' reminders of 20270207000100_meeting_push cover them, never both)');
 select test.momeet('MO Cancelled one', 'MEETING', interval '14 minutes');
 update meetings set status = 'CANCELLED' where title = 'MO Cancelled one';
 set role service_role;

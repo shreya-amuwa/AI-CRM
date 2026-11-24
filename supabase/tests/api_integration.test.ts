@@ -12536,6 +12536,167 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const a = await api('a', 'GET', '/departments');
   check(a.status === 200 && a.json.data.every((d: any) => typeof d.unifiedSalesSupport === 'boolean'), 'departments API: every signed-in person reads the flag', a);
 }
+// --- Role-based Offer Letters (migration 20270206000100): one template per designation, its own fields / wording / letterhead; PDF; versions ---
+{
+  const { INITIAL_OFFER_TEMPLATES, offerStartingValues } = await import('../../shared/offerTemplates.js');
+  const { PDFDocument, PDFName, PDFArray, decodePDFRawStream } = await import('pdf-lib');
+  const textOf = async (bytes: Uint8Array) => {
+    const doc = await PDFDocument.load(bytes);
+    let text = '';
+    for (const page of doc.getPages()) {
+      const c = page.node.Contents();
+      for (const ref of c instanceof PDFArray ? c.asArray() : [page.node.get(PDFName.of('Contents'))]) {
+        const raw = Buffer.from(decodePDFRawStream(doc.context.lookup(ref) as any).decode()).toString('latin1');
+        for (const m of raw.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) text += Buffer.from(m[1], 'hex').toString('latin1');
+      }
+    }
+    return { pages: doc.getPageCount(), text: text.replace(/\s+/g, '') };
+  };
+  const squash = (t: string) => t.replace(/\s+/g, '');
+  const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map(k => [k, canon((v as any)[k])])) : v;
+  const same = (x: unknown, y: unknown) => JSON.stringify(canon(x)) === JSON.stringify(canon(y));
+  await db.query(`insert into public.hr_employees (id, name, email, designation, department_id, status, joining_date, monthly_salary, data)
+                  values ('APIOFR-1', 'Ritika Offer', 'apiofr-1@example.com', 'Executive', 'wabastore', 'Full-Time', '2026-12-01', '18000', '{}')
+                  on conflict (id) do nothing`);
+  const K = 'HR:APIOFR-1';
+
+  let r = await api('a', 'GET', '/hr/offer-templates');
+  check(r.status === 403, 'offer templates: an ordinary employee cannot open them', r);
+  r = await api('rrec1', 'GET', '/hr/offer-templates');
+  check(r.status === 403, 'offer templates: nor an HR Recruiter', r);
+  r = await api('hrmember', 'GET', '/hr/offer-templates');
+  check(r.status === 200 && r.json.data.canManage === false && r.json.data.templates.length === 5, 'offer templates: an HR team member reads the five templates (and may not manage them)', r);
+  r = await api('hr', 'GET', '/hr/offer-templates');
+  const list = r.json.data.templates as any[];
+  check(r.status === 200 && r.json.data.canManage === true
+    && list.map(t => t.designation).join('|') === 'Technical Support|Customer Support|Business Development Executive|Sales Executive|AI Developer',
+    'offer templates: the HR Admin Head manages them; the dropdown lists the five designations in order', r);
+  for (const init of INITIAL_OFFER_TEMPLATES) {
+    const t = list.find(x => x.key === init.key);
+    check(!!t && t.current.version === 1 && same(t.current.content, init.content) && same(t.current.letterhead, init.letterhead),
+      `offer templates: ${init.designation} version 1 is exactly the supplied sample's template`);
+  }
+  r = await api('hr', 'GET', '/hr/offer-templates/letterheads');
+  check(r.status === 200 && r.json.data.length === 5 && r.json.data.some((l: any) => l.key === 'business-development' && /M Pillar/.test(l.label)), 'offer templates: the five bundled letterheads', r);
+
+  // each designation: its own template, fields, wording and letterhead
+  const p = (await api('hrmember', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(K)}&type=OFFER`)).json.data;
+  const MARK: Record<string, { has: string[]; not: string[]; pages: [number, number] }> = {
+    'technical-support': { has: ['TechnicalSupportExecutive', 'smoothoperationalsupportforWabastore', 'DearRitikaOffer,', '18,000/-permonth(Fixed)'], not: ['ANNEXURE', 'REF-NO', 'M-PillarCorporation'], pages: [1, 3] },
+    'customer-support': { has: ['APPOINTMENTLETTER', 'Ms.RitikaOffer', '(RupeesEighteenThousandOnly)', 'ANNEXUREA', 'DuringProbitionPeriod'], not: ['KeyResponsibilities', 'REF-NO'], pages: [4, 8] },
+    'business-development': { has: ['REF-NO:MPL/OFFER/2026/07', 'BusinessDevelopmentExecutive(BDE)', 'M-PillarCorporation', 'MpillarCorporation'], not: ['ANNEXURE', 'smoothoperationalsupport'], pages: [1, 3] },
+    'sales-executive': { has: ['SalesExecutive', 'assignedterritory', 'TeamLeaderandDepartmentHead', 'Miss.AartiKalange(CEO)'], not: ['ANNEXURE', 'REF-NO'], pages: [1, 3] },
+    'ai-developer': { has: ['AiDeveloperIntern', 'AiStudio', 'Mr.AmolKamble', 'DateofJoining:1stDecember2026'], not: ['ANNEXURE', 'REF-NO'], pages: [1, 3] }
+  };
+  const valuesFor = (t: any) => {
+    const v = offerStartingValues(t.current.content.fields, { employeeName: p.employee.name, designation: p.employee.designation, department: p.employee.department,
+      joiningDate: p.employee.joiningDate, monthlySalary: p.employee.monthlySalary, today: '2026-11-24' });
+    if ('title' in v) v.title = 'Ms.';
+    if ('refNo' in v) v.refNo = 'MPL/OFFER/2026/07';
+    if ('department' in v && !v.department) v.department = 'Wabastore';
+    return v;
+  };
+  for (const t of list) {
+    const m = MARK[t.key];
+    const keys = t.current.content.fields.map((f: any) => f.key);
+    check(keys.includes('employeeName') && keys.includes('joiningDate') && keys.includes('salary'), `offer letters: ${t.designation} has its own fields (${keys.length})`);
+    const values = valuesFor(t);
+    check(values.employeeName === 'Ritika Offer' && values.salary === '18000' && values.joiningDate === '2026-12-01', `offer letters: ${t.designation} starts from the CRM record`, values);
+    r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: t.id, templateVersion: 1, values } });
+    check(r.status === 200 && r.json.data.fileName.includes(t.designation.replace(/\s+/g, '-')), `offer letters: ${t.designation} previews`, r);
+    const doc = await textOf(Buffer.from(r.json.data.pdfBase64, 'base64'));
+    const missing = m.has.filter(x => x && !doc.text.includes(squash(x)));
+    const wrong = m.not.filter(x => doc.text.includes(squash(x)));
+    check(!missing.length && !wrong.length && doc.pages >= m.pages[0] && doc.pages <= m.pages[1],
+      `offer letters: ${t.designation} loads its own wording (${doc.pages} page${doc.pages === 1 ? '' : 's'})`, { missing, wrong, pages: doc.pages });
+    check(!doc.text.includes('{') && !doc.text.includes('**'), `offer letters: ${t.designation} has every placeholder filled`);
+  }
+
+  // the values are checked against the chosen template's fields
+  const tech = list.find(t => t.key === 'technical-support');
+  const cs = list.find(t => t.key === 'customer-support');
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: cs.id, templateVersion: 1, values: { ...valuesFor(cs), title: '' } } });
+  check(r.status === 422 && /title/i.test(r.json.error.message), 'offer letters: a required field (the title) is checked', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: { ...valuesFor(tech), salary: '18,000.50' } } });
+  check(r.status === 422 && /whole rupees/.test(r.json.error.message), 'offer letters: the salary is whole rupees', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: { ...valuesFor(tech), refNo: 'X' } } });
+  check(r.status === 422 && /no field "refNo"/.test(r.json.error.message), 'offer letters: a field of another template is refused', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 7, values: valuesFor(tech) } });
+  check(r.status === 404, 'offer letters: an unknown template version', r);
+  r = await api('rrec1', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: valuesFor(tech) } });
+  check(r.status === 403, 'offer letters: an HR Recruiter cannot make one', r);
+
+  // generate, download, then replace the template: the issued letter never changes
+  const techValues = valuesFor(tech);
+  r = await api('hrmember', 'POST', '/hr/documents', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: techValues } });
+  const issued = r.json.data;
+  check(r.status === 201 && issued.fields.templateVersion === 1 && issued.fields.templateDesignation === 'Technical Support' && issued.fields.values.salary === '18000'
+    && same(issued.fields.content, tech.current.content), 'offer letters: generated and stored with the designation, template version, wording and values', r);
+  const row = (await db.query(`select offer_template_id, offer_template_version, sha256 from public.hr_documents where id = $1`, [issued.id])).rows[0];
+  check(row.offer_template_id === tech.id && row.offer_template_version === 1, 'offer letters: the record links the template version');
+  r = await api('hrmember', 'GET', `/hr/documents/${issued.id}/download`);
+  const before = Buffer.from(await (await fetch(r.json.data.url)).arrayBuffer());
+  check(r.status === 200 && crypto.createHash('sha256').update(before).digest('hex') === row.sha256 && (await textOf(before)).text.includes('smoothoperationalsupportforWabastore'),
+    'offer letters: the download is the stored PDF', r);
+
+  const changed = { ...tech.current.content, blocks: tech.current.content.blocks.map((b: any, i: number) => (i === 4 ? { ...b, text: 'In this role, you will lead the new support desk.' } : b)) };
+  r = await api('hrmember', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: changed, letterhead: tech.current.letterhead, baseVersion: 1 });
+  check(r.status === 403, 'offer templates: an HR team member cannot replace a template', r);
+  r = await api('hr', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: { ...changed, blocks: [...changed.blocks, { type: 'paragraph', text: 'Bonus: {bonus}' }] }, letterhead: tech.current.letterhead, baseVersion: 1 });
+  check(r.status === 422 && /\{bonus\}/.test(r.json.error.message), 'offer templates: a placeholder that is not a field is refused', r);
+  r = await api('hr', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: changed, letterhead: tech.current.letterhead, baseVersion: 1, note: 'New support desk wording' });
+  check(r.status === 201 && r.json.data.current.version === 2 && r.json.data.versionCount === 2, 'offer templates: the HR Admin Head saves version 2', r);
+  r = await api('hr', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: changed, letterhead: tech.current.letterhead, baseVersion: 1 });
+  check(r.status === 409, 'offer templates: saving over an older version is a conflict', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 2, values: techValues } });
+  check(r.status === 200 && (await textOf(Buffer.from(r.json.data.pdfBase64, 'base64'))).text.includes('leadthenewsupportdesk'), 'offer letters: new letters use version 2', r);
+  r = await api('hrmember', 'GET', `/hr/documents/${issued.id}/download`);
+  const after = Buffer.from(await (await fetch(r.json.data.url)).arrayBuffer());
+  check(after.equals(before), 'offer letters: the letter issued with version 1 is unchanged');
+  r = await api('hrmember', 'GET', `/hr/offer-templates/${tech.id}`);
+  check(r.status === 200 && r.json.data.versions.length === 2 && r.json.data.versions.find((v: any) => v.version === 1)?.issued === 1, 'offer templates: the history counts the letters issued per version', r);
+  r = await api('hrmember', 'GET', `/hr/offer-templates/${tech.id}/versions/1`);
+  check(r.status === 200 && same(r.json.data.content, tech.current.content), 'offer templates: version 1 stays readable', r);
+
+  // uploads: a sample (Word / PDF) and a letterhead (PDF); a new designation with its own letterhead
+  const docx = Buffer.concat([Buffer.from('PK\u0003\u0004'), Buffer.from('....word/document.xml....')]);
+  r = await api('hrmember', 'POST', '/hr/offer-templates/files', { kind: 'SAMPLE', fileName: 'Sample.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dataBase64: docx.toString('base64') });
+  check(r.status === 403, 'offer templates: an HR team member cannot upload', r);
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'SAMPLE', fileName: 'Sample.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dataBase64: docx.toString('base64') });
+  const sample = r.json.data;
+  check(r.status === 201 && sample.kind === 'SAMPLE' && sample.fileName === 'Sample.docx', 'offer templates: the HR Admin Head uploads a Word sample', r);
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'SAMPLE', fileName: 'fake.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from('not a pdf at all').toString('base64') });
+  check(r.status === 422 && /not a PDF/.test(r.json.error.message), 'offer templates: a file is checked by its content, not its name', r);
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'LETTERHEAD', fileName: 'Letterhead.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dataBase64: docx.toString('base64') });
+  check(r.status === 422, 'offer templates: a letterhead must be a PDF', r);
+  const lhDoc = await PDFDocument.create();
+  const lhPage = lhDoc.addPage([595.3, 841.9]);
+  lhPage.drawRectangle({ x: 0, y: 760, width: 595.3, height: 80, color: (await import('pdf-lib')).rgb(0.1, 0.3, 0.7) });
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'LETTERHEAD', fileName: 'Letterhead.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from(await lhDoc.save()).toString('base64') });
+  const letterhead = r.json.data;
+  check(r.status === 201 && letterhead.kind === 'LETTERHEAD', 'offer templates: a letterhead PDF is uploaded', r);
+  r = await api('hrmember', 'GET', `/hr/offer-templates/files/${sample.id}/url`);
+  check(r.status === 200 && typeof r.json.data.url === 'string' && r.json.data.fileName === 'Sample.docx', 'offer templates: HR staff open the sample (a short-lived link)', r);
+  const ai = list.find(t => t.key === 'ai-developer');
+  r = await api('hr', 'POST', '/hr/offer-templates/preview', { designation: 'Graphic Designer', content: ai.current.content, letterhead: { fileId: letterhead.id } });
+  check(r.status === 200 && (await textOf(Buffer.from(r.json.data.pdfBase64, 'base64'))).text.includes('[Employeename]'), 'offer templates: a template previews with [field labels] on an uploaded letterhead', r);
+  r = await api('hr', 'POST', '/hr/offer-templates', { designation: 'Graphic Designer', description: 'Design team', content: ai.current.content, letterhead: { fileId: letterhead.id }, sampleFileId: sample.id, baseVersion: 0 });
+  const gd = r.json.data;
+  check(r.status === 201 && gd.key === 'graphic-designer' && gd.current.version === 1 && gd.current.sampleFile?.id === sample.id && gd.current.letterheadFile?.id === letterhead.id,
+    'offer templates: a new designation is added with its sample and letterhead', r);
+  r = await api('hr', 'POST', '/hr/offer-templates', { designation: 'Graphic Designer', content: ai.current.content, letterhead: { builtin: 'ai-developer' }, baseVersion: 0 });
+  check(r.status === 409, 'offer templates: the same designation twice is refused', r);
+  r = await api('hrmember', 'POST', '/hr/documents', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: gd.id, templateVersion: 1, values: valuesFor(gd) } });
+  check(r.status === 201 && r.json.data.fields.templateDesignation === 'Graphic Designer', 'offer letters: a letter is generated from the new designation (uploaded letterhead)', r);
+  r = await api('hrmember', 'GET', '/hr/offer-templates');
+  check(r.status === 200 && r.json.data.templates.length === 6 && r.json.data.templates.find((t: any) => t.key === 'technical-support').issued === 1, 'offer templates: six designations now, with their issued counts', r);
+
+  // the NDA and the earlier Offer Letter keep working
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: K, fields: { letterDate: '2026-11-24', employeeName: 'Ritika Offer' } });
+  check(r.status === 200 && r.json.data.fileName.startsWith('NDA-'), 'offer letters: the NDA still generates', r);
+  await db.query(`delete from public.hr_documents where employee_key = $1`, [K]);
+  await db.query(`delete from public.hr_employees where id = 'APIOFR-1'`);
+}
 // 20270205000100: Notice Board delete (a soft delete by the people who already manage notices)
 {
   const rid = () => `nd-${Math.random().toString(16).slice(2)}-${Date.now()}`;
@@ -12597,7 +12758,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 // ---------------------------------------------------------------------------
-// Meeting notifications on phones (20270206000100): an invitation reaches the invitee's phone at once, and the 5-minute scheduled run
+// Meeting notifications on phones (20270207000100): an invitation reaches the invitee's phone at once, and the 5-minute scheduled run
 // sends the 15-minute reminder. Fake push service and a generated VAPID key; no real device.
 {
   const subtle = globalThis.crypto.subtle;

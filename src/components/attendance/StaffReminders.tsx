@@ -29,7 +29,7 @@ export function useStaffReminders(showAttendance: () => void, onOpenChat?: () =>
       // next tick: a dashboard that wraps this layout attaches its "open chat" listener after this effect runs
       if (detail) window.setTimeout(() => openChat(detail), 0);
     }
-    // a meeting awareness notice (the Managing Director's, 20270206000200): /?open=meeting-report&id=<meeting> opens the read-only
+    // a meeting awareness notice (the Managing Director's, 20270207000200): /?open=meeting-report&id=<meeting> opens the read-only
     // report view (they are not taking part, so the meeting itself is not theirs to open; /?open=meeting is meetingEvents.ts)
     if (q.get('open') === 'meeting-report') {
       const id = q.get('id');

@@ -452,7 +452,17 @@ export const hrDocumentController = {
   download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler,
   templateState: (async ctx => ok(await svc(ctx).hrDocuments.templateState(ctx.params.type))) as Handler,
   templateVersion: (async ctx => ok(await svc(ctx).hrDocuments.templateVersion(ctx.params.type, ctx.params.version))) as Handler,
-  saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler
+  saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler,
+  // role-based Offer Letter templates (20270206000100)
+  offerTemplates: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplates())) as Handler,
+  offerLetterheads: (async ctx => ok(await svc(ctx).hrDocuments.offerLetterheads())) as Handler,
+  offerTemplateHistory: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplateHistory(ctx.params.id))) as Handler,
+  offerTemplateVersion: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplateVersion(ctx.params.id, ctx.params.version))) as Handler,
+  createOfferTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveOfferTemplate(null, ctx.req.body), 201)) as Handler,
+  saveOfferTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveOfferTemplate(ctx.params.id, ctx.req.body), 201)) as Handler,
+  previewOfferTemplate: (async ctx => ok(await svc(ctx).hrDocuments.previewOfferTemplate(ctx.req.body))) as Handler,
+  uploadOfferTemplateFile: (async ctx => ok(await svc(ctx).hrDocuments.uploadOfferTemplateFile(ctx.req.body), 201)) as Handler,
+  offerTemplateFileUrl: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplateFileUrl(ctx.params.id))) as Handler
 };
 
 export const payoutController = {

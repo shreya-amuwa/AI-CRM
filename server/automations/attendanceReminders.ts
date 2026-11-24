@@ -67,7 +67,7 @@ async function runLegacy(now: Date | undefined, push: 'on' | 'off'): Promise<Rem
  * Scheduled notifications that ride on the reminders' 5-minute run (each one checked and recorded once by the database):
  *  - sa_attendance_alert_generate (20270131000100): "Look at today's attendance." to the Super Admin, once a working day from 11:00 India time;
  *  - notice_release_due (20270131000200): company notices whose publish time has come reach their audience;
- *  - mtg_oversight_run (20270206000200): the Managing Director's meeting reminders (15 minutes before and at the start by default). It
+ *  - mtg_oversight_run (20270207000200): the Managing Director's meeting reminders (15 minutes before and at the start by default). It
  *    needs this 5-minute run: the meetings dispatch runs only twice a day. Meeting notices queued by a booking, move or cancellation
  *    (a database trigger) also go out with this run's outbox.
  * A function that does not exist yet (its migration not run) is skipped; a failure of one never stops the reminders.

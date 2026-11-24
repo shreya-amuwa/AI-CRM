@@ -142,7 +142,7 @@ message text or punch location.
 services accepted it. Max 3 per employee and 30 per administrator per hour; the employee sees "HR sent a test notification" in their bell;
 audited (`NOTIFICATION_TEST_SENT`); no attendance or reminder record is created. Employees' own tests: max 5 per 10 minutes.
 
-## Meeting notifications on phones (20270206000100)
+## Meeting notifications on phones (20270207000100)
 
 Meeting notifications used to reach the bell only. Now each meeting notification a person receives in the CRM that needs their attention
 is also pushed to each of their active devices (delivery kind `MEETING`), by the same delivery worker (retries, dead-device clean-up,
