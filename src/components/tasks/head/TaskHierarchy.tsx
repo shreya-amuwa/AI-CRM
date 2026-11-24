@@ -5,7 +5,7 @@ import { EmptyState, fmtDate, fmtDateTime, PriorityPill, ProgressBar, StatusPill
 import { Card, CardHead, fieldCls, LoadingLine, primaryBtn, textareaCls } from './headParts';
 
 const FN: Record<string, string> = { SALES: 'Sales', SUPPORT: 'Support', ALL: 'Whole department' };
-const ROLE: Record<string, string> = { OPERATIONS_HEAD: 'Operations Head', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member' };
+const ROLE: Record<string, string> = { OPERATIONS_HEAD: 'CEO', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member' };
 
 /**
  * One task and everything below it: Operations Head -> Department Head -> Team Lead -> Team Member. Each level shows the actual assignee, who
@@ -215,8 +215,8 @@ export const ReceivedTasks: React.FC<{ data: WorkTaskData; meId: string; leads: 
   const received = data.tasks.filter(t => t.assigneeId === meId && t.parentId === null && t.assignedBy !== meId);
   if (!received.length) return null;
   return (
-    <section aria-label="From the Operations Head" className="space-y-3" data-testid="received-tasks">
-      <h2 className="text-lg font-extrabold text-slate-900">From the Operations Head ({received.length})</h2>
+    <section aria-label="From the CEO" className="space-y-3" data-testid="received-tasks">
+      <h2 className="text-lg font-extrabold text-slate-900">From the CEO ({received.length})</h2>
       {received.map(t => <ReceivedTask key={t.id} task={t} data={data} leads={leads} />)}
     </section>
   );

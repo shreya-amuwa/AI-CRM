@@ -133,7 +133,7 @@ export const ReviewForm: React.FC<{
           </>
         )}
         <button type="button" className="text-xs font-semibold text-indigo-700 hover:underline" onClick={() => setShowHistory(h => !h)} aria-expanded={showHistory}>{showHistory ? 'Hide review history' : 'Previous reviews'}</button>
-        {review?.status === 'SUBMITTED' ? <span className="text-[11px] text-slate-500">Submitted by {review.reviewer}, {timeLabel(review.submittedAt)}. It stays unchanged in the history.</span> : !canReview ? <span className="text-[11px] text-slate-500">This week was already sent to the Super Admin.</span> : null}
+        {review?.status === 'SUBMITTED' ? <span className="text-[11px] text-slate-500">Submitted by {review.reviewer}, {timeLabel(review.submittedAt)}. It stays unchanged in the history.</span> : !canReview ? <span className="text-[11px] text-slate-500">This week was already sent to the Managing Director.</span> : null}
         {note ? <span role="status" className="text-xs text-emerald-700">{note}</span> : null}
       </div>
       {showHistory ? <HistoryList subjectId={subject.id} currentId={review?.id} /> : null}

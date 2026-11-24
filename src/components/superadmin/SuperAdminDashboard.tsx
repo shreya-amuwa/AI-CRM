@@ -99,9 +99,9 @@ export const SuperAdminDashboard: React.FC = () => {
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle="Super Admin"
+      subtitle="Managing Director"
       reminders={false}
-      ariaLabel="Super Admin navigation"
+      ariaLabel="Managing Director navigation"
       groups={groups}
       active={page}
       onSelect={id => {
@@ -109,7 +109,7 @@ export const SuperAdminDashboard: React.FC = () => {
         if (id === 'team' && page !== 'team') setTeamTab(t => ({ tab: 'members', n: t.n }));
         setPage(id as Page);
       }}
-      user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
+      user={{ name: user?.name || 'Managing Director', role: 'Managing Director' }}
       onSignOut={() => void logout()}
       wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'team' || page === 'notification-health' || page === 'email'}
       flush={page === 'chat'}

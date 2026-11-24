@@ -23,7 +23,7 @@ const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e
 const SUBTITLE: Record<ReportContext['level'], string> = {
   MEMBER: 'Report your tasks each day. Your Team Lead and then your Department Head approve it.',
   TEAM_LEAD: 'Approve your team\'s daily reports and send your own to your Department Head.',
-  DEPARTMENT_HEAD: 'Approve the daily reports your Team Leads passed on, follow every team and send the weekly report to the Operations Head.',
+  DEPARTMENT_HEAD: 'Approve the daily reports your Team Leads passed on, follow every team and send the weekly report to the CEO.',
   OPERATIONS_HEAD: 'Review the weekly department reports and open a department down to every Team Member.',
   SUPER_ADMIN: 'Every department\'s reports, from the Department Head down to each Team Member.'
 };
@@ -140,7 +140,7 @@ const ReportsWorkspace: React.FC = () => {
           <ReviewInbox title="Department Head daily reports" emptyText="No Department Head daily report is waiting for you." reloadKey={refresh} onOpen={openReport} />
         </div>
       ) : null}
-      {tab === 'weeklyApprovals' && ctx.level === 'SUPER_ADMIN' ? <p className="text-sm text-slate-500">Weekly approvals are decided by the Operations Head.</p> : null}
+      {tab === 'weeklyApprovals' && ctx.level === 'SUPER_ADMIN' ? <p className="text-sm text-slate-500">Weekly approvals are decided by the CEO.</p> : null}
       {tab === 'overview' && (ctx.level === 'OPERATIONS_HEAD' || ctx.level === 'SUPER_ADMIN') ? <ReportingOverview reloadKey={refresh} /> : null}
 
       {openId ? (

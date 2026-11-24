@@ -26,7 +26,7 @@ const PRIORITY_LABEL: Record<NoticePriority, string> = { NORMAL: 'Normal', IMPOR
 const PRIORITY_STYLE: Record<NoticePriority, string> = {
   NORMAL: 'bg-slate-50 text-slate-700 border-slate-200', IMPORTANT: 'bg-amber-50 text-amber-800 border-amber-200', URGENT: 'bg-rose-50 text-rose-700 border-rose-200'
 };
-const ROLE_LABEL = { SUPER_ADMIN: 'Super Admin', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', DEVELOPER: 'Developers', CRM_TEAM: 'CRM team' } as const;
+const ROLE_LABEL = { SUPER_ADMIN: 'Managing Director', OPERATIONS_HEAD: 'CEO', HR: 'HR', DEVELOPER: 'Developers', CRM_TEAM: 'CRM team' } as const;
 const AUDIENCE_LABEL: Record<NoticeAudienceType, string> = {
   COMPANY: 'Entire company – all employees', DEPARTMENT: 'Specific departments', ROLE: 'Specific designations or roles', EMPLOYEES: 'Selected employees'
 };
@@ -460,7 +460,7 @@ const Managers: React.FC = () => {
   return (
     <section className="space-y-3" aria-label="Notice Board managers" data-testid="notice-managers">
       <Card className="p-4 space-y-3">
-        <p className="text-sm text-slate-600">Who may send, edit and archive company notices: the Super Admin, HR, and these named people (the CRM team). Nobody else, whatever their role.</p>
+        <p className="text-sm text-slate-600">Who may send, edit and archive company notices: the Managing Director, HR, and these named people (the CRM team). Nobody else, whatever their role.</p>
         {error ? <ErrorBanner message={error} onRetry={load} /> : null}
         {!data && !error ? <Spinner /> : null}
         {data ? (

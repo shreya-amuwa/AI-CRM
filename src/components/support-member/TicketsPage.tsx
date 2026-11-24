@@ -391,7 +391,7 @@ const SlaSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {sla && (
             <p className="text-[11px] text-slate-400">
               {sla.scope === 'DEPARTMENT' ? 'Set for your department.' : 'The default for every department.'} Last changed {fmtWhen(sla.updatedAt)}.
-              {!sla.canEdit && ' Only a Department Head or the Super Admin can change it.'}
+              {!sla.canEdit && ' Only a Department Head or the Managing Director can change it.'}
             </p>
           )}
           {error && (

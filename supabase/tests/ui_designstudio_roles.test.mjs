@@ -103,7 +103,7 @@ const submitted = async page => {
   await page.selectOption('#dept', 'wabastore');
   await page.waitForFunction(() => [...document.querySelectorAll('#staff-role option')].some(o => o.value === 'TECHNICAL_CONSULTANT'));
   const ws = (await roleOptions(page)).join('|');
-  check(/Technical Consultant/.test(ws) && /Meta Verifier/.test(ws) && /Operations Head/.test(ws), 'Wabastore: the Support and cross-department roles are offered', ws);
+  check(/Technical Consultant/.test(ws) && /Meta Verifier/.test(ws) && /CEO/.test(ws), 'Wabastore: the Support and cross-department roles are offered', ws);
   await page.selectOption('#staff-role', 'TEAM_MEMBER');
   await page.selectOption(teamSelect, T.wsSales);
   await page.selectOption('#staff-sales-role', 'TELECALLER');
@@ -157,7 +157,7 @@ const submitted = async page => {
   const page = await open(true);
   await page.selectOption('select:has(option:text("Choose a department"))', '11111111-1111-4111-8111-111111111111');
   await page.selectOption('select:has(option:text("Not specified"))', 'SALES');
-  await page.selectOption('select:has(option:text("Operations Head"))', 'OPERATIONS_HEAD');
+  await page.selectOption('select:has(option:text("CEO"))', 'OPERATIONS_HEAD');
   const listed = await page.$$eval('select:has(option:text("Choose a department")) option', os => os.map(o => o.textContent.trim()));
   check(listed.includes('Amuwa Design Studio') && listed.includes('AI Design Studio') && !listed.some(t => /Retired/i.test(t)), 'request form: Amuwa Design Studio and AI Design Studio are both listed, neither is Retired', listed);
   await page.selectOption('select:has(option:text("Choose a department"))', DS);

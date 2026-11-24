@@ -20,7 +20,7 @@ const OUTCOME_CLS: Record<AuditOutcome, string> = {
   DENIED: 'bg-rose-50 text-rose-700'
 };
 const OUTCOME_LABEL: Record<AuditOutcome, string> = { SUCCESS: 'Success', FAILURE: 'Failed', DENIED: 'Refused' };
-const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: 'Super Admin', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member' };
+const ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: 'Managing Director', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member' };
 
 /** CUSTOMER_STAGE_CHANGED -> Customer stage changed */
 const pretty = (action: string) => action.toLowerCase().replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());

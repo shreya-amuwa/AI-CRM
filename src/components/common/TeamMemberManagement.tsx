@@ -98,9 +98,9 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
 
   const meta: Record<TeamMemberTab, { label: string; icon: typeof Users; hint: string }> = {
     add: { label: 'Add Team Member', icon: UserPlus, hint: isTeamLead ? 'Add a team member to your team. The account is active at once: no approval is needed.' : 'Create an account. Only the roles you may create are offered.' },
-    approvals: { label: 'Employee Approvals', icon: ClipboardCheck, hint: isSuperAdmin ? 'Operations Heads HR asked for. You decide them and choose the departments they manage.' : 'Team Leads and Team Members HR asked for in your department.' },
+    approvals: { label: 'Employee Approvals', icon: ClipboardCheck, hint: isSuperAdmin ? 'CEOs HR asked for. You decide them and choose the departments they manage.' : 'Team Leads and Team Members HR asked for in your department.' },
     directory: { label: 'Approved Employees', icon: UserCheck, hint: 'Put approved Team Members under a Team Lead.' },
-    operations: { label: 'Operations Heads', icon: Building2, hint: 'The departments each Operations Head manages, and who approves the Department Heads of each.' },
+    operations: { label: 'CEOs', icon: Building2, hint: 'The departments each CEO manages, and who approves the Department Heads of each.' },
     members: {
       label: 'Team Members',
       icon: Users,

@@ -65,13 +65,13 @@ try {
 
   // --- the HR menu: every entry, the active page, sections
   const labels = (await sidebar(page).locator('nav button, button').allInnerTexts()).map(s => s.trim()).filter(Boolean);
-  for (const name of ['Attendance', 'Meetings', 'Notice Board', 'CEO Availability', 'Dashboard', 'Employee Requests', 'HR & Operations', 'Recruitment Management', 'Recruitment Portal'])
+  for (const name of ['Attendance', 'Meetings', 'Notice Board', 'Managing Director Availability', 'Dashboard', 'Employee Requests', 'HR & Operations', 'Recruitment Management', 'Recruitment Portal'])
     check(labels.some(l => l === name || l.startsWith(name)), `the HR menu keeps "${name}"`, labels);
   check(await sidebar(page).getByRole('link', { name: 'User Documentation' }).isVisible(), 'User Documentation stays at the foot of the menu');
   check((await sidebar(page).getByText('Human Resources', { exact: true }).count()) === 1, 'the department name appears once (no repeated heading in the menu)');
   check(await sidebar(page).getByRole('button', { name: 'Dashboard' }).getAttribute('aria-current') === 'page', 'the open page is marked in the menu');
   const order = labels.slice(0, 6);
-  check(order[0] === 'Attendance' && order[1] === 'Meetings' && order[2] === 'Notice Board' && order[3] === 'CEO Availability', 'the top entries keep their order', order);
+  check(order[0] === 'Attendance' && order[1] === 'Meetings' && order[2] === 'Notice Board' && order[3] === 'Managing Director Availability', 'the top entries keep their order', order);
 
   const work = sidebar(page).getByRole('button', { name: /^Work$/ });
   check(await work.getAttribute('aria-expanded') === 'true', 'the Work section (holding the open page) is open');

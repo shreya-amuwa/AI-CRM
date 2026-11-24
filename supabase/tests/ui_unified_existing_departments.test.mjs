@@ -93,7 +93,7 @@ const fill = async (page, name) => {
   // BEFORE the migration: the reported behaviour (the form does not know the department is unified)
   const page = await open(false);
   const opts = await optionsOf(page);
-  check(opts.includes('Operations Head'), 'before the migration: the form treats the owner-created department as an ordinary one (Operations Head offered; the reported state)', opts);
+  check(opts.includes('CEO'), 'before the migration: the form treats the owner-created department as an ordinary one (Operations Head offered; the reported state)', opts);
   await page.close();
 }
 for (const [slug, name, dbId] of [['amuwa-international-department', 'Amuwa International Department', '11111111-1111-4111-8111-111111111111'],
@@ -136,7 +136,7 @@ for (const [slug, name, dbId] of [['amuwa-international-department', 'Amuwa Inte
   for (const slug of ['wabastore', 'intl-sales-hub']) {
     await page.selectOption('#dept', slug);
     const opts = (await optionsOf(page)).join('|');
-    check(/Department Head/.test(opts) && /Team Lead/.test(opts) && /Team Member/.test(opts) && /Operations Head/.test(opts), `${slug}: keeps every existing role`, opts);
+    check(/Department Head/.test(opts) && /Team Lead/.test(opts) && /Team Member/.test(opts) && /CEO/.test(opts), `${slug}: keeps every existing role`, opts);
   }
   await page.close();
 }

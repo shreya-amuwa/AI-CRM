@@ -148,7 +148,7 @@ export const AiqrLoginForm: React.FC = () => {
               className="py-2 px-3 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-[11px] font-mono flex items-center justify-center gap-1.5 transition-all"
             >
               <Shield className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Super Admin</span>
+              <span>Managing Director</span>
             </button>
             <button
               type="button"

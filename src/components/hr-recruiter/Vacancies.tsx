@@ -71,7 +71,7 @@ export const Vacancies: React.FC<{ ctx: RecruiterContext; go: RecruiterGo; openI
                 <div key={v.id} className="space-y-2"><VacancyCard v={v} onOpen={() => go('vacancies', { vacancyId: v.id })} />{ctx.isLeadership && <button type="button" className={`${btn.primary} w-full`} onClick={() => setAllocating(v)}>Allocate to a recruiter</button>}</div>
               ))}</div>
             )}
-            {!ctx.isLeadership && queue.length > 0 && <p className="text-[11px] text-slate-500">Only the Super Admin or the HR Department Head can allocate a vacancy. You cannot see the candidates of these vacancies until they are allocated to you.</p>}
+            {!ctx.isLeadership && queue.length > 0 && <p className="text-[11px] text-slate-500">Only the Managing Director or the HR Department Head can allocate a vacancy. You cannot see the candidates of these vacancies until they are allocated to you.</p>}
           </section>
         </>
       )}

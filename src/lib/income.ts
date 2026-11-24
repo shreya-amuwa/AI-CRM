@@ -55,10 +55,10 @@ export interface RuleInput {
 export const EVENT_LABEL: Record<IncentiveEvent, string> = { SALE_PAID: 'Sale paid', DEMO_COMPLETED: 'Demo completed', VISIT_COMPLETED: 'Field visit completed' };
 export const ROLE_LABEL: Record<EarningRole, string> = {
   CLOSER: 'Your sale', TELECALLER: 'Telecaller share', BUSINESS_ASSOCIATE: 'Business Associate share', TEAM_LEAD: 'Team Lead share',
-  DEPARTMENT_HEAD: 'Department Head share', OPERATIONS_HEAD: 'Operations Head share', PARTICIPANT: 'Reward'
+  DEPARTMENT_HEAD: 'Department Head share', OPERATIONS_HEAD: 'CEO share', PARTICIPANT: 'Reward'
 };
 export const SCOPE_LABEL: Record<IncentiveScope, string> = {
-  OPERATIONS_HEAD: 'Operations Head', LEVEL: 'Everyone at a level', SUB_ROLE: 'A sales role', DEPARTMENT: 'A department', TEAM: 'A team', PERSON: 'One person'
+  OPERATIONS_HEAD: 'CEO', LEVEL: 'Everyone at a level', SUB_ROLE: 'A sales role', DEPARTMENT: 'A department', TEAM: 'A team', PERSON: 'One person'
 };
 export const LEVELS = [
   { value: 'TEAM_MEMBER', label: 'Team Members' }, { value: 'TEAM_HEAD', label: 'Team Leads' }, { value: 'DEPARTMENT_HEAD', label: 'Department Heads' }
