@@ -7003,6 +7003,66 @@ export interface NotificationHealthDetail {
 export interface NotificationTestResult { devices: number; sent: number; retry: number; failed: number; gone: number; pushConfigured: boolean }
 
 // ---------------------------------------------------------------------------
+// Email Management (migration 20270201000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
+// e-mail; DELIVERY_CONFIRMED needs the provider's own delivery event.
+// ---------------------------------------------------------------------------
+export type EmailProviderName = 'resend' | 'ses' | 'smtp' | 'brevo';
+export interface EmailSettings {
+  providerOrder: ('resend' | 'ses' | 'smtp')[] | null;
+  quotaThresholds: number[];
+  resendDailyLimit: number;
+  resendMonthlyLimit: number;
+  sesDailyLimit: number | null;
+  criticalReserve: number;
+  maxAutoRecipients: number;
+  allowedSenderDomains: string[];
+  updatedAt?: string;
+}
+export interface EmailSender { category: string; fromEmail: string; fromName: string; replyTo: string | null; enabled: boolean; updatedAt?: string }
+export interface EmailRule {
+  id: string; name: string; category: string; application: string | null; departmentId: string | null; workflow: string | null;
+  mode: 'CC' | 'BCC'; target: string; profileIds: string[]; addresses: string[]; excludeProfileIds: string[]; priority: number; enabled: boolean;
+  effectiveFrom: string | null; effectiveTo: string | null; updatedAt?: string;
+}
+export interface EmailProviderState {
+  provider: 'resend' | 'ses' | 'smtp';
+  pausedUntil: string | null; pauseReason: string | null; lastSuccessAt: string | null; lastErrorAt: string | null; lastErrorCategory: string | null;
+  reportedDaily: string | null; reportedMonthly: string | null; reportedAt: string | null; usedToday: number; usedMonth: number;
+}
+export interface EmailDiagnostics {
+  route: EmailProviderName[]; intended: EmailProviderName | null; excluded: { provider: EmailProviderName; reason: string }[]; fallback: boolean;
+  sesProductionEnabled: boolean; configured: Record<'resend' | 'ses' | 'smtp', boolean>; sesRegion: string | null; sesRegionExplicit: boolean;
+  sesConfigurationSet: boolean; smtpHost: string | null; fromEmail: string; replyTo: string; globalCc: number; globalBcc: number;
+  resendWebhookSecret: boolean; orderFromEnv: string | null;
+}
+export interface EmailOverview {
+  settings: EmailSettings;
+  today: { submitted: number; accepted: number; deliveryConfirmed: number; failed: number; bounced: number; complained: number; unknown: number;
+           suppressed: number; retryPending: number; processing: number; fallbacks: number };
+  providers: EmailProviderState[];
+  senders: EmailSender[];
+  rules: EmailRule[];
+  suppressions: number;
+  webhookEvents24h: number;
+  lastWebhookAt: string | null;
+  diagnostics: EmailDiagnostics;
+}
+export interface EmailProviderCheck { provider: 'resend' | 'ses' | 'smtp'; ok: boolean; checkedAt: string; summary: string; details: Record<string, unknown> }
+export interface EmailHistoryItem {
+  id: string; application: string; category: string; template: string | null; priority: string; sender: string | null; recipient: string;
+  cc: string[]; bccCount: number; bcc: string[] | null; status: string; provider: EmailProviderName | null; fallbackUsed: boolean; attempts: number;
+  errorCategory: string | null; customerId: string | null; applicationId: string | null; createdAt: string; acceptedAt: string | null;
+  deliveredAt: string | null; bouncedAt: string | null; complainedAt: string | null;
+}
+export interface EmailHistoryPage { total: number; items: EmailHistoryItem[] }
+export interface EmailHistoryDetail {
+  attempts: { provider: string; outcome: string; errorCategory: string | null; statusCode: number | null; ms: number | null; at: string }[];
+  events: { type: string; bounceType: string | null; at: string }[];
+}
+export interface EmailSuppression { email: string; active: boolean; reason: string; source: string; note: string | null; updatedAt: string }
+export interface EmailRulePreview { rule: string; recipients: { mode: 'CC' | 'BCC'; email: string; name: string | null }[] }
+
+// ---------------------------------------------------------------------------
 // Company Notice Board (migration 20270131000200)
 // ---------------------------------------------------------------------------
 export type NoticeCategory = 'GENERAL' | 'HR' | 'POLICY' | 'EVENT' | 'HOLIDAY' | 'IT_SYSTEM' | 'OPERATIONS' | 'OTHER';

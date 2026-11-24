@@ -45,6 +45,7 @@ import {
   workflowController as workflow,
   meController as me,
   notificationsController as notifications,
+  emailController as email,
   organizationController as org,
   pipelineController as pipeline,
   usersController as users
@@ -619,6 +620,20 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/documents/:id/url', handler: documents.url },
   { method: 'DELETE', path: '/documents/:id', handler: documents.remove, options: S },
 
+  // Email Management (20270201000100)
+  { method: 'GET', path: '/email/admin/overview', handler: email.overview },
+  { method: 'POST', path: '/email/admin/settings', handler: email.saveSettings, options: S },
+  { method: 'POST', path: '/email/admin/senders', handler: email.saveSender, options: S },
+  { method: 'DELETE', path: '/email/admin/senders/:category', handler: email.deleteSender, options: S },
+  { method: 'POST', path: '/email/admin/rules', handler: email.saveRule, options: S },
+  { method: 'DELETE', path: '/email/admin/rules/:id', handler: email.deleteRule, options: S },
+  { method: 'POST', path: '/email/admin/rules/:id/preview', handler: email.previewRule },
+  { method: 'GET', path: '/email/admin/suppressions', handler: email.suppressions },
+  { method: 'POST', path: '/email/admin/suppressions', handler: email.setSuppression, options: S },
+  { method: 'POST', path: '/email/admin/providers/:provider/check', handler: email.checkProvider, options: S },
+  { method: 'GET', path: '/email/history', handler: email.history },
+  { method: 'GET', path: '/email/history/:id', handler: email.historyDetail },
+  { method: 'POST', path: '/email/history/:id/review', handler: email.reviewMessage, options: S },
   { method: 'GET', path: '/notifications', handler: notifications.list },
   { method: 'GET', path: '/notifications/unread-count', handler: notifications.unreadCount },
   { method: 'GET', path: '/notifications/health', handler: notifications.health },

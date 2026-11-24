@@ -75,7 +75,9 @@ async function processAccountsMail(s: AutomationSettings, job: ClaimedJob): Prom
     link: s.appUrl ? `${s.appUrl}/accounts/dashboard/${job.customer.id}` : ''
   });
   if (s.mode !== 'live') return { outcome: 'SKIPPED', detail: `Dry run – not sent: "${mail.subject}" to ${maskEmail(to)}`, recipient: to };
-  return fromResult(await sendEmail(s, { email: to, name: x.toName || to }, mail), to, `Payment request email sent to ${maskEmail(to)}`);
+  return fromResult(await sendEmail(s, { email: to, name: x.toName || to }, mail, undefined,
+    { category: 'ACCOUNTS', template: 'accounts-payment-request', idempotencyKey: `automation-job:${job.id}`, context: { customerId: job.customer.id } }),
+    to, `Payment request email sent to ${maskEmail(to)}`);
 }
 
 /**
@@ -99,7 +101,10 @@ async function processAccountCreatedMail(s: AutomationSettings, job: ClaimedJob)
     const password = decryptSecret(job.secret, s.secretKey);
     if (!password) return { outcome: 'FAILED', detail: 'The temporary password could not be read (check AUTOMATION_SECRET_KEY). Nothing was sent - send the e-mail again from Client logins.', recipient: email };
     const mail = renderTemporaryAccessEmail({ name, businessName, loginEmail: email, password, loginUrl: `${s.appUrl}/client/login` });
-    return fromResult(await sendEmail(s, { email, name }, mail), email, `Sign-in e-mail (temporary password) sent to ${maskEmail(email)}`);
+    // a password: never copied to anyone (CREDENTIALS), sent once per job
+    return fromResult(await sendEmail(s, { email, name }, mail, undefined,
+      { category: 'CREDENTIALS', application: 'CLIENT_PORTAL', template: 'client-temporary-password', idempotencyKey: `automation-job:${job.id}`, context: { customerId: c.id } }),
+      email, `Sign-in e-mail (temporary password) sent to ${maskEmail(email)}`);
   }
   let link: string;
   try {
@@ -108,7 +113,10 @@ async function processAccountCreatedMail(s: AutomationSettings, job: ClaimedJob)
     return { outcome: 'RETRY', detail: 'Could not make the set-password link.', recipient: email };
   }
   const mail = renderClientPasswordEmail({ name, businessName, loginEmail: email, link, kind: 'WELCOME' });
-  return fromResult(await sendEmail(s, { email, name }, mail), email, `Set-password e-mail sent to ${maskEmail(email)}`);
+  // a one-time link, made afresh on every attempt (so no idempotency key: the content differs each time); never copied to anyone
+  return fromResult(await sendEmail(s, { email, name }, mail, undefined,
+    { category: 'CREDENTIALS', application: 'CLIENT_PORTAL', template: 'client-set-password', context: { customerId: c.id } }),
+    email, `Set-password e-mail sent to ${maskEmail(email)}`);
 }
 
 /**
@@ -145,7 +153,10 @@ async function processPanelCredentialsMail(s: AutomationSettings, job: ClaimedJo
     account: x.account || '',
     password
   });
-  return fromResult(await sendEmail(s, { email, name }, mail), email, `${x.serviceName || 'WhatsApp'} panel login e-mail sent to ${maskEmail(email)}`);
+  // the panel password: never copied to anyone (CREDENTIALS), sent once per job
+  return fromResult(await sendEmail(s, { email, name }, mail, undefined,
+    { category: 'CREDENTIALS', template: 'panel-credentials', idempotencyKey: `automation-job:${job.id}`, context: { customerId: c.id } }),
+    email, `${x.serviceName || 'WhatsApp'} panel login e-mail sent to ${maskEmail(email)}`);
 }
 
 /**
@@ -167,7 +178,9 @@ async function processPanelLinkMail(s: AutomationSettings, job: ClaimedJob): Pro
     return { outcome: 'SKIPPED', detail: `Test mode - ${maskEmail(email)} is not a test recipient`, recipient: email };
   }
   const mail = renderPanelLinkEmail({ name, businessName: c.company?.trim() || name, serviceName: x.serviceName || 'WhatsApp', panel: x.panel, panelUrl: checked.url, account: x.account });
-  return fromResult(await sendEmail(s, { email, name }, mail), email, `${x.serviceName || 'Panel'} link e-mail sent to ${maskEmail(email)}`);
+  return fromResult(await sendEmail(s, { email, name }, mail, undefined,
+    { category: 'META_VERIFICATION', template: 'panel-link', idempotencyKey: `automation-job:${job.id}`, context: { customerId: c.id, workflow: 'PANEL_LINK' } }),
+    email, `${x.serviceName || 'Panel'} link e-mail sent to ${maskEmail(email)}`);
 }
 
 interface SubscriptionMailData {
@@ -228,7 +241,9 @@ async function processSubscriptionActivatedMail(s: AutomationSettings, job: Clai
     loginUrl: `${s.appUrl}/client/login`,
     setPasswordLink: link
   });
-  return fromResult(await sendEmail(s, { email, name }, mail), email, `${m.serviceName} activation e-mail sent to ${maskEmail(email)}`);
+  return fromResult(await sendEmail(s, { email, name }, mail, undefined,
+    { category: 'CLIENT_ONBOARDING', priority: 'HIGH', template: 'subscription-activated', idempotencyKey: `automation-job:${job.id}`, context: { customerId: job.customer.id, workflow: 'SUBSCRIPTION_ACTIVATED' } }),
+    email, `${m.serviceName} activation e-mail sent to ${maskEmail(email)}`);
 }
 
 /** Decide and (in live mode) send one job. Never throws. */
@@ -272,7 +287,10 @@ export async function processJob(staffSettings: AutomationSettings, job: Claimed
     if (s.testRecipients && !s.testRecipients.emails.has(email)) {
       return { outcome: 'SKIPPED', detail: `Test mode – ${maskEmail(email)} is not a test recipient`, recipient: email };
     }
-    return fromResult(await sendEmail(s, { email, name }, mail), email, `${STAGE_LABEL[job.stage]} email sent${note}`);
+    return fromResult(await sendEmail(s, { email, name }, mail, undefined, {
+      category: job.stage === 'META_VERIFICATION' ? 'META_VERIFICATION' : 'CLIENT_ONBOARDING', template: `stage-${job.stage.toLowerCase()}`,
+      idempotencyKey: `automation-job:${job.id}`, context: { customerId: c.id, workflow: job.stage }
+    }), email, `${STAGE_LABEL[job.stage]} email sent${note}`);
   }
 
   // WhatsApp
@@ -329,8 +347,12 @@ export async function runDispatch(opts: { limit?: number; budgetMs?: number; db?
     const jobs = (data ?? []) as ClaimedJob[];
     if (!jobs.length) break;
     summary.claimed += jobs.length;
-    const outcomes = await Promise.all(
-      jobs.map(async job => {
+    // one customer's messages go out in the order they were claimed (e.g. "website ready" before "Meta Verification"); different customers
+    // in parallel. Before, the order only held by timing, which any extra step in sending (such as the e-mail record) could change.
+    const groups = new Map<string, ClaimedJob[]>();
+    for (const job of jobs) groups.set(job.customer.id, [...(groups.get(job.customer.id) ?? []), job]);
+    const runInOrder = async (list: ClaimedJob[]) => { const out: Outcome['outcome'][] = []; for (const job of list) out.push(await runOne(job)); return out; };
+    const runOne = async (job: ClaimedJob): Promise<Outcome['outcome']> => {
         let o: Outcome;
         try {
           o = await processJob(s, job);
@@ -347,8 +369,8 @@ export async function runDispatch(opts: { limit?: number; budgetMs?: number; db?
         });
         if (finishError) console.error(JSON.stringify({ level: 'error', msg: 'automation_finish_job failed', job: job.id, error: finishError.message }));
         return o.outcome;
-      })
-    );
+    };
+    const outcomes = (await Promise.all([...groups.values()].map(runInOrder))).flat();
     for (const o of outcomes) {
       if (o === 'SENT') summary.sent++;
       else if (o === 'SKIPPED') summary.skipped++;

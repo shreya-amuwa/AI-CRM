@@ -54,7 +54,10 @@ export async function processDecisionEmail(s: AutomationSettings, ev: ClaimedDec
     logoUrl: base ? `${base}/amuwa-logo.png` : '',
     supportEmail: process.env.HR_REPLY_TO?.trim() || s.email.replyTo || COMPANY.companyEmail
   });
-  const r = await send(recruitmentSettings(s), { email: to, name: ev.candidateName?.trim() || to }, mail);
+  const r = await send(recruitmentSettings(s), { email: to, name: ev.candidateName?.trim() || to }, mail, undefined, {
+    category: 'RECRUITMENT', application: 'CANDIDATE_PORTAL', priority: 'HIGH', template: `decision-${ev.type.toLowerCase()}`,
+    idempotencyKey: `decision-email:${ev.id}`, context: { applicationId: ev.applicationId, workflow: ev.type }
+  });
   if (r.ok) return { outcome: 'SENT', detail: `Accepted by the mail provider for ${maskEmail(to)}`, code: r.code, ref: r.ref };
   return { outcome: r.retry ? 'RETRY' : 'FAILED', detail: r.detail, code: r.code };
 }

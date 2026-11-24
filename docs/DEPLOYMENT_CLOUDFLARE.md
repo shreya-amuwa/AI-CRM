@@ -228,3 +228,10 @@ The reminders need all of these on the **production** Worker (`ai-crm`); none of
    switch or the secret is wrong; "Push configuration unavailable" means the VAPID settings are missing or do not match.
 4. Run `supabase/migrations/20270126000200_notification_reliability.sql` in the Supabase SQL editor (before or after the deploy: the API falls
    back to the previous reminder path until it exists).
+
+## E-mail: Resend first, SES later (migration 20270201000100)
+
+See `docs/EMAIL_MANAGEMENT.md` sections 8–10. In short, on the production Worker: `EMAIL_PROVIDER=resend`, secret `EMAIL_API_KEY` (sending-only
+Resend key), `EMAIL_FALLBACK=on` with the working `SMTP_*` mailbox, secret `RESEND_WEBHOOK_SECRET` (Resend webhook to
+`/api/v1/internal/email/resend-webhook`), `SES_REGION=ap-southeast-2`, and `EMAIL_SES_PRODUCTION_ENABLED=false` until AWS grants SES production
+access. Rollback: set `EMAIL_PROVIDER` back to the previous provider (no deploy needed).

@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
+import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
@@ -1095,4 +1096,21 @@ export const leadWhatsAppApi = {
     api.post<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings', body),
   history: (customerId: string) => api.get<LeadWhatsAppMessage[]>(`/leads/${customerId}/whatsapp`),
   resend: (customerId: string) => api.post<LeadWhatsAppMessage>(`/leads/${customerId}/whatsapp/retry`, {})
+};
+
+/** Email Management (20270201000100): the Super Admin's settings; the history for everyone (scoped by the database). */
+export const emailApi = {
+  overview: () => api.get<EmailOverview>('/email/admin/overview'),
+  saveSettings: (s: EmailSettings) => api.post<EmailSettings>('/email/admin/settings', s),
+  saveSender: (b: { category: string; fromEmail: string; fromName: string; replyTo: string | null; enabled: boolean }) => api.post<EmailOverview>('/email/admin/senders', b),
+  deleteSender: (category: string) => api.delete<EmailOverview>(`/email/admin/senders/${category}`),
+  saveRule: (r: Partial<EmailRule>) => api.post<EmailOverview>('/email/admin/rules', r),
+  deleteRule: (id: string) => api.delete<EmailOverview>(`/email/admin/rules/${id}`),
+  previewRule: (id: string, b: { customerId?: string; applicationId?: string }) => api.post<EmailRulePreview>(`/email/admin/rules/${id}/preview`, b),
+  suppressions: (search?: string) => api.get<EmailSuppression[]>('/email/admin/suppressions', search ? { search } : {}),
+  setSuppression: (b: { email: string; active: boolean; note?: string }) => api.post<EmailSuppression[]>('/email/admin/suppressions', b),
+  checkProvider: (provider: 'resend' | 'ses' | 'smtp') => api.post<EmailProviderCheck>(`/email/admin/providers/${provider}/check`, {}),
+  history: (q: Record<string, string | number | undefined>) => api.get<EmailHistoryPage>('/email/history', Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>),
+  historyDetail: (id: string) => api.get<EmailHistoryDetail>(`/email/history/${id}`),
+  review: (id: string, received: boolean) => api.post<{ ok: true }>(`/email/history/${id}/review`, { received })
 };

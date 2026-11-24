@@ -183,7 +183,8 @@ async function mailOne(db: SupabaseClient, o: ClaimedMail): Promise<'SENT' | 'SK
   const attachments = ICS_KINDS.includes(o.kind)
     ? [{ filename: 'meeting.ics', content: new TextEncoder().encode(meetingIcs(m, o.kind === 'CANCELLED')), contentType: 'text/calendar; charset=utf-8' }]
     : undefined;
-  const r = await sendEmail(settings, { email: o.toEmail, name: o.toName || o.toEmail, display: true }, mail, attachments);
+  const r = await sendEmail(settings, { email: o.toEmail, name: o.toName || o.toEmail, display: true }, mail, attachments,
+    { category: 'MEETING', template: `meeting-${String(o.kind).toLowerCase()}`, idempotencyKey: `meeting-mail:${o.id}`, ...(o.toProfileId ? { context: { profileId: o.toProfileId } } : {}) });
   if (r.ok) {
     await done('SENT');
     return 'SENT';

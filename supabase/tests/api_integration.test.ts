@@ -3208,6 +3208,19 @@ provider.close();
       'subscription: the e-mail has the plan, the duration, the real start and expiry dates, the message limit and a secure way in (no password)', act?.body?.html);
     check((await db.query(`select status from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC])).rows[0].status === 'SENT', 'subscription: its delivery status is recorded');
 
+    // a job wrongly marked failed after the provider really accepted its e-mail: a retry of the same event sends no duplicate (email_messages)
+    {
+      const { rows: [job] } = await db.query(`select id from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
+      await db.query(`update public.automation_jobs set status = 'QUEUED', next_attempt_at = '2000-01-01' where id = $1`, [job.id]);
+      const before = mailbox.length;
+      process.env.AUTOMATION_MODE = 'live';
+      await dispatch('dispatch-secret-0123456789');
+      process.env.AUTOMATION_MODE = 'off';
+      const { rows: [again] } = await db.query(`select status, detail from public.automation_jobs where id = $1`, [job.id]);
+      check(mailbox.length === before && again.status === 'SENT', 'subscription: the same accepted e-mail queued again is not sent twice (one send per business event)', again);
+      // a real failure: the provider refused it, so the e-mail record says FAILED too
+      await db.query(`update public.email_messages set status = 'FAILED' where idempotency_key = $1`, [`automation-job:${job.id}`]);
+    }
     // a failure is recorded and can be retried
     await db.query(`update public.automation_jobs set status = 'FAILED', detail = 'Provider refused' where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
     r = await api('tc', 'GET', `/pipeline/customers/${subC}/subscriptions`);
@@ -12171,6 +12184,116 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
 }
+// Email management (20270201000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
+// send per business event, no copies of authentication e-mail, the signed Resend webhook, shared suppression, the Super Admin's API.
+{
+  console.log('--- email management: router, rules, idempotency, auth privacy, webhook, suppression, admin API');
+  const { sendEmail } = await import('../../server/automations/providers.js');
+  const { automationSettings } = await import('../../server/automations/config.js');
+  const mails: { path: string; headers: http.IncomingHttpHeaders; body: any }[] = [];
+  let n = 0;
+  const mailSrv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      mails.push({ path: (req.url || '').split('?')[0], headers: req.headers, body: raw ? JSON.parse(raw) : null });
+      res.writeHead(200, { 'content-type': 'application/json', 'x-resend-daily-quota': '5', 'x-resend-monthly-quota': '41' });
+      res.end(JSON.stringify({ id: `re_api_${++n}` }));
+    });
+  });
+  await new Promise<void>(rs => mailSrv.listen(0, rs));
+  const saved = Object.fromEntries(['EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_CC', 'EMAIL_BCC', 'EMAIL_FROM', 'RESEND_WEBHOOK_SECRET', 'SMTP_HOST'].map(k => [k, process.env[k]]));
+  Object.assign(process.env, { EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_api_key', EMAIL_API_BASE_URL: `http://127.0.0.1:${(mailSrv.address() as any).port}`,
+    EMAIL_FROM: 'Amuwa Corporation <no-reply@amuwa.com>', EMAIL_CC: '', EMAIL_BCC: '' });
+  delete process.env.SMTP_HOST;
+  await db.query(`delete from public.email_recipient_rules; delete from public.email_suppressions where email like '%@email-api.example'`);
+  const { rows: [cust] } = await db.query(`select id from public.customers order by created_at limit 1`);
+  try {
+    // the Super Admin's API (and nobody else's)
+    let r = await api('hr', 'GET', '/email/admin/overview');
+    check(r.status === 403, 'email admin: HR cannot open Email Management', r);
+    r = await api('sa', 'GET', '/email/admin/overview');
+    check(r.status === 200 && r.json.data.diagnostics.route.join() === 'resend' && r.json.data.diagnostics.configured.resend === true
+          && !JSON.stringify(r.json).includes('re_api_key'), 'email admin: the overview shows the route and never the key', r.json?.data?.diagnostics);
+    r = await api('sa', 'POST', '/email/admin/settings', { providerOrder: ['resend', 'gmail'] });
+    check(r.status === 422, 'email admin: an unknown provider is a validation error', r);
+    r = await api('sa', 'POST', '/email/admin/rules', { name: 'Invoices → Accounts mailbox', category: 'INVOICE', mode: 'CC', target: 'ADDRESS', addresses: ['accounts@amuwa.com'], enabled: true });
+    check(r.status === 200 && r.json.data.rules.some((x: any) => x.name === 'Invoices → Accounts mailbox'), 'email admin: the Super Admin adds a CC rule', r);
+    const ruleId = r.json.data.rules.find((x: any) => x.name === 'Invoices → Accounts mailbox').id;
+    r = await api('sa', 'POST', '/email/admin/rules', { name: 'x', category: 'AUTH', mode: 'BCC', target: 'ADDRESS', addresses: ['audit@amuwa.com'] });
+    check(r.status === 422, 'email admin: no rule may copy authentication e-mail', r);
+    r = await api('sa', 'POST', `/email/admin/rules/${ruleId}/preview`, { customerId: cust.id });
+    check(r.status === 200 && r.json.data.recipients.length === 1 && r.json.data.recipients[0].email === 'accounts@amuwa.com', 'email admin: the preview resolves for a real customer', r);
+    r = await api('hr', 'POST', '/email/admin/providers/resend/check', {});
+    check(r.status === 403, 'email admin: only the Super Admin checks providers', r);
+
+    // the router + the shared record
+    const invoice = { subject: 'Invoice AC-1', html: '<p>Invoice</p>', text: 'Invoice' };
+    let sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined,
+      { category: 'INVOICE', idempotencyKey: 'api-email-invoice-1', context: { customerId: cust.id } });
+    check(sent.ok && mails.length === 1 && JSON.stringify(mails[0].body.cc) === '["accounts@amuwa.com"]' && mails[0].headers['idempotency-key'] === 'api-email-invoice-1',
+      'email: sent by Resend, with the rule\'s CC and the Idempotency-Key', mails[0]?.body);
+    const { rows: [row] } = await db.query(`select status, provider, provider_message_id, cc, customer_id from public.email_messages where idempotency_key = 'api-email-invoice-1'`);
+    check(row.status === 'ACCEPTED' && row.provider === 'resend' && row.provider_message_id === 're_api_1' && row.customer_id === cust.id, 'email: recorded as ACCEPTED (not delivered) with the provider id', row);
+    sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined,
+      { category: 'INVOICE', idempotencyKey: 'api-email-invoice-1', context: { customerId: cust.id } });
+    check(sent.ok && mails.length === 1, 'email: the same business event again sends nothing (another Worker or a retry)');
+    const { rows: [state] } = await db.query(`select reported_daily, reported_monthly, last_success_at from public.email_provider_state where provider = 'resend'`);
+    check(state.reported_daily === '5' && state.reported_monthly === '41' && state.last_success_at, 'email: Resend\'s reported usage is kept', state);
+
+    // authentication: no copy, even with EMAIL_CC / EMAIL_BCC set
+    process.env.EMAIL_CC = 'ops@amuwa.com';
+    process.env.EMAIL_BCC = 'audit@amuwa.com';
+    sent = await sendEmail(automationSettings(), { email: 'staff@email-api.example', name: 'Staff' }, { subject: 'Reset', html: '<p>link</p>', text: 'link' }, undefined,
+      { category: 'AUTH', template: 'staff-password-reset' });
+    check(sent.ok && mails[1].body.cc === undefined && mails[1].body.bcc === undefined, 'email: a password reset goes to the account holder only (EMAIL_CC / EMAIL_BCC ignored)', mails[1]?.body);
+    const { rows: [authRow] } = await db.query(`select recipient, cc, bcc, priority from public.email_messages where category = 'AUTH' order by created_at desc limit 1`);
+    check(authRow.recipient === 's***@email-api.example' && authRow.cc.length === 0 && authRow.bcc.length === 0 && authRow.priority === 'CRITICAL',
+      'email: its log keeps only a masked address, no copies, CRITICAL', authRow);
+    sent = await sendEmail(automationSettings(), { email: 'staff@email-api.example', name: 'Staff' }, { subject: 'Reset', html: '<p>link</p>', text: 'link' }, undefined,
+      { category: 'AUTH', cc: ['hr@amuwa.com'] });
+    check(!sent.ok && mails.length === 2, 'email: an explicit CC on an authentication e-mail is refused');
+    process.env.EMAIL_CC = '';
+    process.env.EMAIL_BCC = '';
+
+    // the signed Resend webhook: delivered, then a hard bounce suppresses the address for every provider
+    const whKey = Buffer.from('0123456789abcdef0123456789abcdef');
+    process.env.RESEND_WEBHOOK_SECRET = `whsec_${whKey.toString('base64')}`;
+    const hook = (id: string, payload: unknown, sign = true) => {
+      const body = JSON.stringify(payload);
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sig = crypto.createHmac('sha256', whKey).update(`${id}.${ts}.${body}`).digest('base64');
+      return fetch(`${base}/internal/email/resend-webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'svix-id': id, 'svix-timestamp': ts,
+        'svix-signature': sign ? `v1,${sig}` : 'v1,forged' }, body }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    };
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } }, false);
+    check(r.status === 401, 'email webhook: an unsigned / forged request is refused', r);
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } });
+    check(r.status === 200 && (await db.query(`select status from public.email_messages where provider_message_id = 're_api_1'`)).rows[0].status === 'DELIVERY_CONFIRMED',
+      'email webhook: a signed delivered event confirms delivery', r);
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } });
+    check(r.status === 200 && r.json.duplicate === true, 'email webhook: the same event delivered again is a no-op', r);
+    r = await hook('msg_api_2', { type: 'email.bounced', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'], bounce: { type: 'Permanent' } } });
+    check(r.status === 200 && (await db.query(`select 1 from public.email_suppressions where email = 'client@email-api.example' and active`)).rowCount === 1,
+      'email webhook: a hard bounce suppresses the address', r);
+    sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined, { category: 'INVOICE', context: { customerId: cust.id } });
+    check(!sent.ok && !sent.retry && mails.length === 2, 'email: a suppressed address is not sent to (no provider can bypass it)', sent);
+
+    // history: scoped by the database
+    r = await api('sa', 'GET', '/email/history?category=INVOICE');
+    check(r.status === 200 && r.json.data.items.some((x: any) => x.status === 'BOUNCED'), 'email history: the Super Admin sees the invoice e-mail and its bounce', r.status);
+    r = await api('sa', 'GET', '/email/history?status=NOPE');
+    check(r.status === 422, 'email history: an unknown status is a validation error', r);
+    r = await api('hr', 'GET', '/email/history?category=AUTH');
+    check(r.status === 200 && r.json.data.items.length === 0, 'email history: HR never sees authentication e-mails', r.json?.data);
+    r = await api('sa', 'POST', '/email/admin/suppressions', { email: 'client@email-api.example', active: false, note: 'address fixed' });
+    check(r.status === 200 && r.json.data.some((x: any) => x.email === 'client@email-api.example' && !x.active), 'email admin: the Super Admin lifts a suppression (audited)', r);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await db.query(`delete from public.email_recipient_rules; delete from public.email_suppressions where email like '%@email-api.example'`);
+    mailSrv.close();
+  }
+}
 // --- CEO office arrival (migration 20270128000300): HR's button; information only, meeting requests work before and after ---
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
@@ -12178,8 +12301,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
   let r = await api('a', 'GET', '/meetings/ceo-office');
   check(r.status === 200 && ceoOf(r.json.data)?.arrived === false && r.json.data.canMark === false, 'CEO arrival API: an employee sees "not arrived" and has no button', r);
-  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: new Date(Date.now() + 23 * 86400e3 + 37 * 60e3).toISOString(),
-    endsAt: new Date(Date.now() + 23 * 86400e3 + 67 * 60e3).toISOString(), mode: 'PHONE' });
+  // a fixed time on a day no other block books (now + 23 days + 37 min collided with the Super Admin's 06:00 UTC role-request slots when the suite ran around 05:30 UTC)
+  const caxAt = (min: number) => { const d = new Date(Date.now() + 77 * 86400e3); d.setUTCHours(14, min, 0, 0); return d.toISOString(); };
+  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: caxAt(7),
+    endsAt: caxAt(37), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO arrival API: a meeting request before the arrival is saved as usual', r);
   const reqId = r.json.data.id as string;
   r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
