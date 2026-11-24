@@ -13,7 +13,7 @@ import { takePendingHrMeetingRequest, takePendingMeeting, takePendingMeetingRepo
 import { HrMeetingRequests } from '../issues/HrMeetingRequests';
 import { MeetingDecisionsTab, MySummariesTab, SummaryPanel, SummaryReportDrawer } from './MeetingSummaries';
 import { AvailabilityPill, MyAvailabilityPanel, useCeoPresence, usePresenceOf } from './CeoPresence';
-import { CeoArrivalBanner } from './CeoArrival';
+import { CeoArrivalBanner, CeoArrivalChip, CeoNotArrivedPopup, useCeoOffice } from './CeoArrival';
 import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
 
 /**
@@ -397,6 +397,7 @@ const RequestsTab: React.FC<{ reloadKey: number; onOpen: (id: string, intent?: '
     <div className="space-y-4">
       {/* the CEO's office arrival (20270128000300): information only, asking stays open either way */}
       {data && !sa ? <CeoArrivalBanner /> : null}
+      {data && sa ? <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">Your office status today, as HR set it: <CeoArrivalChip /></div> : null}
       <div>
         <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2"><Crown className="w-4 h-4 text-amber-500" /> {data === null ? 'Meeting requests with the CEO' : sa ? 'Meeting requests from employees' : 'My Meeting Requests'}</h2>
         <p className="text-xs text-slate-500">{sa ? 'Only you, the Super Admin (CEO), can approve, reject or reschedule a request. The employee is told with your reason.' : 'You are told here when the CEO approves, rejects or reschedules a request. You can withdraw one that is still pending.'}</p>
@@ -490,6 +491,7 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
               })()}
               <dt className="text-slate-500">Host</dt><dd>{m.hostName}</dd>
               {m.createdByName && m.createdBy !== m.hostId && (<><dt className="text-slate-500">{m.kind === 'CEO_MEETING' ? 'Requested by' : 'Booked by'}</dt><dd>{m.createdByName}{m.createdByDepartment ? ` · ${m.createdByDepartment}` : ''}{m.createdByDesignation ? ` · ${m.createdByDesignation}` : ''}</dd></>)}
+              {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">CEO today</dt><dd><CeoArrivalChip ceoId={m.hostId} /></dd></>)}
               {m.kind === 'CEO_MEETING' && (<><dt className="text-slate-500">Sent</dt><dd>{new Date(m.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>)}
               {m.rescheduleCount > 0 && m.previousStartsAt && m.previousEndsAt && (<><dt className="text-violet-700">Moved from</dt><dd className="text-violet-800">{fullWhen(m.previousStartsAt, m.previousEndsAt)}{m.rescheduledByName ? ` by ${m.rescheduledByName}` : ''}{m.rescheduleReason ? ` — ${m.rescheduleReason}` : ''}</dd></>)}
               {m.status === 'DECLINED' && m.rejectionReason ? (<><dt className="text-rose-700">Rejected</dt><dd className="text-rose-800">{m.rejectionReason}</dd></>)
@@ -641,6 +643,12 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   const { list: ceoPresence } = useCeoPresence(mode === 'ceo');
   const ceoBusy = mode === 'ceo' && !!ceoPresence?.find(p => p.hostId === f.hostId && p.status === 'BUSY');
   useEffect(() => { if (mode === 'ceo' && !f.hostId && ceos[0]) setF(x => ({ ...x, hostId: ceos[0].id })); }, [mode, ceos, f.hostId]);
+  // the CEO has not arrived: say so in a popup, and let the employee carry on (information only; nothing is blocked, 20270201000100)
+  const { office } = useCeoOffice(mode === 'ceo');
+  const askedCeo = office?.ceos.find(c => c.ceoId === f.hostId) ?? office?.ceos[0];
+  const [warned, setWarned] = useState<string | null>(null);
+  const showNotArrived = mode === 'ceo' && !!askedCeo && !askedCeo.arrived && warned !== askedCeo.ceoId;
+  useEffect(() => { if (askedCeo?.arrived) setWarned(null); }, [askedCeo?.arrived]);
 
   // the chosen day's busy times of the CEO / the invited colleagues (CRM + their Google Calendar)
   const watch = useMemo(() => [...(mode === 'ceo' && f.hostId ? [f.hostId] : []), ...invited].slice(0, 30), [mode, f.hostId, invited]);
@@ -687,6 +695,7 @@ const MeetingComposer: React.FC<{ mode: 'meeting' | 'ceo'; onClose: () => void; 
   return (
     <SideDrawer title={mode === 'ceo' ? 'Ask the CEO for time' : 'New meeting'} subtitle={mode === 'ceo' ? 'Only the CEO (Super Admin) approves, reschedules or rejects your request.' : 'Invite colleagues and guests; Google sends the invitations.'} onClose={onClose}>
       <form onSubmit={submit} className="p-5 space-y-4 text-sm">
+        {showNotArrived && askedCeo ? <CeoNotArrivedPopup onContinue={() => setWarned(askedCeo.ceoId)} /> : null}
         {error && <Notice tone="error">{error}</Notice>}
         {/* information only: the request can be sent whether or not the CEO has arrived (20270128000300) */}
         {mode === 'ceo' && <CeoArrivalBanner ceoId={f.hostId || undefined} />}

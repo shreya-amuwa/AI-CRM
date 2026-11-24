@@ -5893,7 +5893,16 @@ export interface CeoPresence {
 export interface CeoAutoScheduled { id: string; title: string; startsAt: string; endsAt: string; requestedStartsAt: string; moved: boolean; requestedBy: string | null }
 export interface CeoPresenceExit extends CeoPresence { scheduled: CeoAutoScheduled[] }
 /** CEO office arrival (20270128000300): HR marks it once a day; it only drives the banner on "Ask the CEO for time", never the requests. */
-export interface CeoOfficeCeo { ceoId: string; name: string; position: string | null; arrived: boolean; arrivedAt: string | null; markedBy: string | null; presence: 'AVAILABLE' | 'BUSY' }
+export interface CeoOfficeCeo {
+  ceoId: string; name: string; position: string | null; arrived: boolean; arrivedAt: string | null; markedBy: string | null; presence: 'AVAILABLE' | 'BUSY';
+  // CEO Availability (20270201000100): today's status and the latest status update (the time and the person); optional so an older database still works
+  status?: 'ARRIVED' | 'NOT_ARRIVED';
+  updatedAt?: string | null;
+  updatedStatus?: 'ARRIVED' | 'NOT_ARRIVED' | null;
+  updatedBy?: string | null;
+  /** False when the latest update is from an earlier day (today has no update yet). */
+  updatedToday?: boolean;
+}
 export interface CeoOfficeStatus { day: string; canMark: boolean; ceos: CeoOfficeCeo[]; duplicate?: boolean }
 
 export interface MeetingSettings {

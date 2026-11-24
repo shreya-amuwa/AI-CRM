@@ -140,3 +140,11 @@ slug list `UNIFIED_DEPARTMENT_SLUGS` (a convenience, like the Design Studios lis
 * The Department Head's *Add Lead* opens the head's lead form (`HeadLeadsPage`); the Sales income and incentive pages are not part of these departments yet.
 * `Lead Follow-ups` for a Team Lead / Team Member reuses the member task / follow-up page (`MemberSections`); a dedicated "Sales Activity" page is not built.
 * The Sales Department Head's **income** page (`sales_head_income`) is still for Sales-side heads only.
+
+# Super Admin monitoring (PR 3, first part)
+
+The Super Admin who opens International or Reseller from the department hub used to land on the generic department
+panel (a lead-ingestion page that does not apply here). **Dashboard** now shows the department's real **Sales and Support** figures side by side (total / new / converted leads,
+overdue follow-ups, customers, active / resolved / unassigned tickets, and the team table), read-only, for that department only. It reuses the Department Head's overview
+(`UnifiedDepartmentMonitor`, `src/components/unified/UnifiedOverview.tsx`) and the existing `division_leads_overview` / `division_support_overview` functions, which allow exactly the
+Super Admin and that department's own Department Head (anyone else is refused by the database). No migration is needed.

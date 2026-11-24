@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useState } from 'react';
+import { UNIFIED_DEPARTMENT_SLUGS } from '../shared/contracts';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DepartmentProvider, useDepartments } from './context/DepartmentContext';
 import { LeadStoreProvider } from './context/LeadStoreContext';
@@ -52,6 +53,8 @@ const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews
 const AttendancePage = lazy(() => import('./components/attendance/AttendancePage'));
 const MeetingsPage = lazy(() => import('./components/meetings/MeetingsPage'));
 const NoticeBoard = lazy(() => import('./components/notices/NoticeBoard'));
+const CeoAvailabilityPage = lazy(() => import('./components/meetings/CeoAvailabilityPage'));
+const UnifiedDepartmentMonitor = lazy(() => import('./components/unified/UnifiedOverview').then(m => ({ default: m.UnifiedDepartmentMonitor })));
 const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
@@ -570,6 +573,8 @@ const MainAppContent: React.FC = () => {
             <Suspense fallback={<ScreenLoader />}><MeetingsPage /></Suspense>
           ) : currentActiveTab === 'my_notices' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><NoticeBoard /></Suspense>
+          ) : currentActiveTab === 'hr_ceo_availability' && showSidebar && currentDeptId === 'hr' ? (
+            <Suspense fallback={<ScreenLoader />}><CeoAvailabilityPage /></Suspense>
           ) : currentDept && currentDeptId ? (
             /* Sub-department selection screen: ALWAYS show choice cards when no sub-department is selected */
             hasSubDeptChoice && currentSubDept === null ? (
@@ -735,6 +740,9 @@ const MainAppContent: React.FC = () => {
                 subDept={currentSubDept}
                 onSelectSubDept={(dept: any) => handleTabUpdate('dashboard', dept)}
               />
+            ) : currentActiveTab === 'dashboard' && UNIFIED_DEPARTMENT_SLUGS.includes(currentDeptId) && currentDept.dbId ? (
+              /* International / Reseller (Sales + Support in one department): the Super Admin sees the real figures, not the lead-ingestion panel */
+              <Suspense fallback={<ScreenLoader />}><UnifiedDepartmentMonitor departmentId={currentDept.dbId} departmentName={currentDept.name} /></Suspense>
             ) : currentActiveTab === 'dashboard' ? (
               <DepartmentDashboard
                 departmentId={currentDeptId}

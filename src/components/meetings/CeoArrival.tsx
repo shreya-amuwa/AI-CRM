@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, RotateCcw } from 'lucide-react';
 import type { CeoOfficeStatus } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
@@ -95,5 +96,48 @@ export const CeoArrivalControl: React.FC = () => {
       ))}
       {message ? <p role={message.tone === 'error' ? 'alert' : 'status'} className={`text-xs ${message.tone === 'error' ? 'text-rose-700' : 'text-emerald-700'}`}>{message.text}</p> : null}
     </section>
+  );
+};
+
+/** The warning the employee reads when the CEO has not arrived. The wording is fixed; it never blocks: "OK, continue" returns to the form. */
+export const CEO_NOT_ARRIVED_NOTICE = 'CEO has not arrived yet. You can still schedule your meeting request. Please plan your preferred meeting time accordingly.';
+
+export const CeoNotArrivedPopup: React.FC<{ onContinue: () => void }> = ({ onContinue }) => {
+  const button = React.useRef<HTMLButtonElement>(null);
+  const continueRef = React.useRef(onContinue);
+  continueRef.current = onContinue;
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    button.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); continueRef.current(); } };
+    document.addEventListener('keydown', onKey, true);
+    return () => { document.removeEventListener('keydown', onKey, true); previous?.focus?.(); };
+  }, []);
+  // in the page body: the request form sits in a drawer that is moved with a transform, which would pin a fixed popup inside it
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4" data-testid="ceo-not-arrived-popup">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="ceo-na-title" aria-describedby="ceo-na-text" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl border border-rose-200">
+        <h2 id="ceo-na-title" className="text-base font-extrabold text-rose-800"><span aria-hidden="true">🔴 </span>CEO has not arrived</h2>
+        <p id="ceo-na-text" className="mt-2 text-sm text-slate-800" data-testid="ceo-not-arrived-text">{CEO_NOT_ARRIVED_NOTICE}</p>
+        <div className="mt-4 flex justify-end">
+          <button ref={button} type="button" onClick={onContinue} data-testid="ceo-not-arrived-continue"
+            className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800">OK, continue with my request</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+};
+
+/** A one-line "CEO today" status next to a meeting request (information only). */
+export const CeoArrivalChip: React.FC<{ ceoId?: string | null }> = ({ ceoId }) => {
+  const { office } = useCeoOffice();
+  const ceo = office?.ceos.find(c => c.ceoId === ceoId) ?? office?.ceos[0];
+  if (!ceo) return null;
+  return (
+    <span data-testid="ceo-arrival-chip" data-arrived={ceo.arrived ? 'true' : 'false'}
+      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${ceo.arrived ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-rose-300 bg-rose-50 text-rose-800'}`}>
+      <span aria-hidden="true">{ceo.arrived ? '🟢' : '🔴'}</span> CEO {ceo.arrived ? `has arrived${ceo.arrivedAt ? ` (${time(ceo.arrivedAt)})` : ''}` : 'has not arrived yet'}
+    </span>
   );
 };
