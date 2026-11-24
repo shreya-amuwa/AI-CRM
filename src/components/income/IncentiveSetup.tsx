@@ -21,7 +21,7 @@ const btn = {
 };
 const input = 'h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
 const msg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
-const LEVEL_NAME: Record<string, string> = { DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member', OPERATIONS_HEAD: 'Operations Head' };
+const LEVEL_NAME: Record<string, string> = { DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member', OPERATIONS_HEAD: 'CEO' };
 
 const Panel: React.FC<{ title: string; hint?: string; children: React.ReactNode; right?: React.ReactNode }> = ({ title, hint, children, right }) => (
   <section aria-label={title} className="rounded-2xl border border-slate-200 bg-white">
@@ -40,7 +40,7 @@ export function scopeText(r: Pick<SetupRule, 'scopeType' | 'scopeValue'>, o: Inc
   const v = r.scopeValue;
   const find = (list: { id: string; name: string }[] | undefined) => list?.find(x => x.id === v)?.name;
   switch (r.scopeType) {
-    case 'OPERATIONS_HEAD': return `Operations Head: ${find(o?.operationsHeads) ?? 'removed'}`;
+    case 'OPERATIONS_HEAD': return `CEO: ${find(o?.operationsHeads) ?? 'removed'}`;
     case 'LEVEL': return LEVELS.find(l => l.value === v)?.label ?? String(v);
     case 'SUB_ROLE': return SUB_ROLES.find(l => l.value === v)?.label ?? String(v);
     case 'DEPARTMENT': return `Department: ${find(o?.departments) ?? '—'}`;
@@ -130,8 +130,8 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
             </select>
           </label>
         )}
-        <label className="text-sm font-medium text-slate-700">{sale ? 'Amount per unit for the Operations Head (₹)' : 'Amount per event (₹)'}
-          <input className={input} aria-label={sale ? 'Amount per unit for the Operations Head (₹)' : 'Amount per event (₹)'} type="number" inputMode="decimal" min="0.01" step="0.01" value={f.amount} onChange={e => set('amount', e.target.value)} required />
+        <label className="text-sm font-medium text-slate-700">{sale ? 'Amount per unit for the CEO (₹)' : 'Amount per event (₹)'}
+          <input className={input} aria-label={sale ? 'Amount per unit for the CEO (₹)' : 'Amount per event (₹)'} type="number" inputMode="decimal" min="0.01" step="0.01" value={f.amount} onChange={e => set('amount', e.target.value)} required />
         </label>
         {!sale && (
           <label className="text-sm font-medium text-slate-700">Who it is for
@@ -140,8 +140,8 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
             </select>
           </label>
         )}
-        <label className="text-sm font-medium text-slate-700">{sale ? 'Operations Head' : 'Choose'}
-          <select className={input} aria-label={sale ? 'Operations Head' : 'Choose'} value={f.scopeValue} onChange={e => set('scopeValue', e.target.value)} required>
+        <label className="text-sm font-medium text-slate-700">{sale ? 'CEO' : 'Choose'}
+          <select className={input} aria-label={sale ? 'CEO' : 'Choose'} value={f.scopeValue} onChange={e => set('scopeValue', e.target.value)} required>
             <option value="">Choose</option>
             {scopeOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
@@ -158,7 +158,7 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
       </div>
       {replaces && <p className="text-xs text-amber-800" data-testid="replace-note">
         This change applies from now on: the current version stops and a new one starts{sameSale ? ', keeping the amounts already passed down' : ''}. Earnings already recorded stay as they were.
-        {sale && !sameSale && ' With a different product or Operations Head, every level must set its amounts again: until they do, the people below earn nothing from this rule.'}
+        {sale && !sameSale && ' With a different product or CEO, every level must set its amounts again: until they do, the people below earn nothing from this rule.'}
       </p>}
       {error && <Alert tone="error">{error}</Alert>}
       <div className="flex flex-wrap justify-end gap-2">
@@ -201,7 +201,7 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
   return (
     <Panel
       title="Incentive rules"
-      hint="Sales rules go to an Operations Head, who passes amounts down. Demo and field visit rewards go straight to the people you choose."
+      hint="Sales rules go to an CEO, who passes amounts down. Demo and field visit rewards go straight to the people you choose."
       right={<div className="flex flex-wrap gap-2">
         <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={showEnded} onChange={e => setShowEnded(e.target.checked)} /> Show stopped rules</label>
         <button type="button" className={btn.primary} onClick={() => setEditing('new')}><Plus className="w-4 h-4" aria-hidden="true" /> New rule</button>
@@ -303,7 +303,7 @@ const GivenEditor: React.FC<{ rule: SetupRule; row: GivenRow; reload: () => void
 const MyAllocations: React.FC<{ data: IncentiveSetupData; reload: () => void }> = ({ data, reload }) => {
   const rules = data.rules.filter(r => r.eventType === 'SALE_PAID' && r.active && r.myAmount > 0);
   if (!rules.length) {
-    return <Panel title="Amounts for your team"><p className="py-4 text-center text-sm text-slate-500">No sales incentive reaches you yet. The Super Admin sets them.</p></Panel>;
+    return <Panel title="Amounts for your team"><p className="py-4 text-center text-sm text-slate-500">No sales incentive reaches you yet. The Managing Director sets them.</p></Panel>;
   }
   return (
     <>

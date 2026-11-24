@@ -59,7 +59,7 @@ export const VerifierDepartmentsDialog: React.FC<{ member: Pick<Profile, 'id' | 
                 <div className="flex justify-end"><button type="button" className="px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold disabled:opacity-60" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save departments'}</button></div>
               </>
             ) : (
-              <p className="text-xs text-slate-600">Extra departments: <strong>{info.extra.length ? info.extra.map(d => d.name).join(', ') : 'none'}</strong>. Only the Super Admin or the Operations Head who owns these departments can change them.</p>
+              <p className="text-xs text-slate-600">Extra departments: <strong>{info.extra.length ? info.extra.map(d => d.name).join(', ') : 'none'}</strong>. Only the Managing Director or the CEO who owns these departments can change them.</p>
             )}
           </>
         )}

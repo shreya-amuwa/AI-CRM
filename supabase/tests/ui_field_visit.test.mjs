@@ -162,7 +162,7 @@ try {
   // ---------------------------------------------------------------- live location: granted, moving, offline, stopped
   const geo = await browser.newContext({ viewport: { width: 390, height: 900 }, permissions: ['geolocation'], geolocation: { latitude: 18.5204, longitude: 73.8567, accuracy: 12 } });
   const { page: tp } = await open(geo, 'mountTracking');
-  check(/Team Lead.*Department Head.*Operations Head.*HR/s.test(await tp.innerText('[data-testid="tracking-disclosure"]')), 'before sharing, the employee is told who sees the location and when it stops');
+  check(/Team Lead.*Department Head.*CEO.*HR/s.test(await tp.innerText('[data-testid="tracking-disclosure"]')), 'before sharing, the employee is told who sees the location and when it stops');
   check((await calls(tp)).length === 0, 'nothing is collected before the employee starts');
   await tp.click('[data-testid="tracking-start"]');
   await tp.waitForFunction(() => window.__calls.some(c => c.path.endsWith('/tracking/start')), null, { timeout: 10000 });

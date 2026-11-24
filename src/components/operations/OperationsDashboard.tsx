@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api/client';
 import { employeesApi } from '../../lib/api/endpoints';
 import { EmployeeRequestsPanel } from '../employees/EmployeeRequestsPanel';
 import { btn, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
+import { TeamAttendanceSummary } from '../attendance/TeamAttendance';
 
 // The Operations Head marks attendance like every employee (Punch In / Lunch / Punch Out with location); loaded with the dashboard's home page.
 const MyAttendanceCard = React.lazy(() => import('../attendance/AttendancePage').then(m => ({ default: m.MyAttendance })));
@@ -54,16 +55,18 @@ export const OperationsDashboard: React.FC = () => {
       <React.Suspense fallback={<div role="status" className="text-sm text-slate-500">Loading attendance…</div>}>
         <MyAttendanceCard compact />
       </React.Suspense>
+      {/* Task 01: the attendance of the departments and functions in this person's own scope (the database decides) */}
+      <TeamAttendanceSummary />
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" /> Operations dashboard</h2>
-          <p className="text-xs text-slate-500">Only the departments the Super Admin assigned to you.</p>
+          <p className="text-xs text-slate-500">Only the departments the Managing Director assigned to you.</p>
         </div>
         <button type="button" className={btn.secondary} onClick={load}><RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Refresh</button>
       </div>
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!data && !error && <Spinner label="Loading your departments…" />}
-      {data && data.departments.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">No department is assigned to you yet. The Super Admin assigns them.</p>}
+      {data && data.departments.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">No department is assigned to you yet. The Managing Director assigns them.</p>}
       {data && data.departments.length > 0 && (
         <>
           <label className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700" htmlFor="ops-department-filter">

@@ -1,3 +1,4 @@
+import { relabelRoles } from '../../shared/roleNames.js';
 import type { PostgrestError } from '@supabase/supabase-js';
 import { ZodError } from 'zod';
 import type { ApiErrorBody, ErrorCode } from '../../shared/contracts.js';
@@ -41,10 +42,16 @@ export class AppError extends Error {
     return STATUS_BY_CODE[this.code];
   }
 
+  /** What the browser receives. The server's and the database's messages use the internal role wording; they reach people with the new
+   *  designations (Managing Director, CEO), converted here exactly once (shared/roleNames.ts). */
   toBody(): ApiErrorBody {
-    return this.details === undefined
-      ? { code: this.code, message: this.message }
-      : { code: this.code, message: this.message, details: this.details };
+    const message = relabelRoles(this.message);
+    if (this.details === undefined) return { code: this.code, message };
+    const details = Array.isArray(this.details)
+      ? this.details.map(d => (d && typeof d === 'object' && typeof (d as { message?: unknown }).message === 'string'
+        ? { ...(d as Record<string, unknown>), message: relabelRoles((d as { message: string }).message) } : d))
+      : this.details;
+    return { code: this.code, message, details };
   }
 }
 

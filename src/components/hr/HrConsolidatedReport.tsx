@@ -13,7 +13,7 @@ const DeptLine: React.FC<{ d: ConsolidatedDepartment; tone: 'good' | 'warn' }> =
   <li className={`rounded-xl border px-3 py-2 text-sm ${tone === 'good' ? 'border-emerald-200 bg-emerald-50/50' : 'border-amber-200 bg-amber-50/50'}`}>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <span className="font-semibold text-slate-900">{d.department}</span>
-      <span className="text-xs text-slate-600">{d.reviews.submitted}/{d.reviews.expected} reviews submitted{d.reviews.drafts ? `, ${d.reviews.drafts} draft` : ''} - {WEEKLY_STATUS_LABEL[d.status]}{d.alreadySubmitted ? ' (already with the Super Admin)' : ''}</span>
+      <span className="text-xs text-slate-600">{d.reviews.submitted}/{d.reviews.expected} reviews submitted{d.reviews.drafts ? `, ${d.reviews.drafts} draft` : ''} - {WEEKLY_STATUS_LABEL[d.status]}{d.alreadySubmitted ? ' (already with the Managing Director)' : ''}</span>
     </div>
     {d.openApprovals || d.openRevisions ? <p className="text-xs text-amber-900 mt-1">Outstanding in the department that week: {d.openApprovals} report{d.openApprovals === 1 ? '' : 's'} waiting for an approval, {d.openRevisions} sent back for a revision.</p> : null}
     {d.missingReviews.length > 0 ? (
@@ -47,7 +47,7 @@ export const HrConsolidatedReport: React.FC<{ week: string; reloadKey: number }>
     setDone('');
     try {
       const r = await hrReviewsApi.saveConsolidated({ weekStart: week, note: note.trim() || undefined, submit });
-      setDone(submit ? `Submitted: ${r.submittedDepartments} department${r.submittedDepartments === 1 ? '' : 's'} sent to the Super Admin.` : 'Draft saved.');
+      setDone(submit ? `Submitted: ${r.submittedDepartments} department${r.submittedDepartments === 1 ? '' : 's'} sent to the Managing Director.` : 'Draft saved.');
       setPreview(false);
       load();
     } catch (e) {
@@ -64,7 +64,7 @@ export const HrConsolidatedReport: React.FC<{ week: string; reloadKey: number }>
       <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
         <div>
           <h2 className="text-base font-bold text-slate-900">Consolidated Performance Report</h2>
-          <p className="text-xs text-slate-500">The weekly packages, the individual reviews and the figures, for the Super Admin.</p>
+          <p className="text-xs text-slate-500">The weekly packages, the individual reviews and the figures, for the Managing Director.</p>
         </div>
         {data ? <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200" data-testid="performance-stage">{PERFORMANCE_STAGE_LABEL[data.stage]}</span> : null}
       </div>
@@ -87,12 +87,12 @@ export const HrConsolidatedReport: React.FC<{ week: string; reloadKey: number }>
             )}
           </section>
           <div>
-            <label htmlFor="consolidated-note" className="block text-xs font-semibold text-slate-700 mb-1">Note to the Super Admin</label>
+            <label htmlFor="consolidated-note" className="block text-xs font-semibold text-slate-700 mb-1">Note to the Managing Director</label>
             <textarea id="consolidated-note" className={`${inputCls} min-h-20`} value={note} maxLength={4000} disabled={!!busy} onChange={e => setNote(e.target.value)} />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" className={btn.secondary} onClick={() => void run(false)} disabled={!!busy}><Save className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'draft' ? 'Saving...' : 'Save as draft'}</button>
-            <button type="button" className={btn.primary} onClick={() => setPreview(true)} disabled={!!busy || sendable === 0}><Send className="w-3.5 h-3.5" aria-hidden="true" /> Submit Consolidated Performance Report to Superadmin</button>
+            <button type="button" className={btn.primary} onClick={() => setPreview(true)} disabled={!!busy || sendable === 0}><Send className="w-3.5 h-3.5" aria-hidden="true" /> Submit Consolidated Performance Report to the Managing Director</button>
             {sendable === 0 ? <span className="text-xs text-slate-500">Nothing complete is waiting to be sent.</span> : null}
             {data.report?.submittedAt ? <span className="text-xs text-slate-500">Last submitted {timeLabel(data.report.submittedAt)} by {data.report.submittedBy} (revision {data.report.revision})</span> : null}
             {done ? <span role="status" className="text-xs text-emerald-700">{done}</span> : null}
@@ -100,14 +100,14 @@ export const HrConsolidatedReport: React.FC<{ week: string; reloadKey: number }>
         </div>
       ) : null}
       {preview && r ? (
-        <Dialog title="Review before submitting" description="Check what goes to the Super Admin." onClose={() => setPreview(false)}>
+        <Dialog title="Review before submitting" description="Check what goes to the Managing Director." onClose={() => setPreview(false)}>
           <div className="space-y-3 text-sm" data-testid="consolidated-preview">
             <p><b>{sendable}</b> department{sendable === 1 ? '' : 's'} with every review submitted will be sent: {r.complete.filter(d => !d.alreadySubmitted).map(d => d.department).join(', ')}.</p>
             {r.pending.length > 0 ? <p className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-amber-900"><b>Not included (reviews pending):</b> {r.pending.map(d => d.department).join(', ')}. They stay with HR and are not marked as finalised.</p> : null}
             {r.notReceived.length > 0 ? <p className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-slate-700"><b>Weekly report not received:</b> {r.notReceived.map(d => d.department).join(', ')}.</p> : null}
             <div className="flex justify-end gap-2">
               <button type="button" className={btn.secondary} onClick={() => setPreview(false)}>Cancel</button>
-              <button type="button" className={btn.primary} onClick={() => void run(true)} disabled={!!busy}>{busy === 'submit' ? 'Submitting...' : 'Submit to Superadmin'}</button>
+              <button type="button" className={btn.primary} onClick={() => void run(true)} disabled={!!busy}>{busy === 'submit' ? 'Submitting...' : 'Submit to the Managing Director'}</button>
             </div>
           </div>
         </Dialog>

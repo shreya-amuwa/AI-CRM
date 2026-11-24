@@ -54,7 +54,7 @@ const Overview: React.FC<{ o: EmailOverview }> = ({ o }) => {
       <section className={card} aria-label="Sending now">
         <h2 className="text-sm font-extrabold">Sending now</h2>
         <p className="text-sm">Provider order: <span className="font-semibold">{o.diagnostics.route.map(p => PROVIDER_NAME[p]).join(' → ') || 'none — e-mail is not configured'}</span>
-          {o.settings.providerOrder ? ' (Super Admin order)' : ''}</p>
+          {o.settings.providerOrder ? ' (Managing Director order)' : ''}</p>
         {o.diagnostics.excluded.map(x => <p key={x.provider} className="text-xs text-slate-600">{PROVIDER_NAME[x.provider]} not used: {EXCLUDED[x.reason] ?? x.reason}</p>)}
         <p className="text-xs text-slate-600">Resend today: {resend?.usedToday ?? 0} of {o.settings.resendDailyLimit} (counted by the CRM){resend?.reportedDaily ? ` · Resend reports ${resend.reportedDaily} today, ${resend.reportedMonthly ?? '?'} this month (${when(resend.reportedAt)})` : ''}</p>
         <p className="text-xs text-slate-600">Delivery events received in 24 h: {o.webhookEvents24h} · last {when(o.lastWebhookAt)}{o.diagnostics.resendWebhookSecret ? '' : ' · RESEND_WEBHOOK_SECRET is not set, so delivery cannot be confirmed'}</p>
@@ -353,7 +353,7 @@ const Suppressions: React.FC = () => {
         <ul className="divide-y divide-slate-100 text-sm">{list.map(x => (
           <li key={x.email} className="py-1 flex flex-wrap items-center gap-2"><span className="font-semibold break-all">{x.email}</span>
             <span className="text-xs text-slate-600">{label(x.reason)} · {x.source} · {when(x.updatedAt)}{x.note ? ` · ${x.note}` : ''}</span>
-            {x.active ? <button type="button" className={secondary} onClick={() => void set(x.email, false, 'lifted by the Super Admin')}>Lift</button> : <span className="text-xs text-slate-500">lifted</span>}</li>
+            {x.active ? <button type="button" className={secondary} onClick={() => void set(x.email, false, 'lifted by the Managing Director')}>Lift</button> : <span className="text-xs text-slate-500">lifted</span>}</li>
         ))}</ul>
       )}
       <div className="flex flex-wrap items-end gap-2">

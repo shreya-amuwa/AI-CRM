@@ -124,7 +124,7 @@ export const TcFollowUps: React.FC<{ onChanged?: () => void }> = ({ onChanged })
         <div>
           <h1 className="text-2xl sm:text-[28px] font-bold text-slate-900">Follow-ups</h1>
           <p className="text-sm text-slate-500 mt-1">
-            Customers handed over after the first verification. Each is due for a consultation after the waiting time the Super Admin set.
+            Customers handed over after the first verification. Each is due for a consultation after the waiting time the Managing Director set.
           </p>
         </div>
         <div role="tablist" aria-label="Follow-ups" className="flex gap-1.5">
@@ -177,7 +177,7 @@ export const TcFollowUps: React.FC<{ onChanged?: () => void }> = ({ onChanged })
                     </span>
                   )}
                 </div>
-                {f.status === 'AWAITING_CONFIGURATION' && <p className="text-amber-800">The waiting time is not set yet. It is scheduled as soon as the Super Admin sets it.</p>}
+                {f.status === 'AWAITING_CONFIGURATION' && <p className="text-amber-800">The waiting time is not set yet. It is scheduled as soon as the Managing Director sets it.</p>}
                 {f.status === 'CANCELLED' && f.cancelledReason && <p className="text-slate-500">{f.cancelledReason}</p>}
                 {f.lastContact && (
                   <p className="text-slate-600">

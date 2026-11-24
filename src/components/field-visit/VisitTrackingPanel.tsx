@@ -58,7 +58,7 @@ export const VisitTrackingPanel: React.FC<{ visit: LeadVisit }> = ({ visit }) =>
       {!collecting && (
         <>
           <p className="text-slate-700" data-testid="tracking-disclosure">
-            Share your location while this visit is in progress so your Team Lead, your Sales Department Head, the Sales Operations Head of your
+            Share your location while this visit is in progress so your Team Lead, your Sales Department Head, the Sales CEO of your
             department and HR can see where you are for this work visit. It is shared only while this page is open and the visit is in progress, and
             stops when you tap Stop or record the outcome. A browser cannot share it while it is closed or the phone is locked.
           </p>

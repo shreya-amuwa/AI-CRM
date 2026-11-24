@@ -15,9 +15,9 @@ const deps = [d('wabastore'), d('whatsbox'), d('wabastar'), d('dtalk'), d('wabat
 const teams = [...both('wabastore'), ...both('whatsbox'), { departmentId: 'wabastar', division: 'GENERAL' }, ...both('dtalk'), ...both('mpillar')];
 const o = offers(deps, teams);
 // an Operations Head opens its own dashboard, not the Department Head one
-check(defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, null, false, true) === 'Operations Head Dashboard · Wabastore', 'an Operations Head with no side opens the Operations Head Dashboard');
-check(defaultDashboardLabel('DEPARTMENT_HEAD', null, undefined, false, 'wabastore', null, 'SALES', false, true) === 'Sales Operations Head Dashboard', 'a Sales Operations Head opens the Sales Operations Head Dashboard');
-check(defaultDashboardLabel('DEPARTMENT_HEAD', null, undefined, false, 'wabastore', null, 'SUPPORT', false, true) === 'Support Operations Head Dashboard', 'a Support Operations Head opens the Support Operations Head Dashboard');
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, null, false, true) === 'CEO Dashboard · Wabastore', 'an Operations Head with no side opens the Operations Head Dashboard');
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, undefined, false, 'wabastore', null, 'SALES', false, true) === 'Sales CEO Dashboard', 'a Sales Operations Head opens the Sales Operations Head Dashboard');
+check(defaultDashboardLabel('DEPARTMENT_HEAD', null, undefined, false, 'wabastore', null, 'SUPPORT', false, true) === 'Support CEO Dashboard', 'a Support Operations Head opens the Support Operations Head Dashboard');
 check(defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, 'SALES') === 'Sales Department Head Dashboard · Wabastore' && defaultDashboardLabel('DEPARTMENT_HEAD', null, 'Wabastore', false, 'wabastore', null, null) === 'Department Head Dashboard · Wabastore', 'a Department Head still opens the Department Head dashboards');
 check(parseSalesHeadPage('/sales-head/dashboard/u1', 'operations') === 'operations' && parseSalesHeadPage('/sales-head/dashboard/u1') === 'overview' && parseSalesHeadPage('/sales-head/dashboard/u1/overview', 'operations') === 'overview' && parseSalesHeadPage('/sales-head/dashboard/u1/leads', 'operations') === 'leads-list', 'the bare Sales head address opens the Operations Overview for an Operations Head, the Overview for anyone else');
 check(o.get('wabastore')!.sales && o.get('wabastore')!.support, 'a department with both teams offers both');

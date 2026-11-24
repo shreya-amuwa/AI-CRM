@@ -51,7 +51,7 @@ export const OffboardingDialog: React.FC<{ member: Pick<Profile, 'id' | 'fullNam
             <ul className="text-xs text-slate-700 grid sm:grid-cols-2 gap-x-4 gap-y-1" aria-label="What is attached to this person">
               {COUNT_LABEL.map(([k, label]) => <li key={k} className="flex justify-between border-b border-slate-100 py-0.5"><span>{label}</span><b>{impact.counts[k]}</b></li>)}
             </ul>
-            {impact.needsInterimHead && <p role="note" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">A Department Head&apos;s pending approvals are never moved to an arbitrary person: the department is placed in the queue and the Operations Head / Super Admin are told it needs an interim or new head.</p>}
+            {impact.needsInterimHead && <p role="note" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">A Department Head&apos;s pending approvals are never moved to an arbitrary person: the department is placed in the queue and the CEO / Managing Director are told it needs an interim or new head.</p>}
             {!impact.needsInterimHead && (
               <label className="block text-xs text-slate-600">
                 <span className="block font-semibold mb-1">Who takes the work</span>

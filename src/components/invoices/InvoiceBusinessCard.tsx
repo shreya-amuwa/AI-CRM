@@ -68,7 +68,7 @@ export const InvoiceBusinessCard: React.FC<{ invoiceId: string }> = ({ invoiceId
       {info && (
         <>
           {!info.tag && <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Not classified yet: payments on this invoice are credited to neither Sales nor Support until you choose.</p>}
-          {info.locked && <p className="text-[11px] text-slate-600">Payments are verified, so only the Super Admin can change this now.</p>}
+          {info.locked && <p className="text-[11px] text-slate-600">Payments are verified, so only the Managing Director can change this now.</p>}
           <div className="grid sm:grid-cols-3 gap-3">
             <Field label="Kind" htmlFor={`ib-kind-${invoiceId}`}>
               <select id={`ib-kind-${invoiceId}`} className={selectCls} value={kind} disabled={info.locked} onChange={e => setKind(e.target.value as InvoiceBusinessKind | '')}>

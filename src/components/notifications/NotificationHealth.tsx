@@ -192,7 +192,7 @@ export const NotificationHealth: React.FC = () => {
       </div>
       {error && (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error.forbidden ? 'Only the Super Admin and HR can see Notification Health.' : error.text}
+          {error.forbidden ? 'Only the Managing Director and HR can see Notification Health.' : error.text}
         </p>
       )}
       {report && sch && s && (

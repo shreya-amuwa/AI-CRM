@@ -13,7 +13,7 @@ const inputCls = 'w-full px-3 py-2 rounded-xl border border-slate-200 focus:bord
 const dates = (r: LeaveRequest) => (r.endDate === r.startDate ? formatDay(r.startDate) : `${formatDay(r.startDate)} to ${formatDay(r.endDate)}`);
 const length = (r: LeaveRequest) => (r.leaveType === 'HALF_DAY' ? `Half day (${r.halfDayShift === 'AFTERNOON' ? 'afternoon' : 'morning'})` : `${r.days} day${r.days === 1 ? '' : 's'}`);
 
-const STAGE_LABEL: Record<string, string> = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', SUPER_ADMIN: 'Super Admin', SUBMITTED: 'Requested', RESUBMITTED: 'Changed and sent again' };
+const STAGE_LABEL: Record<string, string> = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head', OPERATIONS_HEAD: 'CEO', HR: 'HR', SUPER_ADMIN: 'Managing Director', SUBMITTED: 'Requested', RESUBMITTED: 'Changed and sent again' };
 const DECISION_LABEL: Record<string, string> = { APPROVED: 'approved', REJECTED: 'rejected', REVISION_REQUESTED: 'asked for changes', SUBMITTED: '' };
 const when = (at: string) => new Date(at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 
@@ -64,7 +64,7 @@ const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (r.timeline && r.timelin
     {r.timeline.map((t, i) => (
       <li key={i}>
         {when(t.at)} · {STAGE_LABEL[t.stage] ?? t.stage}{t.by ? ` (${t.by})` : ''}{DECISION_LABEL[t.decision] ? `: ${DECISION_LABEL[t.decision]}` : ''}
-        {t.onBehalf ? ' (Super Admin, nobody else could decide this step)' : ''}{t.note ? ` - "${t.note}"` : ''}
+        {t.onBehalf ? ' (Managing Director, nobody else could decide this step)' : ''}{t.note ? ` - "${t.note}"` : ''}
       </li>
     ))}
     {r.currentStage && <li className="font-semibold text-slate-600">Waiting for {STAGE_LABEL[r.currentStage]}{r.waitingFor?.length ? ` (${r.waitingFor.join(', ')})` : ''}</li>}
@@ -124,7 +124,7 @@ const RequestForm: React.FC<{ onDone: () => void; paid?: PaidLeaveBalance | null
   return (
     <form onSubmit={submit} className="p-5 space-y-3 border-b border-slate-100">
       <h3 className="text-sm font-bold text-slate-900">Request leave</h3>
-      <p className="text-[11px] text-slate-500">It goes up your reporting line (your Team Lead, Department Head and Operations Head, as they apply to you), then HR gives the final approval.</p>
+      <p className="text-[11px] text-slate-500">It goes up your reporting line (your Team Lead, Department Head and CEO, as they apply to you), then HR gives the final approval.</p>
       {error && <div role="alert" className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">{error}</div>}
       <div className="grid grid-cols-2 gap-3">
         <label className="text-xs font-semibold text-slate-700 col-span-2">

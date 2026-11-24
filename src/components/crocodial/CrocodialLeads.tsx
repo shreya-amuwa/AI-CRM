@@ -40,7 +40,7 @@ export const CrocodialLeadsPanel: React.FC<{ profileId?: string; title?: string;
   // migration is run)
   if (hideWhenOff && !data?.enabled) return null;
   if (data && !data.enabled) {
-    return hideWhenOff ? null : <p className="text-sm text-slate-500" data-testid="croc-leads-off">You are not connected to Crocodial yet. The Super Admin connects your Crocodial login.</p>;
+    return hideWhenOff ? null : <p className="text-sm text-slate-500" data-testid="croc-leads-off">You are not connected to Crocodial yet. The Managing Director connects your Crocodial login.</p>;
   }
   const counts = data?.counts;
   const total = data?.total ?? 0;
