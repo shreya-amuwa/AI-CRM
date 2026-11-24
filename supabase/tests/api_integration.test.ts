@@ -12697,6 +12697,66 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.hr_documents where employee_key = $1`, [K]);
   await db.query(`delete from public.hr_employees where id = 'APIOFR-1'`);
 }
+// 20270205000100: Notice Board delete (a soft delete by the people who already manage notices)
+{
+  const rid = () => `nd-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+  let r = await api('hr', 'POST', '/notices', { title: 'NDX HR notice to delete', body: 'HR text.', category: 'HR', priority: 'IMPORTANT', audienceType: 'COMPANY', clientRequestId: rid() });
+  const nd1 = r.json.data.id;
+  r = await api('sa', 'POST', '/notices', { title: 'NDX Keep this one', body: 'Stays.', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: rid() });
+  const nd2 = r.json.data.id;
+  r = await api('a', 'POST', `/notices/${nd2}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice delete API: an employee acknowledges a notice', r);
+
+  r = await api('a', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 404, 'notice delete API: a Team Member cannot delete (the notice is "not found" for them)', r);
+  r = await api('th', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 404, 'notice delete API: nor a Team Lead', r);
+  r = await api(null, 'DELETE', `/notices/${nd1}`);
+  check(r.status === 401, 'notice delete API: a visitor who is not signed in is refused', r);
+  r = await api('sa', 'DELETE', '/notices/not-a-uuid');
+  check(r.status === 422, 'notice delete API: a malformed id is refused', r);
+  r = await api('hr', 'DELETE', `/notices/${nd2}`);
+  check(r.status === 404, 'notice delete API: HR cannot delete a notice the Super Admin published', r);
+  r = await api('a', 'GET', '/notices?limit=100');
+  check(r.json.data.items.some((i: any) => i.id === nd1) && r.json.data.items.some((i: any) => i.id === nd2), 'notice delete API: every refusal left both notices in place', r);
+
+  r = await api('hr', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 200 && r.json.data.deleted === true && r.json.data.alreadyDeleted === false, 'notice delete API: the publisher deletes their notice', r);
+  r = await api('hr', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 200 && r.json.data.alreadyDeleted === true, 'notice delete API: a second request is answered as already done', r);
+  r = await api('hr', 'GET', '/notices?scope=MINE&limit=100');
+  check(!r.json.data.items.some((i: any) => i.id === nd1), 'notice delete API: it is gone from the publisher\'s list', r);
+  r = await api('a', 'GET', '/notices?limit=100');
+  check(!r.json.data.items.some((i: any) => i.id === nd1) && r.json.data.items.some((i: any) => i.id === nd2), 'notice delete API: and from the employee\'s board, which keeps the other notice', r);
+  r = await api('a', 'GET', '/notices/pending');
+  check(!r.json.data.items.some((i: any) => i.id === nd1), 'notice delete API: and from the popup queue', r);
+  r = await api('a', 'GET', `/notices/${nd1}`);
+  check(r.status === 404, 'notice delete API: nobody can open it any more', r);
+  r = await api('hr', 'GET', `/notices/${nd1}/receipts`);
+  check(r.status === 404, 'notice delete API: its receipts are not served', r);
+  r = await api('a', 'POST', `/notices/${nd1}/acknowledge`, {});
+  check(r.status === 404, 'notice delete API: it cannot be acknowledged', r);
+  r = await api('hr', 'POST', `/notices/${nd1}/update`, { title: 'NDX Back again' });
+  check(r.status === 404, 'notice delete API: it cannot be edited back to life', r);
+  r = await api('hr', 'POST', `/notices/${nd1}/archive`, {});
+  check(r.status === 404, 'notice delete API: nor archived', r);
+  r = await api('sa', 'GET', '/notices?scope=MINE&limit=100');
+  check(!r.json.data.items.some((i: any) => i.id === nd1), 'notice delete API: the Super Admin does not see it either', r);
+
+  // what is kept: the record, who and when, the receipts, the history and the audit entry
+  const kept = (await db.query(`select status, deleted_by is not null as who, deleted_at is not null as at,
+      (select count(*)::int from public.company_notice_recipients where notice_id = n.id) as recipients,
+      (select count(*)::int from public.company_notice_revisions where notice_id = n.id and action = 'DELETED') as revisions,
+      (select count(*)::int from public.audit_logs where action = 'COMPANY_NOTICE_DELETED' and entity_id = n.id) as audits
+    from public.company_notices n where id = $1`, [nd1])).rows[0];
+  check(kept.status === 'DELETED' && kept.who && kept.at && kept.recipients > 0 && kept.revisions === 1 && kept.audits === 1, 'notice delete API: the record, the receipts, the history and the audit entry are kept', kept);
+  const ack = (await db.query(`select count(*)::int n from public.company_notice_recipients where notice_id = $1 and acknowledged_at is not null`, [nd2])).rows[0].n;
+  check(ack >= 1, 'notice delete API: acknowledgements of other notices are untouched', ack);
+
+  r = await api('sa', 'DELETE', `/notices/${nd2}`);
+  check(r.status === 200 && r.json.data.deleted === true, 'notice delete API: the Super Admin can delete any notice', r);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

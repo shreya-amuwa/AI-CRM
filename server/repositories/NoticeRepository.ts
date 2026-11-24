@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../shared/contracts.js';
+import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeDeleted, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** Company Notice Board (20270131000200): every call is a database function that checks the caller (reader or publisher, and the audience). */
@@ -25,4 +25,6 @@ export class NoticeRepository {
   managers() { return this.rpc<NoticeManagers>('notice_managers'); }
   managerSet(profileId: string, enabled: boolean) { return this.rpc<{ profileId: string; manager: boolean }>('notice_manager_set', { p_profile: profileId, p_enabled: enabled }); }
   archive(id: string) { return this.rpc<CompanyNotice>('notice_archive', { p_id: id }); }
+  /** Soft delete (20270205000100): the notice leaves every list and queue; nothing is physically removed. */
+  delete(id: string) { return this.rpc<NoticeDeleted>('notice_delete', { p_id: id }); }
 }

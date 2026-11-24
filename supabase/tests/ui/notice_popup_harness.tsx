@@ -32,7 +32,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (!url.pathname.startsWith('/api/v1/')) return realFetch(input as RequestInfo, init);
   const method = (init?.method || 'GET').toUpperCase();
   const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
-  w.__calls.push({ method, path: url.pathname, body });
+  w.__calls.push({ method, path: url.pathname, body, search: url.search });
   const p = url.pathname.replace('/api/v1', '');
   const s = w.__server;
   if (p === '/notices/pending') {
@@ -43,6 +43,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const ack = p.match(/^\/notices\/([^/]+)\/acknowledge$/);
   if (ack && method === 'POST') {
     if (s.failAck) return json({ code: 'INTERNAL', message: 'The notice could not be saved right now.' }, 500);
+    // like the database: the notice was deleted while it was on screen
+    if (s.deletedIds?.includes(ack[1])) { s.items = s.items.filter((x: any) => x.id !== ack[1]); return json({ code: 'NOT_FOUND', message: 'Notice not found.' }, 404); }
     s.items = s.items.filter((x: any) => x.id !== ack[1]);
     return json({ noticeId: ack[1], acknowledged: true, acknowledgedAt: new Date().toISOString(), pending: s.items.length });
   }

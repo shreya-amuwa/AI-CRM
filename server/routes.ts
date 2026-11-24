@@ -564,6 +564,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/notices/:id/receipts', handler: notices.receipts },
   { method: 'POST', path: '/notices/:id/update', handler: notices.update, options: S },
   { method: 'POST', path: '/notices/:id/archive', handler: notices.archive, options: S },
+  { method: 'DELETE', path: '/notices/:id', handler: notices.delete, options: S },
   { method: 'POST', path: '/employee/issues', handler: employeeCases.submitIssue, options: S },
   { method: 'GET', path: '/employee/issues', handler: employeeCases.myIssues },
   { method: 'POST', path: '/employee/issues/uploads', handler: employeeCases.beginUpload, options: S },

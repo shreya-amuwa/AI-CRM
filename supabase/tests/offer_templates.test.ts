@@ -94,7 +94,7 @@ for (const t of INITIAL_OFFER_TEMPLATES) {
 }
 
 // --- the letterheads: page 1 of each sample with the sample letter removed
-const SAMPLE_WORDS = ['Dear', 'Subject', 'Responsibilities', 'Designation', 'Reporting', 'Vanshika', 'Singh', '18,000', 'REF-NO', 'APPOINTMENT', 'Acceptance'];
+const SAMPLE_WORDS = ['Dear', 'Subject', 'Responsibilities', 'Designation', 'Reporting', '18,000', '20th', '19th', 'REF-NO', 'APPOINTMENT', 'Acceptance'];
 for (const [key, lh] of Object.entries(OFFER_LETTERHEADS)) {
   const doc = await PDFDocument.load(Buffer.from(lh.base64, 'base64'));
   const { text } = await textOf(Buffer.from(lh.base64, 'base64'));

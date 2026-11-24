@@ -7169,6 +7169,8 @@ export interface NoticeReceipts {
 }
 /** 20270202000100: the popup queue (Urgent first, then Important, then Normal; the oldest first inside a priority), the acknowledgement, and the CRM team's access */
 export interface NoticePending { pending: number; items: CompanyNotice[] }
+/** Deleting a notice (migration 20270205000100): a soft delete, the record and its receipts are kept. */
+export interface NoticeDeleted { id: string; deleted: true; alreadyDeleted: boolean }
 export interface NoticeAcknowledged { noticeId: string; acknowledged: boolean; acknowledgedAt: string | null; pending: number }
 export interface NoticeManagers {
   managers: { profileId: string; name: string; email: string | null; status: string; department: string | null; since: string }[];
