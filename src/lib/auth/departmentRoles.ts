@@ -13,7 +13,17 @@ export const hasNoSalesSupport = (slug?: string | null): boolean => !!slug && NO
  * Associate, Technical Consultant, ...), team or side: Department Head, Team Lead and Team Member in the department's one team, whose function is the
  * department's (migration 20270127000100). A convenience for the forms; the database enforces it.
  */
-export const isUnifiedDepartment = (slug?: string | null): boolean => !!slug && UNIFIED_DEPARTMENT_SLUGS.includes(slug);
+export const isUnifiedDepartment = (slug?: string | null): boolean => !!slug && (UNIFIED_DEPARTMENT_SLUGS.includes(slug) || flaggedUnified.has(slug));
+
+/**
+ * The departments the DATABASE marks unified (departments.unified_sales_support). The department list registers them when it loads, so International and
+ * Reseller are recognised under whatever slug they were created with ("Amuwa International Department"); the two seeded slugs stay as the fallback.
+ */
+const flaggedUnified = new Set<string>();
+export function registerUnifiedDepartments(departments: readonly { slug: string; unifiedSalesSupport?: boolean }[]): void {
+  flaggedUnified.clear();
+  for (const d of departments) if (d.unifiedSalesSupport) flaggedUnified.add(d.slug);
+}
 
 /** Departments whose forms offer only Department Head / Team Lead / Team Member, the one General team and no side. */
 export const hasPlainRolesOnly = (slug?: string | null): boolean => hasNoSalesSupport(slug) || isUnifiedDepartment(slug);
