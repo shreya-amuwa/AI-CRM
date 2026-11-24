@@ -44,6 +44,9 @@ self.addEventListener('notificationclick', event => {
       if (q.get('open') === 'notice') {
         // a company notice (20270131000200) opens that notice on the Notice Board
         open.postMessage({ type: 'open-notice', id: q.get('id') });
+      } else if (q.get('open') === 'meeting') {
+        // a meeting notification (20270206000100) opens that meeting
+        open.postMessage({ type: 'open-meeting', id: q.get('id') });
       } else if (q.get('open') === 'chat') {
         open.postMessage(q.get('client') ? { type: 'open-chat', clientConversationId: q.get('client') } : { type: 'open-chat', conversationId: q.get('conversation') });
       } else {

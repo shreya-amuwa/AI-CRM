@@ -12596,6 +12596,59 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.deleted === true, 'notice delete API: the Super Admin can delete any notice', r);
 }
 
+// ---------------------------------------------------------------------------
+// Meeting notifications on phones (20270206000100): an invitation reaches the invitee's phone at once, and the 5-minute scheduled run
+// sends the 15-minute reminder. Fake push service and a generated VAPID key; no real device.
+{
+  const subtle = globalThis.crypto.subtle;
+  const vk = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const saved = { priv: process.env.VAPID_PRIVATE_KEY, subj: process.env.VAPID_SUBJECT, pub: process.env.VAPID_PUBLIC_KEY };
+  process.env.VAPID_PRIVATE_KEY = JSON.stringify(await subtle.exportKey('jwk', vk.privateKey));
+  process.env.VAPID_SUBJECT = 'mailto:hr@example.com';
+  delete process.env.VAPID_PUBLIC_KEY;
+  const b64u = (b: ArrayBuffer | Uint8Array) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString('base64url');
+  const dev = async () => b64u(await subtle.exportKey('raw', (await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey));
+  const realFetch = globalThis.fetch;
+  const pushed: string[] = [];
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://push.example.com/mp-')) { pushed.push(url); return new Response(null, { status: 201 }); }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  try {
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/mp-%'`);
+    await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) values ($1, 'https://push.example.com/mp-md-phone', $2, $3, 'Chrome on Android')`,
+      [sa.id, await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16)))]);
+    const soon = (min: number) => new Date(Date.now() + min * 60e3).toISOString();
+    let mr = await api('tm2', 'POST', '/meetings', { title: 'MPush API review', description: 'Confidential agenda', startsAt: soon(3 * 1440), endsAt: soon(3 * 1440 + 60), attendeeIds: [sa.id] });
+    check(mr.status === 201, 'meeting push: a colleague invites the Managing Director', mr);
+    const m1 = mr.json.data.id;
+    const { rows: d1 } = await db.query(`select d.status, d.url, d.title, d.body from public.notification_deliveries d where d.kind = 'MEETING' and d.profile_id = $1 and d.url like $2`,
+      [sa.id, `%${m1}`]);
+    check(d1.length === 1 && d1[0].status === 'ACCEPTED_BY_PUSH_SERVICE' && pushed.includes('https://push.example.com/mp-md-phone'),
+      'meeting push: the invitation is on the Managing Director\'s phone right away (sent after the change, not at the next run)', d1);
+    check(d1[0].url === `/?open=meeting&id=${m1}` && !/Confidential/.test(d1[0].title + d1[0].body), 'meeting push: it opens that meeting and never shows the agenda', d1[0]);
+
+    pushed.length = 0;
+    mr = await api('tm2', 'POST', '/meetings', { title: 'MPush API standup', startsAt: soon(12), endsAt: soon(40), attendeeIds: [sa.id] });
+    check(mr.status === 201, 'meeting push: a meeting in 12 minutes', mr);
+    const m2 = mr.json.data.id;
+    const run = await fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: { authorization: 'Bearer dispatch-secret-0123456789' } })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    const { rows: d2 } = await db.query(`select d.status from public.notification_deliveries d join public.notifications n on n.id = d.notification_id
+                                           where n.type = 'MEETING_REMINDER' and n.entity_id = $1 and d.profile_id = $2`, [m2, sa.id]);
+    check(run.status === 200 && d2.length === 1 && d2[0].status === 'ACCEPTED_BY_PUSH_SERVICE',
+      'meeting push: the 5-minute scheduled run sends the 15-minute reminder to the phone', { run: run.json, d2 });
+    await db.query(`delete from public.meetings where title like 'MPush API %'`);
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/mp-%'`);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (saved.priv === undefined) delete process.env.VAPID_PRIVATE_KEY; else process.env.VAPID_PRIVATE_KEY = saved.priv;
+    if (saved.subj === undefined) delete process.env.VAPID_SUBJECT; else process.env.VAPID_SUBJECT = saved.subj;
+    if (saved.pub !== undefined) process.env.VAPID_PUBLIC_KEY = saved.pub;
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

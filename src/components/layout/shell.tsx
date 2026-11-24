@@ -6,7 +6,7 @@ import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
 import { attendanceRequested } from '../attendance/attendanceEvents';
 import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
-import { useOpenMeetingRequest } from '../meetings/meetingEvents';
+import { meetingRequestedFromUrl, useOpenMeetingRequest } from '../meetings/meetingEvents';
 import { useBugAccess } from '../bugs/bugUi';
 import { useRememberedOverlay } from '../../hooks/useRememberedOverlay';
 import { useOpenBugsRequest } from '../bugs/bugEvents';
@@ -30,7 +30,9 @@ const CeoAvailabilityPage = React.lazy(() => import('../meetings/CeoAvailability
 export const CEO_AVAILABILITY_NAV_ID = '__ceo_availability';
 const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID] as const;
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
-export const meetingsRequested = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'meetings';
+// ?tab=meetings, or a tapped meeting push (/?open=meeting&id=...: Meetings opens on that meeting)
+export const meetingsRequested = () => typeof window !== 'undefined'
+  && (new URLSearchParams(window.location.search).get('tab') === 'meetings' || meetingRequestedFromUrl(window.location.search));
 
 /**
  * The shared dashboard shell (the Department Head design handoff): a white sidebar with an Amuwa brand block,
