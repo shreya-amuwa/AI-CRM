@@ -62,6 +62,13 @@ create table if not exists public.hr_offer_template_versions (
   unique (template_id, version)
 );
 
+-- the private bucket of the HR letters also keeps the uploaded samples, which may be Word documents (adds the type; keeps the others)
+update storage.buckets
+   set allowed_mime_types = array(select distinct t from unnest(coalesce(allowed_mime_types, '{}'::text[])
+                                   || array['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']) t order by t)
+ where id = 'hr-documents'
+   and not ('application/vnd.openxmlformats-officedocument.wordprocessingml.document' = any (coalesce(allowed_mime_types, '{}'::text[])));
+
 alter table public.hr_documents add column if not exists offer_template_id uuid references public.hr_offer_templates (id) on delete restrict;
 alter table public.hr_documents add column if not exists offer_template_version integer;
 create index if not exists hr_documents_offer_template_idx on public.hr_documents (offer_template_id, created_at desc) where offer_template_id is not null;

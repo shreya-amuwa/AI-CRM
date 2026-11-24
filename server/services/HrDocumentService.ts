@@ -107,10 +107,7 @@ export class HrDocumentService {
       return { bytes: Buffer.from(lh.base64, 'base64'), layout: lh.layout };
     }
     const file = await this.repo.offerTemplateFile(l.fileId);
-    const url = await this.storage.signedDownloadUrl(file.storageBucket, file.storagePath, 60, undefined, file.storageProvider);
-    const res = await fetch(url);
-    if (!res.ok) throw new AppError('INTERNAL', 'The template\'s letterhead could not be opened. Try again.');
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    const bytes = await this.storage.readStored(file.storageProvider, file.storageBucket, file.storagePath);
     if (bytes.length > 5_242_880) throw new AppError('VALIDATION_ERROR', 'The letterhead PDF is too large.');
     return { bytes, layout: (await pdfOfferTemplate()).DEFAULT_LETTERHEAD_LAYOUT };
   }
@@ -146,6 +143,10 @@ export class HrDocumentService {
   /** A sample document (PDF / Word) or a letterhead (PDF): its real type and size are checked, it is stored privately, then recorded. */
   async uploadOfferTemplateFile(body: unknown): Promise<OfferTemplateFile> {
     const b = parse(offerTemplateFileUploadSchema, body);
+    // who may upload is checked before anything is stored (the database checks again when the file is recorded)
+    if (!(await this.repo.offerTemplates()).canManage) {
+      throw new AppError('FORBIDDEN', 'Only the Super Admin and the HR Admin Head add or replace offer letter templates.');
+    }
     const bytes = new Uint8Array(Buffer.from(b.dataBase64, 'base64'));
     if (!bytes.length || bytes.length > OFFER_UPLOAD_MAX_BYTES) throw new AppError('VALIDATION_ERROR', 'The file must be at most 2.5 MB.');
     const head = Buffer.from(bytes.subarray(0, 5)).toString('latin1');

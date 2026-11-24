@@ -21,6 +21,8 @@ select test.check((select content -> 'blocks' -> 0 ->> 'text' = 'APPOINTMENT LET
   'Customer Support is the appointment letter with its own fields (title)');
 select test.check((select content -> 'dateLine' ->> 'left' = 'REF-NO:{refNo}' from hr_offer_template_versions v join hr_offer_templates t on t.id = v.template_id
                     where t.template_key = 'business-development'), 'Business Development Executive has the reference number line');
+select test.check((select 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' = any (allowed_mime_types) and 'application/pdf' = any (allowed_mime_types)
+                     from storage.buckets where id = 'hr-documents'), 'the private HR bucket takes Word samples as well as PDFs');
 select test.must_fail($$update hr_offer_template_versions set note = 'changed' where version = 1$$, 'a version is never changed', 'cannot be changed');
 select test.must_fail($$delete from hr_offer_template_versions where version = 1$$, 'nor deleted', 'cannot be changed');
 create temp table ot (k text primary key, v jsonb);
