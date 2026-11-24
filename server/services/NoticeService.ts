@@ -1,4 +1,4 @@
-import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../shared/contracts.js';
+import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeDeleted, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../shared/contracts.js';
 import { noticeListQuerySchema, noticeManagerSetSchema, noticePublishSchema, noticeUpdateSchema, uuidSchema } from '../../shared/validation.js';
 import { processDeliveries } from '../automations/notificationDelivery.js';
 import { vapidConfig } from '../automations/webPush.js';
@@ -40,4 +40,5 @@ export class NoticeService {
     return this.repo.managerSet(parse(uuidSchema, profileId), parse(noticeManagerSetSchema, body).enabled);
   }
   archive(id: string): Promise<CompanyNotice> { return this.repo.archive(parse(uuidSchema, id)); }
+  delete(id: string): Promise<NoticeDeleted> { return this.repo.delete(parse(uuidSchema, id)); }
 }

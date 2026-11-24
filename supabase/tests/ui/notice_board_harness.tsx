@@ -58,7 +58,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p === '/notices' && method === 'GET') {
     const scope = url.searchParams.get('scope') ?? 'INBOX';
     if (scope === 'MINE' && !me.publisher) return json({ code: 'FORBIDDEN', message: 'Only publishers have published notices.' }, 403);
-    let items = scope === 'MINE' ? notices.filter(n => n.publisherId === me.id || me.role === 'SUPER_ADMIN') : scope === 'ALL' ? notices.filter(n => n.status === 'PUBLISHED') : inbox();
+    let items = scope === 'MINE' ? notices.filter(n => n.status !== 'DELETED' && (n.publisherId === me.id || me.role === 'SUPER_ADMIN')) : scope === 'ALL' ? notices.filter(n => n.status === 'PUBLISHED') : inbox();
     if (url.searchParams.get('unread') === 'true') items = items.filter(n => !reads[n.id][me.id]);
     if (url.searchParams.get('priority')) items = items.filter(n => n.priority === url.searchParams.get('priority'));
     return json({ items: items.map(n => view(n)), total: items.length, unread: unread(), publisherRole: me.publisher ?? null });
@@ -73,7 +73,18 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const one = p.match(/^\/notices\/([0-9a-f-]{36})(?:\/(receipts|update|archive))?$/);
   if (one) {
     const n = notices.find(x => x.id === one[1]);
-    if (!n) return json({ code: 'NOT_FOUND', message: 'Notice not found.' }, 404);
+    // like the database: a deleted notice does not exist for anybody
+    if (!n || (n.status === 'DELETED' && method !== 'DELETE')) return json({ code: 'NOT_FOUND', message: 'Notice not found.' }, 404);
+    if (method === 'DELETE') {
+      // like notice_delete: only the publisher of the notice or the Super Admin, and only while they manage notices; anybody else is told it does not exist
+      if (!(n.publisherId === me.id || me.role === 'SUPER_ADMIN')) return json({ code: 'NOT_FOUND', message: 'Notice not found.' }, 404);
+      if (!me.publisher) return json({ code: 'FORBIDDEN', message: 'Only the people who manage notices can delete them.' }, 403);
+      if (w.__deleteDelay) await new Promise(r => setTimeout(r, w.__deleteDelay));
+      if (w.__deleteFails) return json({ code: 'INTERNAL', message: 'Something went wrong. Please try again.' }, 500);
+      const again = n.status === 'DELETED';
+      n.status = 'DELETED';
+      return json({ id: n.id, deleted: true, alreadyDeleted: again });
+    }
     if (one[2] === 'receipts') return json({ noticeId: n.id, status: n.status, total: recipients(n).length, read: Object.keys(reads[n.id]).length, unread: recipients(n).length - Object.keys(reads[n.id]).length,
       push: { devices: 2, accepted: 2, pending: 0, failed: 0, cancelled: 0 }, rows: recipients(n).map(x => ({ profileId: x.id, name: x.name, department: x.department, notifiedAt: n.releasedAt, readAt: reads[n.id][x.id] ?? null })) });
     if (one[2] === 'archive') { n.status = 'ARCHIVED'; return json(view(n, true)); }
