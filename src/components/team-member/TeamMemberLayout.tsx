@@ -98,7 +98,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   const SECTION_LABEL: Partial<Record<TeamMemberNav, string>> = { leads: 'Sales', 'work-tasks': 'Work', settings: 'Team' };
 
   // a tapped reminder opens the CRM on /?open=attendance
-  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV as TeamMemberNav : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
+  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(() => meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV as TeamMemberNav : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
 
   React.useEffect(() => {

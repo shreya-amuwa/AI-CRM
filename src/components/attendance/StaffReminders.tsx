@@ -2,6 +2,7 @@ import React, { Suspense, useEffect } from 'react';
 import { registerServiceWorker } from '../../lib/push/registerServiceWorker';
 import { useOpenAttendanceRequest } from './attendanceEvents';
 import { OPEN_CHAT_EVENT, openChat, type OpenChatDetail } from '../chat/chatEvents';
+import { openMeetingReport } from '../meetings/meetingEvents';
 
 const ReminderBanner = React.lazy(() => import('./ReminderBanner'));
 
@@ -28,6 +29,12 @@ export function useStaffReminders(showAttendance: () => void, onOpenChat?: () =>
       // next tick: a dashboard that wraps this layout attaches its "open chat" listener after this effect runs
       if (detail) window.setTimeout(() => openChat(detail), 0);
     }
+    // a meeting awareness notice (the Managing Director's, 20270208000200): /?open=meeting-report&id=<meeting> opens the read-only
+    // report view (they are not taking part, so the meeting itself is not theirs to open; /?open=meeting is meetingEvents.ts)
+    if (q.get('open') === 'meeting-report') {
+      const id = q.get('id');
+      if (id && UUIDISH.test(id)) window.setTimeout(() => openMeetingReport(id), 0);
+    }
     if (q.has('open')) {
       for (const k of ['open', 'conversation', 'client', 'view', 'id']) q.delete(k);
       const rest = q.toString();
@@ -36,6 +43,7 @@ export function useStaffReminders(showAttendance: () => void, onOpenChat?: () =>
     // a notification tapped while the CRM is already open (public/sw.js)
     const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined;
     const fromWorker = (e: MessageEvent) => {
+      if (e.data?.type === 'open-meeting-report') { if (typeof e.data.id === 'string' && UUIDISH.test(e.data.id)) openMeetingReport(e.data.id); return; }
       if (e.data?.type !== 'open-chat') return;
       const detail = chatDetail(e.data.conversationId ?? null, e.data.clientConversationId ?? null);
       if (detail) openChat(detail);
@@ -49,6 +57,7 @@ const UUIDISH = /^[0-9A-Za-z-]{1,64}$/;
 const chatDetail = (conversation: string | null, client: string | null): OpenChatDetail | null =>
   client && UUIDISH.test(client) ? { clientConversationId: client } : conversation && UUIDISH.test(conversation) ? { conversationId: conversation } : null;
 
-/** "Turn on reminders" at the top of the page; hidden above a page that fills the screen (Chat), and for the Super Admin. */
-export const StaffReminderBanner: React.FC<{ hidden?: boolean }> = ({ hidden = false }) =>
-  hidden ? null : <Suspense fallback={null}><ReminderBanner /></Suspense>;
+/** "Turn on notifications" at the top of the page; hidden above a page that fills the screen (Chat). The Managing Director gets the
+ *  meetings wording (they do not punch, but their meeting notices reach their phone only once a device is on). */
+export const StaffReminderBanner: React.FC<{ hidden?: boolean; purpose?: 'attendance' | 'meetings' }> = ({ hidden = false, purpose = 'attendance' }) =>
+  hidden ? null : <Suspense fallback={null}><ReminderBanner purpose={purpose} /></Suspense>;

@@ -103,7 +103,7 @@ export const SuperAdminDashboard: React.FC = () => {
     <DashboardShell
       title="Amuwa"
       subtitle="Managing Director"
-      reminders={false}
+      reminders="meetings"
       wallet={false}
       ariaLabel="Managing Director navigation"
       groups={groups}
