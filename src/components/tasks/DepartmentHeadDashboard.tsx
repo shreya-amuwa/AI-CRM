@@ -59,6 +59,7 @@ import { HeadAttendancePage } from '../department-head/HeadAttendancePage';
 import { HeadLeadsPage } from '../department-head/HeadLeadsPage';
 import { HeadCustomersPage } from '../department-head/HeadCustomersPage';
 import { HeadInvoicesPage } from '../department-head/HeadInvoicesPage';
+import { TeamAttendanceSummary } from '../attendance/TeamAttendance';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -202,6 +203,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
           {data.error}
         </div>
       )}
+      {nav === 'overview' && <div className="mb-6"><TeamAttendanceSummary /></div>}
       {nav === 'overview' && <HeadOverview data={data} go={go} onAddLead={() => { setAddLead(n => n + 1); go('leads'); }} />}
       {nav === 'operations' && operationsHead && <OperationsDashboard />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}

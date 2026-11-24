@@ -52,6 +52,13 @@ const handlers: Record<string, (a: any) => any> = {
   my_attendance: () => [],
   attendance_punch_in: a => { state.punchIn = state.punchIn ?? punch(a); return day(); },
   attendance_punch_out: a => { state.punchOut = { ...punch(a), at: '2026-11-09T12:40:00Z' }; state.punchOutCount += 1; return day(); },
+  // Task 02: the Punch Out dialog's figures (the shift ends at 19:00, after "now"), and the confirmed Punch Out that needs a reason when early
+  attendance_punch_out_preview: () => ({ serverTime: serverNow(), punchInAt: state.punchIn?.at ?? null, punchedOut: false, workedMinutes: 485, breakMinutes: 52,
+    netMinutes: 433, shiftEnd: '19:00', early: true, reasonRequired: true }),
+  attendance_punch_out_confirmed: a => {
+    if (!a.p_early_reason) throw new Error('VALIDATION_ERROR: You are punching out before your scheduled shift end (19:00). Say why.');
+    return handlers.attendance_punch_out(a);
+  },
   // the lunch "started" 52 minutes ago on the SERVER clock
   attendance_lunch: a => {
     if (a.p_action === 'START') { state.lunchOpen = { id: 'l1', startedAt: new Date(Date.now() + skew - 52 * 60000).toISOString() }; state.sessions = [{ startedAt: state.lunchOpen.startedAt, endedAt: null, endedBy: null, minutes: 52 }]; }
@@ -61,7 +68,12 @@ const handlers: Record<string, (a: any) => any> = {
 };
 const chain: any = { on: () => chain, subscribe: () => chain };
 const fake = {
-  rpc: async (fn: string, args: any) => { calls.push({ fn, args }); const h = handlers[fn]; return h ? { data: h(args), error: null } : { data: null, error: { message: `unexpected ${fn}` } }; },
+  rpc: async (fn: string, args: any) => {
+    calls.push({ fn, args });
+    const h = handlers[fn];
+    if (!h) return { data: null, error: { message: `unexpected ${fn}` } };
+    try { return { data: h(args), error: null }; } catch (e) { return { data: null, error: { message: (e as Error).message } }; }
+  },
   auth: { getSession: async () => ({ data: { session: null } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
   channel: () => chain, removeChannel: async () => undefined
 };
