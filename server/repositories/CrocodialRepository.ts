@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity } from '../../shared/contracts.js';
+import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Crocodial integration's database functions, called with the signed-in user's own login (the database decides who may do what). */
@@ -35,6 +35,13 @@ export class CrocodialRepository {
   mappingCountFrom(id: string, from: string | null) { return this.rpc<CrocodialMapping>('croc_mapping_count_from', { p_id: id, p_from: from }); }
   mappingRevoke(id: string, reason: string | null) { return this.rpc<CrocodialMapping>('croc_mapping_revoke', { p_id: id, p_reason: reason }); }
   myStatus() { return this.rpc<CrocodialMyStatus>('croc_my_status'); }
+  refreshCapabilities() { return this.rpc<CrocodialRefreshCapabilities>('croc_refresh_capabilities'); }
+  /** kick: the connections this request started (read by the server right away); never sent to the browser */
+  refreshRequest(scope: string, departmentId: string | null) {
+    return this.rpc<CrocodialRefreshRequest & { kick: string[] }>('croc_refresh_request', { p_scope: scope, p_department: departmentId });
+  }
+  refreshStatus(id: string) { return this.rpc<CrocodialRefreshRequest>('croc_refresh_status', { p_id: id }); }
+  connectionHealth() { return this.rpc<Omit<CrocodialConnectionHealth, 'current'>[]>('croc_connection_health'); }
   activity(profileId: string | null, from: string | null, to: string | null) {
     return this.rpc<CrocodialActivity>('croc_activity', { p_profile: profileId, p_from: from, p_to: to });
   }

@@ -41,7 +41,7 @@ Only the **paid** invoice is sent (customers never receive an unpaid invoice). N
 |---|---|
 | `AUTOMATION_MODE_INVOICE_WHATSAPP` | `off`, `dry_run` (default: decided and logged, nothing sent, no link made) or `live`. **When it is not set, `AUTOMATION_MODE` decides** (the same switch the onboarding messages use), so `AUTOMATION_MODE=live` is enough. |
 | `WHATSAPP_WEBHOOK_URL` | The WhatsApp Automation Builder webhook the onboarding messages already use. The paid invoice is posted to it as an event (see below). Used when Wabastore is not set up. |
-| `WABASTORE_WEBHOOK_URL`, `WABASTORE_API_KEY` | Wabastore's send endpoint (https) and key (shared with the expiry reminders). When set it is used instead of the builder. Live with neither behaves like off and says why. |
+| `WABASTORE_WEBHOOK_URL`, `WABASTORE_API_KEY` | Wabastore's send endpoint (https), and an OPTIONAL key (sent as `Authorization: Bearer` only when set; shared with the expiry reminders). When set it is used instead of the builder. Live with neither behaves like off and says why. |
 | `WABASTORE_STATUS_SECRET` | 16+ characters; the provider sends delivery reports to `/api/v1/internal/whatsapp/status` with it. |
 | `INVOICE_WHATSAPP_LINK_TTL_SECONDS` | Link lifetime (default 900). |
 | `AUTOMATION_TEST_RECIPIENTS` | Staging safety net: only these numbers are ever sent to. |

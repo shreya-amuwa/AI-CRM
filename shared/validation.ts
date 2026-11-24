@@ -3411,6 +3411,9 @@ export const crocodialActivityQuerySchema = z
   })
   .strict();
 /** A person's Crocodial leads: search, filter and a page (the database decides whose leads the caller may see). */
+export const crocodialRefreshSchema = z
+  .object({ scope: z.enum(['SELF', 'TEAM', 'DEPARTMENT', 'ALL']), departmentId: uuidSchema.optional() })
+  .strict();
 export const crocodialLeadsQuerySchema = z
   .object({
     profileId: uuidSchema.optional(),

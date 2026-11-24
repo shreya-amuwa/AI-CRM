@@ -67,9 +67,78 @@ This is `private.croc_can_view(profile, department, division)`. The screens in p
 ## The token (environment secret)
 
 1. **Create the token.** In Crocodial, go to **Setup → Outbound API**, create a token, and keep **Allow changes OFF**. The CRM only reads.
-2. **Put it on the server.** Add it to the server's environment under a name starting with `CROCODIAL_TOKEN_`, for example `CROCODIAL_TOKEN_MPILLAR`. Use Vercel → Settings → Environment Variables, and the Worker secrets if the API runs there. Redeploy.
-3. **Name it in the CRM.** In the CRM, add the connection with **that name**. The CRM stores only the name, and shows whether the server has it ("set on the server"). The value never reaches the browser, the database, the logs or the repository.
-4. **If the token is ever exposed** (pasted into a chat, an e-mail or a ticket): regenerate it in Crocodial, which ends the old one immediately, and update the server setting.
+2. **Put it on EVERY server that runs the CRM.** Add it under a name starting with `CROCODIAL_TOKEN_`, for example `CROCODIAL_TOKEN_MPILLAR`,
+   as a **Secret** (a runtime secret, not a build variable):
+   - Cloudflare: Workers & Pages → the CRM Worker (`ai-crm`) → **Settings → Variables and Secrets** → Add → type **Secret**. Saving deploys it.
+   - Vercel (only while a Vercel deployment still runs): Project → Settings → Environment Variables (Production), then redeploy.
+   Paste only the token: no quotes, no spaces, no word `Bearer`. A value shaped otherwise is reported as "format invalid" and not used.
+3. **Name it in the CRM.** In the CRM, add the connection with **that name**. The CRM stores only the name. The value never reaches the browser,
+   the database, the logs or the repository.
+4. **If the token is ever exposed** (pasted into a chat, an e-mail or a ticket): regenerate it in Crocodial, which ends the old one immediately,
+   and update the server setting.
+
+## Connection health (migration `20270204000100_crocodial_scoped_refresh.sql`)
+
+Super Admin → Crocodial Integration → **Connection health** answers "why does it say the token is missing?" without showing the token:
+
+- **Which server answered the page**: Cloudflare / Vercel / Node.js, its environment (`CRM_ENVIRONMENT` in `wrangler.jsonc`, `VERCEL_ENV` on
+  Vercel), its deployment (the Worker's `CF_VERSION_METADATA` binding; the Vercel commit) and its address.
+- **Credential detected / format valid** on that server (yes / no only), the expected setting name, the last test, the last successful API
+  response, the last complete sync, and the latest error.
+- **Every server's report** (`crocodial_runtime_reports`): each server records what it sees whenever it shows this page, tests or syncs.
+- **The current category**, worst first: secret missing from this server's runtime · secret present but its format is invalid · Crocodial
+  returned 401 (token refused) · 403 (API access turned off) · rate-limited · network timeout · connected. Data read earlier stays on the
+  dashboards and is labelled as not current when the connection is broken now. An old "missing" status written by a server without the token
+  is labelled as old once this server has the token (Test connection clears it).
+
+**Why it can say "Token setting missing on the server" while the secret is set.** Verified: in the Workers runtime itself (workerd,
+`nodejs_compat`, this Worker's compatibility date) a secret named `CROCODIAL_TOKEN_MPILLAR` IS visible to the CRM code, at start-up and per
+request, so the lookup code is not the cause. What decides is WHICH server answers, and both messages come from a server's own settings:
+- the "(not set on the server)" badge is checked live by the server that answered the page: if it says No, that server has no runtime secret
+  of exactly that name (for example the page is still served by a Vercel deployment, or the secret was saved as a build variable or on
+  another Worker);
+- the red "The server has no ... setting" line is the status last WRITTEN to the connection, by whichever server last tested or synced it.
+  Every server that receives `/internal/automations/dispatch` also runs the Crocodial sync, so a second deployment without the token (Vercel's
+  own cron, or a pg_cron / uptime job still calling the Vercel address) overwrote a working connection's status.
+Fixed here:
+- a server without the token records that (for itself) and leaves the connection alone while another server reported a valid token in the
+  last 6 hours; only when no server has it is the connection marked, naming the server ("This server (Vercel, production) has no ...");
+- the token is looked up in `process.env` and, on the Worker, also in its own bindings (`useRuntimeBindings`, `worker/entry.ts`);
+- the Super Admin page shows each server's answer, so the server without the secret is named.
+If Connection health shows **this page** answered by a server with "Credential detected: No", that server really has no secret of that
+exact name: add it there (step 2 above). If it shows another server without it, set the same secret there or stop that deployment receiving
+the scheduled calls (on Vercel: `VERCEL_CRON_PAUSED=true`; remove any pg_cron job that still calls the Vercel address).
+
+## Refresh on every Sales dashboard (same migration)
+
+One account-level read per Crocodial connection serves everybody; "Refresh" only asks for that read sooner. Each person then sees only what
+they could already see (`private.croc_can_view`, unchanged): refreshing never widens access.
+
+| Who | Buttons | What the scope covers |
+|---|---|---|
+| Team Member / Telecaller / Business Associate | **Refresh My Data** (My Crocodial Activity) | their own approved mapping |
+| Team Lead | **Refresh My Team**, plus Refresh My Data when mapped | the connected people they directly lead (`private.led_by`, same team) |
+| Department Head | **Refresh Department** (a choice when they cover several), plus Refresh My Data | connected Sales people of the departments their Sales scope covers (`private.scopes_of`) |
+| Operations Head | **Refresh Selected Department**, **Refresh My Departments**, plus Refresh My Data | connected Sales people of their assigned departments (`operations_head_departments`); a Support-only assignment covers nobody |
+| Super Admin | **Refresh Selected Department**, **Refresh All Departments** (Crocodial Activity); Sync now (Integration page) | everyone |
+
+- **The browser sends a scope only** (`SELF`, `TEAM`, `DEPARTMENT` + a department id, `ALL`). The database (`croc_refresh_request`) works out the
+  people and connections from the signed-in account; a department id is only a selector and must pass the same check. A person id, a
+  Crocodial user id or a connection id is never accepted. Suspended accounts, revoked mappings, a paused rollout or a switched-off link stop it.
+- **Coalescing:** per connection, a read that is running, or asked for in the last minute (by anyone, including Sync now), is joined; one
+  completed in the last 2 minutes is not repeated; the same person repeating the same request within 30 seconds gets the same request back.
+  Ten people clicking at once start one read. Started reads run after the answer is sent (Worker `waitUntil`), within Crocodial's 60 requests a
+  minute; a large read continues on the scheduled run (`croc_sync_due` includes a pending refresh). No new queue service is used.
+- **Status** (`croc_refresh_status`, the requester or the Super Admin only): Refresh queued · Syncing · Up to date · Partially synced ·
+  Sync failed · Rate limited · Token missing · Token invalid · Data unavailable. "Up to date" is shown only after the read finished.
+  Employees see "the connection needs the administrator" for a token problem, never details.
+- **Who has which button** (`croc_refresh_capabilities`): counts come from approved mappings only; no Crocodial user, account or connection
+  detail is returned. A person in a department where Crocodial is on, but without a mapping, sees "Your Crocodial account is not connected to
+  Amuwa CRM. Contact your administrator." (or "waiting for administrator approval" / "switched off"); elsewhere nothing is shown.
+- **Audit:** every request is `CROCODIAL_REFRESH_REQUESTED` (scope, people, connections, outcome). Mapping history, "Count all past
+  activity" dates and earlier attributions are never touched by a refresh.
+- **API:** `GET /api/v1/crocodial/refresh-capabilities`, `POST /api/v1/crocodial/refresh` (`{ scope, departmentId? }`),
+  `GET /api/v1/crocodial/refresh/:id`, and (Super Admin) `GET /api/v1/crocodial/connection-health`.
 
 ## How the client talks to Crocodial (`server/crocodial/client.ts`)
 
@@ -383,7 +452,7 @@ yet (phase 2). When they are built, they will read calls and demos only through 
 
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.
@@ -392,7 +461,7 @@ yet (phase 2). When they are built, they will read calls and demos only through 
 ## Rollout steps (pilot)
 
 1. Run the migration.
-2. Add `CROCODIAL_TOKEN_MPILLAR` to the server environment, with a token whose "Allow changes" is off. Redeploy.
+2. Add `CROCODIAL_TOKEN_MPILLAR` as a **Secret** of every server that runs the CRM (Cloudflare Worker: Settings → Variables and Secrets), with a token whose "Allow changes" is off. Check Connection health shows "Credential detected: Yes" for the server that answers the page.
 3. Open Super Admin > Crocodial Integration and add the connection:
    - name "M Pillar";
    - account "M pillar corporation";
