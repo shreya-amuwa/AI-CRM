@@ -1,6 +1,6 @@
 import { CareerManagement } from './CareerManagement';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, Plus, RefreshCw, Search } from 'lucide-react';
+import { Briefcase, CalendarClock, Plus, RefreshCw, Search } from 'lucide-react';
 import { recruitmentApi } from '../../lib/api/endpoints';
 import { ApiError } from '../../lib/api/client';
 import { fmtDay } from '../../lib/support';
@@ -9,6 +9,7 @@ import type {
   RecruitmentList, RecruitmentOverview, RecruitmentPosition
 } from '../../../shared/contracts';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pager, Pill, selectCls, Spinner, type Tone } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 
 /**
  * HR dashboard > Recruitment Management. Candidates live in the database (hr_candidates and its pending items, calls and history); the table
@@ -132,16 +133,12 @@ export const RecruitmentManagement: React.FC = () => {
   const filtered = !!(debounced || position || confirmation || pending || call || owner);
   return (
     <section className="space-y-5" aria-label="Recruitment management">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-slate-900">Recruitment Management</h2>
-          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">Candidates, what is still pending for each, their calls and follow-ups, and where the confirmation stands. Every change is kept in the candidate's history.</p>
-        </div>
-        <div className="flex gap-2">
-          <button type="button" className={btn.secondary} onClick={refresh}><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
-          <button type="button" className={btn.primary} onClick={() => setOpen('new')}><Plus className="w-3.5 h-3.5" /> Add candidate</button>
-        </div>
-      </header>
+      <HrPageHeader as="h2" icon={Briefcase} title="Recruitment Management"
+        subtitle="Candidates, what is still pending for each, their calls and follow-ups, and where the confirmation stands. Every change is kept in the candidate's history."
+        actions={<>
+          <button type="button" className={hrBtn.secondary} onClick={refresh}><RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh</button>
+          <button type="button" className={hrBtn.primary} onClick={() => setOpen('new')}><Plus className="w-4 h-4" aria-hidden="true" /> Add candidate</button>
+        </>} />
       {error && <ErrorBanner message={error} onRetry={refresh} />}
 
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">

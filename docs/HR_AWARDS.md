@@ -68,3 +68,17 @@ Changes to one award and month are serialised with a row lock on its period, so 
 
 `supabase/tests/hr_awards_test.sql` (database rules and permissions), the *awards API* block in `supabase/tests/api_integration.test.ts`,
 `supabase/tests/hr_awards.test.ts` (shared schemas) and `supabase/tests/ui_hr_awards.test.mjs` (browser: the menu order, the cards, the flows).
+
+## Screen layout (HR UI redesign)
+
+* **Award Management** opens under a breadcrumb (*Back to HR Dashboard / Award Management*) with one tab row: **Birthdays**, **Anniversaries**,
+  **Awards**. **Nominate Star Award** sits at the right of that row (a secondary button): it opens Awards and the Add Nominee form with the
+  award to choose. The KPI cards show only on the HR dashboard overview, so a workspace starts right under the header.
+* **Awards** header: *Employee Recognition & Awards* with its subtitle, and one month control: previous month, the month shown (opens a
+  month/year picker; months with award records carry a dot), next month, and *This month*. Under it, the month's totals and the award history.
+* **Cards**: one per award, the same height whatever the title's length; 1 column on a phone, 2 on a tablet / narrow laptop, 3 from 1280px.
+* **Manage Award**: Award overview, then Nominees (a table on wider screens, cards on a phone) and Winners (a quiet gold section; beside the
+  nominees from 1536px).
+* **Add Nominee** shows only what the nominee type needs: an employee's department, team and designation; a team's department and members; a
+  department's members. All come from the CRM.
+* **Declare Winner** is two steps: choose one or more nominees (and the remarks), then confirm the list before anything is saved.

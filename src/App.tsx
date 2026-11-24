@@ -57,6 +57,7 @@ const NoticeBoard = lazy(() => import('./components/notices/NoticeBoard'));
 const CeoAvailabilityPage = lazy(() => import('./components/meetings/CeoAvailabilityPage'));
 const UnifiedDepartmentMonitor = lazy(() => import('./components/unified/UnifiedOverview').then(m => ({ default: m.UnifiedDepartmentMonitor })));
 const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
+import { mainClassFor } from './components/layout/mainLayout';
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
 const SupportSuperAdminDashboard = lazy(() => import('./components/departments/wabastore/superadmin/SupportSuperAdminDashboard').then(m => ({ default: m.SupportSuperAdminDashboard })));
@@ -567,7 +568,7 @@ const MainAppContent: React.FC = () => {
         )}
 
         {/* Main Workspace Panel */}
-        <main className={currentActiveTab === 'chat' ? 'flex-1 min-w-0 w-full' : 'flex-1 min-w-0 p-3 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full'}>
+        <main className={mainClassFor(currentActiveTab, currentDeptId)}>
           {currentActiveTab === 'my_attendance' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><AttendancePage hrView={currentDeptId === 'hr'} /></Suspense>
           ) : currentActiveTab === 'my_meetings' && showSidebar ? (

@@ -27,6 +27,7 @@ import { formatClock, officeInstant, officeToday } from '../../../lib/officeTime
 import { LoginGapBadge } from '../../hr/LoginGapBadge';
 import { EmployeeDirectory } from '../../hr/EmployeeDirectory';
 import { AwardsManagement } from '../../hr/AwardsManagement';
+import { HrEmptyState, HrPageHeader, HrSectionTitle, HrToast, hrBtn, hrCard } from '../../hr/hrUi';
 import { useMonthlyLeave } from '../../../hooks/useMonthlyLeave';
 import { LeaveReviewList, useLeaveData } from '../../leave/LeaveCenter';
 
@@ -57,6 +58,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const [activeModule, setActiveModule] = useState<string | null>(null);
   // Award Management's own menu: Birthdays, Anniversaries, then Awards (20270203000100)
   const [awardsTab, setAwardsTab] = useState<'birthdays' | 'anniversaries' | 'awards'>('anniversaries');
+  // "Nominate Star Award": each press opens the Add Nominee form in Awards (with the award to choose)
+  const [nominateSignal, setNominateSignal] = useState(0);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => attendanceStore.getAttendanceRecords());
   const [latestMemberLogin, setLatestMemberLogin] = useState<AttendanceRecord | null>(() => attendanceStore.getLatestMemberLogin());
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'crm' | 'biometric'>('all');
@@ -510,73 +513,38 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const leftCount = employees.filter(e => e.status === 'Left').length;
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-5 animate-fade-in">
 
-      {/* Top Department Executive Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-        <div className="flex items-center gap-3.5">
-          <div className="h-11 w-11 rounded-xl bg-slate-50 p-2 border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs">
-            <img src="/logos/hr.png" alt="HR" className="h-full w-full object-contain" />
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold font-heading text-slate-900">
-                Human Resources
-              </h2>
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Shift: 09:30 - 18:30
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Workforce roster, attendance tracking, leave approvals &amp; letter automation
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => handleExportAttendanceCsv()}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 shadow-2xs transition-all cursor-pointer"
-            title="Download today's attendance logs as CSV"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Attendance CSV</span>
-          </button>
-          <button
-            onClick={() => setShowAddEmployeeModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Add Employee</span>
-          </button>
-          <button
-            onClick={() => setShowOfferModal(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Generate Offer</span>
-          </button>
-        </div>
+      {/* Department header: one title, the shift, and the three everyday actions */}
+      <div className={`${hrCard} p-4 sm:p-5`}>
+        <HrPageHeader
+          icon={Users}
+          title="Human Resources"
+          meta={<span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">Shift 09:30 – 18:30</span>}
+          subtitle="Workforce roster, attendance, leave approvals, recognition and letters."
+          actions={<>
+            <button type="button" onClick={() => handleExportAttendanceCsv()} className={hrBtn.secondary} title="Download today's attendance logs as CSV">
+              <Download className="w-4 h-4" aria-hidden="true" /> Attendance CSV
+            </button>
+            <button type="button" onClick={() => setShowAddEmployeeModal(true)} className={hrBtn.secondary}>
+              <UserPlus className="w-4 h-4" aria-hidden="true" /> Add Employee
+            </button>
+            <button type="button" onClick={() => setShowOfferModal(true)} className={hrBtn.primary}>
+              <Sparkles className="w-4 h-4" aria-hidden="true" /> Generate Offer
+            </button>
+          </>}
+        />
       </div>
 
-      {/* OPERATIONAL TOAST FEEDBACK */}
-      {opToast && (
-        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-mono font-semibold flex items-center justify-between shadow-xs animate-fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{opToast}</span>
-          </div>
-          <button onClick={() => setOpToast(null)} className="text-emerald-700 hover:text-emerald-950 cursor-pointer p-1">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
+      {/* confirmations float in the corner instead of pushing the page down */}
+      <HrToast message={opToast} onClose={() => setOpToast(null)} />
 
       {/* SECTION 1: MINIMAL OPERATIONAL DASHBOARD */}
       {mainSection === 'dashboard' && (
         <div className="space-y-6 animate-fade-in">
 
+          {/* Top 4 Minimal High-Impact Metric Cards: the overview only (an open workspace starts right under the header) */}
+          {!activeModule && (<>
           {/* Top 4 Minimal High-Impact Metric Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {/* 1. Active Staff */}
@@ -665,49 +633,51 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
               </div>
             </div>
           </div>
+          </>)}
 
           {/* CONDITIONAL: EITHER SPECIFIC MODULE WORKSPACE OR THE 3X3 MINIMAL OPERATIONAL BOXES GRID */}
           {activeModule ? (
             <div className="space-y-6 animate-fade-in">
               {/* Back to Modules Navigation Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-white rounded-2xl border border-slate-200/90 shadow-xs">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <nav aria-label="Breadcrumb" className="flex items-center gap-2 min-w-0">
                   <button
+                    type="button"
                     onClick={() => setActiveModule(null)}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                    className={hrBtn.ghost}
                   >
-                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <ArrowLeft className="w-4 h-4" aria-hidden="true" />
                     <span>Back to HR Dashboard</span>
                   </button>
-                  <span className="text-slate-300">/</span>
-                  <span className="text-xs font-mono font-bold text-slate-900 uppercase">
+                  <span className="text-slate-300" aria-hidden="true">/</span>
+                  <span className="text-sm font-semibold text-slate-900 truncate" aria-current="page">
                     {activeModule === 'attendance' && 'Attendance & Shift Management'}
                     {activeModule === 'departments' && `Department Hierarchy (${departments.length} Units)`}
                     {activeModule === 'recruitment' && 'Recruitment & Talent Acquisition Desk'}
                     {activeModule === 'employees' && 'Employee Directory & KYC Profiles'}
                     {activeModule === 'leaves' && 'Leave & Shift Approvals Register'}
-                    {activeModule === 'awards' && 'Awards, Upcoming Birthdays & Anniversaries'}
+                    {activeModule === 'awards' && 'Award Management'}
                     {(activeModule === 'offer_letter' || activeModule === 'letters') && 'Automated Offer Letter & Contract Studio'}
                     {activeModule === 'experience_letter' && 'Experience Letter Studio'}
                     {activeModule === 'nda_letter' && 'NDA Studio'}
                   </span>
-                </div>
+                </nav>
 
                 <div className="flex items-center gap-2">
                   {activeModule === 'attendance' && (
                     <>
                       <button
                         onClick={handleExportAttendanceCsv}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                        className={hrBtn.secondary}
                       >
-                        <Download className="w-3.5 h-3.5" />
+                        <Download className="w-4 h-4" />
                         <span>CSV Export</span>
                       </button>
                       <button
                         onClick={() => setShowManualPunchModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                        className={hrBtn.primary}
                       >
-                        <Plus className="w-3.5 h-3.5" />
+                        <Plus className="w-4 h-4" />
                         <span>Log Clock-In</span>
                       </button>
                     </>
@@ -715,18 +685,18 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                   {activeModule === 'recruitment' && (
                     <button
                       onClick={() => setShowOfferModal(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                      className={hrBtn.primary}
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <Sparkles className="w-4 h-4" />
                       <span>Generate Offer</span>
                     </button>
                   )}
                   {activeModule === 'employees' && (
                     <button
                       onClick={() => setShowAddEmployeeModal(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                      className={hrBtn.primary}
                     >
-                      <UserPlus className="w-3.5 h-3.5" />
+                      <UserPlus className="w-4 h-4" />
                       <span>Add Employee</span>
                     </button>
                   )}
@@ -1217,27 +1187,11 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                 </div>
               )}
 
-              {/* MODULE 6: AWARDS & CELEBRATIONS WORKSPACE */}
+              {/* MODULE 6: AWARD MANAGEMENT — Birthdays, Anniversaries, then Awards */}
               {activeModule === 'awards' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div>
-                      <h4 className="text-base font-bold text-slate-900 font-heading">Employee Awards, Upcoming Birthdays &amp; Anniversaries</h4>
-                      <p className="text-xs text-slate-500 mt-0.5">Track upcoming employee milestones, work anniversaries (soon), birthdays within 30 days, and honors</p>
-                    </div>
-                    <button
-                      onClick={() => setAwardsTab('awards')}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
-                    >
-                      <Award className="w-4 h-4" />
-                      <span>Nominate Star Award</span>
-                    </button>
-                  </div>
-
-                  {/* Award Management menu: Birthdays, Anniversaries, then Awards */}
-                  <div className="flex flex-col lg:flex-row gap-4">
-                    <nav aria-label="Award Management" className="lg:w-56 shrink-0 bg-white rounded-2xl border border-slate-200/90 p-2 shadow-xs flex lg:flex-col gap-1 overflow-x-auto">
-                      <span className="hidden lg:block px-2.5 pt-1.5 pb-1 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">Award Management</span>
+                <div className="space-y-5">
+                  <div className="flex flex-col-reverse sm:flex-row sm:items-end justify-between gap-3 border-b border-slate-200">
+                    <nav aria-label="Award Management" className="flex gap-1 -mb-px overflow-x-auto">
                       {([
                         { id: 'birthdays' as const, label: 'Birthdays', icon: Cake },
                         { id: 'anniversaries' as const, label: 'Anniversaries', icon: PartyPopper },
@@ -1248,32 +1202,37 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                           type="button"
                           onClick={() => setAwardsTab(item.id)}
                           aria-current={awardsTab === item.id ? 'page' : undefined}
-                          className={`px-3 py-2 rounded-[9px] flex items-center gap-2 text-sm whitespace-nowrap transition-colors cursor-pointer ${
-                            awardsTab === item.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50'
+                          className={`px-3.5 py-2.5 border-b-2 flex items-center gap-2 text-sm whitespace-nowrap transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 rounded-t-md ${
+                            awardsTab === item.id ? 'border-blue-600 text-blue-700 font-semibold' : 'border-transparent text-slate-600 font-medium hover:text-slate-900 hover:border-slate-300'
                           }`}
                         >
-                          <item.icon className="w-4 h-4 shrink-0" />
+                          <item.icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                           <span>{item.label}</span>
                         </button>
                       ))}
                     </nav>
-                    <div className="flex-1 min-w-0 space-y-3">
+                    <button type="button" onClick={() => { setAwardsTab('awards'); setNominateSignal(n => n + 1); }} className={`${hrBtn.secondary} self-start sm:self-auto sm:mb-2`}>
+                      <Award className="w-4 h-4 text-amber-600" aria-hidden="true" />
+                      <span>Nominate Star Award</span>
+                    </button>
+                  </div>
+                  <div className="space-y-3">
                   {/* Section 1: Upcoming Celebrations (Birthdays & Work Anniversaries) */}
                     {awardsTab !== 'awards' && (
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                        <Cake className="w-4 h-4 text-amber-600" />
-                        <span>{awardsTab === 'birthdays' ? 'Upcoming Birthdays (Within 30 Days)' : 'Upcoming Work Anniversaries (Within 30 Days)'}</span>
-                      </h5>
-                      <span className="text-xs font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                        {shownCelebrations.length} Upcoming Events
-                      </span>
-                    </div>
+                    <HrSectionTitle
+                      icon={awardsTab === 'birthdays' ? Cake : PartyPopper}
+                      title={awardsTab === 'birthdays' ? 'Upcoming Birthdays (Within 30 Days)' : 'Upcoming Work Anniversaries (Within 30 Days)'}
+                      actions={<span className="text-xs text-slate-500">{shownCelebrations.length} Upcoming Events</span>}
+                    />
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4">
                       {!shownCelebrations.length && (
-                        <p className="col-span-full text-xs text-slate-500 bg-white border border-slate-200 rounded-2xl p-5">{awardsTab === 'birthdays' ? 'No birthdays in the next 30 days.' : 'No work anniversaries in the next 30 days.'}</p>
+                        <div className="col-span-full">
+                          <HrEmptyState icon={awardsTab === 'birthdays' ? Cake : PartyPopper}
+                            title={awardsTab === 'birthdays' ? 'No birthdays in the next 30 days.' : 'No work anniversaries in the next 30 days.'}
+                            hint={awardsTab === 'birthdays' ? 'Birthdays come from the dates of birth in the employee records.' : 'Anniversaries come from the joining dates in the employee records.'} />
+                        </div>
                       )}
                       {shownCelebrations.map(cel => (
                         <div
@@ -1345,9 +1304,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                   </div>
                     )}
                     {awardsTab === 'awards' && (
-                      <AwardsManagement onToast={(msg) => { setOpToast(msg); setTimeout(() => setOpToast(null), 4500); }} />
+                      <AwardsManagement nominateSignal={nominateSignal} onToast={(msg) => { setOpToast(msg); setTimeout(() => setOpToast(null), 4500); }} />
                     )}
-                    </div>
                   </div>
                 </div>
               )}
@@ -1368,7 +1326,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
           ) : (
             /* 3X3 GRID OF MINIMAL & HIGH-IMPACT OPERATIONAL MODULE BOXES */
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 
                 {/* 1. Attendance Management */}
                 <div 

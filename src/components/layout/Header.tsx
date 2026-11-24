@@ -65,14 +65,14 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
           </div>}
 
           {/* Active Sessions Counter Badge */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-xs">
+          <div className="hidden md:flex items-center gap-2 h-8 px-3 rounded-full bg-slate-50 border border-slate-200 text-slate-600 text-xs whitespace-nowrap">
             <Users className="w-3.5 h-3.5 text-slate-500" />
             <span>Active Sessions: <strong className="text-slate-900">{activeSessions.length}/2</strong></span>
           </div>
         </div>
 
         {/* Right Side Tools */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           
           {/* The Super Admin and the HR head tell clients about closures and new services */}
           {(user?.role === 'superadmin' || user?.role === 'hr') && activeDepartment.id !== 'hr' && (
@@ -89,14 +89,14 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
           <NotificationBell />
 
           {/* User Profile & Logout */}
-          <div className="flex items-center gap-1 sm:gap-2 pl-1.5 sm:pl-2 border-l border-slate-200">
-            <div className="w-[38px] h-[38px] rounded-full bg-blue-50 text-blue-700 font-extrabold text-[13px] flex items-center justify-center">
+          <div className="flex items-center gap-2 sm:gap-2.5 pl-2 sm:pl-3 ml-0.5 sm:ml-1 border-l border-slate-200">
+            <div className="w-9 h-9 rounded-full bg-blue-50 text-blue-700 ring-1 ring-blue-100 font-bold text-[13px] flex items-center justify-center shrink-0" aria-hidden="true">
               {user?.name.charAt(0)}
             </div>
             
-            <div className="hidden lg:block text-left">
-              <span className="text-slate-900 text-sm font-bold block leading-tight">{user?.name}</span>
-              <span className="text-slate-500 text-xs">
+            <div className="hidden lg:block text-left min-w-0 max-w-[180px]">
+              <span className="text-slate-900 text-sm font-semibold block leading-tight truncate">{user?.name}</span>
+              <span className="text-slate-500 text-xs block truncate">
                 {user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'team-lead' ? 'Team Lead' : user?.role === 'hr' && user.profile ? ROLE_LABELS[user.profile.role] : 'Staff Admin'}
               </span>
             </div>

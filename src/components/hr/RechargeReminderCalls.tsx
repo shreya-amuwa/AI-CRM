@@ -5,6 +5,7 @@ import { ApiError } from '../../lib/api/client';
 import type { ReminderCallList, ReminderCallRow } from '../../../shared/contracts';
 import type { REMINDER_CALL_FILTERS } from '../../../shared/validation';
 import { btn, Card, ErrorBanner, Pill, Spinner, type Tone } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 
 /**
  * HR dashboard > Recharge Reminder Calls (Super Admin and HR staff; the database refuses anyone else).
@@ -77,20 +78,14 @@ export const RechargeReminderCalls: React.FC = () => {
 
   return (
     <section className="space-y-4" aria-label="Recharge reminder calls">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2"><PhoneCall className="w-5 h-5 text-indigo-600" /> Recharge Reminder Calls</h2>
-          <p className="text-xs text-slate-500 mt-0.5 max-w-3xl">
-            BolifyAI AI calls placed automatically 7, 5 and 1 day before a customer's panel expires (India dates, 10:00 to 19:00 IST). Only customers with a live panel,
+      <HrPageHeader as="h2" icon={PhoneCall} title="Recharge Reminder Calls"
+        subtitle={<>BolifyAI AI calls placed automatically 7, 5 and 1 day before a customer's panel expires (India dates, 10:00 to 19:00 IST). Only customers with a live panel,
             a valid mobile number and call consent are called, never twice for the same reminder. <b>Submitted</b> means BolifyAI accepted the request; it becomes
             <b> Completed</b> only when BolifyAI reports the call result.
-          </p>
-          {data?.lastSchedule && <p className="text-[11px] text-slate-400 mt-1">Last daily run: {ist(data.lastSchedule.ranAt)} · {data.lastSchedule.created} new, {data.lastSchedule.cancelled} withdrawn</p>}
-        </div>
-        <button type="button" className={btn.secondary} onClick={() => void load()} disabled={loading} aria-label="Refresh the reminder calls">
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
-      </header>
+          {data?.lastSchedule && <span className="block text-[11px] text-slate-400 mt-1">Last daily run: {ist(data.lastSchedule.ranAt)} · {data.lastSchedule.created} new, {data.lastSchedule.cancelled} withdrawn</span>}</>}
+        actions={<button type="button" className={hrBtn.secondary} onClick={() => void load()} disabled={loading} aria-label="Refresh the reminder calls">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>} />
 
       <div role="tablist" aria-label="Filter the reminder calls" className="flex flex-wrap gap-1.5">
         {FILTERS.map(f => (

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { BugReportSection } from '../issues/BugReport';
 import { takePendingIssues, useOpenIssuesRequest } from '../issues/issueEvents';
 import { EmployeeIssuesManagement } from './EmployeeIssuesManagement';
+import { HrPageHeader } from './hrUi';
+import { MessageSquareWarning } from 'lucide-react';
 
 /**
  * HR dashboard > Raise an Issue (migration 20270128000200). Two sections, one recipient each:
@@ -25,10 +27,8 @@ export const HrRaiseIssuePage: React.FC<{ canReport?: boolean }> = ({ canReport 
   const shown = canReport ? [SECTIONS[1], SECTIONS[0]] : [SECTIONS[0]];
   return (
     <div className="space-y-5" data-testid="hr-raise-issue-page">
-      <div>
-        <h1 className="text-xl font-extrabold text-slate-900">Raise an Issue</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Report a problem to the Developer Team, and handle the issues employees raised to HR.</p>
-      </div>
+      <HrPageHeader icon={MessageSquareWarning} title="Raise an Issue"
+        subtitle="Report a problem to the Developer Team, and handle the issues employees raised to HR." />
       <div role="tablist" aria-label="Raise an Issue sections" className="flex flex-wrap gap-1 border-b border-slate-200">
         {shown.map(s => (
           <button key={s.id} type="button" role="tab" aria-selected={section === s.id} onClick={() => setSection(s.id)} data-testid={`hr-section-${s.id}`}

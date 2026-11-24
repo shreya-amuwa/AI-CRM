@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { MessageSquareWarning, RefreshCw, Search } from 'lucide-react';
 import type { CaseDepartment, EmployeeIssue, EmployeeIssueDetail, EmployeeIssueList, EmployeeIssueOverview, HrAssignee, IssueStatus } from '../../../shared/contracts';
 import { ISSUE_CATEGORIES, ISSUE_CATEGORY_LABELS, ISSUE_PRIORITIES, ISSUE_PRIORITY_LABELS, ISSUE_STATUSES, ISSUE_STATUS_LABELS } from '../../../shared/contracts';
 import { DEV_ISSUE_CATEGORIES, DEV_ISSUE_CATEGORY_LABELS } from '../../../shared/validation';
@@ -7,6 +7,7 @@ import { BUG_STATUS_LABEL, BugHistory, BugStatusPill } from '../bugs/bugUi';
 import { ApiError } from '../../lib/api/client';
 import { employeeCasesApi } from '../../lib/api/employeeCases';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pager, selectCls, Spinner, useDebounced } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 import { MessageFiles } from '../tickets/TicketFiles';
 import { issueFileTransport } from '../issues/issueFiles';
 import { takePendingHrCase } from '../issues/issueEvents';
@@ -222,13 +223,10 @@ export const EmployeeIssuesManagement: React.FC<{ embedded?: boolean }> = ({ emb
 
   return (
     <div className="space-y-5" data-testid="employee-issues-page">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          {embedded ? <h2 className="text-base font-extrabold text-slate-900">Employee Issues – Received by HR</h2> : <h1 className="text-xl font-extrabold text-slate-900">Employee Issues</h1>}
-          <p className="text-sm text-slate-500 mt-0.5">Issues raised by Team Members, Team Leads and Department Heads, across all departments.</p>
-        </div>
-        <button type="button" className={btn.secondary} onClick={changed} aria-label="Refresh"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden /> Refresh</button>
-      </div>
+      <HrPageHeader as={embedded ? 'h2' : 'h1'} icon={embedded ? undefined : MessageSquareWarning}
+        title={embedded ? 'Employee Issues – Received by HR' : 'Employee Issues'}
+        subtitle="Issues raised by Team Members, Team Leads and Department Heads, across all departments."
+        actions={<button type="button" className={hrBtn.secondary} onClick={changed} aria-label="Refresh"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden /> Refresh</button>} />
 
       <section aria-label="Summary" className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Stat label="Total Issues" value={overview?.total ?? null} />
