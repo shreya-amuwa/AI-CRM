@@ -7003,7 +7003,7 @@ export interface NotificationHealthDetail {
 export interface NotificationTestResult { devices: number; sent: number; retry: number; failed: number; gone: number; pushConfigured: boolean }
 
 // ---------------------------------------------------------------------------
-// Email Management (migration 20270131000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
+// Email Management (migration 20270201000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
 // e-mail; DELIVERY_CONFIRMED needs the provider's own delivery event.
 // ---------------------------------------------------------------------------
 export type EmailProviderName = 'resend' | 'ses' | 'smtp' | 'brevo';
@@ -7061,3 +7061,34 @@ export interface EmailHistoryDetail {
 }
 export interface EmailSuppression { email: string; active: boolean; reason: string; source: string; note: string | null; updatedAt: string }
 export interface EmailRulePreview { rule: string; recipients: { mode: 'CC' | 'BCC'; email: string; name: string | null }[] }
+
+// ---------------------------------------------------------------------------
+// Company Notice Board (migration 20270131000200)
+// ---------------------------------------------------------------------------
+export type NoticeCategory = 'GENERAL' | 'HR' | 'POLICY' | 'EVENT' | 'HOLIDAY' | 'IT_SYSTEM' | 'OPERATIONS' | 'OTHER';
+export type NoticePriority = 'NORMAL' | 'IMPORTANT' | 'URGENT';
+export type NoticeAudienceType = 'COMPANY' | 'DEPARTMENT' | 'ROLE' | 'EMPLOYEES';
+/** SUPER_ADMIN / HR / DEVELOPER: any audience; OPERATIONS_HEAD: only the departments they own */
+export type NoticePublisherRole = 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'HR' | 'DEVELOPER';
+export interface CompanyNotice {
+  id: string; reference: string; title: string; body: string; category: NoticeCategory; priority: NoticePriority;
+  status: 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED'; expired: boolean; publishAt: string; expiresAt: string | null; releasedAt: string | null; updatedAt: string; version: number;
+  publisherId: string; publisherName: string | null; publisherRole: NoticePublisherRole;
+  audience: { type: NoticeAudienceType; departments: string[]; roles: string[]; employees: string[]; departmentNames: string[] };
+  isRecipient: boolean; read: boolean; readAt: string | null; canManage: boolean; recipientCount: number; readCount: number;
+  attachments: { id: string; name: string; mime: string; size: number }[];
+  /** the publisher's / Super Admin's view of an opened notice: every version */
+  history?: { version: number; action: 'PUBLISHED' | 'EDITED' | 'ARCHIVED'; by: string | null; at: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null }[];
+  duplicate?: boolean; notified?: number;
+}
+export interface NoticeList { items: CompanyNotice[]; total: number; unread: number; publisherRole: NoticePublisherRole | null }
+export interface NoticeReceipts {
+  noticeId: string; status: CompanyNotice['status']; total: number; read: number; unread: number;
+  push: { devices: number; accepted: number; pending: number; failed: number; cancelled: number };
+  rows: { profileId: string; name: string; department: string | null; notifiedAt: string | null; readAt: string | null }[];
+}
+export interface NoticeAudienceOptions {
+  canPublish: boolean; role: NoticePublisherRole | null; audiences: NoticeAudienceType[];
+  departments: { id: string; name: string }[]; roles: { id: string; label: string }[];
+  employees: { id: string; name: string; role: string; department: string | null; departmentId: string | null }[];
+}

@@ -12184,7 +12184,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
 }
-// Email management (20270131000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
+// Email management (20270201000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
 // send per business event, no copies of authentication e-mail, the signed Resend webhook, shared suppression, the Super Admin's API.
 {
   console.log('--- email management: router, rules, idempotency, auth privacy, webhook, suppression, admin API');
@@ -12323,6 +12323,68 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 401, 'CEO arrival API: not for visitors', r);
   await db.query(`delete from public.meetings where title like 'CAX %'`);
   await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
+// --- Company Notice Board (migration 20270131000200): everyone reads; only the Super Admin, Operations Heads, HR and Developers publish ---
+{
+  const devId = deliveryMember as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, false) on conflict (profile_id) do nothing`, [devId]);
+  tokens.set('nbdev', tokenFor(devId));
+  const key = () => `nbx-${crypto.randomUUID().slice(0, 18)}`;
+  const wabastore = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  let r = await api('a', 'GET', '/notices/audience');
+  check(r.status === 200 && r.json.data.canPublish === false, 'notice board API: a Team Member has no Send Notice', r);
+  r = await api('a', 'POST', '/notices', { title: 'NBX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: key() });
+  check(r.status === 403, 'notice board API: a Team Member cannot publish (refused by the server)', r);
+  r = await api('th', 'POST', '/notices', { title: 'NBX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: key() });
+  check(r.status === 403, 'notice board API: nor a Team Lead', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Bad', body: 'x', category: 'GENERAL', audienceType: 'DEPARTMENT', clientRequestId: key() });
+  check(r.status === 422, 'notice board API: a department notice needs departments', r);
+  const k1 = key();
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Town hall at 5 pm', body: 'Everyone joins the town hall.', category: 'EVENT', priority: 'IMPORTANT', audienceType: 'COMPANY', clientRequestId: k1 });
+  check(r.status === 201 && r.json.data.status === 'PUBLISHED' && r.json.data.recipientCount >= 3 && r.json.data.publisherRole === 'SUPER_ADMIN' && !('deliveryIds' in r.json.data),
+    'notice board API: the Super Admin publishes to the entire company', r);
+  const n1 = r.json.data.id as string;
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Town hall at 5 pm', body: 'Everyone joins the town hall.', category: 'EVENT', audienceType: 'COMPANY', clientRequestId: k1 });
+  check(r.status === 201 && r.json.data.duplicate === true && r.json.data.id === n1, 'notice board API: the same form again is the same notice', r);
+  r = await api('hr', 'POST', '/notices', { title: 'NBX Wabastore leave rules', body: 'New leave rules for Wabastore.', category: 'HR', audienceType: 'DEPARTMENT', departmentIds: [wabastore], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'HR', 'notice board API: HR publishes to a department', r);
+  r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'DEVELOPER', 'notice board API: a developer publishes to designations', r);
+  const bell = (await db.query(`select count(*)::int n from public.notifications where type = 'COMPANY_NOTICE' and entity_id = $1`, [n1])).rows[0].n;
+  check(bell === r.json.data.recipientCount || bell >= 3, 'notice board API: the targeted employees are notified in the bell');
+
+  r = await api('a', 'GET', '/notices/unread-count');
+  check(r.status === 200 && r.json.data.unread >= 1, 'notice board API: the employee has unread notices', r);
+  const before = r.json.data.unread as number;
+  r = await api('a', 'GET', '/notices?unread=true');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === n1 && n.read === false), 'notice board API: the employee sees it, unread', r);
+  r = await api('a', 'GET', `/notices/${n1}`);
+  check(r.status === 200 && r.json.data.read === true && r.json.data.body === 'Everyone joins the town hall.', 'notice board API: opening it marks it read', r);
+  r = await api('a', 'GET', '/notices/unread-count');
+  check(r.status === 200 && r.json.data.unread === before - 1, 'notice board API: the unread count goes down', r);
+  r = await api('a', 'GET', `/notices/${n1}/receipts`);
+  check(r.status === 404, 'notice board API: an employee does not see the read receipts', r);
+  r = await api('a', 'POST', `/notices/${n1}/update`, { title: 'NBX Hacked' });
+  check(r.status === 404, 'notice board API: nor edit the notice', r);
+  r = await api('sa', 'GET', `/notices/${n1}/receipts`);
+  check(r.status === 200 && r.json.data.read >= 1 && r.json.data.total === r.json.data.read + r.json.data.unread, 'notice board API: the publisher sees who read it', r);
+  r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Everyone joins the town hall at 5:30 pm.', version: 1 });
+  check(r.status === 200 && r.json.data.version === 2, 'notice board API: the publisher edits it', r);
+  r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Stale', version: 1 });
+  check(r.status === 409, 'notice board API: a stale edit is refused', r);
+  r = await api('sa', 'POST', `/notices/${n1}/archive`, {});
+  check(r.status === 200 && r.json.data.status === 'ARCHIVED', 'notice board API: and archives it', r);
+  r = await api('a', 'GET', '/notices');
+  check(r.status === 200 && !r.json.data.items.some((n: any) => n.id === n1), 'notice board API: an archived notice leaves the board', r);
+  r = await api('a', 'GET', '/notices?scope=MINE');
+  check(r.status === 403, 'notice board API: an employee has no "my published notices"', r);
+  r = await api(null, 'GET', '/notices');
+  check(r.status === 401, 'notice board API: not for visitors', r);
+  // the chat and the other notifications keep working alongside
+  r = await api('a', 'GET', '/chat/internal');
+  check(r.status === 200, 'notice board API: the chat still answers', r);
+  await db.query(`delete from public.company_notices where title like 'NBX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
 }
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();

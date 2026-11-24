@@ -138,7 +138,7 @@ sending statistics, and the CRM's delivery logs. Going back is instant: set `EMA
   reply-to. Not after a timeout (SES may have sent it: no duplicate) nor for an invalid address or content; those stay queued for a retry.
 * `EMAIL_FALLBACK=off` turns the backup off. Code: `server/automations/providers.ts`; tests: `supabase/tests/ses_email.test.ts`.
 
-## Amuwa's actual region and SES as a fallback (migration 20270131000100)
+## Amuwa's actual region and SES as a fallback (migration 20270201000100)
 
 Amuwa's SES identity is verified in **Asia Pacific (Sydney) `ap-southeast-2`**, not the Mumbai region used as the example above: set
 `SES_REGION=ap-southeast-2` (now also the default when unset) and read every `ap-south-1` above as `ap-southeast-2` (e.g. the MAIL FROM MX

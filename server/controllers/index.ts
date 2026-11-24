@@ -261,6 +261,18 @@ export const bugsController = {
   setTeam: (async ctx => ok(await svc(ctx).bugs.setTeam(ctx.req.body))) as Handler
 };
 
+// Company Notice Board (20270131000200): everyone reads; the database decides who publishes, edits and archives
+export const noticesController = {
+  list: (async ctx => ok(await svc(ctx).notices.list(ctx.req.query))) as Handler,
+  unreadCount: (async ctx => ok(await svc(ctx).notices.unreadCount())) as Handler,
+  audience: (async ctx => ok(await svc(ctx).notices.audienceOptions())) as Handler,
+  open: (async ctx => ok(await svc(ctx).notices.open(ctx.params.id))) as Handler,
+  receipts: (async ctx => ok(await svc(ctx).notices.receipts(ctx.params.id))) as Handler,
+  publish: (async ctx => ok(await svc(ctx).notices.publish(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).notices.update(ctx.params.id, ctx.req.body))) as Handler,
+  archive: (async ctx => ok(await svc(ctx).notices.archive(ctx.params.id))) as Handler
+};
+
 export const employeeCasesController = {
   // the employee
   submitIssue: (async ctx => ok(await svc(ctx).employeeCases.submitIssue(ctx.req.body), 201)) as Handler,
@@ -320,7 +332,7 @@ export const notificationsController = {
   healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
-// Email Management (20270131000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// Email Management (20270201000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
 // the history for everyone, scoped by the database to what each person's work allows.
 export const emailController = {
   overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,

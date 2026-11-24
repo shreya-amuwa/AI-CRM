@@ -5,22 +5,26 @@ import { useEffect } from 'react';
  * "open-attendance" to an open CRM window, or opens /?open=attendance). The page then shows the person's own day ("My attendance").
  */
 export const OPEN_ATTENDANCE_EVENT = 'crm:open-attendance';
-let pending = false;
+/** 'mine': the person's own day (a reminder); 'today': Today's Attendance Overview (the Super Admin's 11:00 alert, 20270131000100) */
+export type AttendanceView = 'mine' | 'today';
+let pending: AttendanceView | null = null;
 
-export const openAttendance = () => {
-  pending = true;
-  window.dispatchEvent(new CustomEvent(OPEN_ATTENDANCE_EVENT));
+export const openAttendance = (view: AttendanceView = 'mine') => {
+  pending = view;
+  window.dispatchEvent(new CustomEvent(OPEN_ATTENDANCE_EVENT, { detail: { view } }));
 };
-/** The page takes the request when it opens (once): true = show "My attendance". */
-export const takePendingAttendance = (): boolean => {
+/** The page takes the request when it opens (once): which view to show, or null. */
+export const takePendingAttendance = (): AttendanceView | null => {
   const p = pending;
-  pending = false;
+  pending = null;
   return p;
 };
-/** The CRM was opened from a notification (/?open=attendance). */
+/** The CRM was opened from a notification (/?open=attendance, or /?open=attendance&view=today). */
 export const attendanceRequested = () => {
-  if (typeof window === 'undefined' || new URLSearchParams(window.location.search).get('open') !== 'attendance') return false;
-  pending = true;
+  if (typeof window === 'undefined') return false;
+  const q = new URLSearchParams(window.location.search);
+  if (q.get('open') !== 'attendance') return false;
+  pending = q.get('view') === 'today' ? 'today' : 'mine';
   return true;
 };
 
@@ -28,7 +32,7 @@ export const attendanceRequested = () => {
 export function useOpenAttendanceRequest(show: () => void) {
   useEffect(() => {
     const on = () => show();
-    const fromWorker = (e: MessageEvent) => { if (e.data?.type === 'open-attendance') openAttendance(); };
+    const fromWorker = (e: MessageEvent) => { if (e.data?.type === 'open-attendance') openAttendance(e.data.view === 'today' ? 'today' : 'mine'); };
     window.addEventListener(OPEN_ATTENDANCE_EVENT, on);
     const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined;
     sw?.addEventListener('message', fromWorker);

@@ -29,7 +29,7 @@ export function useStaffReminders(showAttendance: () => void, onOpenChat?: () =>
       if (detail) window.setTimeout(() => openChat(detail), 0);
     }
     if (q.has('open')) {
-      for (const k of ['open', 'conversation', 'client']) q.delete(k);
+      for (const k of ['open', 'conversation', 'client', 'view', 'id']) q.delete(k);
       const rest = q.toString();
       window.history.replaceState(window.history.state, '', window.location.pathname + (rest ? `?${rest}` : '') + window.location.hash);
     }

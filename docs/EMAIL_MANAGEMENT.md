@@ -1,6 +1,6 @@
 # Email management: Resend first, SES failover later, CC / BCC rules, one log, one suppression list
 
-Migration `20270131000100_email_management.sql`. Code: `server/automations/providers.ts` (the router), `server/email/*` (routing, classification,
+Migration `20270201000100_email_management.sql`. Code: `server/automations/providers.ts` (the router), `server/email/*` (routing, classification,
 the shared record, the Resend webhook, provider checks), `src/components/email/EmailManagement.tsx` (Super Admin → Email Management).
 Related: `docs/AUTH_EMAIL_HOOK.md`, `docs/AWS_SES_SETUP.md`, `docs/DEPLOYMENT_CLOUDFLARE.md`.
 

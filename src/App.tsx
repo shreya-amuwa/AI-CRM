@@ -14,6 +14,7 @@ import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
 import { useOpenHrCaseRequest, useOpenIssuesRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
 import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
+import { useOpenNoticeRequest } from './components/notices/noticeEvents';
 import { TabBar } from './components/layout/TabBar';
 
 // Dedicated Department Panels
@@ -50,6 +51,7 @@ const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews
 // Attendance from the department menu: the same Punch In / Out page as every other dashboard (HR also sees the register, as on its own panel)
 const AttendancePage = lazy(() => import('./components/attendance/AttendancePage'));
 const MeetingsPage = lazy(() => import('./components/meetings/MeetingsPage'));
+const NoticeBoard = lazy(() => import('./components/notices/NoticeBoard'));
 const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
@@ -102,6 +104,9 @@ const MainAppContent: React.FC = () => {
   // a meeting notification opens Meetings in the department panel's side menu
   const showMeetings = React.useRef<(() => void) | null>(null);
   useOpenMeetingRequest(React.useCallback(() => showMeetings.current?.(), []));
+  // a notice notification in a department dashboard (the shell's dashboards handle their own): the Notice Board
+  const showNotices = React.useRef<(() => void) | null>(null);
+  useOpenNoticeRequest(React.useCallback(() => showNotices.current?.(), []));
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
@@ -530,6 +535,7 @@ const MainAppContent: React.FC = () => {
 
   showChat.current = () => handleTabUpdate('chat');
   showMeetings.current = () => { if (showSidebar) handleTabUpdate('my_meetings'); };
+  showNotices.current = () => { if (showSidebar) handleTabUpdate('my_notices'); };
   showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
   showHrIssues.current = () => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate('hr_raise_issue'); };
 
@@ -562,6 +568,8 @@ const MainAppContent: React.FC = () => {
             <Suspense fallback={<ScreenLoader />}><AttendancePage hrView={currentDeptId === 'hr'} /></Suspense>
           ) : currentActiveTab === 'my_meetings' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><MeetingsPage /></Suspense>
+          ) : currentActiveTab === 'my_notices' && showSidebar ? (
+            <Suspense fallback={<ScreenLoader />}><NoticeBoard /></Suspense>
           ) : currentDept && currentDeptId ? (
             /* Sub-department selection screen: ALWAYS show choice cards when no sub-department is selected */
             hasSubDeptChoice && currentSubDept === null ? (

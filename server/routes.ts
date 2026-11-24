@@ -25,6 +25,7 @@ import {
   ticketFilesController as ticketFiles,
   employeeCasesController as employeeCases,
   bugsController as bugs,
+  noticesController as notices,
   meetingsController as meetings,
   leadWhatsAppController as leadWhatsApp,
   crocodialController as crocodial,
@@ -543,6 +544,15 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/bugs/:id/status', handler: bugs.setStatus, options: S },
   { method: 'POST', path: '/bugs/:id/comment', handler: bugs.comment, options: S },
   { method: 'POST', path: '/bugs/:id/reply', handler: bugs.reply, options: S },
+  // Company Notice Board (20270131000200): everyone reads what is addressed to them; publishers send, edit, archive and see read receipts
+  { method: 'GET', path: '/notices', handler: notices.list },
+  { method: 'GET', path: '/notices/unread-count', handler: notices.unreadCount },
+  { method: 'GET', path: '/notices/audience', handler: notices.audience },
+  { method: 'POST', path: '/notices', handler: notices.publish, options: S },
+  { method: 'GET', path: '/notices/:id', handler: notices.open },
+  { method: 'GET', path: '/notices/:id/receipts', handler: notices.receipts },
+  { method: 'POST', path: '/notices/:id/update', handler: notices.update, options: S },
+  { method: 'POST', path: '/notices/:id/archive', handler: notices.archive, options: S },
   { method: 'POST', path: '/employee/issues', handler: employeeCases.submitIssue, options: S },
   { method: 'GET', path: '/employee/issues', handler: employeeCases.myIssues },
   { method: 'POST', path: '/employee/issues/uploads', handler: employeeCases.beginUpload, options: S },
@@ -610,7 +620,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/documents/:id/url', handler: documents.url },
   { method: 'DELETE', path: '/documents/:id', handler: documents.remove, options: S },
 
-  // Email Management (20270131000100)
+  // Email Management (20270201000100)
   { method: 'GET', path: '/email/admin/overview', handler: email.overview },
   { method: 'POST', path: '/email/admin/settings', handler: email.saveSettings, options: S },
   { method: 'POST', path: '/email/admin/senders', handler: email.saveSender, options: S },

@@ -2,7 +2,7 @@
 -- Email management: provider routing state and quotas, sender addresses, automatic CC / BCC rules, one log of every e-mail the CRM,
 -- the Candidate Portal and the Client Portal send, provider events (Resend webhooks), and one suppression list for every provider
 -- (docs/EMAIL_MANAGEMENT.md).
--- Run after 20270130000100_unified_head_sales_pages.sql. Additive and safe to run twice; pasteable in the Supabase SQL editor.
+-- Run after 20270131000200_company_notice_board.sql. Additive and safe to run twice; pasteable in the Supabase SQL editor.
 --
 -- What it does NOT replace: each e-mail family keeps its own durable queue (automation_jobs, welcome / HR / finance e-mail events,
 -- recruitment_decision_emails, the meetings outbox, invoice sending). Those queues already claim with leases and retry with backoff.

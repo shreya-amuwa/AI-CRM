@@ -1098,7 +1098,7 @@ export const leadWhatsAppApi = {
   resend: (customerId: string) => api.post<LeadWhatsAppMessage>(`/leads/${customerId}/whatsapp/retry`, {})
 };
 
-/** Email Management (20270131000100): the Super Admin's settings; the history for everyone (scoped by the database). */
+/** Email Management (20270201000100): the Super Admin's settings; the history for everyone (scoped by the database). */
 export const emailApi = {
   overview: () => api.get<EmailOverview>('/email/admin/overview'),
   saveSettings: (s: EmailSettings) => api.post<EmailSettings>('/email/admin/settings', s),

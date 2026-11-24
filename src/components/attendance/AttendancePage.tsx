@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Coffee, LogIn, LogOut, MapPin, Play } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { takePendingAttendance } from './attendanceEvents';
+import { OPEN_ATTENDANCE_EVENT, takePendingAttendance, type AttendanceView } from './attendanceEvents';
+import { TodayOverview } from './TodayOverview';
 import { isOperationsHead } from '../../lib/auth/roleMapping';
 import {
   attendanceApi, captureLocation, coords, isLowPrecision, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
@@ -361,6 +362,8 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
   const isHr = hrView || (!!profile && (isSa || (profile.department?.slug === 'hr' && profile.hrSubRole !== 'HR_RECRUITER')));
   const isOh = !!profile && isOperationsHead(profile);
   const tabs = [
+    // HR and the Super Admin: Present / Absent / On leave / Not yet marked / Late today (20270131000100); the 11:00 alert opens it
+    ...(isHr ? [{ id: 'today', label: "Today's overview" }] : []),
     ...(isHr ? [{ id: 'register', label: 'Attendance register (all staff)' }] : []),
     ...(isSa ? [] : [{ id: 'mine', label: 'My attendance' }]),
     ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : []),
@@ -369,8 +372,16 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
     // HR and the Super Admin: who can receive the reminders (the database checks again)
     ...(isHr ? [{ id: 'health', label: 'Notification health' }] : [])
   ];
-  // opened from a reminder (the bell or a notification): the person's own day
-  const [tab, setTab] = useState(() => (takePendingAttendance() && tabs.some(t => t.id === 'mine') ? 'mine' : tabs[0]?.id ?? 'mine'));
+  // opened from a reminder (the bell or a notification): the person's own day; from the Super Admin's 11:00 alert: Today's overview
+  const viewTab = (v: AttendanceView | null) => (v && tabs.some(t => t.id === v) ? v : null);
+  const [tab, setTab] = useState(() => viewTab(takePendingAttendance()) ?? tabs[0]?.id ?? 'mine');
+  // a notification tapped while Attendance is already open switches to its view
+  useEffect(() => {
+    const on = (e: Event) => { const v = viewTab(((e as CustomEvent).detail?.view ?? null) as AttendanceView | null); takePendingAttendance(); if (v) setTab(v); };
+    window.addEventListener(OPEN_ATTENDANCE_EVENT, on);
+    return () => window.removeEventListener(OPEN_ATTENDANCE_EVENT, on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHr, isSa]);
   return (
     <div className="space-y-4">
       <div>
@@ -383,7 +394,7 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
             className={`px-3.5 h-9 rounded-xl text-sm font-bold border ${tab === t.id ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>{t.label}</button>)}
         </div>
       ) : null}
-      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : tab === 'health'
+      {tab === 'today' ? <TodayOverview /> : tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : tab === 'health'
         ? <React.Suspense fallback={<p role="status" className="text-sm text-slate-500">Loading…</p>}><NotificationHealth /></React.Suspense>
         : tab === 'reminders'
         ? <React.Suspense fallback={<p role="status" className="text-sm text-slate-500">Loading reminders…</p>}><RemindersPanel /></React.Suspense>
