@@ -1,5 +1,5 @@
 -- =============================================================================
--- International and Reseller that ALREADY exist (migration 20270202000100). The owner had created "Amuwa International Department" and "Amuwa Reseller
+-- International and Reseller that ALREADY exist (migration 20270202000300). The owner had created "Amuwa International Department" and "Amuwa Reseller
 -- Department" in the Departments page: other slugs, no team, so Sales and Support were "not available". The migration recognises them by what they are
 -- (name says International / Reseller, no Sales or Support team, not a side of another department), gives them their one team, fixes the dashboards of the
 -- people in them, never touches a real Sales / Support department, and removes the seeded duplicate only when nothing at all points at it.
@@ -33,8 +33,8 @@ select test.ue_user('ue_i_head', 'DEPARTMENT_HEAD', 'amuwa-international-departm
 update profiles set head_division = 'SALES' where id = test.id('ue_i_head');
 
 \echo '   the migration (twice)'
-\i supabase/migrations/20270202000100_unified_existing_departments.sql
-\i supabase/migrations/20270202000100_unified_existing_departments.sql
+\i supabase/migrations/20270202000300_unified_existing_departments.sql
+\i supabase/migrations/20270202000300_unified_existing_departments.sql
 select test.check((select count(*) = 2 and bool_and(unified_sales_support) from departments where slug in ('amuwa-international-department', 'amuwa-reseller-department')),
   'both existing departments are now unified, whatever their slug');
 select test.check((select count(*) = 1 and bool_and(division = 'GENERAL') from teams where department_id = test.dept('amuwa-international-department'))

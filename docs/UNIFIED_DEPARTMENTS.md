@@ -149,7 +149,7 @@ overdue follow-ups, customers, active / resolved / unassigned tickets, and the t
 (`UnifiedDepartmentMonitor`, `src/components/unified/UnifiedOverview.tsx`) and the existing `division_leads_overview` / `division_support_overview` functions, which allow exactly the
 Super Admin and that department's own Department Head (anyone else is refused by the database). No migration is needed.
 
-# Existing departments: "Amuwa International Department" and "Amuwa Reseller Department" (migration 20270202000100)
+# Existing departments: "Amuwa International Department" and "Amuwa Reseller Department" (migration 20270202000300)
 
 ## What was wrong
 
@@ -165,7 +165,7 @@ There was no permission problem: the Sales and Support rules (`private.dept_is_u
 
 ## The fix (data, not slugs)
 
-`20270202000100_unified_existing_departments.sql` (run after `20270201000100`; safe to run twice; nothing is deleted from a used department, nothing is renamed, no person, lead, ticket or task changes):
+`20270202000300_unified_existing_departments.sql` (run after `20270202000200`, and only after `20270127000100_international_reseller_departments.sql` and `20270130000100_unified_head_sales_pages.sql` have been run: it stops with a clear message if they have not; safe to run twice; nothing is deleted from a used department, nothing is renamed, no person, lead, ticket or task changes):
 
 1. A department is flagged `unified_sales_support` when its **name or slug says International or Reseller** (whole word), it is **not the Sales / Support side of another department**
    and it has **no Sales team and no Support team**. A real Sales or Support department therefore can never be matched (tested with "International Sales Hub", which has a Sales team).

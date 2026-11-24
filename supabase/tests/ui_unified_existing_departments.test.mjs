@@ -1,4 +1,4 @@
-// Browser test of the reported error (migration 20270202000100): the Super Admin's Add Team Member form for "Amuwa International Department" and "Amuwa Reseller
+// Browser test of the reported error (migration 20270202000300): the Super Admin's Add Team Member form for "Amuwa International Department" and "Amuwa Reseller
 // Department" (the departments the owner created, with their own slugs) said "... has no Sales or Support team to manage." and offered the Sales / Support roles.
 // Once the department list says they are unified (departments.unified_sales_support) the form offers Department Head, Team Lead and Team Member only, in the
 // department's one team and with no Sales / Support side, names the unified Sales & Support dashboard, and sends exactly that. An ordinary department (and one that

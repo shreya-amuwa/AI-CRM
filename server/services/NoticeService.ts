@@ -1,5 +1,5 @@
-import type { CompanyNotice, NoticeAudienceOptions, NoticeList, NoticeReceipts } from '../../shared/contracts.js';
-import { noticeListQuerySchema, noticePublishSchema, noticeUpdateSchema, uuidSchema } from '../../shared/validation.js';
+import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../shared/contracts.js';
+import { noticeListQuerySchema, noticeManagerSetSchema, noticePublishSchema, noticeUpdateSchema, uuidSchema } from '../../shared/validation.js';
 import { processDeliveries } from '../automations/notificationDelivery.js';
 import { vapidConfig } from '../automations/webPush.js';
 import { parse } from '../http/validate.js';
@@ -31,5 +31,13 @@ export class NoticeService {
     return rest;
   }
   update(id: string, body: unknown): Promise<CompanyNotice> { return this.repo.update(parse(uuidSchema, id), parse(noticeUpdateSchema, body)); }
+  /** The notices this employee must still acknowledge (the popup queue). */
+  pending(): Promise<NoticePending> { return this.repo.pending(); }
+  /** "Acknowledge" / "Mark as read" on the signed-in employee's own row: the database knows who is asking, nothing about whom is sent. */
+  acknowledge(id: string): Promise<NoticeAcknowledged> { return this.repo.acknowledge(parse(uuidSchema, id)); }
+  managers(): Promise<NoticeManagers> { return this.repo.managers(); }
+  managerSet(profileId: string, body: unknown): Promise<{ profileId: string; manager: boolean }> {
+    return this.repo.managerSet(parse(uuidSchema, profileId), parse(noticeManagerSetSchema, body).enabled);
+  }
   archive(id: string): Promise<CompanyNotice> { return this.repo.archive(parse(uuidSchema, id)); }
 }

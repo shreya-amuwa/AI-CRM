@@ -1,6 +1,6 @@
 -- =============================================================================
 -- International and Reseller: the departments that ALREADY exist (docs/UNIFIED_DEPARTMENTS.md, "Existing departments").
--- Run after 20270201000100_ceo_availability.sql. Additive and safe to run twice.
+-- Run after 20270202000200_notification_coverage.sql, and ONLY after 20270127000100_international_reseller_departments.sql and 20270130000100_unified_head_sales_pages.sql. Additive and safe to run twice.
 --
 -- 20270127000100 made a department "unified" (Sales AND Support for its Department Head, Team Leads and Team Members) only for the two
 -- slugs `international` and `reseller`. The departments the owner had already created in the Super Admin's Departments page ("Amuwa
@@ -18,6 +18,19 @@
 -- another International / Reseller department exists AND nothing at all points at it (no person, lead, customer, ticket, task, report ...
 -- in it or in its team: every foreign key is checked; audit entries only remember and are kept). If anything is found it is kept and the owner decides.
 -- =============================================================================
+
+-- 0. The earlier migrations this one builds on must have been run (every migration runs in file order). Stop here, with the way forward, when not.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'departments' and column_name = 'unified_sales_support')
+     or to_regprocedure('private.dept_is_unified(uuid)') is null then
+    raise exception 'PREREQUISITE_MISSING: run supabase/migrations/20270127000100_international_reseller_departments.sql first (it adds departments.unified_sales_support and the Sales + Support rules), then every later migration in file order up to this one, then run this file again. Nothing was changed.';
+  end if;
+  if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'private' and p.proname = 'require_sales_head'
+                  and pg_get_functiondef(p.oid) like '%dept_is_unified%') then
+    raise exception 'PREREQUISITE_MISSING: run supabase/migrations/20270130000100_unified_head_sales_pages.sql first (the Department Head''s Sales pages for International / Reseller), then run this file again. Nothing was changed.';
+  end if;
+end $$;
 
 do $$
 declare

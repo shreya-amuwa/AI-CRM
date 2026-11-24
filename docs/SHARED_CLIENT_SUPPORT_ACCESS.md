@@ -49,7 +49,7 @@ existing read-only review of client chats. Shared access is **not** Super Admin 
 
 * A client message notifies the RM and the Team Lead (as before) and, if a colleague is actively handling the chat, that colleague. One bell per person per unread run
   (`private.notify_once`), not one per message.
-* The RM gets one `CHAT_COVER_REPLY` bell per colleague per day when a colleague answers their client.
+* The RM (and, since `20270202000200`, the Team Lead) gets one `CHAT_COVER_REPLY` bell per colleague per day when a colleague answers their client.
 * Nobody else on the desk is notified; nobody is notified of their own reply.
 
 ## Tickets

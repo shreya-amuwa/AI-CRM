@@ -99,7 +99,7 @@ for (const slug of UNIFIED_DEPARTMENT_SLUGS) {
 check(staffChoicesForDepartment('wabastore', roles).length === roles.length && requestSidesForDepartment('wabastore').length === 3, 'another department keeps every role and side');
 check(defaultDashboardLabel('TEAM_HEAD', 'SUPPORT', 'Wabastore', false, 'wabastore') === 'Support Team Lead Dashboard · Wabastore', 'and its dashboard names');
 
-// ---- departments the owner created under their own names: the DATABASE flag decides, not the slug (migration 20270202000100)
+// ---- departments the owner created under their own names: the DATABASE flag decides, not the slug (migration 20270202000300)
 {
   const OWNER = ['amuwa-international-department', 'amuwa-reseller-department'];
   check(OWNER.every(s => !isUnifiedDepartment(s) && !hasPlainRolesOnly(s)), 'before the department list is loaded the owner-created slugs are not recognised (the reported error)');
