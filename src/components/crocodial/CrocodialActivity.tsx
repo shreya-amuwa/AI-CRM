@@ -145,13 +145,13 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
                 </ul>
               )}
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
               <h3 className="text-sm font-bold text-slate-800 mb-2">Open follow-ups</h3>
               {!data.upcomingFollowups?.length ? <p className="text-xs text-slate-500">No open follow-ups.</p> : (
                 <ul className="divide-y divide-slate-100 text-xs">
                   {data.upcomingFollowups.map((u, i) => (
-                    <li key={i} className="py-1.5 flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate"><b>{u.leadName || 'Lead'}</b>{u.note ? <span className="text-slate-500"> · {u.note}</span> : null}</span>
+                    <li key={i} className="py-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                      <span className="min-w-0 max-w-full truncate"><b>{u.leadName || 'Lead'}</b>{u.note ? <span className="text-slate-500"> · {u.note}</span> : null}</span>
                       <span className={`whitespace-nowrap ${u.overdue ? 'text-rose-700 font-semibold' : 'text-slate-600'}`}>{u.overdue ? 'Overdue · ' : ''}{when(u.scheduledAt)}</span>
                     </li>
                   ))}

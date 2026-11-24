@@ -219,6 +219,57 @@ try {
     check(m.ackTop >= 0 && m.ackBottom <= m.ih + 1, 'and the Acknowledge button is on screen', m);
     await page.close();
   }
+  // ---- Task 03: a compact bottom sheet on phones, "View full notice", focus kept inside, the page locked, and never over another dialog
+  for (const vp of [{ width: 320, height: 640 }, { width: 390, height: 844 }, { width: 430, height: 932 }]) {
+    const page = await open(vp);
+    await page.evaluate(() => { window.__server = { items: [window.__notice('n-long', 'NORMAL', 'A long notice', 1, { body: Array.from({ length: 80 }, (_, i) => `Line ${i + 1} of a long notice.`).join('\n') })], failAck: false }; });
+    await mount(page);
+    await popup(page).waitFor();
+    const m = await page.evaluate(() => { const d = document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect();
+      return { h: d.height, bottom: d.bottom, ih: innerHeight, left: d.left, right: d.right, iw: innerWidth, sw: document.documentElement.scrollWidth, locked: getComputedStyle(document.body).overflow }; });
+    check(m.h <= m.ih * 0.56 && m.h >= m.ih * 0.3 && Math.abs(m.bottom - m.ih) <= 1 && m.left <= 0.5 && m.right >= m.iw - 0.5 && m.sw <= m.iw + 1,
+      `${vp.width}px: a bottom sheet across the width, at most about half the screen, no sideways scroll`, m);
+    check(m.locked === 'hidden', `${vp.width}px: the page behind does not scroll`, m);
+    check(await page.isVisible('[data-testid="notice-popup-full"]') && /View full notice/.test(await page.innerText('[data-testid="notice-popup-full"]')), `${vp.width}px: "View full notice" for a long text`);
+    await page.click('[data-testid="notice-popup-full"]');
+    const e = await page.evaluate(() => { const d = document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect(); const a = document.querySelector('[data-testid="notice-popup-ack"]').getBoundingClientRect();
+      return { h: d.height, top: d.top, ih: innerHeight, ackBottom: a.bottom, expanded: document.querySelector('[data-testid="notice-popup"]').dataset.expanded }; });
+    check(e.expanded === 'true' && e.h > m.h && e.h <= e.ih * 0.93 && e.top >= 0 && e.ackBottom <= e.ih + 1, `${vp.width}px: opened to nearly the full height, Acknowledge still on screen`, e);
+    await page.close();
+  }
+  {
+    const page = await open({ width: 390, height: 844 });
+    await page.evaluate(() => { window.__server = { items: [window.__notice('n-short', 'NORMAL', 'Short one', 1, { body: 'Two words.' })], failAck: false }; });
+    await mount(page);
+    await popup(page).waitFor();
+    const h = await page.evaluate(() => document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect().height / innerHeight);
+    check(h < 0.55 && !(await page.isVisible('[data-testid="notice-popup-full"]')), 'a short notice: a small sheet, no "View full notice"', h);
+    // Tab stays inside the notice
+    const inside = [];
+    for (let i = 0; i < 8; i++) { await page.keyboard.press('Tab'); inside.push(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="notice-popup"]'))); }
+    await page.keyboard.press('Shift+Tab');
+    inside.push(await page.evaluate(() => !!document.activeElement?.closest('[data-testid="notice-popup"]')));
+    check(inside.every(Boolean), 'keyboard: Tab and Shift+Tab stay inside the notice', inside);
+    await page.click('[data-testid="notice-popup-ack"]');
+    await popup(page).waitFor({ state: 'detached' });
+    check(await page.evaluate(() => getComputedStyle(document.body).overflow) !== 'hidden', 'once acknowledged, the page scrolls again');
+    await page.close();
+  }
+  {
+    const page = await open({ width: 390, height: 844 });
+    await page.evaluate(() => {
+      const d = document.createElement('div'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-modal', 'true'); d.id = 'other-dialog'; d.textContent = 'Start your workday?';
+      document.body.appendChild(d);
+      window.__server = { items: [window.__notice('n-wait', 'URGENT', 'Wait your turn', 1)], failAck: false };
+    });
+    await mount(page);
+    await page.waitForTimeout(500);
+    check(!(await popup(page).isVisible()), 'another dialog is open (a punch confirmation): the notice waits, never on top of it');
+    await page.evaluate(() => document.getElementById('other-dialog').remove());
+    await popup(page).waitFor();
+    check(await title(page) === 'Wait your turn', 'and it appears once that dialog closes');
+    await page.close();
+  }
 } finally {
   await browser.close();
 }
