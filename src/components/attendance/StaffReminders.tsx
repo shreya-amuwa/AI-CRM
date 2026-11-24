@@ -29,8 +29,9 @@ export function useStaffReminders(showAttendance: () => void, onOpenChat?: () =>
       // next tick: a dashboard that wraps this layout attaches its "open chat" listener after this effect runs
       if (detail) window.setTimeout(() => openChat(detail), 0);
     }
-    // a meeting notice (the Managing Director's, 20270206000100): /?open=meeting&id=<meeting>
-    if (q.get('open') === 'meeting') {
+    // a meeting awareness notice (the Managing Director's, 20270206000200): /?open=meeting-report&id=<meeting> opens the read-only
+    // report view (they are not taking part, so the meeting itself is not theirs to open; /?open=meeting is meetingEvents.ts)
+    if (q.get('open') === 'meeting-report') {
       const id = q.get('id');
       if (id && UUIDISH.test(id)) window.setTimeout(() => openMeetingReport(id), 0);
     }
@@ -42,7 +43,7 @@ export function useStaffReminders(showAttendance: () => void, onOpenChat?: () =>
     // a notification tapped while the CRM is already open (public/sw.js)
     const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined;
     const fromWorker = (e: MessageEvent) => {
-      if (e.data?.type === 'open-meeting') { if (typeof e.data.id === 'string' && UUIDISH.test(e.data.id)) openMeetingReport(e.data.id); return; }
+      if (e.data?.type === 'open-meeting-report') { if (typeof e.data.id === 'string' && UUIDISH.test(e.data.id)) openMeetingReport(e.data.id); return; }
       if (e.data?.type !== 'open-chat') return;
       const detail = chatDetail(e.data.conversationId ?? null, e.data.clientConversationId ?? null);
       if (detail) openChat(detail);

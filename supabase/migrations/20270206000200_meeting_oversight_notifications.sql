@@ -2,13 +2,15 @@
 -- Meeting notifications for the Managing Director (Super Admin): management awareness of internal team meetings, reminders before they
 -- start, and delivery to their phones / laptops (Task 05). docs/NOTIFICATION_ARCHITECTURE.md.
 --
+-- Follows 20270206000100_meeting_push.sql, which sends the meeting notices of the people taking part (the Managing Director's own
+-- invitations included) to their phones, with 15-minute and at-start reminders. This adds what a Managing Director who is NOT taking part
+-- needs; the two never notify the same person about the same thing.
+--
 -- Root causes found:
---   1. Meeting notifications only ever reached the CRM bell: the push outbox (notification_deliveries) carried attendance reminders, the
---      11:00 attendance alert and company notices only. A phone saw a meeting notice only if the CRM was open.
+--   1. Meeting notifications only ever reached the CRM bell (fixed for participants by 20270206000100).
 --   2. Meeting notices go to the people taking part (private.mtg_notify_staff): the Managing Director heard nothing about a team meeting they
 --      were not invited to. That privacy rule is right for calendars; oversight needs a separate, narrow notice.
---   3. No reminder close to the start: only 24 hours and 1 hour before, and only for participants.
---   (4. In the app: the "Turn on notifications" banner was switched off on the Managing Director's dashboard, so their devices were rarely
+--   3. (In the app: the "Turn on notifications" banner was switched off on the Managing Director's dashboard, so their devices were rarely
 --       subscribed at all. Fixed in the screens.)
 --
 -- What this adds (additive, safe to run twice, nothing existing changed):
@@ -17,8 +19,9 @@
 --     every path that books, moves or cancels one is covered; it never blocks the meeting itself. Type MEETING_OVERSIGHT_* (an invitation
 --     is MEETING_*), data.awareness = true. "View Meeting" opens the meeting's read-only report view (outcome fields only, as the meeting
 --     summaries), so the Managing Director does not gain the calendars of others.
---   * Reminders to every active Managing Director, `meeting_oversight_settings.remind_minutes` before the start (default 15 and 0), once per
---     meeting, time and Managing Director; a reschedule starts new ones, a cancellation stops them (only SCHEDULED meetings).
+--   * Reminders to every active Managing Director NOT taking part, `meeting_oversight_settings.remind_minutes` before the start (default
+--     15 and 0), once per meeting, time and Managing Director; a reschedule starts new ones, a cancellation stops them (only SCHEDULED
+--     meetings). A Managing Director who takes part gets the participants' reminders (20270206000100_meeting_push), never both.
 --   * Each of these also goes to the Managing Director's devices through the existing push outbox (kind MEETING), with retries, expiry and
 --     invalid-device handling as every other push. The lock-screen text has no meeting title or participants ("Team meeting at 3:00 PM").
 -- =============================================================================
@@ -79,7 +82,7 @@ begin
   if coalesce(s.push_enabled, true) then
     insert into public.notification_deliveries (kind, profile_id, subscription_id, device_label, title, body, tag, url, expires_at, next_attempt_at)
     select 'MEETING', p_profile, d.id, d.label, left(p_push_title, 120), left(p_push_body, 300),
-           'mtg-' || m.id || '-' || lower(p_event), '/?open=meeting&id=' || m.id, now() + p_ttl, now()
+           'mtg-' || m.id || '-' || lower(p_event), '/?open=meeting-report&id=' || m.id, now() + p_ttl, now()
       from (select x.id, x.label from public.push_subscriptions x where x.profile_id = p_profile and x.active order by x.created_at desc limit 10) d;
   end if;
   return true;
@@ -175,7 +178,7 @@ begin
               and private.mms_eligible(x) loop
     foreach r in array s.remind_minutes loop
       continue when p_now < m.starts_at - make_interval(mins => r) or p_now > m.starts_at - make_interval(mins => r) + interval '10 minutes';
-      for v in select x from private.mtg_oversight_targets(m, false) x loop
+      for v in select x from private.mtg_oversight_targets(m, true) x loop
         if private.mtg_oversight_send(m, v, 'REMINDER', r || ':' || m.starts_at::text, 'MEETING_OVERSIGHT_REMINDER',
              case when r = 0 then 'Starting now: ' else 'In ' || r || ' minutes: ' end || m.title,
              private.mtg_oversight_body(m),

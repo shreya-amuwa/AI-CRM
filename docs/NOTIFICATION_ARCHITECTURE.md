@@ -14,34 +14,45 @@ role) receives about meetings. Related: `NOTIFICATION_RELIABILITY.md`, `NOTIFICA
 3. **Outbox → Web Push.** The server (`server/automations/notificationDelivery.ts`, `processDeliveries`) claims pending rows with
    `push_deliveries_claim`, sends them with VAPID, retries with back-off, and marks devices that answer 404/410 as invalid.
 4. **Device.** `public/sw.js` shows the notification. A tap focuses an open CRM window and posts a message to it (`open-attendance`,
-   `open-meeting`, …), or opens the CRM on the notice's URL.
+   `open-meeting`, `open-meeting-report`, …), or opens the CRM on the notice's URL.
 
 The outbox has these kinds: `ATTENDANCE_REMINDER`, `TEST`, `SA_ATTENDANCE`, `COMPANY_NOTICE` and `MEETING` (added by
 `20270206000200_meeting_oversight_notifications.sql`).
 
-## Meeting notifications for the Managing Director (Task 05)
+## Meeting notifications (Task 05)
 
-### Root causes found in the audit
+Two migrations, which never notify the same person about the same thing:
+
+* `20270206000100_meeting_push.sql` (see `NOTIFICATION_RELIABILITY.md`): the meeting notices of the **people taking part** (invited, moved,
+  cancelled, approvals, summaries, reminders 24 hours, 1 hour, 15 minutes before and at the start) also go to their phones. A trigger on
+  `notifications` queues them. A tap opens the meeting (`/?open=meeting&id=…`). This includes a Managing Director who is invited.
+* `20270206000200_meeting_oversight_notifications.sql` (below): **management awareness** for a Managing Director who is *not* taking
+  part. A tap opens the read-only report view (`/?open=meeting-report&id=…`), because the meeting itself is not theirs to open.
+
+### Management awareness for the Managing Director
+
+#### Root causes found in the audit
 
 1. Meeting notices only reached the bell. The push outbox carried attendance and company notices only, so a phone heard about a
-   meeting only while the CRM was open.
+   meeting only while the CRM was open (fixed by `20270206000100_meeting_push`).
 2. Meeting notices go only to the people taking part. The Managing Director heard nothing about a team meeting they were not invited to.
-3. There was no reminder close to the start (only 24 hours and 1 hour before, and only for participants).
+3. There was no reminder close to the start: only 24 hours and 1 hour before, and only for participants (participants: `20270206000100`; Managing Director not taking part: `20270206000200`).
 4. The "Turn on notifications" banner was switched off on the Managing Director's dashboard (`reminders={false}`), so their devices
    were rarely subscribed for push at all.
 
-### What happens now
+#### What happens now
 
 | Event | Who | Bell | Phone / computer |
 | --- | --- | --- | --- |
 | Internal team meeting scheduled (booked or approved) | Every active Managing Director **not** taking part | "Team meeting scheduled: *title*" | "Team meeting scheduled" + day and time |
 | Moved (start time changed) | same | "…rescheduled", with the old time | yes |
 | Cancelled | same (urgent) | "…cancelled", with the reason | yes |
-| Reminder (default 15 minutes before and at the start) | Every active Managing Director, invited or not | "In 15 minutes: *title*" / "Starting now: *title*" | yes |
+| Reminder (default 15 minutes before and at the start) | Every active Managing Director **not** taking part | "In 15 minutes: *title*" / "Starting now: *title*" | yes |
 
 * Only internal team meetings (`private.mms_eligible`) are covered: not appointments, interviews, client meetings or CEO requests.
 * An awareness notice has type `MEETING_OVERSIGHT_*` and `data.awareness = true`. An invitation has type `MEETING_*`. A Managing Director who
-  is invited gets the invitation only, never both.
+  is invited gets the invitation and the participants' reminders only, never the awareness notices too. The participants' push trigger ignores
+  `MEETING_OVERSIGHT_*` (`private.meeting_push_type`), so nothing is pushed twice.
 * **View Meeting** opens the meeting's read-only report view: title, organiser, department, time, status and participant count. It does not
   give access to anyone's calendar.
 * Each notice goes out once per meeting, event, start time and person (`meeting_oversight_log`, unique). Retries and repeated runs send

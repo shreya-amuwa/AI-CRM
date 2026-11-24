@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { automationSettings, clientEmailSettings, type AutomationSettings } from '../automations/config.js';
+import { processDeliveries } from '../automations/notificationDelivery.js';
 import { sendEmail } from '../automations/providers.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { sendBlocker } from '../invoices/mailer.js';
@@ -237,6 +238,8 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
 /** Right after a change in the CRM: a short run, never failing the request that triggered it. */
 export async function meetingsQuietly(): Promise<void> {
   await runMeetingsDispatch({ budgetMs: 8_000, limit: 10 }).catch(() => undefined);
+  // the change's notifications reach phones now, not at the next 5-minute run (20270206000100; a no-op without push keys)
+  await processDeliveries({ budgetMs: 6_000, limit: 20 }).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------

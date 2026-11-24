@@ -31,16 +31,17 @@ const tap = async (url: string) => {
 };
 const id = '6f1c2b2a-1111-4222-8333-444455556666';
 windows = [{ url: 'https://crm.example.com/', focus: async () => undefined, postMessage: (m: unknown) => posted.push(m) }];
-await tap(`/?open=meeting&id=${id}`);
-check(posted.length === 1 && posted[0].type === 'open-meeting' && posted[0].id === id, 'a tapped meeting notice tells the open CRM window to open that meeting', posted);
+await tap(`/?open=meeting-report&id=${id}`);
+check(posted.length === 1 && posted[0].type === 'open-meeting-report' && posted[0].id === id,
+  "a tapped awareness notice tells the open CRM window to open that meeting's report view (not the participants' open-meeting)", posted);
 windows = [];
-await tap(`/?open=meeting&id=${id}`);
-check(opened[0] === `https://crm.example.com/?open=meeting&id=${id}`, 'with the CRM closed, it opens the CRM on that meeting');
+await tap(`/?open=meeting-report&id=${id}`);
+check(opened[0] === `https://crm.example.com/?open=meeting-report&id=${id}`, 'with the CRM closed, it opens the CRM on that report view');
 let pushWait: Promise<unknown> = Promise.resolve();
-handlers.push({ data: { json: () => ({ title: 'Team meeting in 15 minutes', body: 'Tue 25 Nov, 3:00 PM. Open the CRM for details.', tag: 'mtg-x-reminder', url: `/?open=meeting&id=${id}` }) },
+handlers.push({ data: { json: () => ({ title: 'Team meeting in 15 minutes', body: 'Tue 25 Nov, 3:00 PM. Open the CRM for details.', tag: 'mtg-x-reminder', url: `/?open=meeting-report&id=${id}` }) },
   waitUntil: (p: Promise<unknown>) => { pushWait = p; } });
 await pushWait;
-check(shown[0]?.title === 'Team meeting in 15 minutes' && shown[0]?.data?.url === `/?open=meeting&id=${id}` && shown[0]?.tag === 'mtg-x-reminder',
+check(shown[0]?.title === 'Team meeting in 15 minutes' && shown[0]?.data?.url === `/?open=meeting-report&id=${id}` && shown[0]?.tag === 'mtg-x-reminder',
   'a meeting push is shown with its own tag (a later one replaces it) and its link');
 windows = [{ url: 'https://crm.example.com/', focus: async () => undefined, postMessage: (m: unknown) => posted.push(m) }];
 await tap('/?open=attendance&view=today');

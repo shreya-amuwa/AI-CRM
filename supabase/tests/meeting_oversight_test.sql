@@ -48,7 +48,7 @@ select test.check((select n.entity_type = 'meeting_summary' and (n.data ->> 'awa
                    from notifications n where n.recipient_id = test.id('sa') and n.type = 'MEETING_OVERSIGHT_SCHEDULED' and n.entity_id = test.moid('MO Weekly sales review')),
   'the notice: title, organiser, date and time, participant count, status; it opens the meeting''s report view');
 select test.check((select count(*) = 1 from notification_deliveries d where d.kind = 'MEETING' and d.profile_id = test.id('sa') and d.status = 'PENDING'
-                     and d.url = '/?open=meeting&id=' || test.moid('MO Weekly sales review')), 'it is queued for the Managing Director''s phone');
+                     and d.url = '/?open=meeting-report&id=' || test.moid('MO Weekly sales review')), 'it is queued for the Managing Director''s phone');
 select test.check((select bool_and(d.title not like '%MO Weekly%' and d.body not like '%MO Weekly%') from notification_deliveries d where d.kind = 'MEETING'),
   'the lock-screen text has no meeting title');
 select test.check((select n.body like '% 3 participants%' from notifications n where n.type = 'MEETING_OVERSIGHT_SCHEDULED' and n.entity_id = test.moid('MO Weekly sales review')),
@@ -115,7 +115,8 @@ update meetings set starts_at = date_trunc('minute', now()) + interval '14 minut
 set role service_role;
 select mtg_oversight_run(now());
 reset role;
-select test.check(test.monotes('MO Board prep', 'MEETING_OVERSIGHT_REMINDER') = 1, 'reminders also when the Managing Director takes part');
+select test.check(test.monotes('MO Board prep', 'MEETING_OVERSIGHT_REMINDER') = 0,
+  'taking part: no oversight reminder (the participants'' reminders of 20270206000100_meeting_push cover them, never both)');
 select test.momeet('MO Cancelled one', 'MEETING', interval '14 minutes');
 update meetings set status = 'CANCELLED' where title = 'MO Cancelled one';
 set role service_role;

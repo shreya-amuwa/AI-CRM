@@ -260,13 +260,18 @@ app.post('/internal/crocodial/sync', async c => {
 app.post('/internal/attendance/reminders', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
+  // meeting reminders (24 h, 1 h, 15 min, at the start; 20270206000100) are created first, so this run's delivery step sends them too
+  const meetings = await runMeetingsDispatch({ budgetMs: 8_000, limit: 10 }).catch(e => {
+    log('error', 'meeting reminders failed', c, { message: e instanceof Error ? e.message : 'error' });
+    return { reminders: 0, error: 'FAILED' };
+  });
   const run = await runAttendanceReminders();
   // the same run reminds the team of client messages nobody has answered (20270202000200); a failure here never stops the reminders above
   const chatWaiting = await runChatUnansweredReminders().catch(e => {
     log('error', 'unanswered chat reminders failed', c, { message: e instanceof Error ? e.message : 'error' });
     return { reminded: 0, skipped: 'FAILED' };
   });
-  return c.json(ok({ ...run, chatWaiting }));
+  return c.json(ok({ ...run, chatWaiting, meetings }));
 });
 
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
