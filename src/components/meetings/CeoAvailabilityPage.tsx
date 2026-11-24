@@ -4,6 +4,7 @@ import type { CeoOfficeCeo } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi } from '../../lib/api/meetings';
 import { useCeoOffice } from './CeoArrival';
+import { HrPageHeader } from '../hr/hrUi';
 
 /**
  * HR dashboards > CEO Availability (migration 20270201000100). The status lives in the database (ceo_office_arrivals) and every screen follows it
@@ -87,13 +88,8 @@ export const CeoAvailabilityPage: React.FC = () => {
   const { office, setOffice } = useCeoOffice();
   return (
     <div className="space-y-5 max-w-3xl" data-testid="ceo-availability-page">
-      <header>
-        <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900 flex items-center gap-2"><Crown className="w-6 h-6 text-amber-500" aria-hidden /> CEO Availability</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Whether the CEO has arrived at the office today. Every dashboard shows the same latest status, and it is shown to employees who ask the CEO for time.
-          It never stops anyone from sending a meeting request.
-        </p>
-      </header>
+      <HrPageHeader icon={Crown} title="CEO Availability"
+        subtitle="Whether the CEO has arrived at the office today. Every dashboard shows the same latest status, and it is shown to employees who ask the CEO for time. It never stops anyone from sending a meeting request." />
       {office === null ? (
         <p role="status" className="text-sm text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" aria-hidden /> Loading the CEO&apos;s availability…</p>
       ) : office.ceos.length === 0 ? (

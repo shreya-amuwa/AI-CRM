@@ -294,12 +294,13 @@ export const Pager: React.FC<{
  * `persistent` is for forms where an accidental click would lose the user's work (e.g. a chosen file):
  * clicking outside or pressing Escape does nothing, only the dialog's own Cancel / Close buttons close it.
  */
-export const Dialog: React.FC<{ title: string; description?: string; onClose: () => void; wide?: boolean; persistent?: boolean; children: React.ReactNode }> = ({
+export const Dialog: React.FC<{ title: string; description?: string; onClose: () => void; wide?: boolean; persistent?: boolean; size?: 'lg' | 'xl'; children: React.ReactNode }> = ({
   title,
   description,
   onClose,
   wide,
   persistent,
+  size,
   children
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -326,7 +327,7 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   }, [persistent]);
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => !persistent && e.target === e.currentTarget && onClose()}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`w-full ${wide ? 'max-w-5xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`w-full ${wide ? 'max-w-5xl' : size === 'xl' ? 'max-w-3xl' : size === 'lg' ? 'max-w-xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
         <div>
           <h2 id={titleId} className="text-base font-bold text-slate-900">
             {title}

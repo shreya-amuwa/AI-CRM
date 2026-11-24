@@ -5,6 +5,7 @@ import { ApiError } from '../../lib/api/client';
 import { fmtDay } from '../../lib/support';
 import type { HrProbationCycle } from '../../../shared/contracts';
 import { btn, Card, ErrorBanner, inputCls, Pill, Spinner } from '../team-member/pipeline/shared';
+import { HrPageHeader } from './hrUi';
 
 /**
  * HR dashboard > Probation Confirmations. The approval step of the six-month confirmation: HR (the HR lead), the employee's
@@ -44,10 +45,8 @@ export const ProbationConfirmations: React.FC = () => {
 
   return (
     <section className="space-y-5" aria-label="Probation confirmations">
-      <header>
-        <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2"><ClipboardCheck className="w-5 h-5 text-indigo-600" /> Probation Confirmations</h2>
-        <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">Employees whose six-month probation is ending. Nobody is confirmed automatically.</p>
-      </header>
+      <HrPageHeader as="h2" icon={ClipboardCheck} title="Probation Confirmations"
+        subtitle="Employees whose six-month probation is ending. Nobody is confirmed automatically." />
       {error && <ErrorBanner message={error} onRetry={() => { setError(null); void load(); }} />}
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> {notice}</div>}
       <ConfirmationsList cycles={cycles} busy={busy} act={act} />
