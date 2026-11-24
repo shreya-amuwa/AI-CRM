@@ -414,7 +414,7 @@ export const AmuwaHqPanel: React.FC<AmuwaHqPanelProps> = ({ activeTab = 'dashboa
 
       {/* SECTION 5: FIELD VISIT GPS TRACKING */}
       {mainSection === 'field_visits' && (
-        <FieldVisitTrackerView viewerRole="admin" userName="Super Admin Console" />
+        <FieldVisitTrackerView viewerRole="admin" userName="Managing Director Console" />
       )}
 
       {/* MODAL: FULL EMPLOYEE PROFILE DRAWER / MODAL */}

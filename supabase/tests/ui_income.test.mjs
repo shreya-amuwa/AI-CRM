@@ -101,8 +101,8 @@ try {
   const form = page.getByRole('form', { name: 'New rule' });
   await form.getByLabel('Name', { exact: true }).fill('Website 500');
   await form.getByLabel('Product').selectOption('WEB');
-  await form.getByLabel('Amount per unit for the Operations Head (₹)').fill('500');
-  await form.getByLabel('Operations Head', { exact: true }).selectOption({ label: 'Omkar Ops' });
+  await form.getByLabel('Amount per unit for the CEO (₹)').fill('500');
+  await form.getByLabel('CEO', { exact: true }).selectOption({ label: 'Omkar Ops' });
   await form.getByLabel('Target units (optional, a goal only)').fill('100');
   await form.getByRole('button', { name: 'Create rule' }).click();
   await page.getByText('Rule created.').waitFor();
@@ -123,7 +123,7 @@ try {
   // edit the amount: applies from now on
   await page.getByRole('button', { name: 'Edit Website 500 renamed' }).click();
   edit = page.getByRole('form', { name: 'Edit rule' });
-  await edit.getByLabel('Amount per unit for the Operations Head (₹)').fill('450');
+  await edit.getByLabel('Amount per unit for the CEO (₹)').fill('450');
   await edit.getByText('This change applies from now on', { exact: false }).waitFor();
   await edit.getByRole('button', { name: 'Save' }).click();
   await page.getByText('The new amount applies from now on', { exact: false }).waitFor();
@@ -138,14 +138,14 @@ try {
   const note = await edit.getByTestId('replace-note').innerText();
   check(note.includes('every level must set its amounts again') && !note.includes('keeping the amounts already passed down'), 'a product change says the amounts must be set again', note);
   await edit.getByLabel('Product').selectOption('WA_API');
-  await edit.getByLabel('Amount per unit for the Operations Head (₹)').fill('520');
+  await edit.getByLabel('Amount per unit for the CEO (₹)').fill('520');
   check((await edit.getByTestId('replace-note').innerText()).includes('keeping the amounts already passed down'), 'an amount change on the same product keeps the amounts passed down');
   await edit.getByRole('button', { name: 'Cancel' }).click();
 
   // a rule whose Operations Head has left can still be renamed; clearing its target sends null
   await page.getByRole('button', { name: 'Edit Old OH rule' }).click();
   edit = page.getByRole('form', { name: 'Edit rule' });
-  check((await edit.getByLabel('Operations Head', { exact: true }).inputValue()) === 'oh-gone', 'the departed Operations Head stays selected');
+  check((await edit.getByLabel('CEO', { exact: true }).inputValue()) === 'oh-gone', 'the departed Operations Head stays selected');
   await edit.getByLabel('Name', { exact: true }).fill('Old OH rule renamed');
   await edit.getByLabel('Target units (optional, a goal only)').fill('');
   await edit.getByRole('button', { name: 'Save' }).click();

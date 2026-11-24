@@ -118,13 +118,13 @@ export const WEEKLY_STATUS_LABEL: Record<WeeklyReportStatus | 'NOT_SUBMITTED', s
   NOT_SUBMITTED: 'Not started',
   DRAFT: 'Draft',
   COMPILING: 'Compiling',
-  PENDING_OPERATIONS_HEAD: 'Pending Operations Head Approval',
+  PENDING_OPERATIONS_HEAD: 'Pending CEO Approval',
   REVISION_REQUIRED: 'Revision Required',
-  APPROVED_BY_OPERATIONS_HEAD: 'Approved by Operations Head',
+  APPROVED_BY_OPERATIONS_HEAD: 'Approved by CEO',
   SENT_TO_HR: 'Sent to HR',
   HR_REVIEW_IN_PROGRESS: 'HR Review In Progress',
   HR_REVIEW_COMPLETED: 'HR Review Completed',
-  SUBMITTED_TO_SUPERADMIN: 'Submitted to Superadmin'
+  SUBMITTED_TO_SUPERADMIN: 'Submitted to Managing Director'
 };
 
 /** The final performance reporting stage of a week (HR reviews, then the Super Admin). */
@@ -132,7 +132,7 @@ export const PERFORMANCE_STAGE_LABEL = {
   PENDING_HR_REVIEW: 'Pending HR Review',
   PARTIALLY_REVIEWED: 'Partially Reviewed',
   HR_REVIEW_COMPLETED: 'HR Review Completed',
-  SUBMITTED_TO_SUPERADMIN: 'Submitted to Superadmin',
+  SUBMITTED_TO_SUPERADMIN: 'Submitted to Managing Director',
   AI_ANALYSIS_COMPLETED: 'AI Analysis Completed'
 } as const;
 export type PerformanceStage = keyof typeof PERFORMANCE_STAGE_LABEL;

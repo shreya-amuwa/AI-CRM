@@ -16,7 +16,7 @@ const daysAgo = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n
 const WHO: Record<ReportKind, (names: string) => React.ReactNode> = {
   MEMBER: n => (n ? <>Your Team Lead <b>{n}</b> approves it first, then your Department Head.</> : 'No Team Lead is assigned to you yet; you can save drafts, but submitting needs one.'),
   TEAM_LEAD: n => (n ? <>It goes straight to your Department Head <b>{n}</b>. You cannot approve your own report.</> : 'No Department Head is set for your department yet; you can save drafts, but submitting needs one.'),
-  DEPARTMENT_HEAD: n => (n ? <>It is kept in the department's reporting history and goes to the Operations Head <b>{n}</b>.</> : 'No Operations Head manages your department yet; you can save drafts, but submitting needs one.')
+  DEPARTMENT_HEAD: n => (n ? <>It is kept in the department's reporting history and goes to the CEO <b>{n}</b>.</> : 'No CEO manages your department yet; you can save drafts, but submitting needs one.')
 };
 
 /**

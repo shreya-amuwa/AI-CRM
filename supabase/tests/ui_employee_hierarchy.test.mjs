@@ -93,7 +93,7 @@ const open = async (view, vp = { width: 1280, height: 900 }) => {
   const page = await open('approver');
   await page.waitForSelector('text=Employee r1');
   const items = await page.$$eval('li', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
-  check(items.length === 2 && items.some(t => /Olive Ops/.test(t) && /Operations Head/.test(t)), 'the approver sees what waits for them (a request they cannot decide is not in "Waiting for me")', items);
+  check(items.length === 2 && items.some(t => /Olive Ops/.test(t) && /CEO/.test(t)), 'the approver sees what waits for them (a request they cannot decide is not in "Waiting for me")', items);
   check(await page.locator('li:has-text("Employee r1") >> text=Approve').count() === 1 && await page.locator('li:has-text("Employee r1") >> text=Reject').count() === 1, 'each has Approve and Reject');
   await page.click('li:has-text("Employee r1") >> text=Reject');
   await page.waitForSelector('role=dialog');
@@ -106,7 +106,7 @@ const open = async (view, vp = { width: 1280, height: 900 }) => {
   check(rej.body.approve === false && rej.body.note === 'Not this department', 'the rejection is sent with its reason', rej);
   // operations head: departments chosen in the approval
   await page.click('li:has-text("Olive Ops") >> text=Approve');
-  await page.waitForSelector('role=dialog >> text=Departments managed by this Operations Head');
+  await page.waitForSelector('role=dialog >> text=Departments managed by this CEO');
   await page.check('role=dialog >> label:has-text("Alpha") >> input[type="checkbox"]');
   await page.check('role=dialog >> label:has-text("Beta") >> input[type="checkbox"]');
   const primaryEnabled = await page.locator('role=dialog >> label:has-text("approves heads") >> input').evaluateAll(els => els.map(e => !e.disabled));

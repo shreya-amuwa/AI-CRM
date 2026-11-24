@@ -55,7 +55,7 @@ export const AiqrHeader: React.FC<AiqrHeaderProps> = ({ onOpenPublicScanDemo }) 
         {/* Security Tier Badge */}
         <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-emerald-300 text-xs font-mono">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>{user?.role || 'Super Admin'}</span>
+          <span>{user?.role || 'Managing Director'}</span>
         </div>
 
         {/* User Avatar & Logout */}

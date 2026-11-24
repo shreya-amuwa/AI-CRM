@@ -55,7 +55,7 @@ export const PaidLeaveManagement: React.FC = () => {
           ) : (
             <p data-testid="paid-leave-off">
               <b>Not switched on yet.</b> Before the monthly credit starts, HR confirms the credit day, how the month of the confirmation is counted, the first month to
-              credit and any opening balances. {data?.canChangePolicy ? 'Use Policy settings.' : 'The HR Department Head or the Super Admin switches it on.'}
+              credit and any opening balances. {data?.canChangePolicy ? 'Use Policy settings.' : 'The HR Department Head or the Managing Director switches it on.'}
             </p>
           )}
         </Card>

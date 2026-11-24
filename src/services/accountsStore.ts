@@ -1587,7 +1587,7 @@ export const INITIAL_DAILY_EXPENSES: DepartmentDailyExpense[] = [
         reason: 'Daily automated e-commerce catalog webhook CDN burst caching & express checkout traffic',
         category: 'Cloud & Server Infrastructure',
         amount: 4200,
-        approvedBy: 'Super Admin'
+        approvedBy: 'Managing Director'
       }
     ]
   },
@@ -1638,7 +1638,7 @@ export const INITIAL_DAILY_EXPENSES: DepartmentDailyExpense[] = [
         reason: 'Kubernetes pod autoscaling & multi-agent live chat server compute bandwidth for customer support floor',
         category: 'Cloud & Server Infrastructure',
         amount: 12600,
-        approvedBy: 'Super Admin'
+        approvedBy: 'Managing Director'
       },
       {
         time: '04:10 PM',
@@ -1667,7 +1667,7 @@ export const INITIAL_DAILY_EXPENSES: DepartmentDailyExpense[] = [
         reason: 'Tata Teleservices enterprise PRI line daily trunk usage & 5,000 outbound voice call minutes settlement',
         category: 'API Subscriptions & Telecom',
         amount: 15200,
-        approvedBy: 'Super Admin'
+        approvedBy: 'Managing Director'
       },
       {
         time: '01:40 PM',
@@ -1696,7 +1696,7 @@ export const INITIAL_DAILY_EXPENSES: DepartmentDailyExpense[] = [
         reason: 'Google Cloud Vertex AI processing & BigQuery daily batch queries for dynamic AIQR campaign analytics',
         category: 'Cloud & Server Infrastructure',
         amount: 16400,
-        approvedBy: 'Super Admin'
+        approvedBy: 'Managing Director'
       },
       {
         time: '02:50 PM',
@@ -1725,7 +1725,7 @@ export const INITIAL_DAILY_EXPENSES: DepartmentDailyExpense[] = [
         reason: 'CAD rendering server cluster compute & civil infrastructure project blueprint cloud processing vault',
         category: 'Cloud & Server Infrastructure',
         amount: 13900,
-        approvedBy: 'Super Admin'
+        approvedBy: 'Managing Director'
       },
       {
         time: '04:30 PM',

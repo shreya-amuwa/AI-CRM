@@ -84,7 +84,7 @@ export const ActiveFieldVisits: React.FC<{ audience: 'manager' | 'hr' }> = ({ au
   if (forbidden) {
     return (
       <Card className="p-6">
-        <EmptyState title="Not available">Field visit tracking is for Team Leads, Sales Department Heads, Sales Operations Heads and HR.</EmptyState>
+        <EmptyState title="Not available">Field visit tracking is for Team Leads, Sales Department Heads, Sales CEOs and HR.</EmptyState>
       </Card>
     );
   }

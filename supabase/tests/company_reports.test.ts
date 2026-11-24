@@ -59,7 +59,7 @@ check(!reportSettingsSchema.safeParse({ weights: { ...w, hrRating: 101 }, minTas
 
 // ---- the statuses
 check(WEEKLY_REPORT_STATUSES.length === 9 && WEEKLY_REPORT_STATUSES.every(s => !!WEEKLY_STATUS_LABEL[s]), 'every weekly status has its label');
-check(WEEKLY_STATUS_LABEL.SUBMITTED_TO_SUPERADMIN === 'Submitted to Superadmin' && WEEKLY_STATUS_LABEL.PENDING_OPERATIONS_HEAD.includes('Operations Head'), 'the weekly labels read as the stages');
+check(WEEKLY_STATUS_LABEL.SUBMITTED_TO_SUPERADMIN === 'Submitted to Managing Director' && WEEKLY_STATUS_LABEL.PENDING_OPERATIONS_HEAD.includes('CEO'), 'the weekly labels read as the stages');
 
 // ---- the analysis: traceable, no names to the AI
 const fact = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ factId: id, subjectType: 'PERSON' as const, subjectId: id, name, department: 'Sales', team: 'North', sources: ['work_tasks'], ...extra });

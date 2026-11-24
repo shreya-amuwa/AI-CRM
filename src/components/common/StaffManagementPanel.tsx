@@ -22,6 +22,7 @@ import {
   META_VERIFIER_LABEL, OPERATIONS_HEAD_LABEL, ROLE_LABELS, TECHNICAL_CONSULTANT_LABEL, creatableRoles, defaultDashboardLabel, isMetaVerifier, isOperationsHead, isSalesHead, isTechnicalConsultant, staffRoleLabel
 } from '../../lib/auth/roleMapping';
 import { designationsForDepartment, hasPlainRolesOnly, isUnifiedDepartment, staffChoicesForDepartment, staffTeamsForDepartment } from '../../lib/auth/departmentRoles';
+import { designationLabel } from '../../../shared/roleNames';
 
 /**
  * Team Members & Access - create staff accounts and manage their access.
@@ -407,17 +408,17 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   /** The Super Admin makes a Department Head an Operations Head, or takes it back (the database audits it and tells the person). */
   const changeOperationsHead = (member: Profile, value: boolean) => {
     ask({
-      title: value ? `Make ${member.fullName} an Operations Head?` : `Remove ${member.fullName} as Operations Head?`,
+      title: value ? `Make ${member.fullName} an CEO?` : `Remove ${member.fullName} as CEO?`,
       message: value
-        ? 'They will oversee the departments the Super Admin assigns in Access Control. They get no Super Admin permission.'
+        ? 'They will oversee the departments the Managing Director assigns in Access Control. They get no Managing Director permission.'
         : 'The departments other than their own are withdrawn. Their own department stays.',
-      confirmLabel: value ? 'Make Operations Head' : 'Remove Operations Head',
+      confirmLabel: value ? 'Make CEO' : 'Remove CEO',
       danger: !value,
       run: async () => {
         setActionNotice(null);
         try {
           await usersApi.setOperationsHead(member.id, value);
-          setActionNotice({ text: value ? `${member.fullName} is now an Operations Head.` : `${member.fullName} is a Department Head again.`, ok: true });
+          setActionNotice({ text: value ? `${member.fullName} is now an CEO.` : `${member.fullName} is a Department Head again.`, ok: true });
           await loadMembers();
         } catch (err) {
           setActionNotice({ text: errorMessage(err), ok: false });
@@ -451,7 +452,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     let headPlan: { departmentId: string; headDivision?: HeadDivision; additionalAccess: { departmentId: string; division: HeadDivision }[] } | null = null;
     if (operationsHead) {
       if (opsDepts.length === 0) {
-        setFormError('Choose at least one department for the Operations Head.');
+        setFormError('Choose at least one department for the CEO.');
         return;
       }
     } else if (role === 'DEPARTMENT_HEAD' && (adsMode || designMode)) {
@@ -757,7 +758,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 onChange={e => setHrChoice(e.target.value as HrDesignation)}
                 data-testid="hr-designation"
               >
-                {hrOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                {hrOptions.map(d => <option key={d} value={d}>{designationLabel(d)}</option>)}
               </select>
             ) : lockedRole ? (
               <input id="staff-role" className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={ROLE_LABELS[lockedRole]} readOnly aria-readonly="true" />
@@ -777,7 +778,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               <span className="block mt-1 font-normal text-slate-500">
                 {hrChoice === 'HR Assistant' && 'Opens the HR dashboard.'}
                 {hrChoice === 'HR Recruiter' && 'Opens the HR Recruiter dashboard (vacancies, candidate applications, pipeline, calls, interviews and selection).'}
-                {hrChoice === 'HR Admin Head' && 'The Department Head of HR: opens the HR Department Head dashboard. One per department; it gives no Super Admin or Operations Head access.'}
+                {hrChoice === 'HR Admin Head' && 'The Department Head of HR: opens the HR Department Head dashboard. One per department; it gives no Managing Director or CEO access.'}
               </span>
             )}
             {(designMode || adsMode) && (
@@ -845,7 +846,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 multi={false}
               />
               <p className="text-[11px] text-slate-500">
-                A department has one Sales head and one Support head (the department the head is placed in is checked for this). {operationsHead ? 'An Operations Head oversees every department ticked above.' : 'A Department Head is created in one department (and may handle both its Sales and Support); a second department or function is given afterwards in Access Control.'}
+                A department has one Sales head and one Support head (the department the head is placed in is checked for this). {operationsHead ? 'An CEO oversees every department ticked above.' : 'A Department Head is created in one department (and may handle both its Sales and Support); a second department or function is given afterwards in Access Control.'}
                 {unlabelledHead && ` ${unlabelledHead.fullName} has no side set yet — set it in the list below.`}
               </p>
             </>
@@ -871,7 +872,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             <label className="block text-xs font-semibold text-slate-700">
               Designation *
               <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
-                {designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d))).map(d => <option key={d} value={d}>{d}</option>)}
+                {designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d))).map(d => <option key={d} value={d}>{designationLabel(d)}</option>)}
               </select>
             </label>
           )}
@@ -1064,10 +1065,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                             type="button"
                             onClick={() => changeOperationsHead(m, !isOperationsHead(m))}
                             className="mt-1 block text-[11px] font-semibold text-blue-600 hover:text-blue-700"
-                            aria-label={`${isOperationsHead(m) ? 'Remove Operations Head' : 'Make Operations Head'}: ${m.fullName}`}
+                            aria-label={`${isOperationsHead(m) ? 'Remove CEO' : 'Make CEO'}: ${m.fullName}`}
                             data-testid={`operations-head-${m.id}`}
                           >
-                            {isOperationsHead(m) ? 'Remove Operations Head' : 'Make Operations Head'}
+                            {isOperationsHead(m) ? 'Remove CEO' : 'Make CEO'}
                           </button>
                         )}
                         {manage && profile.role === 'SUPER_ADMIN' && m.role === 'DEPARTMENT_HEAD' && m.status === 'ACTIVE' && (
@@ -1165,7 +1166,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                       </td>
                       {manage && <td className="py-2.5 text-right whitespace-nowrap">
                         {!act ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400" title={m.role === 'SUPER_ADMIN' ? 'The Super Admin account is protected and cannot be changed here.' : 'You cannot change this account.'} data-testid={`protected-${m.id}`}>
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400" title={m.role === 'SUPER_ADMIN' ? 'The Managing Director account is protected and cannot be changed here.' : 'You cannot change this account.'} data-testid={`protected-${m.id}`}>
                             <Lock className="w-3.5 h-3.5" aria-hidden="true" /> {m.role === 'SUPER_ADMIN' ? 'Protected account' : 'No access'}
                           </span>
                         ) : m.status === 'ACTIVE' ? (

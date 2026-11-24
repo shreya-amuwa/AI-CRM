@@ -426,7 +426,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
   const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
   const noticesItem: ShellNavItem = { id: NOTICES_NAV_ID, label: 'Notice Board', icon: Megaphone, badge: noticeUnread };
-  const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'CEO Availability', icon: Crown };
+  const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'Managing Director Availability', icon: Crown };
   const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(ceoAvailability ? [ceoAvailabilityItem] : []), ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
     ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]
