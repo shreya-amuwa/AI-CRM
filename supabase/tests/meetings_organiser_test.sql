@@ -34,8 +34,14 @@ select test.check((select bool_and(to_email = lower(p.email)) from meeting_mail_
   'to their own e-mail address');
 select test.check((select count(*) = 0 from meeting_mail_outbox where meeting_id = (select id from mo where k = 'emp') and to_profile_id = test.id('sa')),
   'the Super Admin, not invited, gets no e-mail');
-select test.check((select count(*) = 0 from notifications where recipient_id = test.id('sa') and entity_id = (select id from mo where k = 'emp')),
-  'nor a notification');
+select test.check((select count(*) = 0 from notifications where recipient_id = test.id('sa') and entity_id = (select id from mo where k = 'emp')
+                     and type not like 'MEETING_OVERSIGHT%'),
+  'nor an invitation notice');
+-- Task 05 (20270208000200): the Managing Director is told a team meeting exists (a separate awareness notice, not an invitation);
+-- the meeting stays out of their calendar, as checked below
+select test.check((select count(*) <= 1 from notifications where recipient_id = test.id('sa') and entity_id = (select id from mo where k = 'emp')
+                     and type like 'MEETING_OVERSIGHT%'),
+  'at most one awareness notice (once the meeting notifications migration is run)');
 set role authenticated;
 select test.login('sa');
 select test.check((select count(*) = 0 from jsonb_array_elements(mtg_list(now(), now() + interval '30 days')) x where (x ->> 'id')::uuid = (select id from mo where k = 'emp')),

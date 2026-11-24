@@ -6,7 +6,7 @@ import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
 import { attendanceRequested } from '../attendance/attendanceEvents';
 import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
-import { useOpenMeetingRequest } from '../meetings/meetingEvents';
+import { meetingRequestedFromUrl, useOpenMeetingRequest } from '../meetings/meetingEvents';
 import { useBugAccess } from '../bugs/bugUi';
 import { useRememberedOverlay } from '../../hooks/useRememberedOverlay';
 import { useOpenBugsRequest } from '../bugs/bugEvents';
@@ -34,7 +34,9 @@ const WalletPage = React.lazy(() => import('../wallet/WalletPage'));
 export const WALLET_NAV_ID = '__wallet';
 const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID, WALLET_NAV_ID] as const;
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
-export const meetingsRequested = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'meetings';
+// ?tab=meetings, or a tapped meeting push (/?open=meeting&id=...: Meetings opens on that meeting)
+export const meetingsRequested = () => typeof window !== 'undefined'
+  && (new URLSearchParams(window.location.search).get('tab') === 'meetings' || meetingRequestedFromUrl(window.location.search));
 
 /**
  * The shared dashboard shell (the Department Head design handoff): a white sidebar with an Amuwa brand block,
@@ -366,8 +368,8 @@ interface DashboardShellProps {
   wide?: boolean;
   /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
   flush?: boolean;
-  /** The "Turn on reminders" banner (attendance reminders on this device); off for the Super Admin, who does not punch. */
-  reminders?: boolean;
+  /** The "Turn on notifications" banner: true = attendance reminders; 'meetings' = meeting notices (the Managing Director, who does not punch). */
+  reminders?: boolean | 'meetings';
   /** HR dashboards: adds CEO Availability below the Notice Board (the HR Recruiter's dashboard). */
   ceoAvailability?: boolean;
   /** The Wallet entry (every employee dashboard); off for the Super Admin, who has no wallet. */
@@ -501,7 +503,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} />{shownOverlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{shownOverlay === MEETINGS_NAV_ID ? <MeetingsPage /> : shownOverlay === BUGS_NAV_ID ? <BugsPage /> : shownOverlay === NOTICES_NAV_ID ? <NoticeBoard /> : shownOverlay === WALLET_NAV_ID ? <WalletPage /> : shownOverlay === CEO_AVAILABILITY_NAV_ID ? <CeoAvailabilityPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} purpose={reminders === 'meetings' ? 'meetings' : 'attendance'} />{shownOverlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{shownOverlay === MEETINGS_NAV_ID ? <MeetingsPage /> : shownOverlay === BUGS_NAV_ID ? <BugsPage /> : shownOverlay === NOTICES_NAV_ID ? <NoticeBoard /> : shownOverlay === WALLET_NAV_ID ? <WalletPage /> : shownOverlay === CEO_AVAILABILITY_NAV_ID ? <CeoAvailabilityPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

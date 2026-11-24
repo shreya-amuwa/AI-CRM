@@ -142,6 +142,41 @@ message text or punch location.
 services accepted it. Max 3 per employee and 30 per administrator per hour; the employee sees "HR sent a test notification" in their bell;
 audited (`NOTIFICATION_TEST_SENT`); no attendance or reminder record is created. Employees' own tests: max 5 per 10 minutes.
 
+## Meeting notifications on phones (20270208000100)
+
+Meeting notifications used to reach the bell only. Now each meeting notification a person receives in the CRM that needs their attention
+is also pushed to each of their active devices (delivery kind `MEETING`), by the same delivery worker (retries, dead-device clean-up,
+expiry). This is for everyone, the Managing Director included, and only for meetings they are in (host, organiser, invitee, or one waiting
+for their approval): who is notified does not change.
+
+* **Pushed:** invited, rescheduled / moved, cancelled, reminders, approval requested / approved / declined / another time proposed,
+  scheduled, a guest booked, summary submitted / revised / due / overdue (`private.meeting_push_type`). **Bell only:** answers to an
+  invitation, presence, Google sync problems and other information-only types.
+* **One push per notification and device** (`notification_deliveries.notification_id` + device, unique), so a retry never sends twice.
+  Nobody is told about their own action. A newer notice about the same meeting replaces an older one still waiting (a late retry of a
+  reminder never covers "Meeting cancelled").
+* **Lock-screen text:** a fixed label and the meeting's title ("Meeting request: Q3 review", "In 15 minutes: Q3 review") and its time
+  (IST; for "Another time proposed", the proposed time). Never the agenda, minutes, participants, or who asked or booked (the bell's own
+  text, which can name them, is not used).
+* **Tapping it** opens that meeting: `/?open=meeting&id=…` (or, with the CRM already open, the service worker asks it to open the meeting).
+* **Expiry:** an hour after the meeting starts (at least 30 minutes from when it was queued, so retries can run), so a stale reminder is
+  dropped; summary notices a day after they were queued. Without push keys the rows are closed as expired the next time that person gets a
+  meeting notice.
+* **Reminders:** 24 hours and 1 hour before, plus **15 minutes before** and **at the start** (within 5 minutes). Each once per start time,
+  so a moved meeting is reminded again and a cancelled one is not. They are created by the 5-minute scheduled run
+  (`/internal/attendance/reminders` now creates them first: two database calls, so the attendance reminders keep their request budget;
+  Google sync and e-mails stay with the dispatch) and still by the daily dispatch. Guests get e-mail reminders 24 hours and 1 hour before,
+  as before (booked at short notice: the 1-hour e-mail at the 15-minute mark).
+* **Right after a change** (create, move, cancel, approve…), the pushes are sent at once, not at the next 5-minute run.
+* Without push keys, or without a registered device, the bell works as before. Each person's devices and a test send are under
+  Attendance → **Reminders** (this includes the Managing Director, who is not listed in Notification Health).
+* Known limit: in the older department panels (side menu) a tapped push opens the CRM but not Meetings when the CRM was closed (notices
+  behave the same today); with the CRM open it opens Meetings.
+* Tests: `supabase/tests/meeting_push_test.sql`, `supabase/tests/meeting_push_open.test.ts`, and "meeting push" in
+  `supabase/tests/api_integration.test.ts`.
+* Rollback: drop the trigger `notifications_meeting_push` on `public.notifications` (meetings go back to bell only); the extra column, index
+  and reminder kinds are harmless to leave.
+
 ## Security
 
 All new tables have RLS on and no grants; access only through `security definer` functions with `set search_path = ''`.
@@ -189,6 +224,8 @@ endpoint or key. History is kept 30 days (browser reports 90).
 | 10 | Any | Refresh the page | No chime for old notifications |
 | 11 | Laptop | Sleep 10 min, wake | Bell catches up within seconds |
 | 12 | Shared phone | A signs out, B signs in and turns on | Only B's reminders arrive |
+| 13 | Android Chrome and iPhone Home Screen app; CRM open, in the background, closed | A colleague invites you to a meeting, moves it, cancels it | One notification each, title + time only; tapping opens that meeting |
+| 14 | Same | A meeting you are in starts in 20 minutes | "In 15 minutes" then "Starting now" notifications |
 
 ## Production audit (employee by employee)
 

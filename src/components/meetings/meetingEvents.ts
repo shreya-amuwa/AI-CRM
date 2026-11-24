@@ -32,6 +32,34 @@ export const takePendingMeeting = (): string | null => {
   return p;
 };
 
+const MEETING_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * The CRM was opened from a tapped meeting push (/?open=meeting&id=..., 20270208000100): Meetings opens on that meeting.
+ * A malformed id still opens Meetings, on no particular meeting.
+ */
+export const meetingRequestedFromUrl = (search: string): boolean => {
+  const q = new URLSearchParams(search);
+  if (q.get('open') !== 'meeting') return false;
+  const id = q.get('id');
+  pending = id && MEETING_ID.test(id) ? id : null;
+  return true;
+};
+/** A tapped meeting push while the CRM is open (public/sw.js posts "open-meeting"). True when the message was a meeting's. */
+export const handleMeetingWorkerMessage = (data: unknown): boolean => {
+  const d = data as { type?: string; id?: unknown } | null;
+  if (d?.type !== 'open-meeting') return false;
+  openMeeting(typeof d.id === 'string' && MEETING_ID.test(d.id) ? d.id : undefined);
+  return true;
+};
+// one listener for the whole app (several screens use useOpenMeetingRequest; each must not open the meeting again)
+let workerListening = false;
+const listenToWorker = () => {
+  const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined;
+  if (workerListening || !sw) return;
+  workerListening = true;
+  sw.addEventListener('message', (e: MessageEvent) => { handleMeetingWorkerMessage(e.data); });
+};
+
 /** A meeting request to HR (Meetings > HR meeting requests): shows Meetings on that tab, on the request when one is named. */
 let pendingHr: { id?: string } | null = null;
 export const openHrMeetingRequest = (id?: string) => {
@@ -47,6 +75,7 @@ export const takePendingHrMeetingRequest = (): { id?: string } | null => {
 /** For a dashboard (to show Meetings) and for the Meetings page (to open the meeting). */
 export function useOpenMeetingRequest(show: (id?: string) => void) {
   useEffect(() => {
+    listenToWorker();
     const on = (e: Event) => show((e as CustomEvent<{ id?: string }>).detail?.id);
     window.addEventListener(OPEN_MEETING_EVENT, on);
     return () => window.removeEventListener(OPEN_MEETING_EVENT, on);

@@ -1,5 +1,5 @@
 /*
- * Amuwa CRM service worker: attendance reminders and chat messages (docs/ATTENDANCE_PUNCH.md, docs/CHAT.md "Push notifications").
+ * Amuwa CRM service worker: attendance reminders, chat messages, notices and meeting notices (docs/ATTENDANCE_PUNCH.md, docs/CHAT.md "Push notifications").
  * It shows what the server pushes and, when one is tapped, opens Attendance or that chat conversation. It deliberately has NO fetch handler and
  * caches nothing: every page and API call goes to the network exactly as without it, so it can never serve an old version of the CRM.
  */
@@ -41,9 +41,15 @@ self.addEventListener('notificationclick', event => {
       await open.focus();
       // a chat message opens its conversation; a reminder opens Attendance
       const q = new URL(url).searchParams;
-      if (q.get('open') === 'notice') {
+      if (q.get('open') === 'meeting-report') {
+        // a meeting awareness notice for the Managing Director (20270208000200) opens that meeting's read-only report view
+        open.postMessage({ type: 'open-meeting-report', id: q.get('id') });
+      } else if (q.get('open') === 'notice') {
         // a company notice (20270131000200) opens that notice on the Notice Board
         open.postMessage({ type: 'open-notice', id: q.get('id') });
+      } else if (q.get('open') === 'meeting') {
+        // a meeting notification (20270208000100) opens that meeting
+        open.postMessage({ type: 'open-meeting', id: q.get('id') });
       } else if (q.get('open') === 'chat') {
         open.postMessage(q.get('client') ? { type: 'open-chat', clientConversationId: q.get('client') } : { type: 'open-chat', conversationId: q.get('conversation') });
       } else {

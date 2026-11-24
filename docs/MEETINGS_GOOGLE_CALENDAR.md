@@ -59,7 +59,7 @@ Change or cancel them in their own page; Meetings follows. The Team Member's pri
 | Who | How |
 | --- | --- |
 | Colleagues | By e-mail (`20270113000100`): when a meeting they take part in is scheduled or approved, moved or cancelled, and the one who asked when a request is declined. The e-mail comes from the CRM's mailbox **in the organiser's name** ("Priya Shah via Amuwa CRM", replies go to Priya) with a `.ics` file, and is skipped when Google already sent the invitation from the organiser's calendar. The organiser always gets it, because Google does not e-mail the organiser. |
-| Colleagues | In the Notification Center (only for meetings they take part in): invited, request waiting (urgent), approved / declined / another time proposed, moved, cancelled, a guest booked or cancelled, someone cannot attend, reminders 24 hours and 1 hour before, Google sync failing, Google disconnected. |
+| Colleagues | In the Notification Center, and on their phones for the ones that need attention (only for meetings they take part in; `docs/NOTIFICATION_RELIABILITY.md`): invited, request waiting (urgent), approved / declined / another time proposed, moved, cancelled, a guest booked or cancelled, someone cannot attend, reminders 24 hours, 1 hour and 15 minutes before and at the start, Google sync failing, Google disconnected. |
 | Guests outside the company | By e-mail, from the client sender address: confirmation (with a `.ics` calendar file), request received, another time proposed, declined, moved, cancelled, reminders 24 hours and 1 hour before. |
 | Everyone invited, when the organiser connected Google | Google also sends its own calendar invitation, update and cancellation. For meetings booked by staff, the CRM then skips its own confirmation / change / cancellation e-mail so guests do not get two. Booking-link guests always get the CRM's, because it carries their private link. |
 
@@ -116,7 +116,7 @@ Then run `supabase/migrations/20270113000100_meetings_creator_organiser.sql` (af
 
 ### 4. Reminders
 
-Reminders and retries run with `/api/v1/internal/automations/dispatch`. With only the two daily Vercel crons, the "1 hour before" reminder can come late. Call the dispatch every 5 minutes from Supabase `pg_cron` + `pg_net` (the same `net.http_post` call as in `docs/HR_EMAIL_AUTOMATION.md`, with `*/5 * * * *`), so reminders are on time.
+Reminders and retries run with the 5-minute scheduled run (`/api/v1/internal/attendance/reminders`, Cloudflare cron `*/5 * * * *`) and with `/api/v1/internal/automations/dispatch`, so the 1-hour, 15-minute and at-start reminders are on time (20270208000100).
 
 ## Rules the database enforces
 
