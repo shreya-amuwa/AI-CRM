@@ -106,7 +106,7 @@ const PerformanceReviews: React.FC = () => {
   return (
     <div className="space-y-4" data-testid="hr-performance-reviews">
       <HrPageHeader icon={ClipboardCheck} title="Performance Reviews"
-        subtitle="Weekly department reports approved by the Operations Head. Review each Team Lead and Team Member, then send the consolidated report to the Super Admin."
+        subtitle="Weekly department reports approved by the CEO. Review each Team Lead and Team Member, then send the consolidated report to the Managing Director."
         actions={<WeekPicker value={effectiveWeek} onChange={setWeek} />} />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {error ? <ErrorBanner message={error} onRetry={loadOverview} /> : null}
@@ -114,7 +114,7 @@ const PerformanceReviews: React.FC = () => {
 
       {overview && tab === 'departments' ? (
         overview.departments.length === 0 ? (
-          <Card className="p-8 text-center text-sm text-slate-500">No weekly department report was approved by an Operations Head for {dateLabel(effectiveWeek)} - {dateLabel(weekOf(effectiveWeek).end)}. Reports appear here as soon as they are approved.</Card>
+          <Card className="p-8 text-center text-sm text-slate-500">No weekly department report was approved by an CEO for {dateLabel(effectiveWeek)} - {dateLabel(weekOf(effectiveWeek).end)}. Reports appear here as soon as they are approved.</Card>
         ) : (
           <div className="space-y-3" data-testid="hr-department-boxes">
             {overview.departments.map(d => (

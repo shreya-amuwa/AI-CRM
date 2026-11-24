@@ -69,8 +69,8 @@ const plan = async page => JSON.parse(await page.textContent('#plan'));
   // the options are named for the role being created
   let page = await open({ width: 1280, height: 900 }, true);
   const ops = await page.$$eval('#staff-head-division option', os => os.map(o => o.textContent.trim()));
-  check(ops.length === 4 && ops[1] === 'Sales Operations Head' && ops[2] === 'Support Operations Head' && /^Sales & Support Operations Head/.test(ops[3]) && /Operations Head/.test(ops[0]), 'an Operations Head chooses Sales Operations Head, Support Operations Head or both', ops);
-  check(/Operations Head of/.test(await page.innerText('[data-testid="head-departments"] label')), 'and the field is called "Operations Head of"');
+  check(ops.length === 4 && ops[1] === 'Sales CEO' && ops[2] === 'Support CEO' && /^Sales & Support CEO/.test(ops[3]) && /CEO/.test(ops[0]), 'an Operations Head chooses Sales Operations Head, Support Operations Head or both', ops);
+  check(/CEO of/.test(await page.innerText('[data-testid="head-departments"] label')), 'and the field is called "Operations Head of"');
   await page.close();
   page = await open({ width: 1280, height: 900 }, false);
   const dh = await page.$$eval('#staff-head-division option', os => os.map(o => o.textContent.trim()));

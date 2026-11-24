@@ -308,7 +308,7 @@ export const AmuwaHRStaffManagement: React.FC = () => {
               HR Staff Management
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Superadmin oversight of the internal Human Resources personnel, recruiter roster, attendance, and leave approvals
+              Managing Director oversight of the internal Human Resources personnel, recruiter roster, attendance, and leave approvals
             </p>
           </div>
         </div>
@@ -652,7 +652,7 @@ export const AmuwaHRStaffManagement: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
             <h4 className="font-bold text-slate-900 text-sm">HR Staff Leave Applications</h4>
-            <p className="text-xs text-slate-500 mt-0.5">Leaves submitted by HR team members requiring direct Superadmin approval</p>
+            <p className="text-xs text-slate-500 mt-0.5">Leaves submitted by HR team members requiring direct Managing Director approval</p>
           </div>
 
           <div className="space-y-3">

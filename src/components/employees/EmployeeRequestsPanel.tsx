@@ -196,8 +196,8 @@ const DecisionDialog: React.FC<{ request: EmployeeRequest; approve: boolean; dep
     <Dialog title={approve ? `Approve ${request.employee?.name}?` : `Reject ${request.employee?.name}?`} description={approve ? 'The account becomes active when you approve.' : 'The account stays inactive and HR is told why.'} onClose={onClose} wide={approve && isOperationsHead}>
       {approve && isOperationsHead && (
         <fieldset className="space-y-2">
-          <legend className="text-xs font-bold text-slate-700">Departments managed by this Operations Head</legend>
-          <p className="text-[11px] text-slate-500">Tick the departments they oversee. "Approves Department Heads" makes them the one accountable Operations Head of that department. You can change this later.</p>
+          <legend className="text-xs font-bold text-slate-700">Departments managed by this CEO</legend>
+          <p className="text-[11px] text-slate-500">Tick the departments they oversee. "Approves Department Heads" makes them the one accountable CEO of that department. You can change this later.</p>
           <div className="grid sm:grid-cols-2 gap-1 max-h-64 overflow-y-auto">
             {departments.map(d => (
               <div key={d.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-xs">

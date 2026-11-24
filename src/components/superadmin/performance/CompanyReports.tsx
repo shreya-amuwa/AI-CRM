@@ -59,7 +59,7 @@ export const CompanyReports: React.FC<{ reloadKey: number; onOpenReport: (id: st
     <div className="space-y-4">
       <Card className="p-5">
         <h2 className="text-base font-bold text-slate-900">Consolidated Performance Reports from HR</h2>
-        <p className="text-xs text-slate-500 mb-3">Each one holds the departments whose weekly report was approved by the Operations Head and whose every Team Lead and Team Member HR reviewed.</p>
+        <p className="text-xs text-slate-500 mb-3">Each one holds the departments whose weekly report was approved by the CEO and whose every Team Lead and Team Member HR reviewed.</p>
         {error ? <ErrorBanner message={error} onRetry={load} /> : null}
         {list === null ? <Spinner /> : list.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">HR has not submitted a consolidated report yet.</p> : (
           <div className="space-y-3" data-testid="consolidated-list">

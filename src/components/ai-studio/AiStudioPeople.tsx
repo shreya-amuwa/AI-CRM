@@ -44,7 +44,7 @@ const AssignLeadDialog: React.FC<{ members: AiStudioPerson[]; leads: AiStudioPer
             {leads.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
           </select>
         </Field>
-        <p className="text-xs text-slate-500">Reports they submit from now on go to this Team Lead first, then to the Super Admin. Reports already submitted keep their route and history.</p>
+        <p className="text-xs text-slate-500">Reports they submit from now on go to this Team Lead first, then to the Managing Director. Reports already submitted keep their route and history.</p>
         {error && <ErrorBanner message={error} />}
         <div className="flex justify-end gap-2">
           <button type="button" className={ghostBtn} onClick={onClose} disabled={saving}>Cancel</button>

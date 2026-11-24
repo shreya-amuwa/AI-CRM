@@ -57,13 +57,13 @@ export const OperationsDashboard: React.FC = () => {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" /> Operations dashboard</h2>
-          <p className="text-xs text-slate-500">Only the departments the Super Admin assigned to you.</p>
+          <p className="text-xs text-slate-500">Only the departments the Managing Director assigned to you.</p>
         </div>
         <button type="button" className={btn.secondary} onClick={load}><RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Refresh</button>
       </div>
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!data && !error && <Spinner label="Loading your departments…" />}
-      {data && data.departments.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">No department is assigned to you yet. The Super Admin assigns them.</p>}
+      {data && data.departments.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">No department is assigned to you yet. The Managing Director assigns them.</p>}
       {data && data.departments.length > 0 && (
         <>
           <label className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-700" htmlFor="ops-department-filter">

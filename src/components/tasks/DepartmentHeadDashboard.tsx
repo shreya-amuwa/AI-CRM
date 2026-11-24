@@ -166,12 +166,12 @@ export const DepartmentHeadDashboard: React.FC = () => {
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle={operationsHead ? `Operations Head · ${profile?.department?.name || 'Departments'}` : profile?.department?.name || 'Department'}
-      ariaLabel={operationsHead ? 'Operations Head navigation' : 'Department Head navigation'}
+      subtitle={operationsHead ? `CEO · ${profile?.department?.name || 'Departments'}` : profile?.department?.name || 'Department'}
+      ariaLabel={operationsHead ? 'CEO navigation' : 'Department Head navigation'}
       groups={groups}
       active={nav}
       onSelect={id => go(id as HeadPage)}
-      user={{ name: user?.name || (operationsHead ? 'Operations Head' : 'Department Head'), role: operationsHead ? 'Operations Head' : 'Department Head' }}
+      user={{ name: user?.name || (operationsHead ? 'CEO' : 'Department Head'), role: operationsHead ? 'CEO' : 'Department Head' }}
       onSignOut={() => void logout()}
       flush={nav === 'chat'}
       wide={nav === 'team'}

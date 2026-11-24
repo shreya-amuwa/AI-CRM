@@ -1,3 +1,4 @@
+import { ROLE_DISPLAY_NAMES } from '../../../shared/roleNames';
 import { AI_DESIGN_STUDIO_SLUG, SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
 import type { AuthUser } from '../../types/crm';
 import { isUnifiedDepartment } from './departmentRoles';
@@ -221,7 +222,7 @@ export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant'
   return isTechnicalConsultant(p) ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[p.role];
 }
 
-export const OPERATIONS_HEAD_LABEL = 'Operations Head';
+export const OPERATIONS_HEAD_LABEL = ROLE_DISPLAY_NAMES.OPERATIONS_HEAD;
 
 export const META_VERIFIER_LABEL = 'Meta Verifier';
 
@@ -242,10 +243,11 @@ export function creatableRoles(role: Role | undefined): Exclude<Role, 'SUPER_ADM
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  DEPARTMENT_HEAD: 'Department Head',
-  TEAM_HEAD: 'Team Lead',
-  TEAM_MEMBER: 'Team Member'
+  // the designations come from one place (shared/roleNames.ts); the role keys never change
+  SUPER_ADMIN: ROLE_DISPLAY_NAMES.SUPER_ADMIN,
+  DEPARTMENT_HEAD: ROLE_DISPLAY_NAMES.DEPARTMENT_HEAD,
+  TEAM_HEAD: ROLE_DISPLAY_NAMES.TEAM_HEAD,
+  TEAM_MEMBER: ROLE_DISPLAY_NAMES.TEAM_MEMBER
 };
 
 /** The dashboard a user lands on after signing in (same rules as toAuthUser). */
@@ -270,7 +272,7 @@ export function defaultDashboardLabel(
   if (isUnifiedDepartment(departmentSlug) && role !== 'SUPER_ADMIN' && !operationsHead) return `Sales & Support ${ROLE_LABELS[role]} Dashboard${dept}`;
   // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
   if (role === 'DEPARTMENT_HEAD' && operationsHead) {
-    return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;
+    return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}CEO Dashboard${dept}`;
   }
   // HR and Accounts staff open their department's own dashboard.
   if (departmentSlug === 'hr' && hrSubRole === 'HR_RECRUITER' && role !== 'SUPER_ADMIN') return `HR Recruiter Dashboard${dept}`;
@@ -280,7 +282,7 @@ export function defaultDashboardLabel(
   if (departmentSlug === AI_DESIGN_STUDIO_SLUG && role !== 'SUPER_ADMIN') return `AI Design Studio ${ROLE_LABELS[role]} Dashboard`;
   switch (role) {
     case 'SUPER_ADMIN':
-      return 'Super Admin Department Hub';
+      return 'Managing Director Department Hub';
     case 'DEPARTMENT_HEAD':
       if (headDivision === 'SALES') return `Sales Department Head Dashboard${dept}`;
       return `Department Head Dashboard${dept}`;

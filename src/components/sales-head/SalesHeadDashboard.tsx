@@ -104,7 +104,7 @@ export const SalesHeadDashboard: React.FC = () => {
     [chatUnread, operationsHead, reportsBadge, crocodial.self, crocodial.team, updateCounts?.pending]
   );
 
-  const roleName = operationsHead ? 'Sales Operations Head' : 'Sales Department Head';
+  const roleName = operationsHead ? 'Sales CEO' : 'Sales Department Head';
   const displayName = profile?.fullName || user?.name || roleName;
   const deptName = profile?.department?.name || 'Sales';
 

@@ -161,7 +161,7 @@ try {
 
   // 2. a request for the CEO's time: an employee sees no management buttons, the Super Admin (CEO) decides
   state.approvals[0].canDecide = false; state.approvals[0].canManage = false; state.approvals[0].canWithdraw = true;
-  await page.getByRole('tab', { name: 'My CEO requests' }).click();
+  await page.getByRole('tab', { name: 'My requests to the Managing Director' }).click();
   await page.getByText('Budget for Pune').waitFor();
   check(await page.getByRole('button', { name: 'Approve' }).count() === 0 && await page.getByRole('button', { name: 'Reject' }).count() === 0
         && await page.getByRole('button', { name: /Reschedule/ }).count() === 0, 'an employee sees no Approve, Reject or Reschedule button');
@@ -224,7 +224,7 @@ try {
   // the employee reads the reason of a rejection
   await page.goto(base);
   await page.evaluate(() => window.mount());
-  await page.getByRole('tab', { name: 'My CEO requests' }).click();
+  await page.getByRole('tab', { name: 'My requests to the Managing Director' }).click();
   await page.getByRole('tab', { name: /Rejected \(1\)/ }).click();
   await page.getByText(/Rejected: Please ask your Department Head first/).waitFor();
   check(await page.getByRole('button', { name: 'Approve' }).count() === 0, 'the employee reads the rejection reason and has no decision buttons');
@@ -252,8 +252,8 @@ try {
   check(await page.getByText(/Connect Google Calendar to add it there/).isVisible(), 'the employee is told Google needs connecting');
 
   // 4. asking the CEO for time
-  await page.getByRole('button', { name: /Ask the CEO for time/ }).click();
-  const ask = page.getByRole('dialog', { name: 'Ask the CEO for time' });
+  await page.getByRole('button', { name: /Ask the Managing Director for time/ }).click();
+  const ask = page.getByRole('dialog', { name: 'Ask the Managing Director for time' });
   check(await ask.getByLabel('With').inputValue() === CEO.id, 'the CEO is chosen');
   await ask.getByLabel('Subject').fill('Hiring plan for Q1');
   check(await ask.getByLabel('Agenda or purpose').getAttribute('required') !== null, 'the agenda is required');
@@ -287,14 +287,14 @@ try {
   await page.evaluate(() => window.mount());
   await page.getByText(/Google Calendar connected\. Your meetings now appear/).waitFor();
   check(!page.url().includes('google='), 'the outcome is shown once and the address is cleaned');
-  check(await page.getByRole('button', { name: /Ask the CEO for time/ }).isVisible(), 'an employee can ask the CEO for time');
+  check(await page.getByRole('button', { name: /Ask the Managing Director for time/ }).isVisible(), 'an employee can ask the CEO for time');
 
   // 7b. the CEO's own view: no "Ask the CEO for time" (they book on their own calendar with "New meeting")
   state.viewerIsCeo = true;
   await page.goto(base);
   await page.evaluate(() => window.mount());
   await page.getByText(/requests for your time/).waitFor();
-  check(await page.getByRole('button', { name: /Ask the CEO for time/ }).count() === 0, 'the CEO is not offered "Ask the CEO for time"');
+  check(await page.getByRole('button', { name: /Ask the Managing Director for time/ }).count() === 0, 'the CEO is not offered "Ask the CEO for time"');
   check(await page.getByRole('button', { name: /New meeting/ }).isVisible(), 'the CEO can still book a new meeting');
   state.viewerIsCeo = false;
 

@@ -180,7 +180,7 @@ export const Leaderboard: React.FC<{ reloadKey: number; onOpenEmployee: (id: str
             {selectAny('lb-person', 'Individual employee', f.person, v => set('person', v), people.map(p => ({ value: p.id, label: p.name })))}
             {selectAny('lb-lead', 'Team Lead', f.teamLead, v => set('teamLead', v), leads.map(p => ({ value: p.id, label: p.name })))}
             {selectAny('lb-head', 'Department Head', f.departmentHead, v => set('departmentHead', v), heads.map(p => ({ value: p.id, label: p.name })))}
-            {selectAny('lb-oh', 'Operations Head', f.operationsHead, v => set('operationsHead', v), (opts?.operationsHeads ?? []).map(p => ({ value: p.id, label: p.name })))}
+            {selectAny('lb-oh', 'CEO', f.operationsHead, v => set('operationsHead', v), (opts?.operationsHeads ?? []).map(p => ({ value: p.id, label: p.name })))}
             {num('lb-rmin', 'HR rating from', 'ratingMin', 10)}{num('lb-rmax', 'HR rating to', 'ratingMax', 10)}<div />
             {num('lb-cmin', 'Reporting compliance from %', 'complianceMin', 100)}{num('lb-cmax', 'Reporting compliance to %', 'complianceMax', 100)}
             {num('lb-tmin', 'Task completion from %', 'completionMin', 100)}{num('lb-tmax', 'Task completion to %', 'completionMax', 100)}

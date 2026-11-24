@@ -97,8 +97,8 @@ export const AccessControlTab: React.FC<{
   const changeRole = async (value: boolean) => {
     if (!selected) return;
     const text = value
-      ? `Make ${selected.fullName} an Operations Head? They will be able to oversee the departments you tick below.`
-      : `Remove ${selected.fullName} as Operations Head? The departments other than their own are withdrawn (their own department stays).`;
+      ? `Make ${selected.fullName} an CEO? They will be able to oversee the departments you tick below.`
+      : `Remove ${selected.fullName} as CEO? The departments other than their own are withdrawn (their own department stays).`;
     if (!window.confirm(text)) return;
     setRoleBusy(true);
     setMessage(null);
@@ -106,7 +106,7 @@ export const AccessControlTab: React.FC<{
       await usersApi.setOperationsHead(selected.id, value);
       loadHeads();
       await load(selected.id);
-      setMessage({ text: value ? `${selected.fullName} is now an Operations Head.` : `${selected.fullName} is a Department Head again.`, ok: true });
+      setMessage({ text: value ? `${selected.fullName} is now an CEO.` : `${selected.fullName} is a Department Head again.`, ok: true });
       onSaved();
     } catch (err) {
       setMessage({ text: errorMessage(err), ok: false });
@@ -152,7 +152,7 @@ export const AccessControlTab: React.FC<{
             {heads.map(h => (
               <option key={h.id} value={h.id}>
                 {h.fullName} · {h.email}
-                {h.isOperationsHead ? ' · Operations Head' : ''}
+                {h.isOperationsHead ? ' · CEO' : ''}
                 {h.department ? ` · home: ${h.department.name}` : ''}
               </option>
             ))}
@@ -160,7 +160,7 @@ export const AccessControlTab: React.FC<{
           </select>
           <span className="block mt-1 font-normal text-slate-500">
             A Department Head can head more than one department: tick each department and the function (Sales or Support) they are responsible for there. They stay a Department Head
-            (no Operations Head role). A department and function that already has a Department Head cannot be given to a second one: saving is refused and names the other head, so
+            (no CEO role). A department and function that already has a Department Head cannot be given to a second one: saving is refused and names the other head, so
             decide who is responsible first. Other roles keep the one department they were created in.
           </span>
         </label>
@@ -188,7 +188,7 @@ export const AccessControlTab: React.FC<{
       {selected && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-xs" data-testid="operations-head-box">
           <p className="text-slate-700">
-            <strong>{selected.fullName}</strong> is {selected.isOperationsHead ? 'an Operations Head: oversees the departments ticked below (their Sales / Support function is set under Operations Heads).' : 'a Department Head: heads the departments and functions ticked below.'}
+            <strong>{selected.fullName}</strong> is {selected.isOperationsHead ? 'an CEO: oversees the departments ticked below (their Sales / Support function is set under CEOs).' : 'a Department Head: heads the departments and functions ticked below.'}
           </p>
           <button
             type="button"
@@ -197,7 +197,7 @@ export const AccessControlTab: React.FC<{
             className="rounded-xl border border-slate-200 px-3 py-1.5 font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50"
             data-testid="operations-head-toggle"
           >
-            {selected.isOperationsHead ? 'Remove Operations Head' : 'Make Operations Head'}
+            {selected.isOperationsHead ? 'Remove CEO' : 'Make CEO'}
           </button>
         </div>
       )}

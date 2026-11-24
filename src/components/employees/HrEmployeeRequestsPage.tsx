@@ -10,7 +10,7 @@ export const HrEmployeeRequestsPage: React.FC = () => (
     <HrPageHeader
       icon={UserPlus}
       title="Employee Requests"
-      subtitle="Ask for an Operations Head, Department Head, Team Lead or Team Member. An employee you add needs approval: a Team Member or Team Lead goes to the Department Head, a Department Head to the Operations Head who owns the department, an Operations Head to the Super Admin. The account is active only after they approve."
+      subtitle="Ask for an CEO, Department Head, Team Lead or Team Member. An employee you add needs approval: a Team Member or Team Lead goes to the Department Head, a Department Head to the CEO who owns the department, an CEO to the Managing Director. The account is active only after they approve."
     />
     <EmployeeRequestForm />
     <EmployeeRequestsPanel view="hr" title="Requests you sent" />

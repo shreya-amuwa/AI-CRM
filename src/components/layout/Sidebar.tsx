@@ -384,7 +384,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // Notice Board (20270131000200): every employee reads; publishers also send
     { id: 'my_notices' as ActiveTab, label: 'Notice Board', icon: Megaphone },
     // CEO Availability (20270201000100): in every HR dashboard, immediately below the Notice Board
-    ...(key === 'hr' ? [{ id: 'hr_ceo_availability' as ActiveTab, label: 'CEO Availability', icon: Crown }] : []), ...withChat];
+    ...(key === 'hr' ? [{ id: 'hr_ceo_availability' as ActiveTab, label: 'Managing Director Availability', icon: Crown }] : []), ...withChat];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
