@@ -7114,3 +7114,44 @@ export interface NoticeAudienceOptions {
   departments: { id: string; name: string }[]; roles: { id: string; label: string }[];
   employees: { id: string; name: string; role: string; department: string | null; departmentId: string | null }[];
 }
+
+// ---------------------------------------------------------------------------
+// HR Awards (20270203000100): Award Management > Awards
+// ---------------------------------------------------------------------------
+export type HrAwardCode = 'PROFESSIONALISM_EXCELLENCE' | 'RISING_STAR' | 'PLAYER' | 'EMERGING_LEADER' | 'DEPARTMENT' | 'TEAM' | 'BUSINESS_ICON';
+export type HrAwardNomineeType = 'INDIVIDUAL' | 'TEAM' | 'DEPARTMENT';
+/** NO_NOMINEES: nothing yet; NOMINATIONS_OPEN: nominees, no winner yet; WINNERS_DECLARED: at least one winner */
+export type HrAwardStatus = 'NO_NOMINEES' | 'NOMINATIONS_OPEN' | 'WINNERS_DECLARED';
+export interface HrAwardCard {
+  code: HrAwardCode; name: string; description: string | null; nomineeType: HrAwardNomineeType;
+  periodId: string | null; nominees: number; winners: number; status: HrAwardStatus; winnerNames: string[];
+}
+export interface HrAwardsOverview {
+  month: string; monthLabel: string; awards: HrAwardCard[];
+  /** the months that have award records, newest first */
+  history: { month: string; monthLabel: string; nominees: number; winners: number }[];
+}
+export interface HrAwardNominee {
+  id: string; periodId: string; nomineeType: HrAwardNomineeType; entityId: string;
+  profileId: string | null; teamId: string | null; departmentId: string | null;
+  name: string; departmentName: string | null; teamName: string | null; designation: string | null;
+  reason: string; remarks: string | null; status: 'NOMINATED' | 'WINNER';
+  nominatedAt: string; nominatedBy: string | null; updatedAt: string; updatedBy: string | null;
+}
+export interface HrAwardWinner {
+  id: string; periodId: string; nomineeId: string; name: string; nomineeType: HrAwardNomineeType;
+  departmentName: string | null; teamName: string | null; designation: string | null; remarks: string | null;
+  declaredAt: string; declaredBy: string | null; updatedAt: string;
+  revokedAt: string | null; revokedBy: string | null; revokeReason: string | null;
+}
+export interface HrAwardDetail {
+  award: { code: HrAwardCode; name: string; description: string | null; nomineeType: HrAwardNomineeType };
+  month: string; monthLabel: string; periodId: string | null;
+  totalNominees: number; totalWinners: number; status: HrAwardStatus;
+  nominees: HrAwardNominee[]; winners: HrAwardWinner[]; revokedWinners: HrAwardWinner[]; removedNominees: number;
+}
+export interface HrAwardOptions {
+  employees: { id: string; name: string; departmentId: string | null; departmentName: string | null; teamId: string | null; teamName: string | null; designation: string | null }[];
+  teams: { id: string; name: string; departmentId: string; departmentName: string; members: number }[];
+  departments: { id: string; name: string; members: number }[];
+}

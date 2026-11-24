@@ -57,6 +57,8 @@ import { BugService } from './BugService.js';
 import { BugRepository } from '../repositories/BugRepository.js';
 import { NoticeService } from './NoticeService.js';
 import { NoticeRepository } from '../repositories/NoticeRepository.js';
+import { HrAwardService } from './HrAwardService.js';
+import { HrAwardRepository } from '../repositories/HrAwardRepository.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
 import { WorkReportService } from './WorkReportService.js';
@@ -135,6 +137,7 @@ export function createServices(db: SupabaseClient) {
     meetings: new MeetingService(new MeetingRepository(db)),
     bugs: new BugService(new BugRepository(db)),
     notices: new NoticeService(new NoticeRepository(db)),
+    hrAwards: new HrAwardService(new HrAwardRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),

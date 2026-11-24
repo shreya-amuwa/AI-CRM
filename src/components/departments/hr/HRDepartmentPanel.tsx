@@ -26,6 +26,7 @@ import { errorMessage } from '../../../lib/api/client';
 import { formatClock, officeInstant, officeToday } from '../../../lib/officeTime';
 import { LoginGapBadge } from '../../hr/LoginGapBadge';
 import { EmployeeDirectory } from '../../hr/EmployeeDirectory';
+import { AwardsManagement } from '../../hr/AwardsManagement';
 import { useMonthlyLeave } from '../../../hooks/useMonthlyLeave';
 import { LeaveReviewList, useLeaveData } from '../../leave/LeaveCenter';
 
@@ -54,6 +55,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const leaveData = useLeaveData();
   const monthlyLeave = useMonthlyLeave();
   const [activeModule, setActiveModule] = useState<string | null>(null);
+  // Award Management's own menu: Birthdays, Anniversaries, then Awards (20270203000100)
+  const [awardsTab, setAwardsTab] = useState<'birthdays' | 'anniversaries' | 'awards'>('anniversaries');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => attendanceStore.getAttendanceRecords());
   const [latestMemberLogin, setLatestMemberLogin] = useState<AttendanceRecord | null>(() => attendanceStore.getLatestMemberLogin());
   const [attendanceFilter, setAttendanceFilter] = useState<'all' | 'crm' | 'biometric'>('all');
@@ -162,6 +165,11 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
     });
     return list.sort((a, b) => a.daysLeft - b.daysLeft);
   }, [employees, celebrated]);
+
+  const shownCelebrations = useMemo(
+    () => upcomingCelebrations.filter(c => (awardsTab === 'birthdays' ? c.type === 'birthday' : c.type === 'anniversary')),
+    [upcomingCelebrations, awardsTab]
+  );
 
   const handleWishBirthday = (name: string, id: string) => {
     setCelebrated(prev => ({ ...prev, [id]: true }));
@@ -1218,7 +1226,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       <p className="text-xs text-slate-500 mt-0.5">Track upcoming employee milestones, work anniversaries (soon), birthdays within 30 days, and honors</p>
                     </div>
                     <button
-                      onClick={() => { setMainSection('hr_ops'); setHrSubTab('employees'); setOpToast('Open an employee profile from the directory to nominate them.'); setTimeout(() => setOpToast(null), 4500); }}
+                      onClick={() => setAwardsTab('awards')}
                       className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
                     >
                       <Award className="w-4 h-4" />
@@ -1226,23 +1234,48 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                     </button>
                   </div>
 
+                  {/* Award Management menu: Birthdays, Anniversaries, then Awards */}
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    <nav aria-label="Award Management" className="lg:w-56 shrink-0 bg-white rounded-2xl border border-slate-200/90 p-2 shadow-xs flex lg:flex-col gap-1 overflow-x-auto">
+                      <span className="hidden lg:block px-2.5 pt-1.5 pb-1 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">Award Management</span>
+                      {([
+                        { id: 'birthdays' as const, label: 'Birthdays', icon: Cake },
+                        { id: 'anniversaries' as const, label: 'Anniversaries', icon: PartyPopper },
+                        { id: 'awards' as const, label: 'Awards', icon: Award }
+                      ]).map(item => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setAwardsTab(item.id)}
+                          aria-current={awardsTab === item.id ? 'page' : undefined}
+                          className={`px-3 py-2 rounded-[9px] flex items-center gap-2 text-sm whitespace-nowrap transition-colors cursor-pointer ${
+                            awardsTab === item.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:bg-slate-50'
+                          }`}
+                        >
+                          <item.icon className="w-4 h-4 shrink-0" />
+                          <span>{item.label}</span>
+                        </button>
+                      ))}
+                    </nav>
+                    <div className="flex-1 min-w-0 space-y-3">
                   {/* Section 1: Upcoming Celebrations (Birthdays & Work Anniversaries) */}
+                    {awardsTab !== 'awards' && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                         <Cake className="w-4 h-4 text-amber-600" />
-                        <span>Upcoming Work Anniversaries (Within 30 Days)</span>
+                        <span>{awardsTab === 'birthdays' ? 'Upcoming Birthdays (Within 30 Days)' : 'Upcoming Work Anniversaries (Within 30 Days)'}</span>
                       </h5>
                       <span className="text-xs font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-                        {upcomingCelebrations.length} Upcoming Events
+                        {shownCelebrations.length} Upcoming Events
                       </span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {!upcomingCelebrations.length && (
-                        <p className="col-span-full text-xs text-slate-500 bg-white border border-slate-200 rounded-2xl p-5">No work anniversaries in the next 30 days.</p>
+                      {!shownCelebrations.length && (
+                        <p className="col-span-full text-xs text-slate-500 bg-white border border-slate-200 rounded-2xl p-5">{awardsTab === 'birthdays' ? 'No birthdays in the next 30 days.' : 'No work anniversaries in the next 30 days.'}</p>
                       )}
-                      {upcomingCelebrations.map(cel => (
+                      {shownCelebrations.map(cel => (
                         <div
                           key={cel.id}
                           className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
@@ -1310,16 +1343,11 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
                       ))}
                     </div>
                   </div>
-
-                  {/* Section 2: Star Performers & Wall of Honors */}
-                  <div className="space-y-3 pt-2">
-                    <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-500">
-                      Executive Star Performers of the Quarter
-                    </h5>
-
-                    <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-2xl p-5">
-                      No award nominations yet. Use "Nominate Star Award" to recognise a team member.
-                    </p>
+                    )}
+                    {awardsTab === 'awards' && (
+                      <AwardsManagement onToast={(msg) => { setOpToast(msg); setTimeout(() => setOpToast(null), 4500); }} />
+                    )}
+                    </div>
                   </div>
                 </div>
               )}

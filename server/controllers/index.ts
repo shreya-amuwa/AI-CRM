@@ -374,6 +374,19 @@ export const organizationController = {
 
 import { runHrAutomation } from '../automations/hrDispatcher.js';
 
+// HR Awards (20270203000100): Award Management > Awards; the database allows HR staff and the Super Admin
+export const hrAwardsController = {
+  overview: (async ctx => ok(await svc(ctx).hrAwards.overview(ctx.req.query))) as Handler,
+  options: (async ctx => ok(await svc(ctx).hrAwards.options())) as Handler,
+  detail: (async ctx => ok(await svc(ctx).hrAwards.detail(ctx.params.code, ctx.req.query))) as Handler,
+  nominate: (async ctx => ok(await svc(ctx).hrAwards.nominate(ctx.params.code, ctx.req.body), 201)) as Handler,
+  updateNominee: (async ctx => ok(await svc(ctx).hrAwards.updateNominee(ctx.params.id, ctx.req.body))) as Handler,
+  removeNominee: (async ctx => ok(await svc(ctx).hrAwards.removeNominee(ctx.params.id, ctx.req.body))) as Handler,
+  declareWinners: (async ctx => ok(await svc(ctx).hrAwards.declareWinners(ctx.req.body))) as Handler,
+  updateWinner: (async ctx => ok(await svc(ctx).hrAwards.updateWinner(ctx.params.id, ctx.req.body))) as Handler,
+  revokeWinner: (async ctx => ok(await svc(ctx).hrAwards.revokeWinner(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const hrController = {
   recordRmLogin: (async ctx => (await svc(ctx).hr.recordRmLogin(), ok(null))) as Handler,
   attendance: (async ctx => ok(await svc(ctx).hr.attendance(ctx.req.query))) as Handler,
