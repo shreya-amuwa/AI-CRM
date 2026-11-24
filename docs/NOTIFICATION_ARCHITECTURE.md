@@ -17,7 +17,7 @@ role) receives about meetings. Related: `NOTIFICATION_RELIABILITY.md`, `NOTIFICA
    `open-meeting`, …), or opens the CRM on the notice's URL.
 
 The outbox has these kinds: `ATTENDANCE_REMINDER`, `TEST`, `SA_ATTENDANCE`, `COMPANY_NOTICE` and `MEETING` (added by
-`20270206000100_meeting_oversight_notifications.sql`).
+`20270206000200_meeting_oversight_notifications.sql`).
 
 ## Meeting notifications for the Managing Director (Task 05)
 

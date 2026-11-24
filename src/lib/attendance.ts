@@ -130,7 +130,7 @@ export function locationHelp(status: LocationStatus, accuracy?: number | null, m
   }
 }
 
-/** The Managing Director's meeting notices (migration 20270206000100). */
+/** The Managing Director's meeting notices (migration 20270206000200). */
 export type MeetingNoticeSettings = { enabled: boolean; pushEnabled: boolean; remindMinutes: number[]; updatedAt: string | null };
 export const MEETING_REMINDER_CHOICES: { minutes: number; label: string }[] = [
   { minutes: 120, label: '2 hours before' }, { minutes: 60, label: '1 hour before' }, { minutes: 30, label: '30 minutes before' },
