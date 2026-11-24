@@ -3767,8 +3767,12 @@ export const noticeUpdateSchema = z.object({
   category: z.enum(NOTICE_CATEGORIES).optional(),
   priority: z.enum(NOTICE_PRIORITIES).optional(),
   expiresAt: noticeTime,
+  /** a material change: everyone acknowledges this version again (a minor edit leaves every acknowledgement as it was) */
+  acknowledgeAgain: z.boolean().optional(),
   version: z.number().int().min(1).optional()
 }).strict();
+/** The Super Admin adds or removes a person from the CRM team that runs the Notice Board (20270202000100). */
+export const noticeManagerSetSchema = z.object({ enabled: z.boolean() }).strict();
 export const noticeListQuerySchema = z.object({
   scope: z.enum(['INBOX', 'ALL', 'MINE']).default('INBOX'),
   category: z.enum(NOTICE_CATEGORIES).optional(),

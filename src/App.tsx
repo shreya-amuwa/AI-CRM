@@ -15,6 +15,7 @@ import { useOpenChatRequest } from './components/chat/chatEvents';
 import { useOpenHrCaseRequest, useOpenIssuesRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
 import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
 import { useOpenNoticeRequest } from './components/notices/noticeEvents';
+import { NoticePopupHost } from './components/notices/NoticePopupHost';
 import { TabBar } from './components/layout/TabBar';
 
 // Dedicated Department Panels
@@ -781,6 +782,8 @@ export function App() {
                 <Suspense fallback={<ScreenLoader />}>
                   <MainAppContent />
                 </Suspense>
+                {/* company notices not yet acknowledged open here, on every employee dashboard (20270202000100) */}
+                <NoticePopupHost />
               </EmployeeSecureChat>
             </NotificationProvider>
           </LeadStoreProvider>

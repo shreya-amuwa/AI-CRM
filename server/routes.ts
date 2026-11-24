@@ -548,6 +548,11 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/notices', handler: notices.list },
   { method: 'GET', path: '/notices/unread-count', handler: notices.unreadCount },
   { method: 'GET', path: '/notices/audience', handler: notices.audience },
+  // 20270202000100: the popup queue and the acknowledgement (everyone); who runs the board (the Super Admin)
+  { method: 'GET', path: '/notices/pending', handler: notices.pending },
+  { method: 'GET', path: '/notices/managers', handler: notices.managers },
+  { method: 'POST', path: '/notices/managers/:profileId', handler: notices.managerSet, options: S },
+  { method: 'POST', path: '/notices/:id/acknowledge', handler: notices.acknowledge, options: S },
   { method: 'POST', path: '/notices', handler: notices.publish, options: S },
   { method: 'GET', path: '/notices/:id', handler: notices.open },
   { method: 'GET', path: '/notices/:id/receipts', handler: notices.receipts },

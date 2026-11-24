@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Archive, Bell, CheckCircle2, Loader2, Megaphone, Pencil, RefreshCw, Search, Send } from 'lucide-react';
-import type { CompanyNotice, NoticeAudienceOptions, NoticeAudienceType, NoticeList, NoticePriority, NoticeReceipts } from '../../../shared/contracts';
+import type { CompanyNotice, NoticeAudienceOptions, NoticeAudienceType, NoticeList, NoticeManagers, NoticePriority, NoticeReceipts } from '../../../shared/contracts';
 import { NOTICE_CATEGORIES, NOTICE_CATEGORY_LABELS, NOTICE_PRIORITIES, noticePublishSchema } from '../../../shared/validation';
 import { ApiError } from '../../lib/api/client';
 import { noticesApi } from '../../lib/api/notices';
@@ -14,8 +14,9 @@ import { noticesChanged, takePendingNotice, useOpenNoticeRequest } from './notic
  * Notice Board (migration 20270131000200), in the side panel of every dashboard.
  *  - View Notices: everyone; the notices addressed to them (publishers also every company notice), filters, read / unread; opening one
  *    records the read receipt.
- *  - Send Notice: only the Super Admin, an Operations Head (their departments), HR and the Developers team. The database refuses anyone
- *    else and checks the audience; this screen only hides what they cannot do. Publishers also manage their notices: read receipts,
+ *  - Send Notice: only the Super Admin, HR and the CRM team (named accounts, 20270202000100). The database refuses anyone
+ *    else and checks the audience; this screen only hides what they cannot do. The Super Admin also sees Managers (who the CRM team is).
+ *  - Acknowledge: every recipient acknowledges a notice once (here, or in the popup that opens when they enter the CRM). Publishers also manage their notices: read receipts,
  *    delivery status, edit (history kept), archive.
  */
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
@@ -25,7 +26,7 @@ const PRIORITY_LABEL: Record<NoticePriority, string> = { NORMAL: 'Normal', IMPOR
 const PRIORITY_STYLE: Record<NoticePriority, string> = {
   NORMAL: 'bg-slate-50 text-slate-700 border-slate-200', IMPORTANT: 'bg-amber-50 text-amber-800 border-amber-200', URGENT: 'bg-rose-50 text-rose-700 border-rose-200'
 };
-const ROLE_LABEL = { SUPER_ADMIN: 'Super Admin', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', DEVELOPER: 'Developers' } as const;
+const ROLE_LABEL = { SUPER_ADMIN: 'Super Admin', OPERATIONS_HEAD: 'Operations Head', HR: 'HR', DEVELOPER: 'Developers', CRM_TEAM: 'CRM team' } as const;
 const AUDIENCE_LABEL: Record<NoticeAudienceType, string> = {
   COMPANY: 'Entire company – all employees', DEPARTMENT: 'Specific departments', ROLE: 'Specific designations or roles', EMPLOYEES: 'Selected employees'
 };
@@ -44,7 +45,7 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
   const [receipts, setReceipts] = useState<NoticeReceipts | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [edit, setEdit] = useState<{ title: string; body: string; priority: NoticePriority; expiresAt: string } | null>(null);
+  const [edit, setEdit] = useState<{ title: string; body: string; priority: NoticePriority; expiresAt: string; again: boolean } | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const load = useCallback(() => {
     setError('');
@@ -91,12 +92,16 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
                   <Field label="Priority" htmlFor="notice-edit-priority"><select id="notice-edit-priority" className={`${selectCls} w-full`} value={edit.priority} onChange={e => setEdit({ ...edit, priority: e.target.value as NoticePriority })}>{NOTICE_PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</select></Field>
                   <Field label="Expiry (optional)" htmlFor="notice-edit-expiry"><input id="notice-edit-expiry" type="datetime-local" className={inputCls} value={edit.expiresAt} onChange={e => setEdit({ ...edit, expiresAt: e.target.value })} /></Field>
                 </div>
+                <label className="flex items-start gap-2 text-xs text-slate-700">
+                  <input type="checkbox" className="mt-0.5" checked={edit.again} onChange={e => setEdit({ ...edit, again: e.target.checked })} data-testid="notice-ack-again" />
+                  <span><b>Employees must acknowledge this change again.</b> Tick it for a change that matters (a new date, a different rule). Leave it for a typo: nobody is asked again.</span>
+                </label>
                 <p className="text-[11px] text-slate-500">The audience stays the same. The earlier text is kept in the history.</p>
                 <div className="flex justify-end gap-2">
                   <button type="button" className={btn.secondary} onClick={() => setEdit(null)}>Cancel</button>
                   <button type="button" className={btn.primary} disabled={busy || edit.title.trim().length < 3 || !edit.body.trim()} data-testid="notice-save"
                     onClick={() => void run(() => noticesApi.update(n.id, { title: edit.title.trim(), body: edit.body.trim(), priority: edit.priority,
-                      expiresAt: edit.expiresAt ? new Date(edit.expiresAt).toISOString() : null, version: n.version }))}>{busy ? 'Saving…' : 'Save changes'}</button>
+                      expiresAt: edit.expiresAt ? new Date(edit.expiresAt).toISOString() : null, acknowledgeAgain: edit.again || undefined, version: n.version }))}>{busy ? 'Saving…' : 'Save changes'}</button>
                 </div>
               </div>
             ) : (
@@ -109,15 +114,18 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold">Targeted: {receipts.total}</span>
                   <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800">Read: {receipts.read}</span>
-                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 font-semibold text-amber-800">Not read: {receipts.unread}</span>
+                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 font-semibold text-amber-800">Not read: {receipts.unread} ({receipts.readPercent}% read)</span>
+                  <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-800" data-testid="receipt-ack">Acknowledged: {receipts.acknowledged} ({receipts.acknowledgedPercent}%)</span>
+                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 font-semibold text-amber-800">Not acknowledged: {receipts.notAcknowledged}</span>
                   <span className="rounded-lg bg-indigo-50 px-2.5 py-1 font-semibold text-indigo-800">Push: {receipts.push.accepted} delivered{receipts.push.pending ? `, ${receipts.push.pending} sending` : ''}{receipts.push.failed ? `, ${receipts.push.failed} failed` : ''} ({receipts.push.devices} devices)</span>
                 </div>
                 <div className="max-h-56 overflow-y-auto">
                   <table className="min-w-full text-xs">
-                    <thead className="text-slate-500"><tr>{['Employee', 'Department', 'Read'].map(h => <th key={h} scope="col" className="px-2 py-1 text-left font-semibold">{h}</th>)}</tr></thead>
+                    <thead className="text-slate-500"><tr>{['Employee', 'Department', 'Read', 'Acknowledged'].map(h => <th key={h} scope="col" className="px-2 py-1 text-left font-semibold">{h}</th>)}</tr></thead>
                     <tbody className="divide-y divide-slate-100">{receipts.rows.map(r => (
                       <tr key={r.profileId} data-testid="receipt-row"><td className="px-2 py-1 font-semibold">{r.name}</td><td className="px-2 py-1">{r.department ?? '–'}</td>
-                        <td className="px-2 py-1">{r.readAt ? <span className="text-emerald-700">{when(r.readAt)}</span> : <span className="text-amber-700">Not read</span>}</td></tr>
+                        <td className="px-2 py-1">{r.readAt ? <span className="text-emerald-700">{when(r.readAt)}</span> : <span className="text-amber-700">Not read</span>}</td>
+                        <td className="px-2 py-1" data-testid="receipt-ack-cell">{r.acknowledgedAt ? <span className="text-emerald-700">{when(r.acknowledgedAt)}</span> : <span className="text-amber-700">Not yet</span>}</td></tr>
                     ))}</tbody>
                   </table>
                 </div>
@@ -131,10 +139,15 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
             <div className="flex flex-wrap justify-end gap-2">
               {n.canManage && n.status !== 'ARCHIVED' && !edit ? (
                 <>
-                  <button type="button" className={btn.secondary} onClick={() => setEdit({ title: n.title, body: n.body, priority: n.priority, expiresAt: n.expiresAt ? new Date(new Date(n.expiresAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '' })} data-testid="notice-edit-button"><Pencil className="w-4 h-4" aria-hidden /> Edit</button>
+                  <button type="button" className={btn.secondary} onClick={() => setEdit({ title: n.title, body: n.body, priority: n.priority, expiresAt: n.expiresAt ? new Date(new Date(n.expiresAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '', again: false })} data-testid="notice-edit-button"><Pencil className="w-4 h-4" aria-hidden /> Edit</button>
                   <button type="button" className={btn.secondary} onClick={() => setConfirmArchive(true)} data-testid="notice-archive"><Archive className="w-4 h-4" aria-hidden /> Archive</button>
                 </>
               ) : null}
+              {n.isRecipient && !n.acknowledged && n.status === 'PUBLISHED' && !edit ? (
+                <button type="button" className={btn.primary} disabled={busy} data-testid="notice-acknowledge"
+                  onClick={() => void run(async () => { await noticesApi.acknowledge(n.id); noticesChanged(); return noticesApi.open(n.id); })}><CheckCircle2 className="w-4 h-4" aria-hidden /> Acknowledge</button>
+              ) : null}
+              {n.isRecipient && n.acknowledged && n.acknowledgedAt ? <span className="mr-auto self-center text-xs text-emerald-700" data-testid="notice-acknowledged">Acknowledged {when(n.acknowledgedAt)}</span> : null}
               <button type="button" className={btn.secondary} onClick={onClose}>Close</button>
             </div>
           </>
@@ -295,7 +308,7 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
       ) : null}
       <Card className="p-5">
         <form onSubmit={submit} noValidate className="space-y-4" aria-label="Send a notice" data-testid="notice-form">
-          <p className="text-xs text-slate-500">You publish as <b>{options.role ? ROLE_LABEL[options.role] : ''}</b>{options.role === 'OPERATIONS_HEAD' ? ', to the departments you manage.' : '.'}</p>
+          <p className="text-xs text-slate-500">You publish as <b>{options.role ? ROLE_LABEL[options.role] : ''}</b>. The default audience is all employees.</p>
           <Field label="Notice title" required htmlFor="notice-title" error={errors.title}><input id="notice-title" className={inputCls} maxLength={200} value={title} onChange={e => setTitle(e.target.value)} aria-invalid={!!errors.title} /></Field>
           <Field label="Notice description" required htmlFor="notice-body" error={errors.body}><textarea id="notice-body" rows={6} className={inputCls} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} aria-invalid={!!errors.body} /></Field>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -380,10 +393,53 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
   );
 };
 
+// ---------------------------------------------------------------------------------------------------- who runs the board (the Super Admin)
+const Managers: React.FC = () => {
+  const [data, setData] = useState<NoticeManagers | null>(null);
+  const [error, setError] = useState('');
+  const [pick, setPick] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { noticesApi.managers().then(x => { setData(x); setError(''); }, e => setError(errText(e))); }, []);
+  useEffect(load, [load]);
+  const set = async (id: string, enabled: boolean) => {
+    setBusy(true);
+    try { await noticesApi.setManager(id, enabled); setPick(''); load(); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
+  };
+  return (
+    <section className="space-y-3" aria-label="Notice Board managers" data-testid="notice-managers">
+      <Card className="p-4 space-y-3">
+        <p className="text-sm text-slate-600">Who may send, edit and archive company notices: the Super Admin, HR, and these named people (the CRM team). Nobody else, whatever their role.</p>
+        {error ? <ErrorBanner message={error} onRetry={load} /> : null}
+        {!data && !error ? <Spinner /> : null}
+        {data ? (
+          <>
+            <ul className="divide-y divide-slate-100" aria-label="CRM team">
+              {data.managers.length === 0 ? <li className="py-2 text-sm text-slate-500">No one yet.</li> : null}
+              {data.managers.map(m => (
+                <li key={m.profileId} className="flex items-center gap-3 py-2 text-sm" data-testid="notice-manager">
+                  <span className="flex-1"><b>{m.name}</b> <span className="text-xs text-slate-500">{m.department ?? ''}{m.status !== 'ACTIVE' ? ` · ${m.status.toLowerCase()} (no access while not active)` : ''}</span></span>
+                  <button type="button" className={btn.secondary} disabled={busy} onClick={() => void set(m.profileId, false)}>Remove</button>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap items-center gap-2">
+              <select className={selectCls} aria-label="Add a person" value={pick} onChange={e => setPick(e.target.value)} data-testid="notice-manager-pick">
+                <option value="">Add a person…</option>
+                {data.candidates.map(c => <option key={c.profileId} value={c.profileId}>{c.name}{c.department ? ` · ${c.department}` : ''}</option>)}
+              </select>
+              <button type="button" className={btn.primary} disabled={busy || !pick} onClick={() => void set(pick, true)} data-testid="notice-manager-add">Add</button>
+            </div>
+          </>
+        ) : null}
+      </Card>
+    </section>
+  );
+};
+
 // ---------------------------------------------------------------------------------------------------- the page
 export const NoticeBoard: React.FC = () => {
   const [options, setOptions] = useState<NoticeAudienceOptions | null>(null);
-  const [tab, setTab] = useState<'VIEW' | 'SEND'>('VIEW');
+  const [tab, setTab] = useState<'VIEW' | 'SEND' | 'MANAGERS'>('VIEW');
   const [open, setOpen] = useState<string | null>(() => takePendingNotice()?.id ?? null);
   const [reloadKey, setReloadKey] = useState(0);
   const [unread, setUnread] = useState<number | null>(null);
@@ -404,13 +460,14 @@ export const NoticeBoard: React.FC = () => {
       </div>
       {canPublish ? (
         <div role="tablist" aria-label="Notice Board sections" className="flex gap-2">
-          {([['VIEW', 'View Notices'], ['SEND', 'Send Notice']] as const).map(([id, label]) => (
+          {([['VIEW', 'View Notices'], ['SEND', 'Send Notice'], ...(options?.role === 'SUPER_ADMIN' ? [['MANAGERS', 'Managers'] as const] : [])] as const).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} data-testid={`notice-tab-${id}`}
               className={`px-3.5 h-9 rounded-xl text-sm font-bold border ${tab === id ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>{label}</button>
           ))}
         </div>
       ) : null}
       {tab === 'SEND' && canPublish && options ? <SendNotice options={options} onOpen={setOpen} reloadKey={reloadKey} onSent={reload} />
+        : tab === 'MANAGERS' && options?.role === 'SUPER_ADMIN' ? <Managers />
         : <ViewNotices canPublish={canPublish} onOpen={setOpen} reloadKey={reloadKey} />}
       {open ? <NoticeDialog id={open} onClose={() => { setOpen(null); reload(); }} onChanged={() => noticesApi.unreadCount().then(setUnread, () => undefined)} /> : null}
     </div>

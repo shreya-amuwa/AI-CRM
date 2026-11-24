@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CompanyNotice, NoticeAudienceOptions, NoticeList, NoticeReceipts } from '../../shared/contracts.js';
+import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** Company Notice Board (20270131000200): every call is a database function that checks the caller (reader or publisher, and the audience). */
@@ -20,5 +20,9 @@ export class NoticeRepository {
   audienceOptions() { return this.rpc<NoticeAudienceOptions>('notice_audience_options'); }
   publish(p: Record<string, unknown>) { return this.rpc<CompanyNotice & { deliveryIds?: number[] }>('notice_publish', { p }); }
   update(id: string, p: Record<string, unknown>) { return this.rpc<CompanyNotice>('notice_update', { p_id: id, p }); }
+  pending() { return this.rpc<NoticePending>('notice_pending'); }
+  acknowledge(id: string) { return this.rpc<NoticeAcknowledged>('notice_acknowledge', { p_id: id }); }
+  managers() { return this.rpc<NoticeManagers>('notice_managers'); }
+  managerSet(profileId: string, enabled: boolean) { return this.rpc<{ profileId: string; manager: boolean }>('notice_manager_set', { p_profile: profileId, p_enabled: enabled }); }
   archive(id: string) { return this.rpc<CompanyNotice>('notice_archive', { p_id: id }); }
 }

@@ -1,4 +1,4 @@
-import type { CompanyNotice, NoticeAudienceOptions, NoticeList, NoticeReceipts } from '../../../shared/contracts';
+import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../../shared/contracts';
 import { api } from './client';
 
 /** Company Notice Board (migration 20270131000200). Files use the issue upload / download routes (employeeCasesApi). */
@@ -12,5 +12,10 @@ export const noticesApi = {
   receipts: (id: string) => api.get<NoticeReceipts>(`/notices/${encodeURIComponent(id)}/receipts`),
   publish: (b: Record<string, unknown>) => api.post<CompanyNotice>('/notices', b),
   update: (id: string, b: Record<string, unknown>) => api.post<CompanyNotice>(`/notices/${encodeURIComponent(id)}/update`, b),
+  /** The popup queue: what this employee has not acknowledged yet. */
+  pending: () => api.get<NoticePending>('/notices/pending'),
+  acknowledge: (id: string) => api.post<NoticeAcknowledged>(`/notices/${encodeURIComponent(id)}/acknowledge`, {}),
+  managers: () => api.get<NoticeManagers>('/notices/managers'),
+  setManager: (profileId: string, enabled: boolean) => api.post<{ profileId: string; manager: boolean }>(`/notices/managers/${encodeURIComponent(profileId)}`, { enabled }),
   archive: (id: string) => api.post<CompanyNotice>(`/notices/${encodeURIComponent(id)}/archive`, {})
 };
