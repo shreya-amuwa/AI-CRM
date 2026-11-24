@@ -148,3 +148,43 @@ panel (a lead-ingestion page that does not apply here). **Dashboard** now shows 
 overdue follow-ups, customers, active / resolved / unassigned tickets, and the team table), read-only, for that department only. It reuses the Department Head's overview
 (`UnifiedDepartmentMonitor`, `src/components/unified/UnifiedOverview.tsx`) and the existing `division_leads_overview` / `division_support_overview` functions, which allow exactly the
 Super Admin and that department's own Department Head (anyone else is refused by the database). No migration is needed.
+
+# Existing departments: "Amuwa International Department" and "Amuwa Reseller Department" (migration 20270202000100)
+
+## What was wrong
+
+The two departments the owner had already created in the Departments page ("Amuwa International Department", "Amuwa Reseller Department") have their own slugs and no team.
+The unified behaviour of the earlier pull requests was keyed on the **two slugs** `international` / `reseller` (the seeded departments), in the database (`departments.unified_sales_support`,
+set only for those slugs) **and** in the forms (`UNIFIED_DEPARTMENT_SLUGS`). So for the real departments:
+
+- the Add Team Member form treated them as ordinary departments, offered the Sales-only / Support-only roles and asked for a head function, and refused with *"... has no Sales or Support team to manage."*
+  (they have no Sales or Support team: they are meant to have one General team that does both);
+- the people in them opened the generic dashboards, not the unified Sales + Support one.
+
+There was no permission problem: the Sales and Support rules (`private.dept_is_unified`, `team_unified`) already read the department flag. They just never saw the flag on these departments.
+
+## The fix (data, not slugs)
+
+`20270202000100_unified_existing_departments.sql` (run after `20270201000100`; safe to run twice; nothing is deleted from a used department, nothing is renamed, no person, lead, ticket or task changes):
+
+1. A department is flagged `unified_sales_support` when its **name or slug says International or Reseller** (whole word), it is **not the Sales / Support side of another department**
+   and it has **no Sales team and no Support team**. A real Sales or Support department therefore can never be matched (tested with "International Sales Hub", which has a Sales team).
+2. A flagged department with no team gets its one **General** team.
+3. The people already in them get the unified dashboard (`unified-head` / `-lead` / `-member`); a Department Head who had been given a Sales-only or Support-only side has no side.
+4. **Duplicates.** The first migration seeded separate `international` / `reseller` departments. `private.unified_drop_unused_seed(slug)` removes such a seeded department **only** when an existing
+   International / Reseller department exists and **nothing at all points at it** (every foreign key to the department and its teams is checked; audit entries only remember and are kept).
+   If anything is found, it is kept; remove it from the Departments page when no longer needed.
+
+The API now returns `unifiedSalesSupport` for every department (`GET /departments`, optional, so an older database still works), and the forms learn the flagged departments when the
+department list loads (`registerUnifiedDepartments`). The two seeded slugs stay recognised as the fallback.
+
+## What every person of these departments has (tested with real accounts in the database)
+
+| Department | Designation | Sales | Support | Dashboard |
+| --- | --- | --- | --- | --- |
+| Amuwa International | Department Head / Team Lead / Team Member | add lead, lead lists, assignment (head / lead), follow-ups | customers, tickets, status, resolve / close | one unified dashboard |
+| Amuwa Reseller | Department Head / Team Lead / Team Member | same | same | one unified dashboard |
+
+Each sees only their own department's leads and tickets (member: their own; Team Lead: their members'; head: the department). Super Admin and every existing Sales / Support department are unchanged.
+
+Tests: `supabase/tests/unified_existing_departments_test.sql`, `supabase/tests/unified_dashboard.test.ts` (registry), `supabase/tests/ui_unified_existing_departments.test.mjs` (the real Add Team Member form), the `departments API` checks of `api_integration.test.ts`.

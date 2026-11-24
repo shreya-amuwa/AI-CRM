@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState } from 'react';
-import { UNIFIED_DEPARTMENT_SLUGS } from '../shared/contracts';
+import { isUnifiedDepartment } from './lib/auth/departmentRoles';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DepartmentProvider, useDepartments } from './context/DepartmentContext';
 import { LeadStoreProvider } from './context/LeadStoreContext';
@@ -740,7 +740,7 @@ const MainAppContent: React.FC = () => {
                 subDept={currentSubDept}
                 onSelectSubDept={(dept: any) => handleTabUpdate('dashboard', dept)}
               />
-            ) : currentActiveTab === 'dashboard' && UNIFIED_DEPARTMENT_SLUGS.includes(currentDeptId) && currentDept.dbId ? (
+            ) : currentActiveTab === 'dashboard' && isUnifiedDepartment(currentDeptId) && currentDept.dbId ? (
               /* International / Reseller (Sales + Support in one department): the Super Admin sees the real figures, not the lead-ingestion panel */
               <Suspense fallback={<ScreenLoader />}><UnifiedDepartmentMonitor departmentId={currentDept.dbId} departmentName={currentDept.name} /></Suspense>
             ) : currentActiveTab === 'dashboard' ? (

@@ -12432,6 +12432,15 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.meetings where title like 'CVX %'`);
   await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
 }
+// --- International / Reseller recognised by the database flag, not by a slug (migration 20270202000100) ---
+{
+  const r = await api('sa', 'GET', '/departments');
+  const by = (slug: string) => r.json.data.find((d: any) => d.slug === slug);
+  check(r.status === 200 && by('international')?.unifiedSalesSupport === true && by('reseller')?.unifiedSalesSupport === true, 'departments API: International and Reseller are flagged unified (Sales + Support)', r);
+  check(by('wabastore')?.unifiedSalesSupport === false && r.json.data.filter((d: any) => d.unifiedSalesSupport).every((d: any) => /international|reseller/i.test(`${d.name} ${d.slug}`)), 'departments API: no Sales or Support department is flagged', r);
+  const a = await api('a', 'GET', '/departments');
+  check(a.status === 200 && a.json.data.every((d: any) => typeof d.unifiedSalesSupport === 'boolean'), 'departments API: every signed-in person reads the flag', a);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

@@ -2,6 +2,7 @@
  * Typed API endpoints, grouped by resource. Components and hooks call these;
  * they never call fetch() or Supabase tables directly.
  */
+import { registerUnifiedDepartments } from '../auth/departmentRoles';
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
 import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
@@ -883,7 +884,8 @@ export const signInReportApi = {
 };
 
 export const organizationApi = {
-  departments: () => api.get<Department[]>('/departments'),
+  // the departments the database marks unified (Sales + Support) are remembered, so the forms recognise them whatever their slug is
+  departments: () => api.get<Department[]>('/departments').then(list => { registerUnifiedDepartments(list); return list; }),
   createDepartment: (body: { name: string; description?: string; category?: string }) => api.post<Department>('/departments', body),
   updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description'>>) => api.patch<Department>(`/departments/${id}`, body),
   deleteDepartment: (id: string) => api.delete<null>(`/departments/${id}`),

@@ -3,7 +3,7 @@
 // routing is unchanged.
 import { UNIFIED_DEPARTMENT_SLUGS } from '../../shared/contracts.js';
 import { defaultDashboardLabel, isUnifiedStaff, toAuthUser } from '../../src/lib/auth/roleMapping.js';
-import { designationsForDepartment, requestSidesForDepartment, staffChoicesForDepartment, staffTeamsForDepartment } from '../../src/lib/auth/departmentRoles.js';
+import { designationsForDepartment, hasPlainRolesOnly, isUnifiedDepartment, registerUnifiedDepartments, requestSidesForDepartment, staffChoicesForDepartment, staffTeamsForDepartment } from '../../src/lib/auth/departmentRoles.js';
 import { getRedirectForRole, parseCurrentRoute, validateRouteAccess, type ParsedRoute } from '../../src/utils/router.js';
 import { UNIFIED_PATHS, canOpen, parseUnifiedPage, unifiedMenu, type UnifiedPage, type UnifiedWho } from '../../src/components/unified/unifiedNav.js';
 
@@ -98,5 +98,29 @@ for (const slug of UNIFIED_DEPARTMENT_SLUGS) {
 }
 check(staffChoicesForDepartment('wabastore', roles).length === roles.length && requestSidesForDepartment('wabastore').length === 3, 'another department keeps every role and side');
 check(defaultDashboardLabel('TEAM_HEAD', 'SUPPORT', 'Wabastore', false, 'wabastore') === 'Support Team Lead Dashboard · Wabastore', 'and its dashboard names');
+
+// ---- departments the owner created under their own names: the DATABASE flag decides, not the slug (migration 20270202000100)
+{
+  const OWNER = ['amuwa-international-department', 'amuwa-reseller-department'];
+  check(OWNER.every(s => !isUnifiedDepartment(s) && !hasPlainRolesOnly(s)), 'before the department list is loaded the owner-created slugs are not recognised (the reported error)');
+  check(staffChoicesForDepartment(OWNER[0], roles).length === roles.length, 'so the form offered every Sales / Support role and the head function chooser ("has no Sales or Support team")');
+  registerUnifiedDepartments([
+    { slug: OWNER[0], unifiedSalesSupport: true }, { slug: OWNER[1], unifiedSalesSupport: true },
+    { slug: 'wabastore', unifiedSalesSupport: false }, { slug: 'intl-sales-hub' }
+  ]);
+  for (const slug of OWNER) {
+    check(isUnifiedDepartment(slug) && hasPlainRolesOnly(slug), `${slug}: recognised from the database flag`);
+    check(staffChoicesForDepartment(slug, roles).join() === 'DEPARTMENT_HEAD,TEAM_HEAD,TEAM_MEMBER', `${slug}: only Department Head, Team Lead and Team Member are offered`);
+    check(staffTeamsForDepartment(slug, [{ id: 'a', division: 'GENERAL' }, { id: 'b', division: 'SALES' }]).map(t => t.id).join() === 'a', `${slug}: only the department's one team`);
+    check(requestSidesForDepartment(slug).join() === 'GENERAL', `${slug}: no Sales-only or Support-only side`);
+    for (const [role, label] of [['DEPARTMENT_HEAD', 'Department Head'], ['TEAM_HEAD', 'Team Lead'], ['TEAM_MEMBER', 'Team Member']] as const) {
+      check(defaultDashboardLabel(role, 'GENERAL', 'Amuwa International Department', false, slug).startsWith(`Sales & Support ${label} Dashboard`), `${slug}: ${label}: "Will open" names the unified dashboard`);
+    }
+  }
+  check(!isUnifiedDepartment('wabastore') && !isUnifiedDepartment('intl-sales-hub') && staffChoicesForDepartment('wabastore', roles).length === roles.length, 'an existing department, or one that merely says International, is not recognised');
+  check(isUnifiedDepartment('international') && isUnifiedDepartment('reseller'), 'the two seeded slugs stay recognised');
+  registerUnifiedDepartments([{ slug: 'wabastore' }]);
+  check(!isUnifiedDepartment(OWNER[0]), 'a department list that no longer flags a slug forgets it');
+}
 
 console.log(`=== UNIFIED DASHBOARD TESTS PASSED (${passed}) ===`);
