@@ -653,6 +653,7 @@ function adapt(route: RouteDef) {
     const result = await route.handler({ req: request, params: c.req.param() as Record<string, string>, actor: c.get('actor')!, db: c.get('db')! });
     // a lead may have just got its first sales person: send its welcome WhatsApp now (the scheduled dispatch is the safety net)
     if (assignsLeads(request.method, request.path)) await afterResponse(c, leadWhatsAppQuietly());
+    if (result.after) await afterResponse(c, result.after());
     return c.json(ok(result.data), (result.status ?? 200) as 200);
   };
 }

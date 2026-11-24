@@ -97,7 +97,8 @@ On a lead's page, *Welcome WhatsApp* shows the message's state. It offers **Send
 | Variable | Meaning |
 | --- | --- |
 | `AUTOMATION_MODE_LEAD_WHATSAPP` | `off`, `dry_run` (default: decided and logged, nothing sent) or `live`. When it is not set, `AUTOMATION_MODE` decides. |
-| `WABASTORE_WEBHOOK_URL`, `WABASTORE_API_KEY` | Wabastore's send address and key, shared with the paid-invoice and reminder messages. Live without them behaves like off and says why. |
+| `WABASTORE_WEBHOOK_URL` | Wabastore's send address (https), shared with the paid-invoice and reminder messages. Required for live; without it live behaves like off and says why. |
+| `WABASTORE_API_KEY` | Optional. Only if Wabastore gives you a key: it is then sent as `Authorization: Bearer <key>`. Without it nothing changes and no header is sent. |
 | `WABASTORE_STATUS_SECRET` | 16+ characters; Wabastore sends delivery reports with it. |
 | `AUTOMATION_TEST_RECIPIENTS` | Staging safety net: only these numbers are ever sent to. |
 
@@ -114,7 +115,7 @@ A missing value is never sent empty, because WhatsApp refuses a template with an
 
 ## Going live
 1. Run the migration in the Supabase SQL editor.
-2. Make sure `WABASTORE_WEBHOOK_URL` and `WABASTORE_API_KEY` are set on the server.
+2. Make sure `WABASTORE_WEBHOOK_URL` is set on the server (`WABASTORE_API_KEY` only if Wabastore gave you a key; it is optional).
 3. Submit `amuwa_services_intro` (above) to Meta. Once it is approved, in *Lead Welcome WhatsApp*:
    - check the template name, language and variables (already filled in on a fresh database);
    - switch it on;

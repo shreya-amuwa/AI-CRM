@@ -105,7 +105,11 @@ function stubDb() {
   const s = stubDb();
   const r = await testCrocodialConnection({ id: 'c1', credentialRef: 'CROCODIAL_TOKEN_MP' }, { db: s.db, env: {} as any, fetch: fake([]).f, sleep, minGapMs: 0 });
   check(!r.ok && r.health === 'NO_CREDENTIAL' && /CROCODIAL_TOKEN_MP/.test(r.message) && r.requests === 0, 'without the server setting nothing is called, and it says which setting is missing');
-  check(s.calls[0].fn === 'croc_connection_status' && s.calls[0].args.p_health === 'NO_CREDENTIAL', 'the connection is marked "no credential"');
+  const st = s.calls.find(c => c.fn === 'croc_connection_status');
+  check(st?.args.p_health === 'NO_CREDENTIAL', 'the connection is marked "no credential"');
+  const rep = s.calls.find(c => c.fn === 'croc_runtime_report');
+  check(rep?.args.p_detected === false && rep?.args.p_valid === false && s.calls.indexOf(rep!) < s.calls.indexOf(st!),
+    'this server records what it saw first (detected: no), never a value');
 }
 {
   const s = stubDb();

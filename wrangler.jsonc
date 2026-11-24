@@ -25,8 +25,12 @@
   // variable or a secret, so it can be changed without a code change.
   "vars": {
     // Tells server/security/clientNetwork.ts that the caller's address and place come from Cloudflare (worker/index.ts).
-    "CRM_PLATFORM": "cloudflare"
+    "CRM_PLATFORM": "cloudflare",
+    // Names this deployment on Super Admin -> Crocodial Integration -> Connection health (a rehearsal copy may set its own name).
+    "CRM_ENVIRONMENT": "production"
   },
+  // The running deployment's id and tag, shown on the same page (never a secret).
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   // Keep the variables set in the dashboard when a new version deploys (without this, every deploy would remove them, e.g. switch the
   // scheduled automations off again or drop EMAIL_PROVIDER). Secrets are never touched by a deploy.
   "keep_vars": true,

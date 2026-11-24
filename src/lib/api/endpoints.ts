@@ -8,7 +8,7 @@ import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProvider
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   AiWebsiteOnboarding,
@@ -1091,6 +1091,11 @@ export const crocodialApi = {
   activity: (q: { profileId?: string; from?: string; to?: string } = {}) => api.get<CrocodialActivity>('/crocodial/activity', { ...q }),
   leads: (q: { profileId?: string; search?: string; filter?: 'ALL' | 'NEVER_CALLED' | 'FOLLOW_UP_DUE'; page?: number; pageSize?: number } = {}) =>
     api.get<CrocodialLeads>('/crocodial/leads', { ...q }),
+  refreshCapabilities: () => api.get<CrocodialRefreshCapabilities>('/crocodial/refresh-capabilities'),
+  refresh: (scope: CrocodialRefreshScope, departmentId?: string) =>
+    api.post<CrocodialRefreshRequest>('/crocodial/refresh', departmentId ? { scope, departmentId } : { scope }),
+  refreshStatus: (id: string) => api.get<CrocodialRefreshRequest>(`/crocodial/refresh/${id}`),
+  connectionHealth: () => api.get<CrocodialHealthReport>('/crocodial/connection-health'),
   teamActivity: (q: { from?: string; to?: string; departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamActivity>('/crocodial/team-activity', { ...q })
 };
 

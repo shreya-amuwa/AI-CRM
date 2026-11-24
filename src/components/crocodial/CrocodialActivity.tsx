@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
-import type { CrocodialActivity as Activity, CrocodialMyStatus } from '../../../shared/contracts';
+import type { CrocodialActivity as Activity, CrocodialMyStatus, CrocodialRefreshCapabilities } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi } from '../../lib/api/endpoints';
+import { CrocodialRefreshControl } from './CrocodialRefreshControl';
 import { CROCODIAL_CALL_FIGURES, callDuration, callTypeLabel, connectedLabel } from '../../../shared/crocodialFields';
 
 /**
@@ -18,6 +19,11 @@ const daysAgo = (n: number) => ymd(new Date(Date.now() - n * 86_400_000));
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const duration = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : s >= 60 ? `${Math.round(s / 60)} min` : `${s} s`);
 const pct = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `${v}%`);
+const NOT_CONNECTED: Record<string, string> = {
+  NOT_MAPPED: 'Your Crocodial account is not connected to Amuwa CRM. Contact your administrator.',
+  PENDING_APPROVAL: 'Your Crocodial account is waiting for administrator approval.',
+  NOT_ENABLED: 'The Crocodial connection is switched off for now. Contact your administrator.'
+};
 const PRESETS: [string, string, number][] = [['today', 'Today', 0], ['7', 'Last 7 days', 6], ['30', 'Last 30 days', 29], ['90', 'Last 90 days', 89]];
 
 const Stat: React.FC<{ label: string; value: React.ReactNode; hint?: string; tone?: string }> = ({ label, value, hint, tone = 'text-slate-900' }) => (
@@ -37,9 +43,13 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [caps, setCaps] = useState<CrocodialRefreshCapabilities | null>(null);
+
   useEffect(() => {
     if (profileId) return;
     crocodialApi.me().then(setStatus).catch(() => setStatus({ enabled: false }));
+    // the refresh button, and why there is none (not connected / waiting for approval / switched off); older servers: no button
+    crocodialApi.refreshCapabilities().then(setCaps).catch(() => setCaps(null));
   }, [profileId]);
   const load = useCallback(() => {
     if (!status?.enabled) return;
@@ -49,8 +59,16 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
   }, [status, profileId, from, to]);
   useEffect(load, [load]);
 
-  if (!status?.enabled) return null;
-  if (data && !data.enabled) return null;
+  if (!status?.enabled || (data && !data.enabled)) {
+    // in a department where Crocodial is switched on, a person who is not connected is told why (never the account's user list);
+    // everywhere else nothing is shown
+    const why = !profileId && caps?.active && caps.rollout && caps.self.state !== 'CONNECTED' ? NOT_CONNECTED[caps.self.state] : null;
+    return why ? (
+      <section aria-label={title} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700" data-testid="croc-not-connected">
+        <b className="text-slate-900">{title}.</b> {why}
+      </section>
+    ) : null;
+  }
   const choose = (id: string, back: number) => { setPreset(id); setFrom(daysAgo(back)); setTo(daysAgo(0)); };
   const demos = showDemos ?? data?.person?.salesSubRole === 'BUSINESS_ASSOCIATE';
   const c = data?.calls;
@@ -62,6 +80,10 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
           <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2"><PhoneCall className="w-4 h-4 text-indigo-600" aria-hidden /> {title}</h2>
           <p className="text-xs text-slate-500">Source: Crocodial (read-only){data?.lastSyncAt ? ` · last synced ${when(data.lastSyncAt)}` : ''}{data?.timezone ? ` · ${data.timezone}` : ''}</p>
         </div>
+        {!profileId && caps?.self.state === 'CONNECTED' ? (
+          <CrocodialRefreshControl scope="SELF" label="Refresh My Data" lastSyncAt={data?.lastSyncAt ?? caps.self.lastSyncAt} onCompleted={load}
+            resume={caps.recent?.scope === 'SELF' ? caps.recent : null} />
+        ) : null}
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Period">
           {PRESETS.map(([id, label, back]) => (
             <button key={id} type="button" aria-pressed={preset === id} onClick={() => choose(id, back)}

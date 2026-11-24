@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { resolveCredential } from './runtime.js';
 
 /**
  * Crocodial's Outbound API, read-only (docs/CROCODIAL_INTEGRATION.md). The token is read from the SERVER environment variable a connection
@@ -22,11 +23,12 @@ export class CrocodialError extends Error {
 
 export type CrocodialFetch = (url: string, init: RequestInit) => Promise<Response>;
 
-/** The connection's token, from the server environment. A name that does not follow the convention is never looked up. */
-export function crocodialToken(credentialRef: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  if (!/^CROCODIAL_TOKEN_[A-Z0-9_]{1,40}$/.test(credentialRef)) return null;
-  const v = (env[credentialRef] ?? '').trim();
-  return v.length >= 8 ? v : null;
+/**
+ * The connection's token, from this server's settings (process.env, then the Worker's bindings; with an explicit env, only that). A name
+ * that does not follow the convention is never looked up, and a value that is not shaped like a token is not used (server/crocodial/runtime.ts).
+ */
+export function crocodialToken(credentialRef: string, env?: NodeJS.ProcessEnv): string | null {
+  return resolveCredential(credentialRef, env);
 }
 
 /**
