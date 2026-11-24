@@ -77,7 +77,7 @@ export const LetterTemplateManager: React.FC<{ type: HrLetterType; onSuccessToas
             <h3 className="font-bold text-sm text-slate-900">{LABEL[type]} master template</h3>
             <p className="text-[11px] text-slate-500">Current version <b>v{current.version}</b>, saved by {current.createdBy || '–'} on {when(current.createdAt)}.</p>
           </div>
-          {!state.canEdit && <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">Read only: only the Super Admin and the HR Admin Head edit the template</span>}
+          {!state.canEdit && <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">Read only: only the Managing Director and the HR Admin Head edit the template</span>}
         </div>
         <p className="text-[11px] text-slate-600 bg-blue-50 border border-blue-100 rounded-2xl p-3">
           New letters start from this wording. Saving makes a new version; letters already issued keep the wording they were made with.

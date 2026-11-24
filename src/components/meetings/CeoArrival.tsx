@@ -36,13 +36,13 @@ export const CeoArrivalBanner: React.FC<{ ceoId?: string }> = ({ ceoId }) => {
   if (!ceo) return null;
   return ceo.arrived ? (
     <div role="status" aria-live="polite" data-testid="ceo-arrival" data-arrived="true" className="rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3 text-emerald-900">
-      <p className="text-sm font-extrabold"><span aria-hidden="true">🟢 </span>CEO HAS ARRIVED AT THE OFFICE</p>
+      <p className="text-sm font-extrabold"><span aria-hidden="true">🟢 </span>MANAGING DIRECTOR HAS ARRIVED AT THE OFFICE</p>
       <p className="text-xs mt-0.5">Sir has arrived at the office. You can schedule meetings based on the available time slots.{ceo.arrivedAt ? ` (Arrived at ${time(ceo.arrivedAt)}.)` : ''}</p>
     </div>
   ) : (
     <div role="status" aria-live="polite" data-testid="ceo-arrival" data-arrived="false" className="rounded-xl border-2 border-rose-300 bg-rose-50 p-3 text-rose-900">
-      <p className="text-sm font-extrabold"><span aria-hidden="true">🔴 </span>CEO HAS NOT ARRIVED AT THE OFFICE YET</p>
-      <p className="text-xs mt-0.5">Sir has not arrived at the office yet. You can still schedule your meeting request. Meeting confirmation and availability will be subject to the CEO&apos;s arrival and approval.</p>
+      <p className="text-sm font-extrabold"><span aria-hidden="true">🔴 </span>MANAGING DIRECTOR HAS NOT ARRIVED AT THE OFFICE YET</p>
+      <p className="text-xs mt-0.5">Sir has not arrived at the office yet. You can still schedule your meeting request. Meeting confirmation and availability will be subject to the Managing Director&apos;s arrival and approval.</p>
     </div>
   );
 };
@@ -60,7 +60,7 @@ export const CeoArrivalControl: React.FC = () => {
       const o = undo ? await meetingsApi.ceoArrivalUndo(ceoId) : await meetingsApi.ceoArrived(ceoId);
       setOffice(o);
       const c = o.ceos.find(x => x.ceoId === ceoId);
-      setMessage({ tone: 'ok', text: undo ? 'Undone: employees see "has not arrived yet" again.' : o.duplicate ? `Already marked at ${time(c?.arrivedAt ?? null)}.` : `Marked at ${time(c?.arrivedAt ?? null)}: employees now see that the CEO has arrived.` });
+      setMessage({ tone: 'ok', text: undo ? 'Undone: employees see "has not arrived yet" again.' : o.duplicate ? `Already marked at ${time(c?.arrivedAt ?? null)}.` : `Marked at ${time(c?.arrivedAt ?? null)}: employees now see that the Managing Director has arrived.` });
     } catch (e) {
       setMessage({ tone: 'error', text: errorMessage(e) });
     } finally {
@@ -70,8 +70,8 @@ export const CeoArrivalControl: React.FC = () => {
   return (
     <section aria-labelledby="ceo-arrival-h" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-3" data-testid="ceo-arrival-control">
       <div>
-        <h2 id="ceo-arrival-h" className="text-sm font-bold text-slate-900">CEO office arrival (today)</h2>
-        <p className="text-xs text-slate-500">Shown to everyone who asks the CEO for time. It never stops anyone from sending a meeting request.</p>
+        <h2 id="ceo-arrival-h" className="text-sm font-bold text-slate-900">Managing Director office arrival (today)</h2>
+        <p className="text-xs text-slate-500">Shown to everyone who asks the Managing Director for time. It never stops anyone from sending a meeting request.</p>
       </div>
       {office.ceos.map(c => (
         <div key={c.ceoId} className="flex flex-wrap items-center gap-3">
@@ -89,7 +89,7 @@ export const CeoArrivalControl: React.FC = () => {
           ) : (
             <button type="button" disabled={busy === c.ceoId} onClick={() => void run(c.ceoId, false)} data-testid="ceo-arrived-button"
               className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-extrabold text-white shadow hover:bg-emerald-700 disabled:opacity-50">
-              {busy === c.ceoId ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : null} CEO HAS ARRIVED{office.ceos.length > 1 ? ` (${c.name})` : ''}
+              {busy === c.ceoId ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : null} MANAGING DIRECTOR HAS ARRIVED{office.ceos.length > 1 ? ` (${c.name})` : ''}
             </button>
           )}
         </div>
@@ -100,7 +100,7 @@ export const CeoArrivalControl: React.FC = () => {
 };
 
 /** The warning the employee reads when the CEO has not arrived. The wording is fixed; it never blocks: "OK, continue" returns to the form. */
-export const CEO_NOT_ARRIVED_NOTICE = 'CEO has not arrived yet. You can still schedule your meeting request. Please plan your preferred meeting time accordingly.';
+export const CEO_NOT_ARRIVED_NOTICE = 'Managing Director has not arrived yet. You can still schedule your meeting request. Please plan your preferred meeting time accordingly.';
 
 export const CeoNotArrivedPopup: React.FC<{ onContinue: () => void }> = ({ onContinue }) => {
   const button = React.useRef<HTMLButtonElement>(null);
@@ -117,7 +117,7 @@ export const CeoNotArrivedPopup: React.FC<{ onContinue: () => void }> = ({ onCon
   return createPortal(
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4" data-testid="ceo-not-arrived-popup">
       <div role="alertdialog" aria-modal="true" aria-labelledby="ceo-na-title" aria-describedby="ceo-na-text" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl border border-rose-200">
-        <h2 id="ceo-na-title" className="text-base font-extrabold text-rose-800"><span aria-hidden="true">🔴 </span>CEO has not arrived</h2>
+        <h2 id="ceo-na-title" className="text-base font-extrabold text-rose-800"><span aria-hidden="true">🔴 </span>Managing Director has not arrived</h2>
         <p id="ceo-na-text" className="mt-2 text-sm text-slate-800" data-testid="ceo-not-arrived-text">{CEO_NOT_ARRIVED_NOTICE}</p>
         <div className="mt-4 flex justify-end">
           <button ref={button} type="button" onClick={onContinue} data-testid="ceo-not-arrived-continue"
@@ -137,7 +137,7 @@ export const CeoArrivalChip: React.FC<{ ceoId?: string | null }> = ({ ceoId }) =
   return (
     <span data-testid="ceo-arrival-chip" data-arrived={ceo.arrived ? 'true' : 'false'}
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${ceo.arrived ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-rose-300 bg-rose-50 text-rose-800'}`}>
-      <span aria-hidden="true">{ceo.arrived ? '🟢' : '🔴'}</span> CEO {ceo.arrived ? `has arrived${ceo.arrivedAt ? ` (${time(ceo.arrivedAt)})` : ''}` : 'has not arrived yet'}
+      <span aria-hidden="true">{ceo.arrived ? '🟢' : '🔴'}</span> Managing Director {ceo.arrived ? `has arrived${ceo.arrivedAt ? ` (${time(ceo.arrivedAt)})` : ''}` : 'has not arrived yet'}
     </span>
   );
 };

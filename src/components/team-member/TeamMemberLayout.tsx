@@ -36,7 +36,7 @@ const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 // Notice Board (20270131000200), as in every dashboard
 const NoticeBoard = React.lazy(() => import('../notices/NoticeBoard'));
 const NOTICES_NAV = '__notices';
-// Wallet (20270206000100), as in every dashboard
+// Wallet (20270207000100), as in every dashboard
 const WalletPage = React.lazy(() => import('../wallet/WalletPage'));
 const WALLET_NAV = '__wallet';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';

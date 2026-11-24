@@ -77,7 +77,7 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.entityType === 'attendance') { openAttendance(); return true; }
   // a company notice (20270131000200): the Notice Board, on that notice
   if (n.entityType === 'company_notice') { openNotice(n.entityId ?? undefined); return true; }
-  // the wallet (20270206000100): an incentive credited, a bonus credited, a withdrawal submitted / approved; a credit waiting for approval opens Accounts' wallet page
+  // the wallet (20270207000100): an incentive credited, a bonus credited, a withdrawal submitted / approved; a credit waiting for approval opens Accounts' wallet page
   if (n.entityType === 'wallet') { openWallet(); return true; }
   if (n.entityType === 'wallet_credit') { openWalletAdmin(); return true; }
   // the Super Admin's 11:00 alert (20270131000100): straight to Today's Attendance Overview

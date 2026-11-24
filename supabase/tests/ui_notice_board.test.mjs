@@ -68,7 +68,7 @@ try {
     publisherId: '00000000-0000-4000-8000-0000000000b1', publisherName: 'Hema HR', publisherRole: 'HR' }));
   await mount(page, 'member');
   check(await nav(page, 'Notice Board').count() === 1, 'every dashboard has Notice Board in the side panel');
-  check(await nav(page, 'Wallet').count() === 1, 'every employee dashboard has Wallet in the side panel (20270206000100)');
+  check(await nav(page, 'Wallet').count() === 1, 'every employee dashboard has Wallet in the side panel (20270207000100)');
   await page.waitForFunction(() => /Notice Board\s*1/.test([...document.querySelectorAll('nav button')].find(b => /Notice Board/.test(b.textContent))?.textContent ?? ''));
   check(true, 'with the unread count');
   await nav(page, 'Notice Board').click();

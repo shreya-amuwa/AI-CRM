@@ -8,7 +8,7 @@ import { WithdrawDialog } from '../income/WithdrawDialog';
 import { Empty, Notice, Section, Tile, TransactionList, dayText, timeText } from './walletParts';
 
 /**
- * The Wallet, in the side panel of every employee dashboard (20270206000100; docs/EMPLOYEE_WALLET.md). Every figure is read from the database for the
+ * The Wallet, in the side panel of every employee dashboard (20270207000100; docs/EMPLOYEE_WALLET.md). Every figure is read from the database for the
  * signed-in person only. It is a view over what already exists: incentives are credited when their rule triggers, withdrawals go to Accounts, bonuses and
  * adjustments are entered by Accounts and approved by a second person. Salary is shown as EXPECTED only until payroll is recorded in the CRM; it is never
  * part of what can be withdrawn.

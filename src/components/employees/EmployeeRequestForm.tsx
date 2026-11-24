@@ -11,15 +11,15 @@ import { btn, inputCls } from '../team-member/pipeline/shared';
 const SIDE_LABEL = { SALES: 'Sales', SUPPORT: 'Support', GENERAL: 'General' } as const;
 
 export const ROLE_LABEL: Record<EmployeeRequestRole, string> = {
-  OPERATIONS_HEAD: 'Operations Head', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
+  OPERATIONS_HEAD: 'CEO', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
 };
 /** Who approves which role (the database decides; this only tells the person submitting what will happen). */
 export const APPROVER_LABEL: Record<EmployeeRequestRole, string> = {
-  OPERATIONS_HEAD: 'the Super Admin', DEPARTMENT_HEAD: 'the Operations Head who owns the department', TEAM_HEAD: 'the Department Head', TEAM_MEMBER: 'the Department Head'
+  OPERATIONS_HEAD: 'the Managing Director', DEPARTMENT_HEAD: 'the CEO who owns the department', TEAM_HEAD: 'the Department Head', TEAM_MEMBER: 'the Department Head'
 };
 
 /** The title of the approver, for the confirmation (the database decides who it is). */
-const APPROVER_TITLE: Record<EmployeeRequestRole, string> = { OPERATIONS_HEAD: 'Super Admin', DEPARTMENT_HEAD: 'Operations Head', TEAM_HEAD: 'Department Head', TEAM_MEMBER: 'Department Head' };
+const APPROVER_TITLE: Record<EmployeeRequestRole, string> = { OPERATIONS_HEAD: 'Managing Director', DEPARTMENT_HEAD: 'CEO', TEAM_HEAD: 'Department Head', TEAM_MEMBER: 'Department Head' };
 
 const label = 'block text-xs font-semibold text-slate-700';
 
@@ -146,7 +146,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
       {done && (
         <p role="status" className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" data-testid="submitted-for-approval">
           <span className="block text-sm font-bold">Employee Submitted for {APPROVER_TITLE[done.requestedRole as EmployeeRequestRole]} Approval</span>
-          {done.employee?.name} is waiting for {done.approver?.name ?? (done.awaitingOwner ? 'an Operations Head to be assigned to the department' : APPROVER_LABEL[(done.requestedRole as EmployeeRequestRole)])}. The status is in "Requests you sent" below.
+          {done.employee?.name} is waiting for {done.approver?.name ?? (done.awaitingOwner ? 'an CEO to be assigned to the department' : APPROVER_LABEL[(done.requestedRole as EmployeeRequestRole)])}. The status is in "Requests you sent" below.
         </p>
       )}
       <div className="flex justify-end">

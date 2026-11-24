@@ -3,7 +3,7 @@ import { rupees } from './income';
 import type { PayoutRequest } from './payouts';
 
 /**
- * Employee Wallet (migration 20270206000100; docs/EMPLOYEE_WALLET.md). Like My Income and the payouts it reads and writes through database functions that
+ * Employee Wallet (migration 20270207000100; docs/EMPLOYEE_WALLET.md). Like My Income and the payouts it reads and writes through database functions that
  * check the signed-in person: nothing here takes an employee id for the wallet itself, so there is no other person's wallet to ask for. The wallet is a
  * view over the incentive earnings and the withdrawals that already exist, plus Accounts' manual credits; the ledger is derived from them.
  */

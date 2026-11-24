@@ -49,9 +49,21 @@ try {
   check(await page.getByTestId('punch-out').isDisabled() && await page.getByTestId('lunch-start').isDisabled() && !(await page.getByTestId('punch-in').isDisabled()),
     'Not Punched In: only Punch In is available');
   check((await calledRpc(page, 'attendance_punch_in')).length === 0, 'no Punch In is sent until the button is pressed');
-  const clickedAt = Date.now();
+  // Task 02: a confirmation first; Cancel records nothing
   await page.getByTestId('punch-in').click();
+  await page.getByTestId('punch-in-confirm').waitFor();
+  const confirmText = await page.getByTestId('punch-in-confirm').innerText();
+  check(/Start your workday\?/.test(confirmText) && /Your working hours will start once you confirm/.test(confirmText) && /9 November 2026/.test(confirmText) && /Current time/.test(confirmText),
+    'Punch In asks "Start your workday?" with the date and the current time', confirmText);
+  check((await calledRpc(page, 'attendance_punch_in')).length === 0, 'nothing is recorded while the dialog is open');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByTestId('punch-in-confirm').waitFor({ state: 'detached' });
+  check((await calledRpc(page, 'attendance_punch_in')).length === 0 && (await page.getByTestId('attendance-status').textContent()) === 'Not Punched In', 'Cancel records nothing');
+  await page.getByTestId('punch-in').click();
+  const clickedAt = Date.now();
+  await page.getByTestId('confirm-punch-in').click();
   await page.getByText(/^Punched in at/).waitFor();
+  check(!(await page.getByTestId('punch-in-confirm').count()), 'the dialog closes only after the server answered');
   const tookMs = Date.now() - clickedAt;
   check(tookMs < 2000, 'a 12 m reading: punched within 2 seconds of the click', tookMs);
   check(!/low precision/.test(await page.getByTestId('attendance-notice').textContent()), 'a precise punch is not marked low precision');
@@ -76,8 +88,16 @@ try {
   check((await page.getByTestId('attendance-status').textContent()) === 'Resumed Work', 'Resume Work: state "Resumed Work"');
   await ctx.setGeolocation({ latitude: 18.559, longitude: 73.7868, accuracy: 9 });
   await page.getByTestId('punch-out').click();
+  await page.getByTestId('punch-out-confirm').getByText('You are punching out before your scheduled shift end time.').waitFor();
+  const outText = await page.getByTestId('punch-out-confirm').innerText();
+  check(/End your workday\?/.test(outText) && /8 h 05 min/.test(outText) && /0 h 52 min/.test(outText) && /7 h 13 min/.test(outText) && /7:00 PM IST/.test(outText)
+    && /Continue Working/.test(outText), 'Punch Out shows the Punch In, worked, break and net time and the shift end, with "Continue Working"', outText);
+  check(await page.getByTestId('confirm-punch-out').isDisabled(), 'before the shift end: Confirm stays off until a reason is given');
+  await page.getByTestId('early-reason').fill('Doctor appointment');
+  await page.getByTestId('confirm-punch-out').click();
   await page.getByText(/^Punched out at/).waitFor();
-  const sentOut = (await calledRpc(page, 'attendance_punch_out'))[0];
+  const sentOut = (await calledRpc(page, 'attendance_punch_out_confirmed'))[0];
+  check(sentOut.p_early_reason === 'Doctor appointment' && typeof sentOut.p_request === 'string', 'the reason is sent with the confirmed Punch Out', sentOut);
   check(Math.abs(sentOut.p_lat - 18.559) < 1e-6 && Math.abs(sentOut.p_lng - 73.7868) < 1e-6 && sentOut.p_accuracy === 9, 'Punch Out sends a fresh position (not the Punch In one)', sentOut);
   check((await page.getByTestId('punch-out-time').textContent()) === '6:10 PM IST', 'Punch Out time in IST (12:40 UTC = 6:10 PM IST)');
   check((await page.getByTestId('attendance-status').textContent()) === 'Punched Out' && await page.getByTestId('punch-in').isDisabled()
@@ -95,8 +115,9 @@ try {
     await pg.goto(base);
     await pg.evaluate(() => window.mount());
     await pg.getByTestId('punch-in').click();
-    await pg.getByTestId('attendance-notice').waitFor();
-    const msg = await pg.getByTestId('attendance-notice').textContent();
+    await pg.getByTestId('confirm-punch-in').click();
+    await pg.getByTestId('punch-dialog-error').waitFor();
+    const msg = await pg.getByTestId('punch-dialog-error').textContent();
     check(expect.test(msg) && (await calledRpc(pg, 'attendance_punch_in')).length === 0 && (await pg.getByTestId('attendance-status').textContent()) === 'Not Punched In'
       && !(await pg.getByTestId('punch-in').isDisabled()), label, msg);
     await c.close();
@@ -115,6 +136,7 @@ try {
     await pg.evaluate(() => window.mount());
     const t0 = Date.now();
     await pg.getByTestId('punch-in').click();
+    await pg.getByTestId('confirm-punch-in').click();
     await pg.getByText(/^Punched in at/).waitFor({ timeout: 15000 });
     const took = Date.now() - t0;
     const note = await pg.getByTestId('attendance-notice').textContent();
@@ -133,6 +155,7 @@ try {
     await pg.goto(base);
     await pg.evaluate(() => window.mount());
     await pg.getByTestId('punch-in').click();
+    await pg.getByTestId('confirm-punch-in').click();
     await pg.getByTestId('attendance-notice').waitFor({ timeout });
     const note = await pg.getByTestId('attendance-notice').textContent();
     check(expectRx.test(note), label, note);

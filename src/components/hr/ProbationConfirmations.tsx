@@ -73,7 +73,7 @@ const ConfirmationsList: React.FC<{ cycles: HrProbationCycle[] | null; busy: str
     <Card className="overflow-hidden">
       <p className="px-4 py-3 text-[11px] text-slate-500 border-b border-slate-100">
         Probation is six months from the joining date. A reminder goes to the employee and HR seven days before it ends. The employee is confirmed only when
-        HR (the HR lead), their Department Head or the Super Admin approves it here; the confirmation e-mails are sent after that approval.
+        HR (the HR lead), their Department Head or the Managing Director approves it here; the confirmation e-mails are sent after that approval.
       </p>
       <ul className="divide-y divide-slate-100">
         {rows.map(c => (

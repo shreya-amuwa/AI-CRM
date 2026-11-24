@@ -14,9 +14,9 @@ const FUNCTIONS: { value: HeadFunction; label: string }[] = [
 ];
 // the same three choices for an Operations Head (who oversees several departments)
 const OPERATIONS_FUNCTIONS: { value: HeadFunction; label: string }[] = [
-  { value: 'SALES', label: 'Sales Operations Head' },
-  { value: 'SUPPORT', label: 'Support Operations Head' },
-  { value: 'BOTH', label: 'Sales & Support Operations Head (one person handles both)' }
+  { value: 'SALES', label: 'Sales CEO' },
+  { value: 'SUPPORT', label: 'Support CEO' },
+  { value: 'BOTH', label: 'Sales & Support CEO (one person handles both)' }
 ];
 
 export const HeadDepartmentsField: React.FC<{
@@ -44,7 +44,7 @@ export const HeadDepartmentsField: React.FC<{
   return (
     <div className="space-y-3" data-testid="head-departments">
       <label className="block text-xs font-semibold text-slate-700">
-        {multi ? 'Operations Head of *' : 'Department Head of *'}
+        {multi ? 'CEO of *' : 'Department Head of *'}
         <select
           id="staff-head-division"
           className={`${inputClass} mt-1 cursor-pointer`}
@@ -52,13 +52,13 @@ export const HeadDepartmentsField: React.FC<{
           onChange={e => onFn(e.target.value as HeadFunction | '')}
           required
         >
-          <option value="">{multi ? 'Select Sales Operations Head, Support Operations Head or both…' : 'Select Sales, Support or both…'}</option>
+          <option value="">{multi ? 'Select Sales CEO, Support CEO or both…' : 'Select Sales, Support or both…'}</option>
           {(multi ? OPERATIONS_FUNCTIONS : FUNCTIONS).map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
       </label>
 
       <fieldset className="block text-xs font-semibold text-slate-700">
-        <legend className="mb-1">{multi ? 'Departments this Operations Head oversees *' : 'Department this head manages *'} <span className="font-normal text-slate-500">(one account, one login)</span></legend>
+        <legend className="mb-1">{multi ? 'Departments this CEO oversees *' : 'Department this head manages *'} <span className="font-normal text-slate-500">(one account, one login)</span></legend>
         {selected.length > 0 ? (
           <ul className="flex flex-wrap gap-1.5 mb-2" aria-label="Selected departments">
             {selected.map((id, i) => {
@@ -111,7 +111,7 @@ export const HeadDepartmentsField: React.FC<{
         </div>
         <span className="block mt-1 font-normal text-slate-500">
           {multi
-            ? 'The first department is the home department. The Operations Head signs in once and switches between these departments inside the dashboard; the Super Admin can change them later in Access Control.'
+            ? 'The first department is the home department. The CEO signs in once and switches between these departments inside the dashboard; the Managing Director can change them later in Access Control.'
             : 'A Department Head is created in one department. To give them a second department or function, use Access Control after saving (one head per department and function).'}
         </span>
       </fieldset>

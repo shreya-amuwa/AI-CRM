@@ -1,5 +1,5 @@
 -- =============================================================================
--- Employee Wallet (migration 20270206000100): the wallet over the existing incentive earnings and withdrawals, manual wallet credits approved by a second Accounts
+-- Employee Wallet (migration 20270207000100): the wallet over the existing incentive earnings and withdrawals, manual wallet credits approved by a second Accounts
 -- person, the derived ledger (its sum is the balance), salary shown as expected only, notifications, isolation between employees and the report.
 -- Runs after payouts_test.sql / payouts_razorpay_test.sql. Uses Member B (tm_b, the employee), Member A (tm_a, another employee), Accounts: acc_m and dh_acc,
 -- HR: hr_head, the Super Admin sa, Wabastore: dh_wab, th_wab. Synthetic data only; safe to run again.
@@ -10,8 +10,8 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 -- earlier suites run older copies of private.payout_available: this migration is applied last, twice (it must be safe to run twice)
-\i supabase/migrations/20270206000100_employee_wallet.sql
-\i supabase/migrations/20270206000100_employee_wallet.sql
+\i supabase/migrations/20270207000100_employee_wallet.sql
+\i supabase/migrations/20270207000100_employee_wallet.sql
 
 -- a clean slate for this suite's person (the wallet credits are never deleted by the app: the guard is switched off just for this clean-up)
 alter table wallet_credits disable trigger wallet_credits_guard;

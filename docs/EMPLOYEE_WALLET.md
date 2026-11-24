@@ -1,6 +1,6 @@
 # Employee Wallet (phase 1)
 
-Migration `supabase/migrations/20270206000100_employee_wallet.sql` (run after `20270205000100`; safe to run twice; nothing is deleted).
+Migration `supabase/migrations/20270207000100_employee_wallet.sql` (run after `20270205000100`; safe to run twice; nothing is deleted).
 Tests: `supabase/tests/wallet_test.sql` (database, permission-denied cases included), `supabase/tests/ui_wallet.test.mjs` (the screens in a real browser, desktop and phone),
 and one check in `ui_notice_board.test.mjs` (every dashboard shell has the Wallet entry).
 

@@ -8,6 +8,7 @@ import type {
 import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type MeetingReportFilters, type SummaryInput } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
+import { relabelRoles } from '../../../shared/roleNames';
 
 /**
  * Post-meeting summaries (Minutes of Meeting) of internal team meetings, and the CEO's Meeting Decisions (migration 20270124000200).
@@ -43,7 +44,7 @@ export const SUMMARY_STATUS: Record<MeetingSummaryStatus, { label: string; cls: 
 };
 const METHOD_LABEL: Record<MeetingSummaryOwnerMethod, string> = {
   SENIORITY: 'most senior leader who attended', HOST: 'host, among leaders of the same rank', CREATOR: 'organiser, among leaders of the same rank',
-  SELECTED: 'selected among leaders of the same rank', DELEGATED: 'delegated by the CEO', TRANSFERRED: 'responsibility transferred',
+  SELECTED: 'selected among leaders of the same rank', DELEGATED: 'delegated by the Managing Director', TRANSFERRED: 'responsibility transferred',
   ROUTED: 'routed by the organiser', ESCALATED: 'escalated to a supervisor', NO_LEADER: 'no leader attended', SELECTION_REQUIRED: 'a leader must be selected'
 };
 const DECISION_STATUS: Record<MeetingDecisionStatus, string> = {
@@ -57,7 +58,7 @@ const ACTION_STATUS_CLS: Record<MeetingActionStatus, string> = {
 const PRIORITY: Record<MeetingActionPriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
 const BLOCKER: Record<MeetingBlockerCategory, string> = {
   PENDING_APPROVAL: 'Pending approval', RESOURCE: 'Resource shortage', OPERATIONAL: 'Operational problem', CUSTOMER_ESCALATION: 'Customer escalation',
-  DEPENDENCY: 'Dependency', CEO_DECISION: 'Needs a CEO decision', OTHER: 'Other'
+  DEPENDENCY: 'Dependency', CEO_DECISION: 'Needs a Managing Director decision', OTHER: 'Other'
 };
 
 const Alert: React.FC<{ tone?: 'error' | 'warn' | 'ok' | 'info'; children: React.ReactNode }> = ({ tone = 'error', children }) => (
@@ -143,7 +144,7 @@ export const SummaryPanel: React.FC<{ meetingId: string; source?: 'meeting' | 'r
           <p>
             <span className="text-slate-500">Responsible: </span>
             {s.owner ? <span className="font-semibold">{s.owner.name}</span> : <span className="font-semibold text-amber-700">nobody yet</span>}
-            {s.owner && <span className="text-slate-500"> · {s.owner.roleLabel}</span>}
+            {s.owner && <span className="text-slate-500"> · {relabelRoles(s.owner.roleLabel)}</span>}
             {s.ownerMethod && <span className="text-slate-400"> ({METHOD_LABEL[s.ownerMethod]}{s.ownerAssignedBy ? ` by ${s.ownerAssignedBy}` : ''})</span>}
           </p>
           {s.ownerReason && <p className="text-xs text-slate-500">Reason: {s.ownerReason}</p>}
@@ -171,7 +172,7 @@ export const SummaryPanel: React.FC<{ meetingId: string; source?: 'meeting' | 'r
       )}
       {s && !editing && view.can.amend && (
         <div className="flex flex-wrap gap-2 items-center">
-          {s.status === 'REVISION_REQUESTED' && <p className="text-sm text-violet-800 flex-1">The CEO asked for a clarification. Answer it below, and amend the report if something needs correcting.</p>}
+          {s.status === 'REVISION_REQUESTED' && <p className="text-sm text-violet-800 flex-1">The Managing Director asked for a clarification. Answer it below, and amend the report if something needs correcting.</p>}
           <button type="button" className={btnGhost} onClick={() => setEditing('amend')}>Amend the report</button>
         </div>
       )}
@@ -179,7 +180,7 @@ export const SummaryPanel: React.FC<{ meetingId: string; source?: 'meeting' | 'r
         <SummaryForm view={view} mode={editing} busy={busy} onCancel={() => setEditing(null)}
           onSave={(body, submit, changeNote) => act(
             () => (submit ? meetingsApi.submitSummary(meetingId, body, s.version, changeNote) : meetingsApi.saveSummaryDraft(meetingId, body, s.version)),
-            submit ? (editing === 'amend' ? 'Amendment submitted. The CEO is told the report changed.' : 'Summary submitted. The meeting is completed and the CEO receives the report.') : 'Draft saved.'
+            submit ? (editing === 'amend' ? 'Amendment submitted. The Managing Director is told the report changed.' : 'Summary submitted. The meeting is completed and the Managing Director receives the report.') : 'Draft saved.'
           ).then(done => { if (done && submit) setEditing(null); })} />
       )}
 
@@ -214,12 +215,12 @@ export const SummaryPanel: React.FC<{ meetingId: string; source?: 'meeting' | 'r
       )}
       {(view.can.clarify || view.can.reply) && (
         <div className="space-y-2">
-          <label className={labelCls} htmlFor={`mms-msg-${meetingId}`}>{view.can.clarify ? 'Ask for a clarification' : 'Answer the CEO'}</label>
+          <label className={labelCls} htmlFor={`mms-msg-${meetingId}`}>{view.can.clarify ? 'Ask for a clarification' : 'Answer the Managing Director'}</label>
           <textarea id={`mms-msg-${meetingId}`} rows={2} maxLength={2000} className={inputCls} value={message} onChange={e => setMessage(e.target.value)}
             placeholder={view.can.clarify ? 'Your question goes to the leader; the report itself is not changed.' : 'Your answer'} />
           <button type="button" className={btnGhost} disabled={busy || message.trim().length < (view.can.clarify ? 5 : 2)}
             onClick={() => act(() => (view.can.clarify ? meetingsApi.clarifySummary(meetingId, message.trim()) : meetingsApi.replySummary(meetingId, message.trim())),
-              view.can.clarify ? 'Question sent to the leader.' : 'Answer sent to the CEO.').then(done => done && setMessage(''))}>
+              view.can.clarify ? 'Question sent to the leader.' : 'Answer sent to the Managing Director.').then(done => done && setMessage(''))}>
             <MessageSquare className="w-4 h-4" /> {view.can.clarify ? 'Request clarification' : 'Send answer'}
           </button>
         </div>
@@ -242,7 +243,7 @@ const AttendanceForm: React.FC<{ view: MeetingSummaryView; busy: boolean; onConf
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={picked.has(a.id)} onChange={() => toggle(a.id)} className="rounded border-slate-300" />
               <span className="font-medium">{a.name}</span>
-              <span className="text-xs text-slate-500">{a.roleLabel}{a.department ? ` · ${a.department}` : ''}{a.team ? ` · ${a.team}` : ''}</span>
+              <span className="text-xs text-slate-500">{relabelRoles(a.roleLabel)}{a.department ? ` · ${a.department}` : ''}{a.team ? ` · ${a.team}` : ''}</span>
             </label>
           </li>
         ))}
@@ -270,11 +271,11 @@ const OwnerPicker: React.FC<{ view: MeetingSummaryView; busy: boolean; onAssign:
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
       <p className="text-sm font-semibold text-slate-800">{title}</p>
-      {options.length === 0 ? <p className="text-xs text-slate-500">Nobody can be chosen. Ask the supervisor of this team or the CEO.</p> : (
+      {options.length === 0 ? <p className="text-xs text-slate-500">Nobody can be chosen. Ask the supervisor of this team or the Managing Director.</p> : (
         <>
           <select aria-label="Responsible leader" className={inputCls} value={id} onChange={e => setId(e.target.value)}>
             <option value="">Choose…</option>
-            {options.map(o => <option key={o.id} value={o.id}>{o.name} · {o.roleLabel}{o.department ? ` · ${o.department}` : ''}</option>)}
+            {options.map(o => <option key={o.id} value={o.id}>{o.name} · {relabelRoles(o.roleLabel)}{o.department ? ` · ${o.department}` : ''}</option>)}
           </select>
           {(needsReason || delegate) && <input aria-label="Reason" className={inputCls} maxLength={500} value={reason} onChange={e => setReason(e.target.value)}
             placeholder={needsReason ? 'Why this person? (required, recorded)' : 'Note (optional, recorded)'} />}
@@ -338,7 +339,7 @@ const SummaryForm: React.FC<{
         <span className="text-slate-500">Department</span><span>{m.department ?? '—'}{m.team ? ` · ${m.team}` : ''}{m.division ? ` · ${m.division === 'SALES' ? 'Sales' : 'Support'}` : ''}</span>
         <span className="text-slate-500">Host</span><span>{m.host?.name ?? '—'}{m.organiser && m.organiser.id !== m.host?.id ? ` · organised by ${m.organiser.name}` : ''}</span>
         <span className="text-slate-500">Attended</span><span>{attended.map(a => a.name).join(', ') || '—'}</span>
-        <span className="text-slate-500">Summary by</span><span>{s.owner ? `${s.owner.name} · ${s.owner.roleLabel}` : '—'}</span>
+        <span className="text-slate-500">Summary by</span><span>{s.owner ? `${s.owner.name} · ${relabelRoles(s.owner.roleLabel)}` : '—'}</span>
       </div>
 
       {/* B. purpose */}
@@ -390,7 +391,7 @@ const SummaryForm: React.FC<{
                 <select aria-label={`Decision ${i + 1} made by`} className={inputCls} value={d.decidedBy ?? ''}
                   onChange={e => set('decisions', f.decisions.map(x => (x.key === d.key ? { ...x, decidedBy: e.target.value || null } : x)))}>
                   <option value="">Decided by: {s.owner?.name ?? 'the responsible leader'}</option>
-                  {attended.filter(a => a.id !== s.owner?.id).map(a => <option key={a.id} value={a.id}>Decided by: {a.name} ({a.roleLabel})</option>)}
+                  {attended.filter(a => a.id !== s.owner?.id).map(a => <option key={a.id} value={a.id}>Decided by: {a.name} ({relabelRoles(a.roleLabel)})</option>)}
                 </select>
                 <select aria-label={`Decision ${i + 1} status`} className={inputCls} value={d.status}
                   onChange={e => set('decisions', f.decisions.map(x => (x.key === d.key ? { ...x, status: e.target.value as MeetingDecisionStatus } : x)))}>
@@ -428,7 +429,7 @@ const SummaryForm: React.FC<{
                 <select aria-label={`Action ${i + 1} responsible employee`} className={inputCls} value={a.assigneeId}
                   onChange={e => set('actions', f.actions.map(x => (x.key === a.key ? { ...x, assigneeId: e.target.value } : x)))}>
                   <option value="">Responsible employee…</option>
-                  {assignable.map(p => <option key={p.id} value={p.id}>{p.name} ({p.roleLabel})</option>)}
+                  {assignable.map(p => <option key={p.id} value={p.id}>{p.name} ({relabelRoles(p.roleLabel)})</option>)}
                 </select>
                 <input aria-label={`Action ${i + 1} due date`} type="date" className={inputCls} value={a.dueDate ?? ''}
                   onChange={e => set('actions', f.actions.map(x => (x.key === a.key ? { ...x, dueDate: e.target.value || null } : x)))} />
@@ -473,7 +474,7 @@ const SummaryForm: React.FC<{
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={b.needsCeoAttention} className="rounded border-slate-300"
                   onChange={e => set('blockers', f.blockers.map(x => (x.key === b.key ? { ...x, needsCeoAttention: e.target.checked } : x)))} />
-                Requires the CEO's attention
+                Requires the Managing Director's attention
               </label>
             </li>
           ))}
@@ -510,7 +511,7 @@ const SummaryForm: React.FC<{
 
       {mode === 'amend' && (
         <div>
-          <label className={labelCls} htmlFor="mms-change">What changed in this amendment? (required, the CEO sees it)</label>
+          <label className={labelCls} htmlFor="mms-change">What changed in this amendment? (required, the Managing Director sees it)</label>
           <input id="mms-change" className={inputCls} maxLength={1000} value={changeNote} onChange={e => setChangeNote(e.target.value)} />
         </div>
       )}
@@ -543,7 +544,7 @@ export const ReportView: React.FC<{
       <dl className="grid grid-cols-[96px_1fr] gap-x-2 gap-y-1">
         <dt className="text-slate-500">Meeting</dt><dd className="font-semibold">{m.title}</dd>
         <dt className="text-slate-500">Department</dt><dd>{m.department ?? '—'}{m.team ? ` · ${m.team}` : ''}</dd>
-        <dt className="text-slate-500">Led by</dt><dd>{s.owner ? `${s.owner.name} (${s.owner.roleLabel})` : '—'}</dd>
+        <dt className="text-slate-500">Led by</dt><dd>{s.owner ? `${s.owner.name} (${relabelRoles(s.owner.roleLabel)})` : '—'}</dd>
         <dt className="text-slate-500">When</dt><dd>{when(m.startsAt, m.endsAt)}</dd>
         <dt className="text-slate-500">Attended</dt><dd>{attended.length ? `${attended.length}: ${attended.map(a => a.name).join(', ')}` : '—'}</dd>
         <dt className="text-slate-500">Purpose</dt><dd className="whitespace-pre-wrap">{[m.purpose, c.purposeNote].filter(Boolean).join('\n') || '—'}</dd>
@@ -570,7 +571,7 @@ export const ReportView: React.FC<{
                 </div>
                 {d.description && <p className="whitespace-pre-wrap text-slate-700">{d.description}</p>}
                 <p className="text-xs text-slate-500">Decided by {d.decidedByName ?? '—'}{d.department ? ` · ${d.department}` : ''}{d.team ? ` · ${d.team}` : ''}</p>
-                {d.ceoFollowUp && <p className="text-xs font-semibold text-amber-800">CEO follow-up{d.ceoFollowUpNote ? `: ${d.ceoFollowUpNote}` : ''}</p>}
+                {d.ceoFollowUp && <p className="text-xs font-semibold text-amber-800">Managing Director follow-up{d.ceoFollowUpNote ? `: ${d.ceoFollowUpNote}` : ''}</p>}
                 {onFlag && d.id && <button type="button" disabled={busy} className="text-xs font-semibold text-indigo-700 mt-1 inline-flex items-center gap-1" onClick={() => onFlag('DECISION', d.id!, !d.ceoFollowUp)}>
                   <Flag className="w-3 h-3" /> {d.ceoFollowUp ? 'Clear follow-up' : 'Mark for follow-up'}</button>}
               </li>
@@ -609,9 +610,9 @@ export const ReportView: React.FC<{
           <ul className="space-y-1.5">
             {c.blockers.map(b => (
               <li key={b.key} className={`rounded-lg p-2 ${b.needsCeoAttention || b.ceoFollowUp ? 'bg-rose-50 border border-rose-200' : 'bg-slate-50'}`}>
-                <p className="text-xs font-semibold text-slate-600">{BLOCKER[b.category]}{b.needsCeoAttention ? ' · requires CEO attention' : ''}</p>
+                <p className="text-xs font-semibold text-slate-600">{BLOCKER[b.category]}{b.needsCeoAttention ? ' · requires Managing Director attention' : ''}</p>
                 <p className="whitespace-pre-wrap">{b.description}</p>
-                {b.ceoFollowUp && <p className="text-xs font-semibold text-amber-800">CEO follow-up{b.ceoFollowUpNote ? `: ${b.ceoFollowUpNote}` : ''}</p>}
+                {b.ceoFollowUp && <p className="text-xs font-semibold text-amber-800">Managing Director follow-up{b.ceoFollowUpNote ? `: ${b.ceoFollowUpNote}` : ''}</p>}
                 {onFlag && b.id && <button type="button" disabled={busy} className="text-xs font-semibold text-indigo-700 mt-1 inline-flex items-center gap-1" onClick={() => onFlag('BLOCKER', b.id!, !b.ceoFollowUp)}>
                   <Flag className="w-3 h-3" /> {b.ceoFollowUp ? 'Clear follow-up' : 'Mark for follow-up'}</button>}
               </li>
@@ -669,7 +670,7 @@ const SummaryRowItem: React.FC<{ r: MeetingSummaryRow; action: string; onOpen: (
     <div className="flex-1 min-w-0">
       <p className="font-semibold text-slate-900 truncate">{r.title} <span className="text-xs text-slate-400 font-normal">{r.reference}</span></p>
       <p className="text-xs text-slate-500">{when(r.startsAt, r.endsAt)} · {r.department ?? '—'}{r.team ? ` · ${r.team}` : ''}</p>
-      <p className="text-xs text-slate-500">Responsible: {r.owner ? `${r.owner.name} (${r.owner.roleLabel})` : r.awaitingAttendance ? 'after attendance is confirmed' : 'to be chosen'}
+      <p className="text-xs text-slate-500">Responsible: {r.owner ? `${r.owner.name} (${relabelRoles(r.owner.roleLabel)})` : r.awaitingAttendance ? 'after attendance is confirmed' : 'to be chosen'}
         {showCounts && r.revisionNo > 0 && ` · ${r.decisions} decision(s), ${r.actions} action item(s), ${r.blockers} blocker(s)`}</p>
     </div>
     <div className="flex items-center gap-2 shrink-0">
@@ -870,14 +871,14 @@ export const MeetingDecisionsTab: React.FC<{ reloadKey: number; onOpenReport: (i
         </select>
         <select aria-label="Leader role" className={inputCls} value={leaderRank} onChange={e => { setLeaderRank(e.target.value); setLeaderId(''); }}>
           <option value="">Led by anyone</option>
-          <option value="3">Operations Heads</option>
+          <option value="3">CEOs</option>
           <option value="2">Department Heads</option>
           <option value="1">Team Leads</option>
-          <option value="4">CEO</option>
+          <option value="4">Managing Director</option>
         </select>
         <select aria-label="Leader" className={inputCls} value={leaderId} onChange={e => setLeaderId(e.target.value)}>
           <option value="">Every leader</option>
-          {leaders.map(l => <option key={l.id} value={l.id}>{l.name} ({l.roleLabel})</option>)}
+          {leaders.map(l => <option key={l.id} value={l.id}>{l.name} ({relabelRoles(l.roleLabel)})</option>)}
         </select>
       </div>
       {!validRange && <Alert>Choose a period that ends on or after its start.</Alert>}
@@ -942,7 +943,7 @@ export const MeetingDecisionsTab: React.FC<{ reloadKey: number; onOpenReport: (i
               <option value="OVERDUE">Overdue</option>
               <option value="REVISION_REQUESTED">Clarification requested</option>
             </select>
-            <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={attention} onChange={e => setAttention(e.target.checked)} className="rounded border-slate-300" /> Requires CEO attention</label>
+            <label className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={attention} onChange={e => setAttention(e.target.checked)} className="rounded border-slate-300" /> Requires Managing Director attention</label>
           </div>
         </div>
         {!reports ? <p className="text-sm text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</p>
@@ -960,7 +961,7 @@ export const MeetingDecisionsTab: React.FC<{ reloadKey: number; onOpenReport: (i
                       <td className="px-3 py-2"><span className="font-semibold">{r.title}</span>{r.needsAttention && <Flag className="inline w-3.5 h-3.5 ml-1 text-rose-600" aria-label="Requires attention" />}
                         <span className="block text-xs text-slate-500">{when(r.startsAt, r.endsAt)}</span></td>
                       <td className="px-3 py-2">{r.department ?? '—'}{r.team ? <span className="block text-xs text-slate-500">{r.team}</span> : null}</td>
-                      <td className="px-3 py-2">{r.owner ? <>{r.owner.name}<span className="block text-xs text-slate-500">{r.owner.roleLabel}</span></> : <span className="text-amber-700">Not set</span>}</td>
+                      <td className="px-3 py-2">{r.owner ? <>{r.owner.name}<span className="block text-xs text-slate-500">{relabelRoles(r.owner.roleLabel)}</span></> : <span className="text-amber-700">Not set</span>}</td>
                       <td className="px-3 py-2 text-right">{r.awaitingAttendance ? '—' : r.attendees}</td>
                       <td className="px-3 py-2"><SummaryBadge status={r.status} overdue={r.overdue} awaitingAttendance={r.awaitingAttendance} /></td>
                       <td className="px-3 py-2 text-right">{r.revisionNo ? r.decisions : '—'}</td>

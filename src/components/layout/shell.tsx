@@ -29,7 +29,7 @@ export const NOTICES_NAV_ID = '__notices';
 // CEO Availability (20270201000100): the HR dashboards only, immediately below the Notice Board
 const CeoAvailabilityPage = React.lazy(() => import('../meetings/CeoAvailabilityPage'));
 export const CEO_AVAILABILITY_NAV_ID = '__ceo_availability';
-// Wallet (20270206000100): every employee dashboard, below the Notice Board; each person sees only their own
+// Wallet (20270207000100): every employee dashboard, below the Notice Board; each person sees only their own
 const WalletPage = React.lazy(() => import('../wallet/WalletPage'));
 export const WALLET_NAV_ID = '__wallet';
 const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID, WALLET_NAV_ID] as const;
@@ -436,7 +436,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
   const noticesItem: ShellNavItem = { id: NOTICES_NAV_ID, label: 'Notice Board', icon: Megaphone, badge: noticeUnread };
   const walletItem: ShellNavItem = { id: WALLET_NAV_ID, label: 'Wallet', icon: Wallet };
-  const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'CEO Availability', icon: Crown };
+  const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'Managing Director Availability', icon: Crown };
   const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(ceoAvailability ? [ceoAvailabilityItem] : []), ...(wallet ? [walletItem] : []), ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
     ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]

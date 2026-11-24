@@ -198,6 +198,7 @@ import type {
 import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType, AiWebsiteOnboardingBody } from '../../../shared/validation';
 import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
 import type { AwardNominateInput } from '../../../shared/validation';
+import type { OfferLetterhead, OfferLetterheadOption, OfferTemplate, OfferTemplateContent, OfferTemplateFile, OfferTemplateHistory, OfferTemplateList, OfferTemplateVersion } from '../../../shared/contracts';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -1136,3 +1137,19 @@ export const hrAwardsApi = {
   updateWinner: (id: string, remarks: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/update`, { remarks: remarks || null }),
   revokeWinner: (id: string, reason: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/revoke`, { reason })
 };
+
+// Role-based Offer Letter templates (20270206000100): HR > Offer Letter Generation (the database checks HR staff / the HR Admin Head)
+export const offerTemplatesApi = {
+  list: () => api.get<OfferTemplateList>('/hr/offer-templates'),
+  letterheads: () => api.get<OfferLetterheadOption[]>('/hr/offer-templates/letterheads'),
+  history: (id: string) => api.get<OfferTemplateHistory>(`/hr/offer-templates/${id}`),
+  version: (id: string, version: number) => api.get<OfferTemplateVersion>(`/hr/offer-templates/${id}/versions/${version}`),
+  create: (body: OfferTemplateSaveBody) => api.post<OfferTemplate>('/hr/offer-templates', body),
+  save: (id: string, body: OfferTemplateSaveBody) => api.post<OfferTemplate>(`/hr/offer-templates/${id}`, body),
+  preview: (body: Pick<OfferTemplateSaveBody, 'designation' | 'content' | 'letterhead'>) => api.post<HrDocPreview>('/hr/offer-templates/preview', body),
+  upload: (body: { kind: 'SAMPLE' | 'LETTERHEAD'; fileName: string; mimeType: string; dataBase64: string }) => api.post<OfferTemplateFile>('/hr/offer-templates/files', body),
+  fileUrl: (id: string) => api.get<HrDocumentDownload>(`/hr/offer-templates/files/${id}/url`)
+};
+export interface OfferTemplateSaveBody {
+  designation: string; description?: string | null; content: OfferTemplateContent; letterhead: OfferLetterhead; sampleFileId?: string | null; baseVersion: number; note?: string | null;
+}

@@ -250,7 +250,7 @@ export const SalesRolePersonPage: React.FC<{ role: SalesRole; id: string; onBack
           </>
         ) : (
           <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700" role="status" data-testid="croc-state">
-            {croc === 'OFF' ? `${p.name} is not connected to Crocodial, so there are no call figures. The Super Admin connects a person under Crocodial Integration > People.`
+            {croc === 'OFF' ? `${p.name} is not connected to Crocodial, so there are no call figures. The Managing Director connects a person under Crocodial Integration > People.`
               : 'Crocodial is connected but the first sync has not finished: call figures appear once it has (they are not zero).'}
           </p>
         )}

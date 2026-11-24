@@ -163,3 +163,55 @@ Tests: `supabase/tests/hr_employee_files_test.sql` (database rules), the "HR emp
 
 Not covered yet: the leave records themselves (date, type, times, reason) are still kept only in the open screen; their mails are stored and listed in the
 documents vault, linked by the leave's id.
+
+
+## Role-based Offer Letters (one template per designation)
+
+Migration: `supabase/migrations/20270206000100_hr_offer_templates.sql` (additive, safe to run twice; needs `20261231000600`). Until it is run,
+Offer Letter Generation shows the server's message instead of the templates; the NDA and the Experience Letter are not affected.
+
+**Where:** HR dashboard > **HR & Operations > Offer Letter Generation** (the old static 7-page letter there is replaced), and Employee Letters >
+**Offer Letter** (the same generator). Every "Generate Offer" button opens it.
+
+**Generate & issue.** HR chooses **Select Employee Designation / Offer Letter Template** and the employee. The template of that designation loads
+with **its own fields**: the values that change from person to person in its sample. Technical Support, Sales Executive and AI Developer ask for the
+offer date, name, designation, department, date of joining, salary, employment type, working hours, probation, reporting to and the signatory.
+Customer Support (the appointment letter with Annexure A) asks for the title (never guessed), name, designation, date of joining, salary (printed with
+the amount in words) and its two signatories. Business Development Executive also asks for the reference number. Each field starts with the sample's
+own value or the employee's record (name, department, joining date, monthly salary: marked "from the CRM"); HR can change all of them. The PDF on
+the right is the server's rendering of exactly these values on the template's letterhead, redrawn ~0.6 s after a change. **Generate Offer Letter**
+stores it on the employee's record; **Download as PDF**, **Edit Details**, **Regenerate Document** (a new stored copy, the earlier one kept).
+
+**The five templates** are the samples HR supplied (`shared/offerTemplates.ts` `INITIAL_OFFER_TEMPLATES`): the wording copied as written (including
+its own spelling), headings, bullet lists, numbering, the Annexure on a new page, the signature and acceptance blocks. Only the person-specific values
+became fields; nothing was added. Each has its own **letterhead** (`server/hrDocuments/offerLetterheads.ts`, made by
+`scripts/prepare-hr-offer-letterheads.mjs` from page 1 of each sample with the sample letter removed from the page content, so nothing of it can be
+copied out; the Business Development Executive sample is on the **M Pillar Corporation** letterhead, as supplied). The sample files themselves are not
+in the repository (one is a real issued letter).
+
+**Templates by designation.** Every HR staff member sees the templates (designation, version, letterhead, sample, fields, letters issued). The Super
+Admin and the HR Admin Head (`private.is_hr_leadership()`) can:
+* upload the **sample** of a designation (PDF or Word, up to 2.5 MB; checked by its content) and open it (a 120-second private link);
+* upload a **letterhead** (PDF; its first page is the background of every page, the letter is written between its header and footer);
+* edit the **wording** (one line per paragraph: `= TITLE`, `# Heading`, `## plain heading`, `- bullet`, `^ centred`, `[signature] Label`, `[page]`,
+  `**bold**`, `{field}`, `{amountWords}`) and the **fields** (key, label, type text / long text / date / amount / list, required, starting value,
+  from the CRM), preview the template with each field shown as `[label]`, and **save as a new version** (with a note);
+* **add a designation** (starting from a copy of another template).
+
+**Versions.** A version is never changed or deleted (database trigger). Saving names the version it replaces; if someone saved in between, the save
+is refused (`CONFLICT`). New letters use the newest version. An issued letter is the stored PDF plus, in `hr_documents`, the template
+(`offer_template_id`), its version (`offer_template_version`), the wording and the values: replacing a template never changes it.
+
+**Rules (database):** HR staff (not HR Recruiters) read templates and generate letters (`private.hr_doc_require_staff()`); only HR leadership saves
+templates and uploads files (`private.offer_tpl_require_manager()`); the server loads the wording and letterhead from the database by template and
+version, the browser sends only the values (checked against that template's fields); unknown placeholders, duplicate field keys and unclosed bold are
+refused. Uploads and saves are audited (`HR_OFFER_TEMPLATE_FILE_UPLOADED`, `HR_OFFER_TEMPLATE_SAVED`); generating is audited as before.
+
+**API:** `GET /hr/offer-templates`, `GET /hr/offer-templates/letterheads`, `GET /hr/offer-templates/:id` (versions), `GET /hr/offer-templates/:id/versions/:v`,
+`POST /hr/offer-templates` (new designation), `POST /hr/offer-templates/:id` (new version), `POST /hr/offer-templates/preview`,
+`POST /hr/offer-templates/files` (`{ kind, fileName, mimeType, dataBase64 }`), `GET /hr/offer-templates/files/:id/url`; letters use the existing
+`/hr/documents` routes with `type OFFER` and `fields: { offerTemplateId, templateVersion, values }`.
+
+**Tests:** `supabase/tests/hr_offer_templates_test.sql`, the "Role-based Offer Letters" block of `api_integration.test.ts` (all five designations as PDFs,
+permissions, validation, uploads, replacement with issued letters unchanged, the NDA), `supabase/tests/offer_templates.test.ts` (values, words, markup,
+the renderer, the letterheads) and `supabase/tests/ui_offer_letters.test.mjs` (the screens).

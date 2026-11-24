@@ -97,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
             <div className="hidden lg:block text-left min-w-0 max-w-[180px]">
               <span className="text-slate-900 text-sm font-semibold block leading-tight truncate">{user?.name}</span>
               <span className="text-slate-500 text-xs block truncate">
-                {user?.role === 'superadmin' ? 'Super Admin' : user?.role === 'team-lead' ? 'Team Lead' : user?.role === 'hr' && user.profile ? ROLE_LABELS[user.profile.role] : 'Staff Admin'}
+                {user?.role === 'superadmin' ? 'Managing Director' : user?.role === 'team-lead' ? 'Team Lead' : user?.role === 'hr' && user.profile ? ROLE_LABELS[user.profile.role] : 'Staff Admin'}
               </span>
             </div>
 

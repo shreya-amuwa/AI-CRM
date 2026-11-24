@@ -8,9 +8,10 @@ import { useDepartments } from './DepartmentContext';
 import { notifyMeetingsChanged } from '../components/meetings/meetingEvents';
 import { notifyWorkUpdatesChanged } from '../lib/workUpdates';
 import { attendanceApi } from '../lib/attendance';
+import { relabelRoles } from '../../shared/roleNames';
+import { categoryOf, type NotificationCategory } from '../lib/notifications/notificationCategory';
 import { applySoundPrefs, armAudioUnlock, onSoundPrefsChange, playNotificationSound } from '../lib/notifications/notificationSound';
 import { backoffMs, pickNotificationToChime } from '../lib/notifications/notificationSync';
-import { categoryOf, type NotificationCategory } from '../lib/notifications/notificationCategory';
 
 /**
  * Notifications are rows in Supabase, one per recipient. The server returns
@@ -105,8 +106,10 @@ function toAppNotification(n: Notification): AppNotification {
   return {
     id: n.id,
     type: n.type,
-    title: n.title,
-    message: n.body,
+    // system text from the database uses the internal role wording: shown with the new designations (shared/roleNames.ts).
+    // A body someone wrote (a chat message, an announcement or notice) is shown exactly as written.
+    title: relabelRoles(n.title),
+    message: categoryOf(n.type, n.entityType) === 'Chat' || categoryOf(n.type, n.entityType) === 'Announcements' ? n.body : relabelRoles(n.body),
     senderName: (n.data.sender_name as string) || (n.type === 'ANNOUNCEMENT' ? 'Management' : 'CRM System'),
     senderDept: (n.data.sender_department as string) || '',
     targetKey: division || 'all',

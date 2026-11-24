@@ -6,7 +6,7 @@ import { useEffect } from 'react';
  */
 export const OPEN_ATTENDANCE_EVENT = 'crm:open-attendance';
 /** 'mine': the person's own day (a reminder); 'today': Today's Attendance Overview (the Super Admin's 11:00 alert, 20270131000100) */
-export type AttendanceView = 'mine' | 'today';
+export type AttendanceView = 'mine' | 'today' | 'team' | 'corrections';
 let pending: AttendanceView | null = null;
 
 export const openAttendance = (view: AttendanceView = 'mine') => {
@@ -24,7 +24,8 @@ export const attendanceRequested = () => {
   if (typeof window === 'undefined') return false;
   const q = new URLSearchParams(window.location.search);
   if (q.get('open') !== 'attendance') return false;
-  pending = q.get('view') === 'today' ? 'today' : 'mine';
+  const v = q.get('view');
+  pending = v === 'today' || v === 'team' || v === 'corrections' ? v : 'mine';
   return true;
 };
 

@@ -32,7 +32,7 @@ export const DepartmentPicker: React.FC = () => {
           {user?.name ? `${user.name}, you` : 'You'} look after {departments.length} departments. Open the one you want to work in; you can switch to another from the top of the dashboard without signing in again.
         </p>
         {departments.length === 0 ? (
-          <p role="alert" className="mt-8 text-sm text-slate-600">No department is assigned to your account. Ask the Super Admin.</p>
+          <p role="alert" className="mt-8 text-sm text-slate-600">No department is assigned to your account. Ask the Managing Director.</p>
         ) : (
           <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Your departments">
             {departments.map(d => (

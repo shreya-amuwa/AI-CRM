@@ -9,12 +9,12 @@ export const LEAVE_STATUS_LABEL: Record<LeaveStatus, string> = {
   REJECTED_BY_DEPARTMENT_HEAD: 'Rejected by Department Head',
   REJECTED_BY_HR: 'Rejected by HR',
   PENDING_TEAM_LEAD: 'Pending Team Lead Approval',
-  PENDING_OPERATIONS_HEAD: 'Pending Operations Head Approval',
+  PENDING_OPERATIONS_HEAD: 'Pending CEO Approval',
   REJECTED_BY_TEAM_LEAD: 'Rejected by Team Lead',
-  REJECTED_BY_OPERATIONS_HEAD: 'Rejected by Operations Head',
+  REJECTED_BY_OPERATIONS_HEAD: 'Rejected by CEO',
   REVISION_REQUIRED: 'Changes requested',
-  PENDING_SUPER_ADMIN: 'Pending Super Admin Approval',
-  REJECTED_BY_SUPER_ADMIN: 'Rejected by Super Admin'
+  PENDING_SUPER_ADMIN: 'Pending Managing Director Approval',
+  REJECTED_BY_SUPER_ADMIN: 'Rejected by Managing Director'
 };
 
 const STYLE: Record<LeaveStatus, string> = {

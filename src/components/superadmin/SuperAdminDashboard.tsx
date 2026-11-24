@@ -65,7 +65,7 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'team', label: 'Team Members', icon: Users },
           { id: 'income', label: 'Department Income', icon: Building2 },
           { id: 'incentives', label: 'Sales Incentives', icon: SlidersHorizontal },
-          // wallet credits (bonus, adjustment, refund) and the wallet report (20270206000100); the Super Admin has no wallet of their own
+          // wallet credits (bonus, adjustment, refund) and the wallet report (20270207000100); the Super Admin has no wallet of their own
           { id: 'wallet-admin', label: 'Wallet', icon: Wallet },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'report-performance', label: 'Reports & Performance', icon: FileBarChart },
@@ -102,10 +102,10 @@ export const SuperAdminDashboard: React.FC = () => {
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle="Super Admin"
+      subtitle="Managing Director"
       reminders={false}
       wallet={false}
-      ariaLabel="Super Admin navigation"
+      ariaLabel="Managing Director navigation"
       groups={groups}
       active={page}
       onSelect={id => {
@@ -113,7 +113,7 @@ export const SuperAdminDashboard: React.FC = () => {
         if (id === 'team' && page !== 'team') setTeamTab(t => ({ tab: 'members', n: t.n }));
         setPage(id as Page);
       }}
-      user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
+      user={{ name: user?.name || 'Managing Director', role: 'Managing Director' }}
       onSignOut={() => void logout()}
       wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'team' || page === 'notification-health' || page === 'email'}
       flush={page === 'chat'}

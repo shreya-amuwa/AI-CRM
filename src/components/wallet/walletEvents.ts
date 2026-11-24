@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 /**
- * Opening the Wallet from elsewhere (20270206000100): a wallet notification in the bell (incentive credited, withdrawal approved, ...). Every dashboard with a
+ * Opening the Wallet from elsewhere (20270207000100): a wallet notification in the bell (incentive credited, withdrawal approved, ...). Every dashboard with a
  * Wallet entry listens and shows it; Accounts' wallet credits (a credit waiting for approval) open the wallet administration instead.
  */
 export const OPEN_WALLET_EVENT = 'crm:open-wallet';

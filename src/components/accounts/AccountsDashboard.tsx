@@ -95,7 +95,7 @@ export const AccountsDashboard: React.FC = () => {
         { id: 'finance-mails', label: 'Finance e-mails', icon: MailCheck },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
         { id: 'payouts', label: 'Payout requests', icon: Wallet, badge: payoutsWaiting },
-        // bonuses, adjustments and refunds for employees' wallets (a second Accounts person approves), and the wallet report (20270206000100)
+        // bonuses, adjustments and refunds for employees' wallets (a second Accounts person approves), and the wallet report (20270207000100)
         { id: 'wallet-admin', label: 'Wallet credits & report', icon: PiggyBank },
         { id: 'business-reports', label: 'Business Reports', icon: BarChart3 }
       ]

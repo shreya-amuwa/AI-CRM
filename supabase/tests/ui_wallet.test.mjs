@@ -1,4 +1,4 @@
-// Browser test of the Employee Wallet (20270206000100): the wallet card, the six tabs (Overview, Earnings, Incentives, Salary, Withdrawals, Transactions),
+// Browser test of the Employee Wallet (20270207000100): the wallet card, the six tabs (Overview, Earnings, Incentives, Salary, Withdrawals, Transactions),
 // salary shown as expected only, the withdrawal rules and messages, the ledger with credit / debit / pending indicators, filters and pages, a person without a
 // wallet, a failure; and Accounts' wallet credits (the form, approve, reject, the server's refusal) and the report, at desktop and phone width.
 // The database is a stand-in with synthetic data (supabase/tests/ui/wallet_stubs.ts).

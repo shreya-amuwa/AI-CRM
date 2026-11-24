@@ -228,7 +228,7 @@ export const UserAccessManagementModal: React.FC<UserAccessManagementModalProps>
 
   const handleDeletePermanent = (u: StaffRow) => {
     if (!isSuperAdmin) {
-      notify('Only a Super Admin can permanently delete users.', 'danger');
+      notify('Only a Managing Director can permanently delete users.', 'danger');
       return;
     }
     if (window.confirm(`Permanently remove record for ${u.name}? This cannot be undone.`)) {
