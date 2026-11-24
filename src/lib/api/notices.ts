@@ -1,4 +1,4 @@
-import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../../shared/contracts';
+import type { CompanyNotice, NoticeAcknowledged, NoticeAudienceOptions, NoticeDeleted, NoticeList, NoticeManagers, NoticePending, NoticeReceipts } from '../../../shared/contracts';
 import { api } from './client';
 
 /** Company Notice Board (migration 20270131000200). Files use the issue upload / download routes (employeeCasesApi). */
@@ -17,5 +17,7 @@ export const noticesApi = {
   acknowledge: (id: string) => api.post<NoticeAcknowledged>(`/notices/${encodeURIComponent(id)}/acknowledge`, {}),
   managers: () => api.get<NoticeManagers>('/notices/managers'),
   setManager: (profileId: string, enabled: boolean) => api.post<{ profileId: string; manager: boolean }>(`/notices/managers/${encodeURIComponent(profileId)}`, { enabled }),
-  archive: (id: string) => api.post<CompanyNotice>(`/notices/${encodeURIComponent(id)}/archive`, {})
+  archive: (id: string) => api.post<CompanyNotice>(`/notices/${encodeURIComponent(id)}/archive`, {}),
+  /** Delete (soft): only the notice's publisher or the Super Admin; the database checks. */
+  remove: (id: string) => api.delete<NoticeDeleted>(`/notices/${encodeURIComponent(id)}`)
 };

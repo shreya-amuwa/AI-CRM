@@ -120,13 +120,75 @@ try {
   check(/Targeted: 2/.test(rec) && /Read: 0/.test(rec) && /Not read: 2/.test(rec) && (await page.locator('[data-testid="receipt-row"]').count()) === 2, 'the read receipts: targeted, read, not read, per person', rec);
   check(await page.isVisible('[data-testid="notice-edit-button"]') && await page.isVisible('[data-testid="notice-archive"]'), 'the publisher can edit and archive');
   const hrNotice = await page.evaluate(() => window.__notices.find(n => n.title === 'Wabastore: new leave rules').id);
+  check(await page.isVisible('[data-testid="notice-delete"]'), 'and sees Delete');
+  const deletes = () => page.evaluate(() => window.__calls.filter(c => c.method === 'DELETE').length);
+
+  // ---- delete: the confirmation, Cancel, a failure, a double click, the list updating at once
+  await page.click('[data-testid="notice-delete"]');
+  await page.waitForSelector('[data-testid="delete-notice-dialog"]');
+  const dlg = await page.innerText('[role="dialog"]:has([data-testid="delete-notice-dialog"])');
+  check(/Delete Notice\?/.test(dlg) && /Are you sure you want to delete this notice\? This action cannot be undone\./.test(dlg), 'the confirmation says "Delete Notice?" and that it cannot be undone', dlg);
+  check(await page.isVisible('[data-testid="cancel-delete"]') && await page.isVisible('[data-testid="confirm-delete"]'), 'with Cancel and Delete');
+  check(await deletes() === 0, 'nothing is sent before Delete is pressed');
+  await page.click('[data-testid="cancel-delete"]');
+  check(!(await page.isVisible('[data-testid="delete-notice-dialog"]')) && await deletes() === 0, 'Cancel closes it and sends nothing');
+  check(await page.isVisible('[data-testid="notice-dialog"]') && (await page.evaluate(() => window.__notices.find(n => n.title === 'Wabastore: new leave rules').status)) === 'PUBLISHED', 'the notice is still there');
+  await page.evaluate(() => { window.__deleteFails = true; });
+  await page.click('[data-testid="notice-delete"]');
+  await page.click('[data-testid="confirm-delete"]');
+  await page.waitForSelector('[data-testid="delete-notice-dialog"] [role="alert"]');
+  check(/Something went wrong/.test(await page.innerText('[data-testid="delete-notice-dialog"] [role="alert"]')) && await page.isVisible('[data-testid="confirm-delete"]'), 'a failed delete shows the error and keeps the dialog');
+  check((await page.evaluate(() => window.__notices.find(n => n.title === 'Wabastore: new leave rules').status)) === 'PUBLISHED' && !(await page.isVisible('[data-testid="notice-flash"]')), 'the notice stays, and no success message is shown');
+  await page.evaluate(() => { window.__deleteFails = false; window.__deleteDelay = 500; });
+  const before = await deletes();
+  await page.dblclick('[data-testid="confirm-delete"]');
+  await page.waitForSelector('[data-testid="notice-flash"]');
+  check(await deletes() - before === 1, 'a double click sends one delete request');
+  check(/Notice deleted\./.test(await page.innerText('[data-testid="notice-flash"]')), 'a success message is shown');
+  check(!(await page.isVisible('[data-testid="notice-dialog"]')) && !(await page.isVisible('[data-testid="delete-notice-dialog"]')), 'both dialogs are closed');
+  check((await page.locator('[data-testid="my-notices"] [data-testid="notice-card"]:has-text("Wabastore: new leave rules")').count()) === 0, 'the notice is gone from My published notices at once');
+  await page.evaluate(() => { window.__deleteDelay = 0; });
+
+  // from the list: the Delete button on a card (the notice's publisher), with the same confirmation
+  await page.click('[data-testid="notice-flash"] button');
+  check(!(await page.isVisible('[data-testid="notice-flash"]')), 'the success message can be dismissed');
+  await page.evaluate(() => window.__make({ title: 'Card delete test', body: 'Text', category: 'GENERAL', priority: 'NORMAL', publisherId: window.__profile.id, publisherName: window.__profile.fullName, publisherRole: 'HR' }));
+  await page.click('[data-testid="notice-tab-VIEW"]');
+  await page.click('[data-testid="notice-tab-SEND"]');
+  await page.waitForSelector('[data-testid="my-notices"] [data-testid="notice-card"]:has-text("Card delete test")');
+  await page.click('[data-testid="my-notices"] li:has-text("Card delete test") [data-testid="notice-card-delete"]');
+  await page.waitForSelector('[data-testid="delete-notice-dialog"]');
+  check(/Card delete test/.test(await page.innerText('[data-testid="delete-notice-dialog"]')), 'the card button asks the same question, naming the notice');
+  await page.click('[data-testid="confirm-delete"]');
+  await page.waitForSelector('[data-testid="notice-flash"]');
+  check((await page.locator('[data-testid="my-notices"] [data-testid="notice-card"]:has-text("Card delete test")').count()) === 0, 'and the card disappears at once');
+  await page.click('[data-testid="notice-tab-VIEW"]');
+  await page.click('button[aria-label="Refresh"]');
+  check((await page.locator('[data-testid="notice-card"]:has-text("Card delete test")').count()) === 0 && (await page.locator('[data-testid="notice-card"]:has-text("Wabastore: new leave rules")').count()) === 0, 'deleted notices are not in View Notices either, after a refresh');
+  await reset(page);
+
+  // an employee: no Delete anywhere, and the API refuses a direct call
+  await page.evaluate(() => window.__make({ title: 'Employee sees this', body: 'Please read the new leave rules before Friday.', category: 'GENERAL', priority: 'NORMAL', publisherId: '00000000-0000-4000-8000-0000000000b1', publisherName: 'Hema HR', publisherRole: 'HR' }));
+  await mount(page, 'member');
+  await nav(page, 'Notice Board').click();
+  await page.waitForSelector('[data-testid="notice-card"]:has-text("Employee sees this")');
+  check((await page.locator('[data-testid="notice-card-delete"]').count()) === 0, 'an employee has no Delete button on any card');
+  await page.click('[data-testid="notice-card"]:has-text("Employee sees this")');
+  await page.waitForSelector('[data-testid="notice-dialog"] [data-testid="notice-body"]');
+  check(!(await page.isVisible('[data-testid="notice-delete"]')), 'nor in the notice');
+  const direct = await page.evaluate(async id => { const r = await fetch(`/api/v1/notices/${id}`, { method: 'DELETE' }); return { status: r.status, still: window.__notices.find(n => n.id === id).status }; },
+    await page.evaluate(() => window.__notices.find(n => n.title === 'Employee sees this').id));
+  check(direct.status === 404 && direct.still === 'PUBLISHED', 'a direct DELETE by an employee is refused and the notice stays', direct);
+  const gone = await page.evaluate(async id => (await fetch(`/api/v1/notices/${id}`)).status, hrNotice);
+  check(gone === 404, 'a deleted notice cannot be opened by anyone');
   await reset(page);
 
   // ---- a notice notification opens that exact notice
   await mount(page, 'member');
-  await page.evaluate(id => window.openFromNotification({ type: 'COMPANY_NOTICE', entityType: 'company_notice', entityId: id }), hrNotice);
+  const empNotice = await page.evaluate(() => window.__notices.find(n => n.title === 'Employee sees this').id);
+  await page.evaluate(id => window.openFromNotification({ type: 'COMPANY_NOTICE', entityType: 'company_notice', entityId: id }), empNotice);
   await page.waitForSelector('[data-testid="notice-dialog"] [data-testid="notice-body"]');
-  check(/apply for leave three days ahead/.test(await page.innerText('[data-testid="notice-body"]')), 'clicking the notification opens that notice on the Notice Board');
+  check(/new leave rules before Friday/.test(await page.innerText('[data-testid="notice-body"]')), 'clicking the notification opens that notice on the Notice Board');
   await reset(page);
   await page.close();
 

@@ -58,14 +58,28 @@ try {
     check(await title(page) === 'Office closed on Friday', 'it opens by itself with the Urgent notice first');
     check(/Notice 1 of 3/.test(await page.innerText('[data-testid="notice-popup-count"]')) && /3 unread notices/.test(await page.innerText('[data-testid="notice-popup-unread"]')), 'it says "Notice 1 of 3" and how many are unread');
     const band = await page.innerText('[data-testid="notice-popup-band"]');
-    check(/URGENT NOTICE/.test(band) && (await popup(page).getAttribute('data-priority')) === 'URGENT', 'the Urgent notice is marked in the heading band');
-    check(await page.isVisible('[data-testid="notice-popup-priority"]') && /Urgent/.test(await page.innerText('[data-testid="notice-popup-priority"]')), 'with its priority label');
+    check(/Company notice/.test(band) && (await popup(page).getAttribute('data-priority')) === 'URGENT', 'the heading says "Company notice" and the popup knows it is Urgent');
+    check(await page.isVisible('[data-testid="notice-popup-priority"]') && /Urgent/.test(await page.innerText('[data-testid="notice-popup-priority"]')), 'the priority is a quiet marker with its label (a dot and the word Urgent)');
+    // a normal-sized, plain modal: not a full-screen announcement
+    const box = await page.evaluate(() => { const d = document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect(); const s = getComputedStyle(document.querySelector('[data-testid="notice-popup"]'));
+      return { w: d.width, h: d.height, iw: innerWidth, ih: innerHeight, anim: s.animationName, grad: s.backgroundImage, title: parseFloat(getComputedStyle(document.querySelector('[data-testid="notice-popup-title"]')).fontSize) }; });
+    check(box.w <= 520 && box.w >= 320 && box.h <= box.ih * 0.85 && box.w < box.iw * 0.5, 'desktop: a normal-sized modal (about 512 px wide), not the whole screen', box);
+    check(box.anim === 'none' && box.grad === 'none' && box.title <= 20, 'no animation, no gradient, and a title that is clear but not oversized', box);
     check(/Policy/.test(await page.innerText('[data-testid="notice-popup-category"]')), 'the category');
     const meta = await popup(page).innerText();
     check(/Published by\s+Ashish Sinha/.test(meta) && /2030|Jan/.test(meta), 'who published it and when');
     const body = await page.innerText('[data-testid="notice-popup-body"]');
     check(/Full text of Office closed on Friday\./.test(body) && /Second line/.test(body), 'the whole text, line breaks kept');
-    check(await page.isVisible('text=holiday-list.pdf'), 'the attachment');
+    check(await page.isVisible('text=holiday-list.pdf') && await page.isVisible('[data-testid="notice-popup-file"] >> text=20 KB'), 'the attachment, with its size');
+    // View and Download are separate buttons; each asks the server for a short-lived link of its own kind and opens it
+    await page.evaluate(() => { window.__opened = []; window.open = u => { window.__opened.push(String(u)); return null; }; });
+    await page.click('button[aria-label="View holiday-list.pdf"]');
+    await page.waitForFunction(() => window.__opened.length === 1);
+    await page.click('button[aria-label="Download holiday-list.pdf"]');
+    await page.waitForFunction(() => window.__opened.length === 2);
+    const urlCalls = (await calls(page, 'GET', /issue-attachments\/f1\/url/)).map(c => c.search);
+    check(urlCalls.some(q => /action=view/.test(q)) && urlCalls.some(q => /action=download/.test(q)), 'View and Download each open the file (their own signed link)', urlCalls);
+    check(!(await page.isVisible('[data-testid="notice-popup-close"]')), 'an Urgent notice has no close button');
     check(!(await page.isVisible('[data-testid="notice-popup-later"]')), 'an Urgent notice has no "Remind me later"');
     await page.keyboard.press('Escape');
     check(await popup(page).isVisible(), 'and Escape does not close it');
@@ -74,7 +88,10 @@ try {
     // navigation without acknowledging
     await page.click('[data-testid="notice-popup-next"]');
     check(await title(page) === 'New leave policy' && /Notice 2 of 3/.test(await page.innerText('[data-testid="notice-popup-count"]')), 'Next moves to the Important notice (Important next, then Normal)');
-    check(/Important notice/.test(await page.innerText('[data-testid="notice-popup-band"]')) && await page.isVisible('[data-testid="notice-popup-later"]'), 'it has its own band, and may be put off');
+    check(/Important/.test(await page.innerText('[data-testid="notice-popup-priority"]')) && (await popup(page).getAttribute('data-priority')) === 'IMPORTANT' && await page.isVisible('[data-testid="notice-popup-later"]'), 'it shows Important, and may be put off');
+    check(await page.isVisible('[data-testid="notice-popup-close"]'), 'it has a close button in the top-right corner');
+    const pos = await page.evaluate(() => { const d = document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect(); const c = document.querySelector('[data-testid="notice-popup-close"]').getBoundingClientRect(); return { fromRight: d.right - c.right, fromTop: c.top - d.top }; });
+    check(pos.fromRight < 24 && pos.fromTop < 24, 'and it sits in the top-right corner', pos);
     await page.click('[data-testid="notice-popup-prev"]');
     check(await title(page) === 'Office closed on Friday', 'Previous goes back');
     check((await calls(page, 'POST', /acknowledge/)).length === 0, 'looking at notices acknowledges nothing');
@@ -151,6 +168,41 @@ try {
     await mount(page);
     await page.waitForTimeout(400);
     check(!(await popup(page).isVisible()) && errors.length === 0, 'the server unreachable: no popup, no error on the page');
+    await page.close();
+  }
+  // ---- the Important notice's close button puts it off; a notice deleted while it is open disappears instead of getting stuck
+  {
+    const page = await open();
+    await page.evaluate(() => { window.__server = { items: [window.__notice('n-imp', 'IMPORTANT', 'Close me', 5), window.__notice('n-del', 'NORMAL', 'Deleted meanwhile', 1)], failAck: false, deletedIds: [] }; });
+    await mount(page);
+    await popup(page).waitFor();
+    check(await title(page) === 'Close me', 'the Important notice is first');
+    await page.click('[data-testid="notice-popup-close"]');
+    await page.waitForFunction(() => document.querySelector('[data-testid="notice-popup-title"]')?.textContent === 'Deleted meanwhile');
+    check((await calls(page, 'POST', /acknowledge/)).length === 0, 'the close button puts it off without acknowledging, and the next notice is shown');
+    await page.evaluate(() => { window.__server.deletedIds.push('n-del'); });
+    await page.click('[data-testid="notice-popup-ack"]');
+    await page.waitForFunction(() => !document.querySelector('[data-testid="notice-popup"]'));
+    check(!(await page.isVisible('[data-testid="notice-popup-error"]')), 'a notice deleted while it was open just leaves the queue: no error, nothing stuck');
+    await page.close();
+  }
+  // ---- a tablet, and a long text on a phone: the modal stays a normal size and the text scrolls inside it
+  {
+    const page = await open({ width: 768, height: 1024 });
+    await mount(page);
+    await popup(page).waitFor();
+    const t = await page.evaluate(() => { const d = document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect(); return { w: d.width, h: d.height, ih: innerHeight, iw: innerWidth, left: d.left, right: d.right }; });
+    check(t.w <= 520 && t.left > 0 && t.right < t.iw && t.h < t.ih * 0.6, 'tablet: still a normal-sized modal, centred, with the page visible around it', t);
+    await page.close();
+  }
+  {
+    const page = await open({ width: 360, height: 640 });
+    await page.evaluate(() => { window.__server = { items: [window.__notice('n-long', 'NORMAL', 'A very long notice', 1, { body: Array.from({ length: 120 }, (_, i) => `Line ${i + 1} of a long notice that keeps going.`).join('\n') })], failAck: false }; });
+    await mount(page);
+    await popup(page).waitFor();
+    const m = await page.evaluate(() => { const d = document.querySelector('[data-testid="notice-popup"]').getBoundingClientRect(); const a = document.querySelector('[data-testid="notice-popup-ack"]').getBoundingClientRect();
+      const sc = document.querySelector('[data-testid="notice-popup-body"]').parentElement; return { top: d.top, bottom: d.bottom, ih: innerHeight, ackBottom: a.bottom, scrolls: sc.scrollHeight > sc.clientHeight + 5, sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+    check(m.top >= 0 && m.bottom <= m.ih && m.ackBottom <= m.ih && m.scrolls && m.sw <= m.iw + 1, 'phone, long text: the modal fits the screen, the text scrolls inside it and Acknowledge stays on screen', m);
     await page.close();
   }
   // ---- a phone
