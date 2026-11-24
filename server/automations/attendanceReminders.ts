@@ -63,6 +63,28 @@ async function runLegacy(now: Date | undefined, push: 'on' | 'off'): Promise<Rem
            deliveries: { ...NO_TOTALS, attempted: jobs.length, accepted: totals.pushed, failed: totals.failed, gone: totals.gone }, ...totals };
 }
 
+/**
+ * Scheduled notifications that ride on the reminders' 5-minute run (each one checked and recorded once by the database):
+ *  - sa_attendance_alert_generate (20270131000100): "Look at today's attendance." to the Super Admin, once a working day from 11:00 India time;
+ *  - notice_release_due (20270131000200): company notices whose publish time has come reach their audience.
+ * A function that does not exist yet (its migration not run) is skipped; a failure of one never stops the reminders.
+ */
+export async function runScheduledNotifications(now: Date | undefined, push: boolean): Promise<{ generated: number; jobsCreated: number; noDevice: number }> {
+  const totals = { generated: 0, jobsCreated: 0, noDevice: 0 };
+  for (const fn of ['sa_attendance_alert_generate', 'notice_release_due']) {
+    const { data, error } = await getServiceClient().rpc(fn, { ...(now ? { p_now: now.toISOString() } : {}), p_push: push });
+    if (error) {
+      if (!isMissingFunction(error)) console.error(`[reminders] ${fn} failed:`, error.message);
+      continue;
+    }
+    const r = (data ?? {}) as { generated?: number; jobsCreated?: number; noDevice?: number };
+    totals.generated += r.generated ?? 0;
+    totals.jobsCreated += r.jobsCreated ?? 0;
+    totals.noDevice += r.noDevice ?? 0;
+  }
+  return totals;
+}
+
 export async function runAttendanceReminders(now?: Date, opts: { budgetMs?: number } = {}): Promise<ReminderRun> {
   const vapid = vapidConfig();
   const push = vapid ? 'on' : 'off';
@@ -76,6 +98,12 @@ export async function runAttendanceReminders(now?: Date, opts: { budgetMs?: numb
     throw new Error(`Attendance reminders could not be prepared: ${error.message}`);
   }
   const g = (data ?? {}) as { generated?: number; bellWritten?: number; jobsCreated?: number; noDevice?: number };
+  // the same run queues the Super Admin's 11:00 attendance alert and the notices whose publish time has come; they go out with the outbox below
+  const extra = await runScheduledNotifications(now, !!vapid);
+  g.generated = (g.generated ?? 0) + extra.generated;
+  g.bellWritten = (g.bellWritten ?? 0) + extra.generated;
+  g.jobsCreated = (g.jobsCreated ?? 0) + extra.jobsCreated;
+  g.noDevice = (g.noDevice ?? 0) + extra.noDevice;
   let deliveries: DeliveryTotals = { ...NO_TOTALS };
   let sendError: string | null = null;
   try {
