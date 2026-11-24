@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
-/** HR Awards (20270202000100): every call is one database function that checks the caller is HR staff (or the Super Admin). */
+/** HR Awards (20270203000100): every call is one database function that checks the caller is HR staff (or the Super Admin). */
 export class HrAwardRepository {
   constructor(private readonly db: SupabaseClient) {}
   private async rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {

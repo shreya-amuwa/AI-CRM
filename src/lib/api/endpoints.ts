@@ -1117,7 +1117,7 @@ export const emailApi = {
   review: (id: string, received: boolean) => api.post<{ ok: true }>(`/email/history/${id}/review`, { received })
 };
 
-// HR Awards (20270202000100): Award Management > Awards (HR staff and the Super Admin; the database checks)
+// HR Awards (20270203000100): Award Management > Awards (HR staff and the Super Admin; the database checks)
 export const hrAwardsApi = {
   overview: (month: string) => api.get<HrAwardsOverview>('/hr/awards', { month }),
   options: () => api.get<HrAwardOptions>('/hr/awards/options'),

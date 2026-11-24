@@ -10,7 +10,7 @@ import type { HrAwardRepository } from '../repositories/HrAwardRepository.js';
 const firstDay = (month: string) => `${month}-01`;
 
 /**
- * HR Awards (migration 20270202000100): seven monthly awards with any number of nominees and winners per month.
+ * HR Awards (migration 20270203000100): seven monthly awards with any number of nominees and winners per month.
  * This layer validates; the database decides who may (HR staff and the Super Admin) and keeps every month's records.
  * Every change returns the award's detail as it now is, so the screen shows the saved state.
  */

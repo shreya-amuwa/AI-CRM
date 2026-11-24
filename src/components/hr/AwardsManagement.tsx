@@ -11,7 +11,7 @@ import type { HrAwardCard, HrAwardCode, HrAwardDetail, HrAwardNominee, HrAwardNo
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pill, Spinner } from '../team-member/pipeline/shared';
 
 /**
- * HR dashboard > Award Management > Awards (migration 20270202000100).
+ * HR dashboard > Award Management > Awards (migration 20270203000100).
  * Seven monthly awards. For the chosen month HR adds any number of nominees (employees, teams or departments picked from the CRM),
  * edits or removes them, and declares one or more winners (revocable, with a reason). Every month is kept separately, so earlier months
  * stay as they were. Everything is read from and saved to the database; the database decides who may (HR staff and the Super Admin).

@@ -3767,8 +3767,12 @@ export const noticeUpdateSchema = z.object({
   category: z.enum(NOTICE_CATEGORIES).optional(),
   priority: z.enum(NOTICE_PRIORITIES).optional(),
   expiresAt: noticeTime,
+  /** a material change: everyone acknowledges this version again (a minor edit leaves every acknowledgement as it was) */
+  acknowledgeAgain: z.boolean().optional(),
   version: z.number().int().min(1).optional()
 }).strict();
+/** The Super Admin adds or removes a person from the CRM team that runs the Notice Board (20270202000100). */
+export const noticeManagerSetSchema = z.object({ enabled: z.boolean() }).strict();
 export const noticeListQuerySchema = z.object({
   scope: z.enum(['INBOX', 'ALL', 'MINE']).default('INBOX'),
   category: z.enum(NOTICE_CATEGORIES).optional(),
@@ -3783,7 +3787,7 @@ export const noticeListQuerySchema = z.object({
 }).strict();
 
 // ---------------------------------------------------------------------------
-// HR Awards (20270202000100): Award Management > Awards. The same schemas check the forms and the API; the database checks again.
+// HR Awards (20270203000100): Award Management > Awards. The same schemas check the forms and the API; the database checks again.
 // ---------------------------------------------------------------------------
 export const HR_AWARD_CODES = ['PROFESSIONALISM_EXCELLENCE', 'RISING_STAR', 'PLAYER', 'EMERGING_LEADER', 'DEPARTMENT', 'TEAM', 'BUSINESS_ICON'] as const;
 export const HR_AWARD_NOMINEE_TYPES = ['INDIVIDUAL', 'TEAM', 'DEPARTMENT'] as const;

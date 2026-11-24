@@ -1,5 +1,5 @@
 -- =============================================================================
--- HR Awards (docs/HR_AWARDS.md). Run after 20270201000100_email_management.sql. Additive and safe to run twice.
+-- HR Awards (docs/HR_AWARDS.md). Run after 20270202000200_notification_coverage.sql. Additive and safe to run twice.
 --
 -- HR dashboard > Award Management > Awards: seven monthly awards. For every award and month HR adds any number of nominees (an employee,
 -- a team or a department, chosen from the CRM, never typed in), edits or removes them, and declares one or more of them winners (a winner

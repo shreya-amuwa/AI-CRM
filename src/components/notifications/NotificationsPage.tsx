@@ -4,6 +4,8 @@ import type { Notification, Paginated } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { notificationsApi } from '../../lib/api/endpoints';
 import { useNotifications } from '../../context/NotificationContext';
+import { categoryOf, fullTime } from '../../lib/notifications/notificationCategory';
+import { openNotificationTarget } from './openNotification';
 import { Empty, ErrorBanner, Loading, PageHeader, Pager } from '../support-member/SupportParts';
 
 export const NOTIFICATIONS_PAGE_SIZE = 10;
@@ -40,8 +42,9 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
   useEffect(() => setPage(1), [filter]);
 
   const open = (n: Notification) => {
-    // a dashboard that links its notifications to the item they are about (AI Studio: the task or the report) opens it
-    onOpenItem?.(n);
+    // a dashboard that links its notifications to the item they are about (AI Studio: the task or the report) opens it; every other one goes where the bell goes
+    if (onOpenItem) onOpenItem(n);
+    else openNotificationTarget({ type: n.type, entityType: n.entityType, entityId: n.entityId, messageId: typeof n.data?.messageId === 'string' ? n.data.messageId : null });
     if (n.readAt) return;
     markAsRead(n.id);
     setData(d => (d ? { ...d, items: d.items.map(i => (i.id === n.id ? { ...i, readAt: new Date().toISOString() } : i)) } : d));
@@ -102,9 +105,10 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className={`text-sm truncate ${n.readAt ? 'font-medium text-slate-700' : 'font-bold text-slate-900'}`}>{n.title}</span>
-                        <span className="text-[11px] text-slate-400 shrink-0">{when(n.createdAt)}</span>
+                        <time dateTime={n.createdAt} title={fullTime(n.createdAt)} className="text-[11px] text-slate-400 shrink-0">{when(n.createdAt)}</time>
                       </span>
                       <span className="block text-xs text-slate-500 mt-0.5">{n.body}</span>
+                      <span data-testid="notification-category" className="inline-block mt-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">{categoryOf(n.type, n.entityType)}</span>
                     </span>
                     {!n.readAt && <span className="mt-2 w-2 h-2 rounded-full bg-blue-600 shrink-0" aria-hidden="true" />}
                   </button>

@@ -267,6 +267,10 @@ export const noticesController = {
   list: (async ctx => ok(await svc(ctx).notices.list(ctx.req.query))) as Handler,
   unreadCount: (async ctx => ok(await svc(ctx).notices.unreadCount())) as Handler,
   audience: (async ctx => ok(await svc(ctx).notices.audienceOptions())) as Handler,
+  pending: (async ctx => ok(await svc(ctx).notices.pending())) as Handler,
+  acknowledge: (async ctx => ok(await svc(ctx).notices.acknowledge(ctx.params.id))) as Handler,
+  managers: (async ctx => ok(await svc(ctx).notices.managers())) as Handler,
+  managerSet: (async ctx => ok(await svc(ctx).notices.managerSet(ctx.params.profileId, ctx.req.body))) as Handler,
   open: (async ctx => ok(await svc(ctx).notices.open(ctx.params.id))) as Handler,
   receipts: (async ctx => ok(await svc(ctx).notices.receipts(ctx.params.id))) as Handler,
   publish: (async ctx => ok(await svc(ctx).notices.publish(ctx.req.body), 201)) as Handler,
@@ -370,7 +374,7 @@ export const organizationController = {
 
 import { runHrAutomation } from '../automations/hrDispatcher.js';
 
-// HR Awards (20270202000100): Award Management > Awards; the database allows HR staff and the Super Admin
+// HR Awards (20270203000100): Award Management > Awards; the database allows HR staff and the Super Admin
 export const hrAwardsController = {
   overview: (async ctx => ok(await svc(ctx).hrAwards.overview(ctx.req.query))) as Handler,
   options: (async ctx => ok(await svc(ctx).hrAwards.options())) as Handler,

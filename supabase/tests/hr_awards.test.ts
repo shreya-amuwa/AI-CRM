@@ -1,4 +1,4 @@
-// HR Awards (migration 20270202000100): the shared schemas the Add Nominee / Declare Winner forms and the server both use. The database checks
+// HR Awards (migration 20270203000100): the shared schemas the Add Nominee / Declare Winner forms and the server both use. The database checks
 // who may (HR staff and the Super Admin), the award's nominee type, duplicates and the month range again; these only check the shape.
 import {
   HR_AWARD_CODES, awardCodeSchema, awardDeclareWinnersSchema, awardMonthQuerySchema, awardNominateSchema, awardNomineeRemoveSchema,

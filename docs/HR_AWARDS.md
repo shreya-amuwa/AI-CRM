@@ -1,6 +1,6 @@
 # HR Awards (Award Management > Awards)
 
-Monthly employee recognition in the HR dashboard. Migration: `supabase/migrations/20270202000100_hr_awards.sql` (additive, safe to run twice).
+Monthly employee recognition in the HR dashboard. Migration: `supabase/migrations/20270203000100_hr_awards.sql` (additive, safe to run twice).
 
 ## Where it is
 

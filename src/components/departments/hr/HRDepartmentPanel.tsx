@@ -55,7 +55,7 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
   const leaveData = useLeaveData();
   const monthlyLeave = useMonthlyLeave();
   const [activeModule, setActiveModule] = useState<string | null>(null);
-  // Award Management's own menu: Birthdays, Anniversaries, then Awards (20270202000100)
+  // Award Management's own menu: Birthdays, Anniversaries, then Awards (20270203000100)
   const [awardsTab, setAwardsTab] = useState<'birthdays' | 'anniversaries' | 'awards'>('anniversaries');
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => attendanceStore.getAttendanceRecords());
   const [latestMemberLogin, setLatestMemberLogin] = useState<AttendanceRecord | null>(() => attendanceStore.getLatestMemberLogin());

@@ -1,4 +1,4 @@
-// Browser test of HR Awards (20270202000100) in the real HR dashboard panel: Award Management's menu reads Birthdays, Anniversaries, Awards
+// Browser test of HR Awards (20270203000100) in the real HR dashboard panel: Award Management's menu reads Birthdays, Anniversaries, Awards
 // (Awards last); the existing anniversary card still shows; the seven award cards; HR adds several nominees to one award (from the CRM's
 // employees, never typed), edits and removes one, declares one winner and then a second, sees winners apart from nominees, revokes a winner
 // after confirming; another month starts empty and the earlier month is unchanged; a reload shows what was saved; a refusal is shown.

@@ -1,6 +1,6 @@
 -- =============================================================================
--- Company Notice Board (migration 20270131000200): everyone reads what is addressed to them; only the Super Admin, an Operations Head (within
--- the departments they own), HR and the Developers team publish; the audience (company, departments, designations, selected employees)
+-- Company Notice Board (migration 20270131000200, and 20270202000100 for who publishes): everyone reads what is addressed to them; only the Super Admin, HR and the
+-- CRM team (Ashish, Shreya, Siddhesh: notice_board_managers) publish (see notice_board_restricted_test.sql for the rules); the audience (company, departments, designations, selected employees)
 -- decides who is notified (bell + push) and who can read; read receipts; editing keeps the history; archiving; files; scheduled notices.
 -- Runs after developer_bugs_test.sql (the developers) and access_control_apply_test.sql (ac_p: Operations Head of Whatsbox and Wabastore).
 -- Own notices (titles 'NB %').
@@ -12,6 +12,10 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270131000200_company_notice_board.sql
 \i supabase/migrations/20270131000200_company_notice_board.sql
+-- 20270202000100 narrows who publishes (the Super Admin, HR and the named CRM team) and adds acknowledgement; it replaces the functions above, so it is applied last
+\i supabase/migrations/20270202000100_notice_board_restricted_popup.sql
+\i supabase/migrations/20270202000100_notice_board_restricted_popup.sql
+select private.notice_manager_sync();
 delete from company_notices where title like 'NB %';
 create temp table nb (k text primary key, v jsonb);
 grant all on nb to authenticated;
@@ -30,9 +34,9 @@ insert into push_subscriptions (id, profile_id, endpoint, p256dh, auth, label, a
 values ('bbbbbbbb-0000-4000-8000-00000000b001', test.id('tm_a'), 'https://push.example.com/nb-1', 'k', 'a', 'Member phone', true)
 on conflict (id) do update set active = true, profile_id = excluded.profile_id;
 select test.check(private.notice_publisher_role(test.id('sa')) = 'SUPER_ADMIN' and private.notice_publisher_role(test.id('hr_head')) = 'HR'
-                  and private.notice_publisher_role(test.id('iss_hr_tm')) = 'HR' and private.notice_publisher_role(test.id('dv_ashish')) = 'DEVELOPER'
-                  and private.notice_publisher_role(test.id('ac_p')) = 'OPERATIONS_HEAD',
-  'publishers: the Super Admin, HR (head and members), a developer, an Operations Head');
+                  and private.notice_publisher_role(test.id('iss_hr_tm')) = 'HR' and private.notice_publisher_role(test.id('dv_ashish')) = 'CRM_TEAM'
+                  and private.notice_publisher_role(test.id('ac_p')) is null,
+  'publishers: the Super Admin, HR (head and members), the CRM team; an Operations Head no longer');
 select test.check(private.notice_publisher_role(test.id('dh_wab')) is null and private.notice_publisher_role(test.id('th_wab')) is null
                   and private.notice_publisher_role(test.id('tm_a')) is null, 'a Department Head, a Team Lead and a Team Member are not');
 
@@ -60,7 +64,7 @@ select test.check(test.nb_got('tm_a', 'NB Office closed Friday') and test.nb_got
   'every employee is notified');
 select test.check(not test.nb_got('sa', 'NB Office closed Friday'), 'not the publisher');
 select test.check((select count(*) = 1 from notifications where recipient_id = test.id('tm_a') and entity_id = (test.nb('NB Office closed Friday')).id), 'once');
-select test.check((select title like 'New Company Notice: NB Office closed Friday' and body like 'A new notice has been published by % Please check your Notice Board.' and priority = 'urgent'
+select test.check((select title like 'New Company Notice: NB Office closed Friday' and body like 'A new URGENT notice has been published by % Open it to read and acknowledge.' and priority = 'urgent'
                      from notifications where recipient_id = test.id('tm_a') and entity_id = (test.nb('NB Office closed Friday')).id),
   'the bell: "New Company Notice", the title and the publisher; urgent');
 select test.check((select count(*) = 1 and bool_and(url = '/?open=notice&id=' || (test.nb('NB Office closed Friday')).id) from notification_deliveries
@@ -101,24 +105,19 @@ select test.check(not test.nb_inbox('NB Wabastore leave policy'), 'HR outside th
 select test.check(exists (select 1 from jsonb_array_elements(notice_list('ALL', p_limit => 100) -> 'items') x where x ->> 'title' = 'NB Wabastore leave policy'),
   '... but publishers see the company''s notices in View Notices');
 select test.login('dv_ashish');
-select test.check((test.nb_send('NB Team Leads: release tonight', 'nb-key-0030', '{"audienceType":"ROLE","roles":["TEAM_HEAD"],"category":"IT_SYSTEM"}') ->> 'publisherRole') = 'DEVELOPER',
-  'a developer publishes to a designation');
+select test.check((test.nb_send('NB Team Leads: release tonight', 'nb-key-0030', '{"audienceType":"ROLE","roles":["TEAM_HEAD"],"category":"IT_SYSTEM"}') ->> 'publisherRole') = 'CRM_TEAM',
+  'the CRM team publishes to a designation');
 reset role;
 select test.check(test.nb_got('th_wab', 'NB Team Leads: release tonight') and not test.nb_got('tm_a', 'NB Team Leads: release tonight') and not test.nb_got('dh_wab', 'NB Team Leads: release tonight'),
   'only Team Leads are notified');
 
-\echo '   an Operations Head: only within their departments'
+\echo '   an Operations Head no longer publishes (20270202000100)'
 set role authenticated;
 select test.login('ac_p');
-select test.check((select (o ->> 'canPublish')::boolean and o -> 'audiences' = '["DEPARTMENT","ROLE","EMPLOYEES"]'::jsonb
-                          and jsonb_array_length(o -> 'departments') = 2 from (select notice_audience_options() as o) s), 'their options: their two departments, no entire company');
-select test.must_fail($$select test.nb_send('NB OH company', 'nb-key-0040', '{"audienceType":"COMPANY"}')$$, 'not the entire company', 'not to the entire company');
-select test.must_fail($$select test.nb_send('NB OH hr', 'nb-key-0041', jsonb_build_object('audienceType', 'DEPARTMENT', 'departmentIds', jsonb_build_array(test.dept('hr'))))$$,
-  'not a department they do not manage', 'departments you manage');
-select test.must_fail($$select test.nb_send('NB OH emp', 'nb-key-0042', jsonb_build_object('audienceType', 'EMPLOYEES', 'employeeIds', jsonb_build_array(test.id('hr_head'))))$$,
-  'not an employee outside their departments', 'employees of the departments you manage');
-select test.check((test.nb_send('NB OH to Wabastore', 'nb-key-0043', jsonb_build_object('audienceType', 'DEPARTMENT', 'departmentIds', jsonb_build_array(test.dept('wabastore')))) ->> 'publisherRole') = 'OPERATIONS_HEAD',
-  'they publish to a department they manage');
+select test.check(not (notice_audience_options() ->> 'canPublish')::boolean, 'an Operations Head has no Send Notice');
+select test.must_fail($$select test.nb_send('NB OH company', 'nb-key-0040', '{"audienceType":"COMPANY"}')$$, 'and cannot publish, to the company or to a department', 'Only the Super Admin, HR and the CRM team');
+select test.must_fail($$select test.nb_send('NB OH dept', 'nb-key-0043', jsonb_build_object('audienceType', 'DEPARTMENT', 'departmentIds', jsonb_build_array(test.dept('wabastore'))))$$,
+  'not even to a department they manage', 'Only the Super Admin, HR and the CRM team');
 
 \echo '   selected employees; a scheduled notice'
 select test.login('sa');

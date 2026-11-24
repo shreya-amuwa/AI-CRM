@@ -1,5 +1,5 @@
 -- =============================================================================
--- HR Awards (migration 20270202000100): seven monthly awards; HR adds any number of nominees (employee, team or department from the CRM),
+-- HR Awards (migration 20270203000100): seven monthly awards; HR adds any number of nominees (employee, team or department from the CRM),
 -- edits and removes them, declares one or more winners and revokes a declaration; every month is kept separately.
 -- Only HR staff (not HR Recruiters) and the Super Admin. Runs after hr_documents_test.sql (hrd_rec) and employee_issues_test.sql (iss_hr_tm).
 -- =============================================================================
@@ -8,8 +8,8 @@
 \echo '--- HR Awards'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270202000100_hr_awards.sql
-\i supabase/migrations/20270202000100_hr_awards.sql
+\i supabase/migrations/20270203000100_hr_awards.sql
+\i supabase/migrations/20270203000100_hr_awards.sql
 create temp table aw (k text primary key, v jsonb);
 grant all on aw to authenticated;
 create or replace function test.aw_nominee(p_detail jsonb, p_name text) returns uuid language sql immutable as $$
