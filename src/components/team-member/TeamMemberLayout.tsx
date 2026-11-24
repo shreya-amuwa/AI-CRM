@@ -28,13 +28,17 @@ import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
 import { ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, meetingsRequested } from '../layout/shell';
-import { CalendarDays, Clock3 } from 'lucide-react';
+import { CalendarDays, Clock3, Megaphone } from 'lucide-react';
+import { noticeRequested, useOpenNoticeRequest } from '../notices/noticeEvents';
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
+// Notice Board (20270131000200), as in every dashboard
+const NoticeBoard = React.lazy(() => import('../notices/NoticeBoard'));
+const NOTICES_NAV = '__notices';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 
-export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications', 'income'] as const;
+export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', '__notices', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications', 'income'] as const;
 export type TeamMemberNav = (typeof TEAM_MEMBER_NAVS)[number];
 
 interface TeamMemberLayoutProps {
@@ -68,6 +72,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: ATTENDANCE_NAV_ID as TeamMemberNav, label: 'Attendance', icon: Clock3 },
     // Meetings with Google Calendar, booking links and requests to the CEO
     { id: MEETINGS_NAV_ID as TeamMemberNav, label: 'Meetings', icon: CalendarDays },
+    { id: NOTICES_NAV as TeamMemberNav, label: 'Notice Board', icon: Megaphone },
     { id: 'home' as TeamMemberNav, label: 'Home', icon: Home },
     { id: 'leads' as TeamMemberNav, label: 'My Leads', icon: UserCheck },
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
@@ -88,7 +93,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   const SECTION_LABEL: Partial<Record<TeamMemberNav, string>> = { leads: 'Sales', 'work-tasks': 'Work', settings: 'Team' };
 
   // a tapped reminder opens the CRM on /?open=attendance
-  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(meetingsRequested() ? MEETINGS_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
+  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV as TeamMemberNav : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
 
   React.useEffect(() => {
@@ -114,6 +119,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
   useStaffReminders(React.useCallback(() => handleNavClick(ATTENDANCE_NAV_ID as TeamMemberNav), []));
   useOpenMeetingRequest(React.useCallback(() => handleNavClick(MEETINGS_NAV_ID as TeamMemberNav), []));
+  useOpenNoticeRequest(React.useCallback(() => handleNavClick(NOTICES_NAV as TeamMemberNav), []));
   const displayName = user?.name || 'Team Member';
   const displayRole = memberTitle(user);
 
@@ -226,7 +232,8 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {currentNav === 'income' && sales && <IncomePage />}
           {currentNav === ATTENDANCE_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense>}
           {currentNav === MEETINGS_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><MeetingsPage /></React.Suspense>}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || (currentNav === 'income' && sales) || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID}>{children}</div>
+          {currentNav === NOTICES_NAV && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><NoticeBoard /></React.Suspense>}
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || (currentNav === 'income' && sales) || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID || currentNav === NOTICES_NAV}>{children}</div>
         </main>
       </div>
     </div>

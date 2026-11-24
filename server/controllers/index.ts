@@ -117,6 +117,8 @@ export const chatController = {
   internalList: (async ctx => ok(await svc(ctx).chat.internalList(ctx.req.query))) as Handler,
   myClients: (async ctx => ok(await svc(ctx).chat.myClients(ctx.req.query))) as Handler,
   clientTab: (async ctx => ok(await svc(ctx).chat.clientTab())) as Handler,
+  deskClients: (async ctx => ok(await svc(ctx).chat.deskClients(ctx.req.query))) as Handler,
+  setHandling: (async ctx => ok(await svc(ctx).chat.setHandling(ctx.params.id, ctx.req.body))) as Handler,
   clientTeam: (async ctx => ok(await svc(ctx).chat.clientTeam(ctx.params.id))) as Handler,
   escalateClientMessage: (async ctx => ok(await svc(ctx).chat.escalate(ctx.params.id, ctx.req.body))) as Handler,
   review: (async ctx => ok(await svc(ctx).chat.review(ctx.req.query))) as Handler,
@@ -210,6 +212,13 @@ export const meetingsController = {
   respond: (async ctx => ok(await svc(ctx).meetings.respond(ctx.params.id, ctx.req.body))) as Handler,
   approvals: (async ctx => ok(await svc(ctx).meetings.approvals())) as Handler,
   presence: (async ctx => ok(await svc(ctx).meetings.presence(ctx.req.query))) as Handler,
+  ceoPresence: (async ctx => ok(await svc(ctx).meetings.ceoPresence())) as Handler,
+  ceoOffice: (async ctx => ok(await svc(ctx).meetings.ceoOffice())) as Handler,
+  ceoArrived: (async ctx => ok(await svc(ctx).meetings.ceoArrived(ctx.req.body))) as Handler,
+  ceoNotArrived: (async ctx => ok(await svc(ctx).meetings.ceoNotArrived(ctx.req.body))) as Handler,
+  ceoArrivalUndo: (async ctx => ok(await svc(ctx).meetings.ceoArrivalUndo(ctx.req.body))) as Handler,
+  roomLink: (async ctx => ok(await svc(ctx).meetings.roomLink())) as Handler,
+  setRoomLink: (async ctx => ok(await svc(ctx).meetings.setRoomLink(ctx.req.body))) as Handler,
   clientList: (async ctx => ok(await svc(ctx).meetings.clientList(ctx.req.query))) as Handler,
   createClient: (async ctx => ok(await svc(ctx).meetings.createClient(ctx.req.body), 201)) as Handler,
   mailLog: (async ctx => ok(await svc(ctx).meetings.mailLog(ctx.params.id))) as Handler,
@@ -248,7 +257,9 @@ export const meetingsController = {
 export const bugsController = {
   access: (async ctx => ok(await svc(ctx).bugs.access())) as Handler,
   submit: (async ctx => ok(await svc(ctx).bugs.submit(ctx.req.body), 201)) as Handler,
-  mine: (async ctx => ok(await svc(ctx).bugs.mine())) as Handler,
+  mine: (async ctx => ok(await svc(ctx).bugs.mine(ctx.req.query))) as Handler,
+  followUp: (async ctx => ok(await svc(ctx).bugs.followUp(ctx.params.id, ctx.req.body), 201)) as Handler,
+  reply: (async ctx => ok(await svc(ctx).bugs.reply(ctx.params.id, ctx.req.body), 201)) as Handler,
   myDetail: (async ctx => ok(await svc(ctx).bugs.myDetail(ctx.params.id))) as Handler,
   list: (async ctx => ok(await svc(ctx).bugs.list(ctx.req.query))) as Handler,
   detail: (async ctx => ok(await svc(ctx).bugs.detail(ctx.params.id))) as Handler,
@@ -257,6 +268,22 @@ export const bugsController = {
   comment: (async ctx => ok(await svc(ctx).bugs.comment(ctx.params.id, ctx.req.body), 201)) as Handler,
   team: (async ctx => ok(await svc(ctx).bugs.team())) as Handler,
   setTeam: (async ctx => ok(await svc(ctx).bugs.setTeam(ctx.req.body))) as Handler
+};
+
+// Company Notice Board (20270131000200): everyone reads; the database decides who publishes, edits and archives
+export const noticesController = {
+  list: (async ctx => ok(await svc(ctx).notices.list(ctx.req.query))) as Handler,
+  unreadCount: (async ctx => ok(await svc(ctx).notices.unreadCount())) as Handler,
+  audience: (async ctx => ok(await svc(ctx).notices.audienceOptions())) as Handler,
+  pending: (async ctx => ok(await svc(ctx).notices.pending())) as Handler,
+  acknowledge: (async ctx => ok(await svc(ctx).notices.acknowledge(ctx.params.id))) as Handler,
+  managers: (async ctx => ok(await svc(ctx).notices.managers())) as Handler,
+  managerSet: (async ctx => ok(await svc(ctx).notices.managerSet(ctx.params.profileId, ctx.req.body))) as Handler,
+  open: (async ctx => ok(await svc(ctx).notices.open(ctx.params.id))) as Handler,
+  receipts: (async ctx => ok(await svc(ctx).notices.receipts(ctx.params.id))) as Handler,
+  publish: (async ctx => ok(await svc(ctx).notices.publish(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).notices.update(ctx.params.id, ctx.req.body))) as Handler,
+  archive: (async ctx => ok(await svc(ctx).notices.archive(ctx.params.id))) as Handler
 };
 
 export const employeeCasesController = {
@@ -281,6 +308,7 @@ export const employeeCasesController = {
   issueOverview: (async ctx => ok(await svc(ctx).employeeCases.issueOverview())) as Handler,
   hrIssues: (async ctx => ok(await svc(ctx).employeeCases.hrIssues(ctx.req.query))) as Handler,
   hrIssue: (async ctx => ok(await svc(ctx).employeeCases.hrIssue(ctx.params.id))) as Handler,
+  escalateIssue: (async ctx => ok(await svc(ctx).employeeCases.escalateIssue(ctx.params.id, ctx.req.body))) as Handler,
   assignIssue: (async ctx => ok(await svc(ctx).employeeCases.assignIssue(ctx.params.id, ctx.req.body))) as Handler,
   setIssueStatus: (async ctx => ok(await svc(ctx).employeeCases.setIssueStatus(ctx.params.id, ctx.req.body))) as Handler,
   respondToIssue: (async ctx => ok(await svc(ctx).employeeCases.respondToIssue(ctx.params.id, ctx.req.body))) as Handler,
@@ -317,6 +345,24 @@ export const notificationsController = {
   healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
 };
 
+// Email Management (20270201000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// the history for everyone, scoped by the database to what each person's work allows.
+export const emailController = {
+  overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,
+  saveSettings: (async ctx => ok(await svc(ctx).emailAdmin.saveSettings(ctx.req.body))) as Handler,
+  saveSender: (async ctx => ok(await svc(ctx).emailAdmin.saveSender(ctx.req.body))) as Handler,
+  deleteSender: (async ctx => ok(await svc(ctx).emailAdmin.deleteSender(ctx.params.category))) as Handler,
+  saveRule: (async ctx => ok(await svc(ctx).emailAdmin.saveRule(ctx.req.body))) as Handler,
+  deleteRule: (async ctx => ok(await svc(ctx).emailAdmin.deleteRule(ctx.params.id))) as Handler,
+  previewRule: (async ctx => ok(await svc(ctx).emailAdmin.previewRule(ctx.params.id, ctx.req.body))) as Handler,
+  suppressions: (async ctx => ok(await svc(ctx).emailAdmin.suppressions(ctx.req.query))) as Handler,
+  setSuppression: (async ctx => ok(await svc(ctx).emailAdmin.setSuppression(ctx.req.body))) as Handler,
+  checkProvider: (async ctx => ok(await svc(ctx).emailAdmin.checkProvider(ctx.actor, ctx.params.provider))) as Handler,
+  history: (async ctx => ok(await svc(ctx).emailAdmin.history(ctx.req.query))) as Handler,
+  historyDetail: (async ctx => ok(await svc(ctx).emailAdmin.historyDetail(ctx.params.id))) as Handler,
+  reviewMessage: (async ctx => ok(await svc(ctx).emailAdmin.reviewMessage(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const organizationController = {
   listDepartments: (async ctx => ok(await svc(ctx).organization.listDepartments())) as Handler,
   createDepartment: (async ctx => ok(await svc(ctx).organization.createDepartment(ctx.actor, ctx.req.body), 201)) as Handler,
@@ -335,6 +381,19 @@ export const organizationController = {
 };
 
 import { runHrAutomation } from '../automations/hrDispatcher.js';
+
+// HR Awards (20270203000100): Award Management > Awards; the database allows HR staff and the Super Admin
+export const hrAwardsController = {
+  overview: (async ctx => ok(await svc(ctx).hrAwards.overview(ctx.req.query))) as Handler,
+  options: (async ctx => ok(await svc(ctx).hrAwards.options())) as Handler,
+  detail: (async ctx => ok(await svc(ctx).hrAwards.detail(ctx.params.code, ctx.req.query))) as Handler,
+  nominate: (async ctx => ok(await svc(ctx).hrAwards.nominate(ctx.params.code, ctx.req.body), 201)) as Handler,
+  updateNominee: (async ctx => ok(await svc(ctx).hrAwards.updateNominee(ctx.params.id, ctx.req.body))) as Handler,
+  removeNominee: (async ctx => ok(await svc(ctx).hrAwards.removeNominee(ctx.params.id, ctx.req.body))) as Handler,
+  declareWinners: (async ctx => ok(await svc(ctx).hrAwards.declareWinners(ctx.req.body))) as Handler,
+  updateWinner: (async ctx => ok(await svc(ctx).hrAwards.updateWinner(ctx.params.id, ctx.req.body))) as Handler,
+  revokeWinner: (async ctx => ok(await svc(ctx).hrAwards.revokeWinner(ctx.params.id, ctx.req.body))) as Handler
+};
 
 export const hrController = {
   recordRmLogin: (async ctx => (await svc(ctx).hr.recordRmLogin(), ok(null))) as Handler,

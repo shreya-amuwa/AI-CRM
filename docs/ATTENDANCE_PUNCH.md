@@ -157,3 +157,39 @@ Details: `docs/NOTIFICATION_RELIABILITY.md`.
 * **Devices.** Send test notification (then "Did it appear / make a sound?"), Test sound, Check device status, Notification troubleshooting.
 * **Notification Health.** HR (not recruiters) and the Super Admin: Attendance → Notification health (the Super Admin also has it in their
   menu). Per active employee: reminder settings, devices, last acceptance and failure, status, sound status, Send test.
+
+## Today's Attendance Overview and the Super Admin's 11:00 alert (migration 20270131000100)
+
+Run after `20270130000100_unified_head_sales_pages.sql`. Additive and safe to run twice.
+
+### The alert
+
+Every working day at 11:00 India time, each active Super Admin gets **"Look at today's attendance."**:
+
+- in the CRM bell, with a one-line summary (absent, not yet marked, on leave, present);
+- as a push notification on each of their devices where push is switched on.
+
+Nobody else gets it: no Department Head, Team Lead, Team Member or HR person.
+
+- **When.** The Worker's 5-minute scheduled run calls `sa_attendance_alert_generate()`.
+  - It sends from 11:00 until 14:00 at the latest, so a scheduler that was down catches up, but the alert never arrives in the evening.
+  - The time is `attendance_settings.sa_alert_time` (11:00 by default).
+- **Working days.** The company's days (`attendance_settings.reminder_days`, Monday to Saturday by default). HR's "off for today" switch (`reminders_paused_on`, used for a holiday or an office closure) skips that day.
+- **Once a day.** `sa_attendance_alerts` holds one row per Super Admin per day (`trigger_key`, unique). It is written in the same transaction as the bell notification and the push deliveries, so a retry or a second run creates nothing new.
+- **Delivery.** Push goes through the existing outbox (`notification_deliveries`, kind `SA_ATTENDANCE`): retries with a lease, and each attempt is recorded. The log row keeps the destination `/?open=attendance&view=today`, the number of devices, and `QUEUED`, `NO_DEVICE` or `PUSH_OFF`.
+
+### The overview
+
+Clicking the alert, in the bell or on a phone or laptop, opens **Attendance → Today's overview** directly, on the list of absent employees. HR and the Super Admin also find it as the first Attendance tab. `attendance_today_overview(date)` is HR / Super Admin only, and each read is audited like the register.
+
+| Group | Rule |
+| --- | --- |
+| Present | punched in |
+| Late | punched in after their day start (their own Punch In time, else the company's) |
+| On leave | approved full-day leave, or morning half-day leave and not punched in |
+| Absent | not punched in, not on leave, and their day start + `absent_after_minutes` (60 by default) has passed; on an earlier day, absent |
+| Not yet marked | not punched in, not on leave, before that point (or a day that is not a working day) |
+
+The screen also shows the totals, a department-wise summary, and a date picker for earlier days.
+
+Tests: `supabase/tests/sa_attendance_alert_test.sql`, `supabase/tests/ui_notice_board.test.mjs` (the alert's click and the overview).

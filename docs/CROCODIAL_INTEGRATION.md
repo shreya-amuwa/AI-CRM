@@ -77,7 +77,7 @@ This is `private.croc_can_view(profile, department, division)`. The screens in p
 4. **If the token is ever exposed** (pasted into a chat, an e-mail or a ticket): regenerate it in Crocodial, which ends the old one immediately,
    and update the server setting.
 
-## Connection health (migration `20270127000100_crocodial_scoped_refresh.sql`)
+## Connection health (migration `20270204000100_crocodial_scoped_refresh.sql`)
 
 Super Admin → Crocodial Integration → **Connection health** answers "why does it say the token is missing?" without showing the token:
 
@@ -164,7 +164,7 @@ they could already see (`private.croc_can_view`, unchanged): refreshing never wi
 **What syncs, and when**
 - **Which connections.** Only connections that are **on** and serve an **on** link of a **rolled-out** department (`croc_sync_due`). Anything else is never contacted.
 - **When it runs.**
-  - The automation dispatch syncs each such connection at most every 15 minutes, with a 15 s budget per dispatch.
+  - Scheduled runs sync each such connection at most every `CROCODIAL_SYNC_EVERY_MINUTES` (default 60), with a 15 s budget per run and at most 10 pages per list (see "How often it runs" below).
   - The Super Admin's **Sync now** runs at most once every 5 minutes per connection, with a 20 s budget.
 
 **What one run does**
@@ -174,7 +174,7 @@ they could already see (`private.croc_can_view`, unchanged): refreshing never wi
 **How each resource is read**
 - **One run at a time.** A lease (10 minutes) keeps two runs from reading the same resource.
 - **What is asked for:**
-  - a **full pull** the first time and weekly;
+  - a **full pull** the first time, and weekly only when the Super Admin presses **Sync now** (scheduled runs never re-read everything);
   - otherwise rows changed since the **checkpoint** (`updated_since`).
 - **Storing.** Every page is stored as it arrives. A pull that runs out of time **resumes from its next page** on the next run. The first full pull of a large account therefore completes over a few runs.
 - **The checkpoint** moves only after a resource was read to the end. It moves to that pull's start time minus a 10-minute overlap.
@@ -215,8 +215,8 @@ they could already see (`private.croc_can_view`, unchanged): refreshing never wi
 
 
 **Timing (migration `20270115000500`, Cloudflare):**
-- **Every 5 minutes:** the 5-minute cron (the attendance reminders' cron) also calls `/internal/crocodial/sync`, with a 25 s budget. A first read still in progress continues every 5 minutes, and an up-to-date connection is refreshed every 15 minutes. This needs `SCHEDULED_ENABLED=true` and the dispatch secret, as for every scheduled run.
-- **Sync now:** reads for up to 50 s, and can be used again after 1 minute (it was 5).
+- **The 5-minute cron** (the attendance reminders' cron) calls `/internal/crocodial/sync` on its ticks every `CROCODIAL_SYNC_EVERY_MINUTES` (default 60, so once an hour; it was every 5 minutes, then 15). A read still in progress continues on those runs, at most 10 pages per list each time. This needs `SCHEDULED_ENABLED=true` and the dispatch secret, as for every scheduled run.
+- **Sync now:** reads for up to 50 s with no page cap (a full read finishes in one press), and can be used again after 1 minute (it was 5).
 - **Reading order:** leads → follow-ups → remarks → call logs. The small lists finish first, and the large call log can never hold them back.
 - **Previously:** the sync only continued with the twice-daily automation run or Sync now (20 s, then 5 minutes to wait). The first read of the M Pillar account (about 40 pages) therefore looked stuck, showing "not available yet (not synced)".
 
@@ -437,9 +437,22 @@ statuses of the CRM contact sheets the Telecaller works through, and they are no
 assignments, follow-ups, field visits, the sync, mapping and permissions. **Sales Executive and Business Partner dashboards** do not exist
 yet (phase 2). When they are built, they will read calls and demos only through the same helpers.
 
+## How often it runs, and what it writes (migration `20270127000100_crocodial_sync_quiet.sql`)
+- **Once an hour by default** (`CROCODIAL_SYNC_EVERY_MINUTES`, Worker variable: 5, 10, 15, 20, 30 or 60; `0`/`off` = only Sync now). The same
+  setting decides when a connection is due in the daily automations run, so the two agree.
+- **Only changes are written.** A top-up run reads what changed since the last run (10 minutes of overlap) and writes a new version only of
+  records whose values differ; a record seen again unchanged gets no new row version (Postgres still takes a brief row lock). Before this, every
+  record read was rewritten, which used up Supabase's disk I/O budget. The "Rows" figures of a run now count records changed, not records read:
+  an up-to-date run shows 0.
+- **At most 10 pages (5,000 records) per list per scheduled run**, within the 15-second budget; a longer read continues on the next run.
+  **Sync now** has no page cap (only its 50 s budget), so a full read the Super Admin starts finishes in one press.
+- **No automatic full re-read.** The very first pull of a connection reads everything. After that, scheduled runs only top up; the weekly full
+  re-read (which marks records Crocodial no longer returns as missing) happens when the Super Admin presses **Sync now**.
+- To check: `crocodial_sync_runs` (one row per list per run: pages, rows, full or not) and Supabase → Reports → Disk IO.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_scoped_refresh.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

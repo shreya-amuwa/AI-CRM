@@ -41,10 +41,13 @@ self.addEventListener('notificationclick', event => {
       await open.focus();
       // a chat message opens its conversation; a reminder opens Attendance
       const q = new URL(url).searchParams;
-      if (q.get('open') === 'chat') {
+      if (q.get('open') === 'notice') {
+        // a company notice (20270131000200) opens that notice on the Notice Board
+        open.postMessage({ type: 'open-notice', id: q.get('id') });
+      } else if (q.get('open') === 'chat') {
         open.postMessage(q.get('client') ? { type: 'open-chat', clientConversationId: q.get('client') } : { type: 'open-chat', conversationId: q.get('conversation') });
       } else {
-        open.postMessage({ type: 'open-attendance' });
+        open.postMessage({ type: 'open-attendance', view: q.get('view') || 'mine' });
       }
       return;
     }

@@ -2,7 +2,9 @@
  * Typed API endpoints, grouped by resource. Components and hooks call these;
  * they never call fetch() or Supabase tables directly.
  */
+import { registerUnifiedDepartments } from '../auth/departmentRoles';
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
+import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
@@ -194,6 +196,8 @@ import type {
   TeamDivision
 } from '../../../shared/contracts';
 import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType, AiWebsiteOnboardingBody } from '../../../shared/validation';
+import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
+import type { AwardNominateInput } from '../../../shared/validation';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -882,7 +886,8 @@ export const signInReportApi = {
 };
 
 export const organizationApi = {
-  departments: () => api.get<Department[]>('/departments'),
+  // the departments the database marks unified (Sales + Support) are remembered, so the forms recognise them whatever their slug is
+  departments: () => api.get<Department[]>('/departments').then(list => { registerUnifiedDepartments(list); return list; }),
   createDepartment: (body: { name: string; description?: string; category?: string }) => api.post<Department>('/departments', body),
   updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description'>>) => api.patch<Department>(`/departments/${id}`, body),
   deleteDepartment: (id: string) => api.delete<null>(`/departments/${id}`),
@@ -1100,4 +1105,34 @@ export const leadWhatsAppApi = {
     api.post<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings', body),
   history: (customerId: string) => api.get<LeadWhatsAppMessage[]>(`/leads/${customerId}/whatsapp`),
   resend: (customerId: string) => api.post<LeadWhatsAppMessage>(`/leads/${customerId}/whatsapp/retry`, {})
+};
+
+/** Email Management (20270201000100): the Super Admin's settings; the history for everyone (scoped by the database). */
+export const emailApi = {
+  overview: () => api.get<EmailOverview>('/email/admin/overview'),
+  saveSettings: (s: EmailSettings) => api.post<EmailSettings>('/email/admin/settings', s),
+  saveSender: (b: { category: string; fromEmail: string; fromName: string; replyTo: string | null; enabled: boolean }) => api.post<EmailOverview>('/email/admin/senders', b),
+  deleteSender: (category: string) => api.delete<EmailOverview>(`/email/admin/senders/${category}`),
+  saveRule: (r: Partial<EmailRule>) => api.post<EmailOverview>('/email/admin/rules', r),
+  deleteRule: (id: string) => api.delete<EmailOverview>(`/email/admin/rules/${id}`),
+  previewRule: (id: string, b: { customerId?: string; applicationId?: string }) => api.post<EmailRulePreview>(`/email/admin/rules/${id}/preview`, b),
+  suppressions: (search?: string) => api.get<EmailSuppression[]>('/email/admin/suppressions', search ? { search } : {}),
+  setSuppression: (b: { email: string; active: boolean; note?: string }) => api.post<EmailSuppression[]>('/email/admin/suppressions', b),
+  checkProvider: (provider: 'resend' | 'ses' | 'smtp') => api.post<EmailProviderCheck>(`/email/admin/providers/${provider}/check`, {}),
+  history: (q: Record<string, string | number | undefined>) => api.get<EmailHistoryPage>('/email/history', Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>),
+  historyDetail: (id: string) => api.get<EmailHistoryDetail>(`/email/history/${id}`),
+  review: (id: string, received: boolean) => api.post<{ ok: true }>(`/email/history/${id}/review`, { received })
+};
+
+// HR Awards (20270203000100): Award Management > Awards (HR staff and the Super Admin; the database checks)
+export const hrAwardsApi = {
+  overview: (month: string) => api.get<HrAwardsOverview>('/hr/awards', { month }),
+  options: () => api.get<HrAwardOptions>('/hr/awards/options'),
+  detail: (code: string, month: string) => api.get<HrAwardDetail>(`/hr/awards/${encodeURIComponent(code)}`, { month }),
+  nominate: (code: string, body: AwardNominateInput) => api.post<HrAwardDetail>(`/hr/awards/${encodeURIComponent(code)}/nominees`, body),
+  updateNominee: (id: string, body: { reason: string; remarks?: string | null }) => api.post<HrAwardDetail>(`/hr/awards/nominees/${id}/update`, body),
+  removeNominee: (id: string, reason?: string) => api.post<HrAwardDetail>(`/hr/awards/nominees/${id}/remove`, reason ? { reason } : {}),
+  declareWinners: (nomineeIds: string[], remarks?: string) => api.post<HrAwardDetail>('/hr/awards/winners', { nomineeIds, remarks: remarks || null }),
+  updateWinner: (id: string, remarks: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/update`, { remarks: remarks || null }),
+  revokeWinner: (id: string, reason: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/revoke`, { reason })
 };

@@ -119,6 +119,7 @@ export const RecruiterDashboard: React.FC<{ /** The HR Assistant's way back to t
       </>}
       wide
       flush={route.page === 'chat'}
+      ceoAvailability
     >
       {/* Chat does not depend on the recruitment data: it opens even if that fails to load */}
       {route.page === 'chat' ? <ChatRoute /> : (

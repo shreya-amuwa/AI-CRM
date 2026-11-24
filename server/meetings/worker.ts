@@ -136,6 +136,11 @@ export interface ClaimedMail {
 export function mailDecision(o: ClaimedMail, now = Date.now()): 'SEND' | 'SKIP' | 'DEFER' {
   const m = o.meeting;
   const toOrganiser = !!o.organizerEmail && o.toEmail.trim().toLowerCase() === o.organizerEmail.trim().toLowerCase();
+  // a queued meeting confirmed on Exit: always our e-mail (it says "join now"); with Google Meet, wait (at most ~15 minutes) for the sync to
+  // add the Meet link so the e-mail carries it
+  if (o.kind === 'QUEUE_CONFIRMED') {
+    return m.mode === 'GOOGLE_MEET' && !m.meetLink && m.googleSyncStatus === 'PENDING' && now - new Date(m.updatedAt).getTime() < 15 * 60_000 ? 'DEFER' : 'SEND';
+  }
   // a client meeting: the client always gets the CRM's own invitation / change / cancellation (agenda, company, host details), Google or not
   const clientGuest = m.kind === 'CLIENT_MEETING' && !o.toProfileId;
   if (!GOOGLE_SENDS.includes(o.kind) || m.bookedVia === 'BOOKING_LINK' || toOrganiser || clientGuest) return 'SEND';
@@ -178,7 +183,8 @@ async function mailOne(db: SupabaseClient, o: ClaimedMail): Promise<'SENT' | 'SK
   const attachments = ICS_KINDS.includes(o.kind)
     ? [{ filename: 'meeting.ics', content: new TextEncoder().encode(meetingIcs(m, o.kind === 'CANCELLED')), contentType: 'text/calendar; charset=utf-8' }]
     : undefined;
-  const r = await sendEmail(settings, { email: o.toEmail, name: o.toName || o.toEmail, display: true }, mail, attachments);
+  const r = await sendEmail(settings, { email: o.toEmail, name: o.toName || o.toEmail, display: true }, mail, attachments,
+    { category: 'MEETING', template: `meeting-${String(o.kind).toLowerCase()}`, idempotencyKey: `meeting-mail:${o.id}`, ...(o.toProfileId ? { context: { profileId: o.toProfileId } } : {}) });
   if (r.ok) {
     await done('SENT');
     return 'SENT';

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Crocodial: connection health per server, and a scoped "Refresh" for every Sales dashboard. Run after 20270117000200_crocodial_field_alignment.sql.
+-- Crocodial: connection health per server, and a scoped "Refresh" for every Sales dashboard. Run after 20270127000100_crocodial_sync_quiet.sql (and every earlier Crocodial migration).
 -- Safe to run twice.
 --
 -- 1. Which server sees the token (crocodial_runtime_reports). The token is a setting of each server that runs the CRM (the Cloudflare

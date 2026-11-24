@@ -8,7 +8,7 @@ import { toText, type RenderedEmail } from '../automations/templates.js';
  * a proposed time; that link is signed (HMAC) with MEETING_LINK_SECRET, so it cannot be guessed from the meeting's id.
  */
 
-export type MeetingMailKind = 'REQUEST_RECEIVED' | 'CONFIRMED' | 'RESCHEDULED' | 'CANCELLED' | 'DECLINED' | 'PROPOSED' | 'REMINDER_24H' | 'REMINDER_1H';
+export type MeetingMailKind = 'REQUEST_RECEIVED' | 'CONFIRMED' | 'RESCHEDULED' | 'CANCELLED' | 'DECLINED' | 'PROPOSED' | 'REMINDER_24H' | 'REMINDER_1H' | 'QUEUE_CONFIRMED';
 
 export interface MailMeeting {
   id: string;
@@ -170,6 +170,16 @@ ${row('Reference', esc(m.reference))}</table>`;
       subject = `Another time proposed: ${m.title}`;
       body = `<p>${esc(m.hostName)} cannot meet at the requested time and proposes <b>${proposed ?? 'another time'}</b> instead.${m.decisionNote ? ` Note: ${esc(m.decisionNote)}.` : ''}</p>${manage || '<p>Please reply to this e-mail to accept or decline.</p>'}`;
       break;
+    case 'QUEUE_CONFIRMED': {
+      // a request that waited in the Super Admin's queue, confirmed when they exited their meeting (20270128000100): it starts now
+      const join = m.meetLink
+        ? `<p style="margin:16px 0"><a href="${esc(m.meetLink)}" style="background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Join the meeting room</a></p>`
+        : '<p>The meeting room link follows in the calendar invitation, or from Meetings in the CRM.</p>';
+      subject = `Your meeting is scheduled now: ${m.title}`;
+      body = `<p>Your meeting is scheduled and starts <b>now</b>. You can join the meeting room.</p>${facts}${join}`
+        + '<p>Please join on time; if you can no longer attend, cancel it from Meetings in the CRM so the next request in the queue can be confirmed.</p>';
+      break;
+    }
     case 'REMINDER_24H':
     case 'REMINDER_1H':
       subject = `Reminder: ${m.title} ${kind === 'REMINDER_1H' ? 'starts within the hour' : 'is tomorrow'}`;
@@ -181,6 +191,6 @@ ${row('Reference', esc(m.reference))}</table>`;
 }
 
 /** Kinds that carry the calendar file. */
-export const ICS_KINDS: MeetingMailKind[] = ['CONFIRMED', 'RESCHEDULED', 'CANCELLED', 'REMINDER_24H'];
+export const ICS_KINDS: MeetingMailKind[] = ['CONFIRMED', 'RESCHEDULED', 'CANCELLED', 'REMINDER_24H', 'QUEUE_CONFIRMED'];
 /** Kinds Google already sends itself when the meeting is on the host's Google Calendar (the invitation, its change and cancellation). */
 export const GOOGLE_SENDS: MeetingMailKind[] = ['CONFIRMED', 'RESCHEDULED', 'CANCELLED'];

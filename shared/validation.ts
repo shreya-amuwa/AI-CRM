@@ -1700,6 +1700,8 @@ export const verifierDepartmentsSchema = z.object({ departmentIds: z.array(uuidS
 export const chatEscalateSchema = z
   .object({ messageId: uuidSchema.nullish(), targetId: uuidSchema, note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
   .strict();
+/** Take over or release "currently handling" on a client conversation (information only; the database checks who may). */
+export const chatHandlingSchema = z.object({ action: z.enum(['TAKE', 'RELEASE']) }).strict();
 export const chatSearchQuerySchema = z.object({ q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatReviewQuerySchema = z.object({ q: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatDirectSchema = z.object({ profileId: uuidSchema }).strict();
@@ -2167,6 +2169,9 @@ export const issueHrListQuerySchema = z
     from: caseDateTime.optional(),
     to: caseDateTime.optional(),
     search: trimmed(120).optional(),
+    // issue routing (20270128000200): the order, and whether HR escalated it to the Developer Team
+    sort: z.enum(['NEWEST', 'OLDEST', 'PRIORITY', 'STATUS', 'DEPARTMENT', 'EMPLOYEE']).optional(),
+    routing: z.enum(['ALL', 'WITH_HR', 'ESCALATED_TO_DEVELOPERS']).optional(),
     ...casePaging
   })
   .strict();
@@ -3015,6 +3020,10 @@ export const ceoRequestsQuerySchema = z.object({
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
 // ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
 export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
+/** The Super Admin's fixed meeting-room link (20270128000100): https, or empty to remove it. */
+/** HR marks (or undoes) the CEO's office arrival; ceoId only when there is more than one CEO (20270128000300) */
+export const ceoArrivalSchema = z.object({ ceoId: uuidSchema.optional() }).strict();
+export const meetingRoomLinkSchema = z.object({ roomLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable()) }).strict();
 /** GET /meetings/presence?ids=a,b,c: the live status of up to 100 colleagues (20270122000100); without ids, one's own. */
 export const meetingPresenceQuerySchema = z.object({
   ids: z.preprocess(v => (typeof v === 'string' ? v.split(',').map(x => x.trim()).filter(Boolean) : v), z.array(uuidSchema).min(1).max(100)).optional()
@@ -3485,20 +3494,46 @@ export const clientMeetingListQuerySchema = z.object({
 // ---------------------------------------------------------------------------
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
-export const DEV_BUG_STATUSES = ['PENDING', 'IN_PROGRESS', 'RESOLVED', 'REJECTED'] as const;
+export const DEV_BUG_STATUSES = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
+// Issue routing (migration 20270128000200): what an issue to the Developer Team is about, and how urgent
+export const DEV_ISSUE_CATEGORIES = ['BUG', 'FEATURE_REQUEST', 'ACCESS_LOGIN', 'DATA_ISSUE', 'PERFORMANCE', 'OTHER'] as const;
+export const DEV_ISSUE_CATEGORY_LABELS: Record<(typeof DEV_ISSUE_CATEGORIES)[number], string> = {
+  BUG: 'Bug / error', FEATURE_REQUEST: 'Feature request', ACCESS_LOGIN: 'Access / login', DATA_ISSUE: 'Wrong or missing data', PERFORMANCE: 'Slow / performance', OTHER: 'Other'
+};
+export const DEV_ISSUE_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export const bugSubmitSchema = z.object({
   title: trimmed(200).min(3, 'Give the issue a title (at least 3 characters).'),
   description: trimmed(5000).min(10, 'Describe the issue (at least 10 characters).'),
   steps: optionalText(5000),
   attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
-  clientRequestId: z.string().trim().min(8).max(80)
+  clientRequestId: z.string().trim().min(8).max(80),
+  category: z.enum(DEV_ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }).default('BUG'),
+  priority: z.enum(DEV_ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }).default('MEDIUM'),
+  /** optional context (HR's reports): which department / employee the problem affects */
+  affectedDepartmentId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
+  affectedEmployeeId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional())
 }).strict();
 export const bugListQuerySchema = z.object({
-  status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'CLOSED']).optional(),
+  status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(),
   assignee: z.union([z.enum(['ME', 'UNASSIGNED']), uuidSchema]).optional(),
   search: trimmed(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50)
+}).strict();
+/** GET /bugs/mine: the reporter's own issues to the Developer Team (OPEN: still being worked on, DONE: resolved, rejected or closed) */
+export const bugMyListQuerySchema = z.object({ status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(), search: trimmed(120).optional() }).strict();
+/** the reporter answers the developers */
+export const bugFollowUpSchema = z.object({
+  message: trimmed(3000).min(2, 'Write your message.'),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([])
+}).strict();
+/** a developer replies to the reporter; requestInfo: the issue waits for the reporter (Pending information) */
+export const bugReplySchema = z.object({ message: trimmed(3000).min(2, 'Write the reply.'), requestInfo: z.boolean().default(false) }).strict();
+/** HR escalates an employee issue to the Developer Team (once; the priority defaults to the issue's) */
+export const issueEscalateSchema = z.object({
+  note: optionalText(2000),
+  category: z.enum(DEV_ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }).optional(),
+  priority: z.enum(DEV_ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }).optional()
 }).strict();
 export const bugAssignSchema = z.object({ developerId: uuidSchema.nullable() }).strict();
 export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note: optionalText(3000) }).strict()
@@ -3632,3 +3667,155 @@ export const notificationHealthQuerySchema = z.object({
   issue: z.enum(NOTIFICATION_HEALTH_ISSUES).optional()
 }).strip();
 export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Email Management (migration 20270201000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
+// (scoped by the database). The database checks every value and the caller again.
+// ---------------------------------------------------------------------------
+export const EMAIL_CATEGORIES = ['AUTH', 'CREDENTIALS', 'RECRUITMENT', 'INTERVIEW', 'HR', 'CLIENT_ONBOARDING', 'META_VERIFICATION', 'TECHNICAL', 'ACCOUNTS',
+  'INVOICE', 'PAYMENT', 'RENEWAL', 'MEETING', 'SUPPORT', 'SALES', 'GENERAL'] as const;
+/** Never copied to anyone (one-time links, codes, passwords). */
+export const EMAIL_SENSITIVE_CATEGORIES = ['AUTH', 'CREDENTIALS'] as const;
+export const EMAIL_RULE_TARGETS = ['CUSTOMER_OWNER', 'RELATIONSHIP_MANAGER', 'META_VERIFIER', 'ACCOUNTS_OWNER', 'TECHNICAL_CONSULTANT', 'RECRUITER', 'PROFILE', 'ADDRESS'] as const;
+export const EMAIL_APPLICATIONS = ['CRM', 'CANDIDATE_PORTAL', 'CLIENT_PORTAL'] as const;
+export const EMAIL_STATUSES = ['QUEUED', 'PROCESSING', 'ACCEPTED', 'DELIVERY_CONFIRMED', 'DEFERRED', 'BOUNCED', 'COMPLAINED', 'FAILED', 'RETRY_PENDING',
+  'UNKNOWN_ACCEPTANCE', 'CANCELLED', 'EXPIRED', 'SUPPRESSED'] as const;
+const emailAddress = z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(320);
+export const emailSettingsSchema = z.object({
+  providerOrder: z.array(z.enum(['resend', 'ses', 'smtp'])).min(1).max(3).refine(a => new Set(a).size === a.length, 'Each provider once.').nullable(),
+  quotaThresholds: z.array(z.number().int().min(1).max(100)).min(1).max(6),
+  resendDailyLimit: z.number().int().min(0).max(10_000_000),
+  resendMonthlyLimit: z.number().int().min(0).max(100_000_000),
+  sesDailyLimit: z.number().int().min(0).max(100_000_000).nullable(),
+  criticalReserve: z.number().int().min(0).max(10_000),
+  maxAutoRecipients: z.number().int().min(0).max(20),
+  allowedSenderDomains: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'Enter a domain such as amuwa.com.')).min(1).max(5)
+}).strict();
+export const emailSenderSchema = z.object({
+  category: z.enum(EMAIL_CATEGORIES),
+  fromEmail: emailAddress,
+  fromName: z.string().trim().min(1).max(80).refine(v => !/[<>"\r\n]/.test(v), 'No < > or quotes in the sender name.'),
+  replyTo: emailAddress.nullable().optional(),
+  enabled: z.boolean().default(true)
+}).strict();
+export const emailRuleSchema = z.object({
+  id: uuidSchema.optional(),
+  name: z.string().trim().min(1).max(120),
+  category: z.enum(EMAIL_CATEGORIES).refine(c => !(EMAIL_SENSITIVE_CATEGORIES as readonly string[]).includes(c), 'Authentication and credential e-mails can never be copied.'),
+  application: z.enum(EMAIL_APPLICATIONS).nullable().optional(),
+  departmentId: uuidSchema.nullable().optional(),
+  workflow: z.string().trim().max(60).nullable().optional(),
+  mode: z.enum(['CC', 'BCC']),
+  target: z.enum(EMAIL_RULE_TARGETS),
+  profileIds: z.array(uuidSchema).max(20).default([]),
+  addresses: z.array(emailAddress).max(20).default([]),
+  excludeProfileIds: z.array(uuidSchema).max(50).default([]),
+  priority: z.number().int().min(1).max(1000).default(100),
+  enabled: z.boolean().default(false),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+}).strict()
+  .refine(r => r.target !== 'PROFILE' || r.profileIds.length > 0, { message: 'Choose at least one employee.', path: ['profileIds'] })
+  .refine(r => r.target !== 'ADDRESS' || r.addresses.length > 0, { message: 'Enter at least one company address.', path: ['addresses'] });
+export const emailRulePreviewSchema = z.object({ customerId: uuidSchema.optional(), applicationId: uuidSchema.optional() }).strict()
+  .refine(v => !!v.customerId || !!v.applicationId, 'Choose a customer or a job application to preview with.');
+export const emailSuppressionSchema = z.object({ email: emailAddress, active: z.boolean(), note: z.string().trim().max(300).optional() }).strict();
+export const emailProviderSchema = z.enum(['resend', 'ses', 'smtp']);
+export const emailHistoryQuerySchema = z.object({
+  application: z.enum(EMAIL_APPLICATIONS).optional(),
+  category: z.enum(EMAIL_CATEGORIES).optional(),
+  status: z.union([z.enum(EMAIL_STATUSES), z.literal('PROBLEMS')]).optional(),
+  provider: z.enum(['resend', 'ses', 'smtp', 'brevo']).optional(),
+  departmentId: uuidSchema.optional(),
+  recipient: z.string().trim().max(120).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strip();
+export type EmailHistoryQuery = z.infer<typeof emailHistoryQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Company Notice Board (migration 20270131000200). The database checks who may publish, to whom, and every rule again.
+// ---------------------------------------------------------------------------
+export const NOTICE_CATEGORIES = ['GENERAL', 'HR', 'POLICY', 'EVENT', 'HOLIDAY', 'IT_SYSTEM', 'OPERATIONS', 'OTHER'] as const;
+export const NOTICE_CATEGORY_LABELS: Record<(typeof NOTICE_CATEGORIES)[number], string> = {
+  GENERAL: 'General', HR: 'HR', POLICY: 'Policy', EVENT: 'Event', HOLIDAY: 'Holiday / office closure', IT_SYSTEM: 'IT / CRM', OPERATIONS: 'Operations', OTHER: 'Other'
+};
+export const NOTICE_PRIORITIES = ['NORMAL', 'IMPORTANT', 'URGENT'] as const;
+export const NOTICE_AUDIENCES = ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES'] as const;
+export const NOTICE_ROLES = ['DEPARTMENT_HEAD', 'OPERATIONS_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER', 'HR', 'SUPER_ADMIN'] as const;
+const noticeTime = z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter a date and time.' }).nullable().optional());
+export const noticePublishSchema = z.object({
+  title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).'),
+  body: trimmed(10000).min(1, 'Write the notice.'),
+  category: z.enum(NOTICE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }),
+  priority: z.enum(NOTICE_PRIORITIES, { errorMap: () => ({ message: 'Choose Normal, Important or Urgent.' }) }).default('NORMAL'),
+  audienceType: z.enum(NOTICE_AUDIENCES, { errorMap: () => ({ message: 'Choose who receives the notice.' }) }),
+  departmentIds: z.array(uuidSchema).max(100).default([]),
+  roles: z.array(z.enum(NOTICE_ROLES)).max(6).default([]),
+  employeeIds: z.array(uuidSchema).max(1000).default([]),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
+  publishAt: noticeTime,
+  expiresAt: noticeTime,
+  clientRequestId: z.string().trim().min(8).max(80)
+}).strict()
+  .refine(v => v.audienceType !== 'DEPARTMENT' || v.departmentIds.length > 0, { message: 'Choose at least one department.', path: ['departmentIds'] })
+  .refine(v => v.audienceType !== 'ROLE' || v.roles.length > 0, { message: 'Choose at least one designation.', path: ['roles'] })
+  .refine(v => v.audienceType !== 'EMPLOYEES' || v.employeeIds.length > 0, { message: 'Choose at least one employee.', path: ['employeeIds'] })
+  .refine(v => !v.expiresAt || new Date(v.expiresAt).getTime() > new Date(v.publishAt ?? Date.now()).getTime(), { message: 'The expiry is after the publish date.', path: ['expiresAt'] });
+export const noticeUpdateSchema = z.object({
+  title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).').optional(),
+  body: trimmed(10000).min(1, 'Write the notice.').optional(),
+  category: z.enum(NOTICE_CATEGORIES).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).optional(),
+  expiresAt: noticeTime,
+  /** a material change: everyone acknowledges this version again (a minor edit leaves every acknowledgement as it was) */
+  acknowledgeAgain: z.boolean().optional(),
+  version: z.number().int().min(1).optional()
+}).strict();
+/** The Super Admin adds or removes a person from the CRM team that runs the Notice Board (20270202000100). */
+export const noticeManagerSetSchema = z.object({ enabled: z.boolean() }).strict();
+export const noticeListQuerySchema = z.object({
+  scope: z.enum(['INBOX', 'ALL', 'MINE']).default('INBOX'),
+  category: z.enum(NOTICE_CATEGORIES).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  unread: booleanParam.optional(),
+  includeExpired: booleanParam.optional(),
+  search: trimmed(120).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();
+
+// ---------------------------------------------------------------------------
+// HR Awards (20270203000100): Award Management > Awards. The same schemas check the forms and the API; the database checks again.
+// ---------------------------------------------------------------------------
+export const HR_AWARD_CODES = ['PROFESSIONALISM_EXCELLENCE', 'RISING_STAR', 'PLAYER', 'EMERGING_LEADER', 'DEPARTMENT', 'TEAM', 'BUSINESS_ICON'] as const;
+export const HR_AWARD_NOMINEE_TYPES = ['INDIVIDUAL', 'TEAM', 'DEPARTMENT'] as const;
+/** The award month as YYYY-MM (handed to the database as the first day of that month). */
+export const awardMonthSchema = z.string().trim().regex(/^(20[2-9]\d)-(0[1-9]|1[0-2])$/, 'Choose the award month and year.');
+export const awardCodeSchema = z.enum(HR_AWARD_CODES, { errorMap: () => ({ message: 'That award does not exist.' }) });
+export const awardMonthQuerySchema = z.object({ month: awardMonthSchema }).strict();
+const awardReason = z.string().trim().min(3, 'Enter the reason for the nomination (at least 3 characters).').max(2000, 'Keep the reason under 2000 characters.');
+const awardRemarks = z.string().trim().max(2000, 'Keep the remarks under 2000 characters.').optional().nullable()
+  .transform(v => (v ? v : null));
+export const awardNominateSchema = z.object({
+  month: awardMonthSchema,
+  nomineeType: z.enum(HR_AWARD_NOMINEE_TYPES, { errorMap: () => ({ message: 'Choose the nominee type: Individual, Team or Department.' }) }),
+  entityId: z.string({ required_error: 'Choose who is nominated.' }).uuid('Choose who is nominated.'),
+  reason: awardReason,
+  remarks: awardRemarks
+}).strict();
+export const awardNomineeUpdateSchema = z.object({ reason: awardReason, remarks: awardRemarks }).strict();
+export const awardNomineeRemoveSchema = z.object({ reason: z.string().trim().max(500, 'Keep the reason under 500 characters.').optional().nullable() }).strict();
+export const awardDeclareWinnersSchema = z.object({
+  nomineeIds: z.array(uuidSchema).min(1, 'Choose at least one nominee to declare a winner.').max(200, 'Declare at most 200 winners at a time.'),
+  remarks: awardRemarks
+}).strict();
+export const awardWinnerUpdateSchema = z.object({ remarks: awardRemarks }).strict();
+export const awardWinnerRevokeSchema = z.object({
+  reason: z.string().trim().min(3, 'Enter the reason for revoking the winner (at least 3 characters).').max(500, 'Keep the reason under 500 characters.')
+}).strict();
+export type AwardNominateInput = z.input<typeof awardNominateSchema>;

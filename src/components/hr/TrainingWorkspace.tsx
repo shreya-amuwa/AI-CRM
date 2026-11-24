@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarDays, Plus, RefreshCw, Search, Users } from 'lucide-react';
+import { ArrowLeft, CalendarDays, GraduationCap, Plus, RefreshCw, Search, Users } from 'lucide-react';
 import { trainingApi } from '../../lib/api/endpoints';
 import { ApiError } from '../../lib/api/client';
 import { fmtDay } from '../../lib/support';
@@ -8,6 +8,7 @@ import type {
   TrainingProgramDetail, TrainingRecords, TrainingStatus
 } from '../../../shared/contracts';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pager, Pill, selectCls, Spinner, type Tone } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 
 /**
  * HR dashboard > Training. Structured three-day programs: Day 1 Initial Training, Day 2 Practical Training, Day 3 Final Training and
@@ -66,16 +67,12 @@ export const TrainingWorkspace: React.FC = () => {
   if (openProgram) return <ProgramView id={openProgram} onBack={() => { setOpenProgram(null); void load(); }} />;
   return (
     <section className="space-y-5" aria-label="Training">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-slate-900">Training</h2>
-          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">Three-day training programs with a report for every employee and every day. A day is complete only when the employee attended and the training was recorded: the date passing completes nothing.</p>
-        </div>
-        <div className="flex gap-2">
-          <button type="button" className={btn.secondary} onClick={() => void load()}><RefreshCw className="w-3.5 h-3.5" /> Refresh</button>
-          <button type="button" className={btn.primary} onClick={() => setNewProgram(true)}><Plus className="w-3.5 h-3.5" /> New program</button>
-        </div>
-      </header>
+      <HrPageHeader as="h2" icon={GraduationCap} title="Training"
+        subtitle="Three-day training programs with a report for every employee and every day. A day is complete only when the employee attended and the training was recorded: the date passing completes nothing."
+        actions={<>
+          <button type="button" className={hrBtn.secondary} onClick={() => void load()}><RefreshCw className="w-4 h-4" aria-hidden="true" /> Refresh</button>
+          <button type="button" className={hrBtn.primary} onClick={() => setNewProgram(true)}><Plus className="w-4 h-4" aria-hidden="true" /> New program</button>
+        </>} />
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         <Stat label="Employees enrolled" value={overview?.employeesEnrolled ?? 0} />

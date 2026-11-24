@@ -119,7 +119,8 @@ export function emailMessageSender(): ReminderMessageSender | null {
       if (s.testRecipients && !s.testRecipients.emails.has(msg.to.toLowerCase())) {
         return { outcome: 'SKIPPED', detail: 'Not sent: this address is not in AUTOMATION_TEST_RECIPIENTS.' };
       }
-      const r = await sendEmail(s, { email: msg.to, name: msg.name }, renderReminderEmail(msg));
+      const r = await sendEmail(s, { email: msg.to, name: msg.name }, renderReminderEmail(msg), undefined,
+        { category: 'RENEWAL', application: 'CLIENT_PORTAL', template: `renewal-${msg.stage}`, idempotencyKey: `renewal-mail:${msg.id}`, context: { customerId: msg.customerId } });
       if (r.ok) return { outcome: 'ACCEPTED', detail: r.detail, code: r.code, ref: r.ref };
       return { outcome: r.retry ? 'RETRY' : 'FAILED', detail: r.detail, code: r.code };
     }

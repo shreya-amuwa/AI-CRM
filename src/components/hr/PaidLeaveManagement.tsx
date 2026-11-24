@@ -6,6 +6,7 @@ import { errorMessage } from '../../lib/api/client';
 import { hrApi } from '../../lib/api/endpoints';
 import { fmtDay } from '../../lib/support';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pill, Spinner, useDebounced } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 
 /**
  * HR dashboard > Paid Leave. Confirmed full-time employees earn paid leave every month (unused days carry forward). Every figure here is the
@@ -39,16 +40,9 @@ export const PaidLeaveManagement: React.FC = () => {
   const p = data?.policy;
   return (
     <section className="space-y-5" aria-label="Paid leave" data-testid="hr-paid-leave">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2"><CalendarCheck className="w-5 h-5 text-emerald-600" /> Paid Leave</h2>
-          <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
-            Confirmed full-time employees earn paid leave every month; unused days carry forward. Employees on probation, or waiting for their confirmation, earn none.
-            A paid request reserves its days and is deducted once, at HR's final approval.
-          </p>
-        </div>
-        {data?.canChangePolicy && <button type="button" className={btn.secondary} onClick={() => setPolicyOpen(true)}>Policy settings</button>}
-      </header>
+      <HrPageHeader as="h2" icon={CalendarCheck} title="Paid Leave"
+        subtitle="Confirmed full-time employees earn paid leave every month; unused days carry forward. Employees on probation, or waiting for their confirmation, earn none. A paid request reserves its days and is deducted once, at HR's final approval."
+        actions={data?.canChangePolicy && <button type="button" className={hrBtn.secondary} onClick={() => setPolicyOpen(true)}>Policy settings</button>} />
       {error && <ErrorBanner message={error} onRetry={load} />}
       {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2"><CheckCircle2 className="w-4 h-4" /> {notice}</div>}
       {p && (

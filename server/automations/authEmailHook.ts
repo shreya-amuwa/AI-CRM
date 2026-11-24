@@ -286,7 +286,12 @@ export async function handleAuthEmailHook(
   const settings: AutomationSettings = { ...base, email: { ...base.email, fromName: rendered.brand === 'Amuwa Careers' ? 'Amuwa Careers' : base.email.fromName, cc: [], bcc: [] } };
   let result: SendResult;
   try {
-    result = await d.send(settings, { email: payload.user.email, name: displayName(payload.user) }, rendered);
+    // AUTH: never copied (enforced again in providers.ts and the database), CRITICAL (never waits behind other mail). The webhook id makes a
+    // Supabase retry of the same request answer "already sent" instead of e-mailing a second link.
+    result = await d.send(settings, { email: payload.user.email, name: displayName(payload.user) }, rendered, undefined, {
+      category: 'AUTH', priority: 'CRITICAL', sensitive: true, application: audienceOf(payload.user) === 'CANDIDATE' ? 'CANDIDATE_PORTAL' : 'CRM',
+      template: `auth-${payload.email_data.email_action_type}`, ...(req.id && /^[A-Za-z0-9_.:-]{8,120}$/.test(req.id) ? { idempotencyKey: `auth-hook:${req.id}` } : {})
+    });
   } catch {
     result = { ok: false, retry: true, code: null, ref: null, detail: 'The mail provider call failed.' };
   }

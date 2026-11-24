@@ -1,4 +1,4 @@
-// Browser test of the scoped Crocodial refresh (20270127000100): "Refresh My Data" for an employee, "Refresh My Team" for a Team Lead,
+// Browser test of the scoped Crocodial refresh (20270204000100): "Refresh My Data" for an employee, "Refresh My Team" for a Team Lead,
 // "Refresh Selected Department" / "Refresh My Departments" for an Operations Head; the request names only a scope (never a person), the
 // button follows the request and says "up to date" only when the read has finished, the figures reload, a token problem is reported
 // without details, and an employee without a mapping is told so. Desktop and phone width. The API is a fake.

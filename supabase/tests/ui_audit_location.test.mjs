@@ -20,7 +20,7 @@ const css = readFileSync(path.join(cssDir, cssFile), 'utf8');
 
 const stub = path.resolve('supabase/tests/ui/audit_location_stubs.ts');
 const built = await build({
-  entryPoints: ['supabase/tests/ui/audit_location_harness.tsx'], bundle: true, format: 'iife', platform: 'browser', write: false, jsx: 'automatic', logLevel: 'error',
+  entryPoints: ['supabase/tests/ui/audit_location_harness.tsx'], bundle: true, format: 'iife', platform: 'browser', write: false, jsx: 'automatic', logLevel: 'error', loader: { '.css': 'empty' },
   define: { 'import.meta.env': '{}' },
   plugins: [{ name: 'stub-contexts', setup(b) { b.onResolve({ filter: /\/context\/(AuthContext|DepartmentContext|TabContext)$/ }, () => ({ path: stub })); } }]
 });

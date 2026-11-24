@@ -50,7 +50,7 @@ async function processEvent(s: AutomationSettings, ev: ClaimedEvent): Promise<Ou
   if (s.testRecipients && !s.testRecipients.emails.has(to)) {
     return { outcome: 'DRY_RUN', detail: `Test mode – ${maskEmail(to)} is not a test recipient; not sent.` };
   }
-  const r = await sendEmail(hrSettings(s), { email: to, name: ev.toName || to }, mail);
+  const r = await sendEmail(hrSettings(s), { email: to, name: ev.toName || to }, mail, undefined, { category: 'HR', template: `hr-${String(ev.kind).toLowerCase()}`, idempotencyKey: `hr-mail:${ev.id}` });
   if (r.ok) return { outcome: 'SENT', detail: `Sent to ${maskEmail(to)}`, code: r.code, ref: r.ref };
   return { outcome: r.retry ? 'RETRY' : 'FAILED', detail: r.detail, code: r.code };
 }

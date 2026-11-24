@@ -3,9 +3,10 @@ import { openReports } from '../reports/reportEvents';
 import { openAiStudio } from '../ai-studio/aiStudioEvents';
 import { openAttendance } from '../attendance/attendanceEvents';
 import { openAds } from '../ai-design-studio/adsEvents';
-import { openMeeting, openMeetingReport } from '../meetings/meetingEvents';
+import { openHrMeetingRequest, openMeeting, openMeetingReport } from '../meetings/meetingEvents';
 import { openWorkUpdate } from '../tasks/workUpdateEvents';
 import { openBugs } from '../bugs/bugEvents';
+import { openNotice } from '../notices/noticeEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -73,6 +74,10 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   // AI Studio: a task or a daily report opens its page of the AI Studio dashboard, on that item
   // an attendance reminder (Punch In, lunch, Punch Out) opens the person's own attendance
   if (n.entityType === 'attendance') { openAttendance(); return true; }
+  // a company notice (20270131000200): the Notice Board, on that notice
+  if (n.entityType === 'company_notice') { openNotice(n.entityId ?? undefined); return true; }
+  // the Super Admin's 11:00 alert (20270131000100): straight to Today's Attendance Overview
+  if (n.entityType === 'attendance_overview') { openAttendance('today'); return true; }
   // any task notification (assigned, an update requested / submitted, blocked, completed) opens the Task page that shows it, on that task
   if (n.entityType === 'work_task') { openWorkUpdate({ taskId: n.entityId ?? undefined }); return true; }
   // a meeting (a request, an approval, a move, a cancellation, a reminder) opens Meetings on it
@@ -81,7 +86,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.entityType === 'meeting_summary') { openMeetingReport(n.entityId ?? undefined); return true; }
   // a bug (20270122000300): the reporter's status change opens their bug reports; a developer's opens the Bugs section
   if (n.entityType === 'dev_bug') {
-    if (n.type === 'DEV_BUG_STATUS') openIssues({ kind: 'BUG', id: n.entityId ?? undefined });
+    // the reporter's side (a status change, a developer's reply): their own issues to the Developer Team
+    if (n.type === 'DEV_BUG_STATUS' || n.type === 'DEV_BUG_MESSAGE') openIssues({ kind: 'BUG', id: n.entityId ?? undefined });
     else openBugs();
     return true;
   }
@@ -94,7 +100,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   }
   if (n.entityType !== 'employee_issue' && n.entityType !== 'employee_meeting') return false;
   const issue = n.entityType === 'employee_issue';
-  if (EMPLOYEE_SIDE.has(n.type)) openIssues({ kind: issue ? 'ISSUE' : 'MEETING', id: n.entityId ?? undefined });
+  // a meeting request to HR is on the Meetings page (HR meeting requests)
+  if (EMPLOYEE_SIDE.has(n.type)) { if (issue) openIssues({ kind: 'ISSUE', id: n.entityId ?? undefined }); else openHrMeetingRequest(n.entityId ?? undefined); }
   else openHrCase({ section: issue ? 'issues' : 'meetings', id: n.entityId ?? undefined });
   return true;
 }

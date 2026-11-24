@@ -1,10 +1,11 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3, CalendarDays, Crown } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
 import { closeMenu, useMenu } from './menuState';
-import { DocumentationLink, SidebarToggle, groupNavItems } from './shell';
+import { CollapsibleGroupLabel, DocumentationLink, SidebarToggle, groupNavItems } from './shell';
+import { useCollapsedSections } from './sidebarSections';
 import { CHAT_NAV, useChatNavBadge } from '../chat/ChatRoute';
 
 /** HR > Employee Letters: one entry per letter, each opening the letters page on that letter. */
@@ -83,6 +84,7 @@ export type ActiveTab =
   | 'hr_recruitment'
   | 'hr_training'
   | 'hr_issues'
+  | 'hr_raise_issue'
   | 'hr_meetings'
   | 'hr_reviews'
   | 'hr_field_tracking'
@@ -92,6 +94,8 @@ export type ActiveTab =
   | 'hr_letter_experience'
   | 'my_attendance'
   | 'my_meetings'
+  | 'my_notices'
+  | 'hr_ceo_availability'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -344,6 +348,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // paid leave of confirmed employees (balances, the ledger, corrections; the policy for the HR Department Head)
     { id: 'hr_paid_leave' as ActiveTab, label: 'Paid Leave', icon: CalendarClock },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },
+    // HR's Raise an Issue (20270128000200): report to the Developer Team, and the employee issues HR received
+    { id: 'hr_raise_issue' as ActiveTab, label: 'Raise an Issue', icon: MessageSquareWarning },
     { id: 'hr_meetings' as ActiveTab, label: 'Meeting Requests', icon: CalendarClock },
     // work-related field visit location records (the database decides: HR staff, not recruiters)
     { id: 'hr_field_tracking' as ActiveTab, label: 'Field Visit Tracking', icon: MapPin },
@@ -374,20 +380,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const lastTab = departmentNav[departmentNav.length - 1];
   const withChat: typeof departmentNav = lastTab?.id === 'notifications' ? [...departmentNav.slice(0, -1), chatTab, lastTab] : [...departmentNav, chatTab];
   // Attendance (Punch In / Out, lunch) is the first entry of every department's menu, as in every other dashboard
-  const navItems: typeof departmentNav = [{ id: 'my_attendance' as ActiveTab, label: 'Attendance', icon: Clock3 }, { id: 'my_meetings' as ActiveTab, label: 'Meetings', icon: CalendarDays }, ...withChat];
+  const navItems: typeof departmentNav = [{ id: 'my_attendance' as ActiveTab, label: 'Attendance', icon: Clock3 }, { id: 'my_meetings' as ActiveTab, label: 'Meetings', icon: CalendarDays },
+    // Notice Board (20270131000200): every employee reads; publishers also send
+    { id: 'my_notices' as ActiveTab, label: 'Notice Board', icon: Megaphone },
+    // CEO Availability (20270201000100): in every HR dashboard, immediately below the Notice Board
+    ...(key === 'hr' ? [{ id: 'hr_ceo_availability' as ActiveTab, label: 'CEO Availability', icon: Crown }] : []), ...withChat];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
   const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
   const LETTER_IDS: string[] = key === 'hr' ? HR_LETTER_NAV.map(i => i.id) : [];
+  // Attendance, Meetings, Notice Board (and CEO Availability in HR) form the unlabelled top section
+  const topCount = key === 'hr' ? 4 : 3;
   const navSections = groupNavItems(navItems, [
-    { ids: navItems.slice(0, 3).map(i => i.id) },
-    { label: 'Work', ids: navItems.slice(3).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
+    { ids: navItems.slice(0, topCount).map(i => i.id) },
+    { label: 'Work', ids: navItems.slice(topCount).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
     ...(LETTER_IDS.length ? [{ label: 'Employee Letters', ids: LETTER_IDS }] : []),
     { label: 'Team', ids: TEAM_IDS.filter(id => !COMMUNICATION_IDS.includes(id) && navItems.some(i => i.id === id)) },
     ...(COMMUNICATION_IDS.length ? [{ label: 'Communication', ids: COMMUNICATION_IDS.filter(id => navItems.some(i => i.id === id)) }] : [])
   ]);
   const deptTitle = activeDepartment?.name || 'Department';
+  // HR's menu is long: its labelled sections open and close (remembered in this browser); the section of the open page always stays open
+  const sections = useCollapsedSections(key === 'hr' ? 'hr' : null);
 
   return (
     <>
@@ -406,7 +420,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       
       {/* Top Nav Section */}
-      <div className="p-3.5 space-y-4 overflow-y-auto max-h-[calc(100vh-6rem)]">
+      {/* the menu fills the column and scrolls on its own, so the last entries are never hidden behind the documentation link */}
+      <div className="flex-1 min-h-0 p-3.5 space-y-4 overflow-y-auto overscroll-contain">
         <div className="flex items-center justify-between gap-2 pl-1">
           <span className="text-sm font-extrabold text-slate-900 truncate">{deptTitle}</span>
           <SidebarToggle />
@@ -428,13 +443,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Dedicated Navigation Items for current Department */}
         <div className="space-y-0.5">
-          <div className="px-2.5 pb-1.5 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">
-            {subDept ? `${deptTitle} (${subDept})` : deptTitle}
-          </div>
+          {/* the department's name is already the sidebar's title; only a sub-department is named again */}
+          {subDept && (
+            <div className="px-2.5 pb-1.5 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">
+              {`${deptTitle} (${subDept})`}
+            </div>
+          )}
 
-          {navSections.map(section => (
+          {navSections.map(section => {
+          const sectionId = `nav-section-${(section.label || 'top').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+          const holdsActive = section.items.some(i => i.id === activeTab);
+          const sectionOpen = !sections.enabled || !section.label || holdsActive || !sections.isCollapsed(section.label);
+          return (
           <div key={section.label || 'top'} className="space-y-0.5">
-          {section.label && <div className="px-2.5 pt-4 pb-1.5 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">{section.label}</div>}
+          {section.label && (sections.enabled
+            ? <div className="pt-4 flex flex-col"><CollapsibleGroupLabel label={section.label} open={sectionOpen} onToggle={() => sections.toggle(section.label!)} controls={sectionId} /></div>
+            : <div className="px-2.5 pt-4 pb-1.5 text-[11px] text-slate-500 uppercase tracking-[0.08em] font-bold">{section.label}</div>)}
+          {sectionOpen && <div id={sectionId} className="space-y-0.5">
           {section.items.map(item => {
             const Icon = item.icon;
             const isActive = ((isSalesSuperAdmin || isSupportSuperAdmin) && activeTab === 'dashboard' ? 'team_members' : activeTab) === item.id;
@@ -447,12 +472,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 onClick={() => onSelectTab(item.id)}
                 aria-current={highlighted ? 'page' : undefined}
-                className={`w-full px-2.5 py-2.5 rounded-[9px] flex items-center justify-between text-left text-sm transition-colors ${
-                  highlighted ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-700 font-medium hover:text-slate-900 hover:bg-slate-50'
+                className={`w-full min-h-[40px] px-2.5 py-2 rounded-[9px] flex items-center justify-between gap-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                  highlighted ? 'bg-blue-50 text-blue-700 font-semibold shadow-[inset_3px_0_0_0_#2563eb]' : 'text-slate-700 font-medium hover:text-slate-900 hover:bg-slate-100/70'
                 }`}
               >
                 <div className="flex items-center gap-[11px] min-w-0">
-                  <Icon className={`w-[18px] h-[18px] shrink-0 ${highlighted ? '' : 'text-slate-500'}`} strokeWidth={1.9} />
+                  <Icon className={`w-[18px] h-[18px] shrink-0 ${highlighted ? 'text-blue-600' : 'text-slate-500'}`} strokeWidth={1.9} />
                   <span className="truncate">{item.label}</span>
                 </div>
 
@@ -469,8 +494,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </React.Fragment>
             );
           })}
+          </div>}
           </div>
-          ))}
+          );
+          })}
         </div>
 
       </div>

@@ -46,7 +46,7 @@ function api(req, res, body) {
   state.calls.push({ method: req.method, path: p, body, auth: req.headers.authorization || null, raw: req.url.replace(/^\/api\/v1\/users/, '') });
   const o = state.o;
   if (p === '/crocodial/admin') return ok(res, o);
-  // Connection health (20270127000100): this page is answered by the Cloudflare Worker, which has the token; an old Vercel deployment does not
+  // Connection health (20270204000100): this page is answered by the Cloudflare Worker, which has the token; an old Vercel deployment does not
   if (p === '/crocodial/connection-health') return ok(res, { server: { runtime: 'cloudflare:production', platform: 'cloudflare', environment: 'production', deployment: 'v-42', host: 'crm.example.com' },
     connections: o.connections.map(c => ({ connection: c, syncable: c.enabled, refreshRequestedAt: null, lastManualSyncAt: null, lastSyncAt: c.lastSuccessAt, syncRunning: false, syncInProgress: false,
       lastSyncError: null, connectedPeople: 0, refreshesToday: 0, current: { nameValid: true, credentialDetected: true, credentialFormatValid: true },

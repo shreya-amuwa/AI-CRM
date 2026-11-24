@@ -10,6 +10,7 @@ import { notifyWorkUpdatesChanged } from '../lib/workUpdates';
 import { attendanceApi } from '../lib/attendance';
 import { applySoundPrefs, armAudioUnlock, onSoundPrefsChange, playNotificationSound } from '../lib/notifications/notificationSound';
 import { backoffMs, pickNotificationToChime } from '../lib/notifications/notificationSync';
+import { categoryOf, type NotificationCategory } from '../lib/notifications/notificationCategory';
 
 /**
  * Notifications are rows in Supabase, one per recipient. The server returns
@@ -34,6 +35,9 @@ export interface AppNotification {
   targetLabel: string;
   priority: 'normal' | 'urgent' | 'announcement';
   timestamp: string;
+  /** The exact time (ISO) and the category shown in the bell (Meetings, Tasks, Chat...). */
+  createdAt: string;
+  category: NotificationCategory;
   isRead: boolean;
   entityType: string | null;
   entityId: string | null;
@@ -109,6 +113,8 @@ function toAppNotification(n: Notification): AppNotification {
     targetLabel: TYPE_LABELS[n.type] || n.type.replace(/_/g, ' ').toLowerCase(),
     priority: n.priority,
     timestamp: formatTimestamp(n.createdAt),
+    createdAt: n.createdAt,
+    category: categoryOf(n.type, n.entityType),
     isRead: !!n.readAt,
     entityType: n.entityType,
     entityId: n.entityId,

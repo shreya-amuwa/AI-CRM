@@ -29,9 +29,11 @@ import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices }
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
 import { runAttendanceReminders } from './automations/attendanceReminders.js';
+import { runChatUnansweredReminders } from './automations/chatWaiting.js';
 import { messageIdFrom, pushChatMessage } from './automations/chatPush.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
+import { handleResendWebhook } from './email/resendWebhook.js';
 import { checkPendingRazorpayPayouts, handleRazorpayWebhook } from './services/PayoutService.js';
 import { isPausedVercelCron } from './platform.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
@@ -246,9 +248,9 @@ function requireDispatchSecret(header: string | undefined): void {
 
 // Attendance reminders, every 5 minutes from the Worker's scheduled run (migration 20270109000200): the database decides what is due and
 // puts it in the bell; this pushes it to the person's devices. Same secret and the same Vercel stand-down as the dispatch below.
-// Crocodial (read-only): continues the sync of the connections that are switched on - with the attendance reminders' 5-minute cron, every
-// CROCODIAL_SYNC_EVERY_MINUTES (default 15; worker/index.ts crocodialSyncDue), so a large first read still finishes the same day. Each connection is synced at most every 15 minutes
-// once it is up to date (croc_sync_due); a read in progress continues at once. Never throws.
+// Crocodial (read-only): continues the sync of the connections that are switched on - on the attendance reminders' 5-minute cron, every
+// CROCODIAL_SYNC_EVERY_MINUTES (default 60; worker/index.ts crocodialSyncDue). A connection is due once that long has passed (croc_sync_due,
+// same setting); a read in progress continues on the next such run, at most 10 pages per list each time. Never throws.
 app.post('/internal/crocodial/sync', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
@@ -258,7 +260,13 @@ app.post('/internal/crocodial/sync', async c => {
 app.post('/internal/attendance/reminders', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
-  return c.json(ok(await runAttendanceReminders()));
+  const run = await runAttendanceReminders();
+  // the same run reminds the team of client messages nobody has answered (20270202000200); a failure here never stops the reminders above
+  const chatWaiting = await runChatUnansweredReminders().catch(e => {
+    log('error', 'unanswered chat reminders failed', c, { message: e instanceof Error ? e.message : 'error' });
+    return { reminded: 0, skipped: 'FAILED' };
+  });
+  return c.json(ok({ ...run, chatWaiting }));
 });
 
 // Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
@@ -299,8 +307,8 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
   // Lead welcome WhatsApp ("our services", once when a lead is first given to a sales person): the retries and anything left waiting.
   const leadWhatsApp = await runLeadWhatsApp().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
-  // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every 15 minutes each;
-  // a long first pull continues on the next runs. Never throws.
+  // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every
+  // CROCODIAL_SYNC_EVERY_MINUTES (default 60) each; a long first pull continues on the next runs. Never throws.
   const crocodial = await crocodialSyncQuietly(15_000);
   // RazorpayX payouts still being sent after 10 minutes (a missed webhook): ask Razorpay. Never throws.
   const razorpayPayouts = await checkPendingRazorpayPayouts();
@@ -317,6 +325,11 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
+  // E-mail log retention (20270201000100): a little at a time; never fails the run
+  if (hasServiceClient()) {
+    const { error } = await getServiceClient().rpc('email_purge_old');
+    if (error && !/email_purge_old/.test(error.message)) log('error', 'email log purge failed', c, { message: error.message });
+  }
   return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, crocodial, razorpayPayouts, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
@@ -328,6 +341,18 @@ app.post('/internal/auth/email-hook', async c => {
     id: c.req.header('webhook-id'),
     timestamp: c.req.header('webhook-timestamp'),
     signature: c.req.header('webhook-signature')
+  });
+  return c.json(reply.body, reply.status as 200);
+});
+
+// Resend delivery events (docs/EMAIL_MANAGEMENT.md): authenticated by Resend's Svix signature (RESEND_WEBHOOK_SECRET), not by a user token.
+app.post('/internal/email/resend-webhook', async c => {
+  await enforce([{ key: `resend-webhook:ip:${clientIp(c)}`, limit: 600, window: 60 }], 'memory');
+  const reply = await handleResendWebhook({
+    body: await c.req.text(),
+    id: c.req.header('svix-id'),
+    timestamp: c.req.header('svix-timestamp'),
+    signature: c.req.header('svix-signature')
   });
   return c.json(reply.body, reply.status as 200);
 });
@@ -748,7 +773,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

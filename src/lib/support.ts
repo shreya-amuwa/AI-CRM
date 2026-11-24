@@ -420,6 +420,14 @@ export interface SupportTicket {
   lastMessageFrom: 'CLIENT' | 'STAFF' | null;
   /** Up to when the customer has read the conversation (their dashboard). */
   clientReadAt: string | null;
+  /** Who is handling it now (20270129000100): whoever replied or took it last. Information only; the assignee never changes by it. */
+  handlingBy: string | null;
+  handlingAt: string | null;
+  /** The shared Support desk only: the names (colleagues are not in every people list), whether this person may manage it, and that it came through the desk. */
+  handlerName?: string | null;
+  assigneeName?: string | null;
+  manageable?: boolean;
+  viaDesk?: boolean;
 }
 
 export interface TicketUpdateRow {
@@ -439,6 +447,8 @@ export interface TicketUpdateRow {
   /** The sender's role on the ticket when they wrote (Relationship Manager, Team Lead, ...). */
   authorLabel: string | null;
   clientMsgId: string | null;
+  /** The shared Support desk only: the author's name. */
+  authorName?: string | null;
 }
 
 export const toUpdateRow = (r: any): TicketUpdateRow => ({
@@ -454,7 +464,8 @@ export const toUpdateRow = (r: any): TicketUpdateRow => ({
   createdAt: r.created_at,
   clientAuthor: !!r.client_author,
   authorLabel: r.author_label ?? null,
-  clientMsgId: r.client_msg_id ?? null
+  clientMsgId: r.client_msg_id ?? null,
+  authorName: r.author_name ?? null
 });
 
 type CustomerInfo = { name: string; code: string; company?: string | null; phone?: string | null; email?: string | null };
@@ -491,7 +502,13 @@ export const toTicket = (r: any, cust: Map<string, CustomerInfo>): SupportTicket
   lastMessageAt: r.last_message_at ?? null,
   lastMessagePreview: r.last_message_preview ?? null,
   lastMessageFrom: r.last_message_from ?? null,
-  clientReadAt: r.client_read_at ?? null
+  clientReadAt: r.client_read_at ?? null,
+  handlingBy: r.handling_by ?? null,
+  handlingAt: r.handling_at ?? null,
+  handlerName: r.handler_name ?? null,
+  assigneeName: r.assignee_name ?? null,
+  manageable: r.manageable ?? undefined,
+  viaDesk: r.via_desk ?? undefined
 });
 
 export interface TicketData {
@@ -569,6 +586,48 @@ export function useTickets(teamIds?: string[]): TicketData {
   return { tickets, updates, reads, loading, error, reload };
 }
 
+/**
+ * The shared Support desk (20270129000100): the department's customer tickets for Support employees covering for a colleague, with their history. Same shape as
+ * useTickets so the same screens render it. The ticket tables stay narrow (RLS), so this comes from a function the database checks; it refreshes when the tab
+ * comes back into view and after an action (no timer). `available` is false for people without a desk.
+ */
+export function useDeskTickets(enabled = true): TicketData & { available: boolean } {
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [updates, setUpdates] = useState<TicketUpdateRow[]>([]);
+  const [reads, setReads] = useState<Map<string, string>>(new Map());
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+  const reload = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      const { data, error: e } = await db().rpc('desk_tickets');
+      if (e) throw new Error(cleanDbError(e.message));
+      const d = (data || {}) as { tickets?: any[]; updates?: any[]; customers?: any[] };
+      const cust = new Map<string, CustomerInfo>();
+      (d.customers || []).forEach((c: any) => cust.set(c.id, { name: c.name, code: c.customer_code, company: c.company, phone: c.phone, email: c.email }));
+      const r = await db().from('support_ticket_reads').select('ticket_id, read_at');
+      setReads(new Map((r.data || []).map((x: any) => [x.ticket_id as string, x.read_at as string])));
+      setTickets((d.tickets || []).map((row: any) => toTicket(row, cust)));
+      setUpdates((d.updates || []).map(toUpdateRow));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the Support desk.');
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
+  useEffect(() => { void reload(); }, [reload]);
+  useRealtime('support_ticket_reads', () => void reload());
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onVisible = () => document.visibilityState === 'visible' && void reload();
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => { document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('focus', onVisible); };
+  }, [enabled, reload]);
+  return { tickets, updates, reads, loading, error, reload, available: enabled && !error && tickets.length > 0 };
+}
+
 /** Customer messages the signed-in staff member has not read yet. */
 export function unreadCount(t: SupportTicket, updates: TicketUpdateRow[], reads: Map<string, string>): number {
   const since = reads.get(t.id) ?? t.lastStaffReplyAt ?? '';
@@ -596,6 +655,8 @@ export const ticketApi = {
   send: (ticketId: string, message: string, internal: boolean, clientMsgId: string, attachmentIds: string[] = []) =>
     rpc<unknown>('send_ticket_message', { p_ticket: ticketId, p_message: message, p_internal: internal, p_client_msg_id: clientMsgId, ...(attachmentIds.length ? { p_attachments: attachmentIds } : {}) }),
   markRead: (ticketId: string) => rpc<string>('mark_support_ticket_read', { p_ticket: ticketId }),
+  /** "I am handling this" / release (20270129000100): information only, the assignee and the escalation level never change. */
+  setHandling: (ticketId: string, action: 'TAKE' | 'RELEASE') => rpc<unknown>('ticket_set_handling', { p_ticket: ticketId, p_action: action }),
   /** Change the priority from the ticket header (the handlers, the Team Lead, the Department Head, the Super Admin). */
   setPriority: (ticketId: string, priority: TicketPriority) => rpc<unknown>('set_ticket_priority', { p_ticket: ticketId, p_priority: priority }),
   /** Hand the ticket to the next level (Team Lead, then Department Head). The RM stays assigned. */

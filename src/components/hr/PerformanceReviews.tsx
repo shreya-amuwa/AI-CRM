@@ -8,6 +8,8 @@ import { notifyReportsChanged, useReportsLive } from '../reports/reportEvents';
 import { Box, Chip, dateLabel, Tabs, todayIso, WeekPicker, weekOf, WeeklyStatusPill } from '../reports/reportUi';
 import { HrConsolidatedReport } from './HrConsolidatedReport';
 import { HrReviewHistory } from './HrReviewHistory';
+import { HrPageHeader } from './hrUi';
+import { ClipboardCheck } from 'lucide-react';
 import { DepartmentReview, PersonBox, reviewTone } from './ReviewPeople';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
@@ -102,14 +104,10 @@ const PerformanceReviews: React.FC = () => {
   const effectiveWeek = week ?? overview?.weekStart ?? weekOf(todayIso()).start;
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-6xl mx-auto" data-testid="hr-performance-reviews">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900">Performance Reviews</h1>
-          <p className="text-sm text-slate-500">Weekly department reports approved by the Operations Head. Review each Team Lead and Team Member, then send the consolidated report to the Super Admin.</p>
-        </div>
-        <WeekPicker value={effectiveWeek} onChange={setWeek} />
-      </header>
+    <div className="space-y-4" data-testid="hr-performance-reviews">
+      <HrPageHeader icon={ClipboardCheck} title="Performance Reviews"
+        subtitle="Weekly department reports approved by the Operations Head. Review each Team Lead and Team Member, then send the consolidated report to the Super Admin."
+        actions={<WeekPicker value={effectiveWeek} onChange={setWeek} />} />
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
       {error ? <ErrorBanner message={error} onRetry={loadOverview} /> : null}
       {!overview && !error ? <Spinner /> : null}

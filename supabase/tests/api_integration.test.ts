@@ -78,8 +78,10 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100)
-check(r.status === 200 && r.json.data.length === 14 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio'), 'departments come from the database');
+// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100);
+// 16 with International and Reseller (20270127000100)
+check(r.status === 200 && r.json.data.length === 16 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio')
+  && r.json.data.some((d: any) => d.slug === 'international') && r.json.data.some((d: any) => d.slug === 'reseller'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -3206,6 +3208,19 @@ provider.close();
       'subscription: the e-mail has the plan, the duration, the real start and expiry dates, the message limit and a secure way in (no password)', act?.body?.html);
     check((await db.query(`select status from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC])).rows[0].status === 'SENT', 'subscription: its delivery status is recorded');
 
+    // a job wrongly marked failed after the provider really accepted its e-mail: a retry of the same event sends no duplicate (email_messages)
+    {
+      const { rows: [job] } = await db.query(`select id from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
+      await db.query(`update public.automation_jobs set status = 'QUEUED', next_attempt_at = '2000-01-01' where id = $1`, [job.id]);
+      const before = mailbox.length;
+      process.env.AUTOMATION_MODE = 'live';
+      await dispatch('dispatch-secret-0123456789');
+      process.env.AUTOMATION_MODE = 'off';
+      const { rows: [again] } = await db.query(`select status, detail from public.automation_jobs where id = $1`, [job.id]);
+      check(mailbox.length === before && again.status === 'SENT', 'subscription: the same accepted e-mail queued again is not sent twice (one send per business event)', again);
+      // a real failure: the provider refused it, so the e-mail record says FAILED too
+      await db.query(`update public.email_messages set status = 'FAILED' where idempotency_key = $1`, [`automation-job:${job.id}`]);
+    }
     // a failure is recorded and can be retried
     await db.query(`update public.automation_jobs set status = 'FAILED', detail = 'Provider refused' where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
     r = await api('tc', 'GET', `/pipeline/customers/${subC}/subscriptions`);
@@ -11347,26 +11362,24 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
 }
 
-// --- Enter / Exit Meeting for every employee except the Super Admin (migration 20270122000100) ---------------------------------
+// --- Enter / Exit Meeting for every employee (20270122000100) and the Super Admin's queue, one confirmed per Exit (20270128000100) ---
 {
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
   const soon = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 
-  let r = await api('sa', 'POST', '/meetings/presence/enter', {});
-  check(r.status === 403, 'employee availability: the Super Admin cannot Enter Meeting through the API', r);
-  r = await api('sa', 'POST', '/meetings/presence/exit', {});
-  check(r.status === 403, 'employee availability: nor Exit Meeting', r);
-  r = await api('sa', 'GET', '/meetings/presence');
-  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.length === 0, 'employee availability: the Super Admin has no status of their own', r);
+  let r = await api('sa', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0]?.hostId === saId && r.json.data[0].status === 'AVAILABLE' && r.json.data[0].isCeo === true,
+    'CEO queue: the Super Admin has a status of their own again', r);
 
   r = await api('a', 'GET', '/meetings/presence');
   check(r.status === 200 && r.json.data[0]?.hostId === memberId && r.json.data[0].status === 'AVAILABLE', 'employee availability: a member sees their own status', r);
   r = await api('a', 'POST', '/meetings/presence/enter', {});
   check(r.status === 200 && r.json.data.status === 'BUSY', 'employee availability: a member enters a meeting: BUSY', r);
   r = await api('tl2', 'GET', `/meetings/presence?ids=${memberId},${saId}`);
-  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].status === 'BUSY' && r.json.data[0].meeting === null,
-    'employee availability: a colleague sees them BUSY (no meeting details; the Super Admin is not listed)', r);
+  check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === memberId)?.status === 'BUSY'
+    && r.json.data.find((x: { hostId: string }) => x.hostId === memberId)?.meeting === null,
+    'employee availability: a colleague sees them BUSY (no meeting details)', r);
   r = await api('tl2', 'GET', '/meetings/presence?ids=not-an-id');
   check(r.status === 422, 'employee availability: ids must be ids', r);
   r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
@@ -11380,7 +11393,43 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon after', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
   check(r.status === 201, 'employee availability: after the exit the same booking works', r);
   r = await api('a', 'POST', '/meetings', { title: 'EPX ask the CEO', description: 'Pune office budget', hostId: saId, startsAt: soon(3 * 24 * 60), endsAt: soon(3 * 24 * 60 + 30), mode: 'GOOGLE_MEET' });
-  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'employee availability: asking the CEO for time is a request, as before', r);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'employee availability: asking the CEO while they are AVAILABLE is a request, as before', r);
+
+  // the Super Admin's queue: Enter, requests queue up, each Exit confirms exactly one (the oldest), with the room link and the e-mail
+  r = await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: 'http://insecure.example' });
+  check(r.status === 422 || r.status === 400, 'CEO queue: the room link must be https', r);
+  r = await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: 'https://meet.example.com/ceo-api-room' });
+  check(r.status === 200 && r.json.data.roomLink === 'https://meet.example.com/ceo-api-room', 'CEO queue: the Super Admin saves the meeting-room link', r);
+  r = await api('a', 'POST', '/meetings/settings/room-link', { roomLink: 'https://meet.example.com/not-mine' });
+  check(r.status === 403, 'CEO queue: only a CEO sets the room link', r);
+  r = await api('sa', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'CEO queue: the Super Admin enters a meeting: BUSY', r);
+  r = await api('a', 'GET', '/meetings/presence/ceo');
+  check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === saId)?.status === 'BUSY', 'CEO queue: employees see the CEO BUSY', r);
+  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 30), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: a request while the CEO is BUSY joins the queue', r);
+  const first = r.json.data.id as string;
+  await db.query(`update public.meetings set created_at = now() - interval '5 minutes' where id = $1`, [first]);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 20), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: and another', r);
+  const second = r.json.data.id as string;
+  r = await api('sa', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0].pending?.length === 2 && r.json.data[0].pending[0].id === first, 'CEO queue: the Super Admin sees the queue, oldest first', r);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled?.length === 1 && r.json.data.scheduled[0].id === first,
+    'CEO queue: Exit confirms exactly one, the oldest', r);
+  const conf = (await db.query(`select status, mode, meet_link, starts_at, ends_at from public.meetings where id = $1`, [first])).rows[0];
+  check(conf?.status === 'SCHEDULED' && conf.meet_link === 'https://meet.example.com/ceo-api-room' && Math.abs(new Date(conf.starts_at).getTime() - Date.now()) < 120_000
+    && new Date(conf.ends_at).getTime() - new Date(conf.starts_at).getTime() === 30 * 60_000, 'CEO queue: it starts now, as long as asked, in the room', conf);
+  const outbox = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'QUEUE_CONFIRMED'`, [first])).rows[0].n;
+  check(outbox === 2, 'CEO queue: the "join now" e-mail is queued once each to the employee and the Super Admin', outbox);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.scheduled?.length === 0, 'CEO queue: a second Exit confirms nothing', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [second])).rows[0]?.status === 'PENDING_AVAILABILITY', 'CEO queue: the next waits for the next Exit');
+  await api('sa', 'POST', '/meetings/presence/enter', {});
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.scheduled?.[0]?.id === second, 'CEO queue: the next Exit confirms the next one', r);
+  await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: null });
   await db.query(`delete from public.meetings where title like 'EPX %'`);
 }
 
@@ -11928,6 +11977,97 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   rs = await api('th', 'GET', `/meetings/${appt}/summary`);
   check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
 }
+// --- Issue routing (migration 20270128000200): HR or the Developer Team, the conversation, HR's escalation (once), HR's sort / routing filter ---
+{
+  const leadId = deliveryLead as string, dev1 = deliveryMember as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, true), ($2, false)
+                  on conflict (profile_id) do update set is_lead = excluded.is_lead`, [leadId, dev1]);
+  tokens.set('rd1', tokenFor(dev1));
+  const key = () => `irx-${crypto.randomUUID().slice(0, 18)}`;
+  const deptId = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0].id as string;
+
+  // an employee's issue to the Developer Team: category and priority; checked by the schema
+  let r = await api('a', 'POST', '/bugs', { title: 'IRX Export is slow', description: 'The customer export takes ten minutes.', clientRequestId: key(), category: 'PERFORMANCE', priority: 'HIGH' });
+  check(r.status === 201 && r.json.data.category === 'PERFORMANCE' && r.json.data.priority === 'HIGH' && r.json.data.source === 'EMPLOYEE', 'issue routing API: an issue to the Developer Team, with category and priority', r);
+  const bugA = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', { title: 'IRX Bad', description: 'The customer export takes ten minutes.', clientRequestId: key(), category: 'COFFEE' });
+  check(r.status === 422, 'issue routing API: an unknown category is refused', r);
+  r = await api('a', 'POST', '/bugs', { title: 'IRX Old form', description: 'An old browser sends no category or priority.', clientRequestId: key() });
+  check(r.status === 201 && r.json.data.category === 'BUG' && r.json.data.priority === 'MEDIUM', 'issue routing API: an older form without them still works (Bug, Medium)', r);
+  check((await db.query(`select count(*)::int n from public.employee_issues where title like 'IRX %'`)).rows[0].n === 0, 'issue routing API: nothing reached HR');
+  r = await api('a', 'GET', '/bugs/mine?status=OPEN&search=IRX%20Export');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === bugA, 'issue routing API: the reporter\'s list is filtered in the database', r);
+  r = await api('a', 'GET', '/bugs/mine?status=SOMETIMES');
+  check(r.status === 422, 'issue routing API: the list filter is checked', r);
+
+  // HR reports one, with the affected department and employee
+  r = await api('hrmember', 'POST', '/bugs', { title: 'IRX Payslips missing', description: 'The payslip export has no rows this month.', clientRequestId: key(), category: 'DATA_ISSUE',
+    priority: 'URGENT', affectedDepartmentId: deptId, affectedEmployeeId: memberId });
+  check(r.status === 201 && r.json.data.source === 'HR_REPORT' && r.json.data.affectedEmployeeId === memberId && r.json.data.affectedDepartment, 'issue routing API: HR reports one, about a department and an employee', r);
+  r = await api('hrmember', 'POST', '/bugs', { title: 'IRX Bad', description: 'The payslip export has no rows this month.', clientRequestId: key(), affectedEmployeeId: 'nobody' });
+  check(r.status === 422, 'issue routing API: the affected employee must be an id', r);
+
+  // the conversation: the assigned developer asks, the reporter answers
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 200, 'issue routing API: assigned', r);
+  r = await api('rd1', 'POST', `/bugs/${bugA}/reply`, { message: 'Which export: customers or leads?', requestInfo: true });
+  check(r.status === 201 && r.json.data.status === 'NEEDS_INFO', 'issue routing API: the developer asks for information: Pending Information', r);
+  r = await api('a', 'POST', `/bugs/${bugA}/reply`, { message: 'Hello' });
+  check(r.status === 403, 'issue routing API: an employee never replies as a developer', r);
+  r = await api('th', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'Me too' });
+  check(r.status === 404, 'issue routing API: nobody follows up on someone else\'s issue', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'The customers export.' });
+  check(r.status === 201 && r.json.data.status === 'IN_PROGRESS' && r.json.data.history.some((h: any) => h.kind === 'MESSAGE' && h.data.from === 'REPORTER'), 'issue routing API: the reporter answers: back to the developer', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: '' });
+  check(r.status === 422, 'issue routing API: a follow-up needs words', r);
+  r = await api('rd1', 'POST', `/bugs/${bugA}/status`, { status: 'CLOSED' });
+  check(r.status === 200 && r.json.data.status === 'CLOSED', 'issue routing API: Closed is a status', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'Still slow' });
+  check(r.status === 409, 'issue routing API: a closed issue takes no more messages', r);
+
+  // HR escalates an employee issue, once
+  r = await api('a', 'POST', '/employee/issues', { clientRequestId: crypto.randomUUID(), title: 'IRX CRM logs me out', category: 'TECHNICAL_SYSTEM', description: 'The CRM logs me out every ten minutes.', priority: 'HIGH' });
+  check(r.status === 201 && r.json.data.recipient === 'HR' && r.json.data.routing === 'WITH_HR', 'issue routing API: an issue to HR says so', r);
+  const issueId = r.json.data.id as string;
+  r = await api('a', 'POST', `/hr/issues/${issueId}/escalate`, {});
+  check(r.status === 403, 'issue routing API: an employee cannot escalate', r);
+  r = await api('hr', 'POST', `/hr/issues/${issueId}/escalate`, { category: 'NOPE' });
+  check(r.status === 422, 'issue routing API: the escalation is checked', r);
+  r = await api('hr', 'POST', `/hr/issues/${issueId}/escalate`, { note: 'Seen on two laptops.', category: 'ACCESS_LOGIN' });
+  check(r.status === 200 && r.json.data.duplicate === false && r.json.data.issue.routing === 'ESCALATED_TO_DEVELOPERS' && /^BUG-/.test(r.json.data.issue.escalation?.reference ?? ''),
+    'issue routing API: HR escalates it to the Developer Team', r);
+  const escBug = r.json.data.issue.escalation.bugId as string;
+  r = await api('hrmember', 'POST', `/hr/issues/${issueId}/escalate`, {});
+  check(r.status === 200 && r.json.data.duplicate === true && r.json.data.issue.escalation.bugId === escBug, 'issue routing API: another HR person (or a retry) gets the same one', r);
+  check((await db.query(`select count(*)::int n from public.dev_bugs where source_issue_id = $1`, [issueId])).rows[0].n === 1, 'issue routing API: one Developer Team issue only');
+  r = await api('rd1', 'GET', `/bugs/${escBug}`);
+  check(r.status === 200 && r.json.data.source === 'HR_ESCALATION' && r.json.data.affectedEmployeeId === memberId && r.json.data.priority === 'HIGH', 'issue routing API: the developers see where it came from and whom it affects', r);
+  r = await api('rd1', 'POST', `/bugs/${escBug}/status`, { status: 'UNDER_REVIEW' });
+  check(r.status === 403, 'issue routing API: only the developer it is assigned to (or the lead) changes its status', r);
+  r = await api('tl2', 'POST', `/bugs/${escBug}/status`, { status: 'RESOLVED', note: 'Sessions now last 8 hours.' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED', 'issue routing API: the lead resolves it', r);
+  r = await api('a', 'GET', `/employee/issues/${issueId}`);
+  check(r.status === 200 && r.json.data.issue.escalation?.status === 'RESOLVED' && r.json.data.events.some((e: any) => e.kind === 'DEV_UPDATE' && /8 hours/.test(e.body ?? '')),
+    'issue routing API: the employee follows the developers\' progress on their issue', r);
+  r = await api('hrmember', 'GET', `/hr/issues/${issueId}`);
+  check(r.status === 200 && r.json.data.escalationHistory.some((h: any) => h.kind === 'STATUS' && h.data.to === 'RESOLVED'), 'issue routing API: every HR person sees the developers\' answers', r);
+
+  // HR's list: sort and routing
+  r = await api('hr', 'GET', '/hr/issues?routing=ESCALATED_TO_DEVELOPERS&search=IRX&sort=PRIORITY');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === issueId, 'issue routing API: HR lists the escalated issues', r);
+  r = await api('hr', 'GET', '/hr/issues?routing=WITH_HR&search=IRX');
+  check(r.status === 200 && r.json.data.items.length === 0, '... and the ones still with HR', r);
+  r = await api('hr', 'GET', '/hr/issues?sort=RANDOM');
+  check(r.status === 422, 'issue routing API: the sort order is checked', r);
+  r = await api('hr', 'GET', '/hr/issues/overview');
+  check(r.status === 200 && r.json.data.escalated >= 1, 'issue routing API: the overview counts the escalated issues', r);
+
+  await db.query(`delete from public.dev_bugs where title like 'IRX %'`);
+  await db.query(`delete from public.employee_issues where title like 'IRX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = any($1::uuid[])`, [[leadId, dev1]]);
+}
+
 // Notification reliability (20270126000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
 // retries, a 410 switching a device off, the self and admin test notifications, the scheduler run record and Notification Health.
 {
@@ -12043,6 +12183,358 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
     await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
   }
+}
+// Email management (20270201000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
+// send per business event, no copies of authentication e-mail, the signed Resend webhook, shared suppression, the Super Admin's API.
+{
+  console.log('--- email management: router, rules, idempotency, auth privacy, webhook, suppression, admin API');
+  const { sendEmail } = await import('../../server/automations/providers.js');
+  const { automationSettings } = await import('../../server/automations/config.js');
+  const mails: { path: string; headers: http.IncomingHttpHeaders; body: any }[] = [];
+  let n = 0;
+  const mailSrv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      mails.push({ path: (req.url || '').split('?')[0], headers: req.headers, body: raw ? JSON.parse(raw) : null });
+      res.writeHead(200, { 'content-type': 'application/json', 'x-resend-daily-quota': '5', 'x-resend-monthly-quota': '41' });
+      res.end(JSON.stringify({ id: `re_api_${++n}` }));
+    });
+  });
+  await new Promise<void>(rs => mailSrv.listen(0, rs));
+  const saved = Object.fromEntries(['EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_CC', 'EMAIL_BCC', 'EMAIL_FROM', 'RESEND_WEBHOOK_SECRET', 'SMTP_HOST'].map(k => [k, process.env[k]]));
+  Object.assign(process.env, { EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_api_key', EMAIL_API_BASE_URL: `http://127.0.0.1:${(mailSrv.address() as any).port}`,
+    EMAIL_FROM: 'Amuwa Corporation <no-reply@amuwa.com>', EMAIL_CC: '', EMAIL_BCC: '' });
+  delete process.env.SMTP_HOST;
+  await db.query(`delete from public.email_recipient_rules; delete from public.email_suppressions where email like '%@email-api.example'`);
+  const { rows: [cust] } = await db.query(`select id from public.customers order by created_at limit 1`);
+  try {
+    // the Super Admin's API (and nobody else's)
+    let r = await api('hr', 'GET', '/email/admin/overview');
+    check(r.status === 403, 'email admin: HR cannot open Email Management', r);
+    r = await api('sa', 'GET', '/email/admin/overview');
+    check(r.status === 200 && r.json.data.diagnostics.route.join() === 'resend' && r.json.data.diagnostics.configured.resend === true
+          && !JSON.stringify(r.json).includes('re_api_key'), 'email admin: the overview shows the route and never the key', r.json?.data?.diagnostics);
+    r = await api('sa', 'POST', '/email/admin/settings', { providerOrder: ['resend', 'gmail'] });
+    check(r.status === 422, 'email admin: an unknown provider is a validation error', r);
+    r = await api('sa', 'POST', '/email/admin/rules', { name: 'Invoices → Accounts mailbox', category: 'INVOICE', mode: 'CC', target: 'ADDRESS', addresses: ['accounts@amuwa.com'], enabled: true });
+    check(r.status === 200 && r.json.data.rules.some((x: any) => x.name === 'Invoices → Accounts mailbox'), 'email admin: the Super Admin adds a CC rule', r);
+    const ruleId = r.json.data.rules.find((x: any) => x.name === 'Invoices → Accounts mailbox').id;
+    r = await api('sa', 'POST', '/email/admin/rules', { name: 'x', category: 'AUTH', mode: 'BCC', target: 'ADDRESS', addresses: ['audit@amuwa.com'] });
+    check(r.status === 422, 'email admin: no rule may copy authentication e-mail', r);
+    r = await api('sa', 'POST', `/email/admin/rules/${ruleId}/preview`, { customerId: cust.id });
+    check(r.status === 200 && r.json.data.recipients.length === 1 && r.json.data.recipients[0].email === 'accounts@amuwa.com', 'email admin: the preview resolves for a real customer', r);
+    r = await api('hr', 'POST', '/email/admin/providers/resend/check', {});
+    check(r.status === 403, 'email admin: only the Super Admin checks providers', r);
+
+    // the router + the shared record
+    const invoice = { subject: 'Invoice AC-1', html: '<p>Invoice</p>', text: 'Invoice' };
+    let sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined,
+      { category: 'INVOICE', idempotencyKey: 'api-email-invoice-1', context: { customerId: cust.id } });
+    check(sent.ok && mails.length === 1 && JSON.stringify(mails[0].body.cc) === '["accounts@amuwa.com"]' && mails[0].headers['idempotency-key'] === 'api-email-invoice-1',
+      'email: sent by Resend, with the rule\'s CC and the Idempotency-Key', mails[0]?.body);
+    const { rows: [row] } = await db.query(`select status, provider, provider_message_id, cc, customer_id from public.email_messages where idempotency_key = 'api-email-invoice-1'`);
+    check(row.status === 'ACCEPTED' && row.provider === 'resend' && row.provider_message_id === 're_api_1' && row.customer_id === cust.id, 'email: recorded as ACCEPTED (not delivered) with the provider id', row);
+    sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined,
+      { category: 'INVOICE', idempotencyKey: 'api-email-invoice-1', context: { customerId: cust.id } });
+    check(sent.ok && mails.length === 1, 'email: the same business event again sends nothing (another Worker or a retry)');
+    const { rows: [state] } = await db.query(`select reported_daily, reported_monthly, last_success_at from public.email_provider_state where provider = 'resend'`);
+    check(state.reported_daily === '5' && state.reported_monthly === '41' && state.last_success_at, 'email: Resend\'s reported usage is kept', state);
+
+    // authentication: no copy, even with EMAIL_CC / EMAIL_BCC set
+    process.env.EMAIL_CC = 'ops@amuwa.com';
+    process.env.EMAIL_BCC = 'audit@amuwa.com';
+    sent = await sendEmail(automationSettings(), { email: 'staff@email-api.example', name: 'Staff' }, { subject: 'Reset', html: '<p>link</p>', text: 'link' }, undefined,
+      { category: 'AUTH', template: 'staff-password-reset' });
+    check(sent.ok && mails[1].body.cc === undefined && mails[1].body.bcc === undefined, 'email: a password reset goes to the account holder only (EMAIL_CC / EMAIL_BCC ignored)', mails[1]?.body);
+    const { rows: [authRow] } = await db.query(`select recipient, cc, bcc, priority from public.email_messages where category = 'AUTH' order by created_at desc limit 1`);
+    check(authRow.recipient === 's***@email-api.example' && authRow.cc.length === 0 && authRow.bcc.length === 0 && authRow.priority === 'CRITICAL',
+      'email: its log keeps only a masked address, no copies, CRITICAL', authRow);
+    sent = await sendEmail(automationSettings(), { email: 'staff@email-api.example', name: 'Staff' }, { subject: 'Reset', html: '<p>link</p>', text: 'link' }, undefined,
+      { category: 'AUTH', cc: ['hr@amuwa.com'] });
+    check(!sent.ok && mails.length === 2, 'email: an explicit CC on an authentication e-mail is refused');
+    process.env.EMAIL_CC = '';
+    process.env.EMAIL_BCC = '';
+
+    // the signed Resend webhook: delivered, then a hard bounce suppresses the address for every provider
+    const whKey = Buffer.from('0123456789abcdef0123456789abcdef');
+    process.env.RESEND_WEBHOOK_SECRET = `whsec_${whKey.toString('base64')}`;
+    const hook = (id: string, payload: unknown, sign = true) => {
+      const body = JSON.stringify(payload);
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sig = crypto.createHmac('sha256', whKey).update(`${id}.${ts}.${body}`).digest('base64');
+      return fetch(`${base}/internal/email/resend-webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'svix-id': id, 'svix-timestamp': ts,
+        'svix-signature': sign ? `v1,${sig}` : 'v1,forged' }, body }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    };
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } }, false);
+    check(r.status === 401, 'email webhook: an unsigned / forged request is refused', r);
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } });
+    check(r.status === 200 && (await db.query(`select status from public.email_messages where provider_message_id = 're_api_1'`)).rows[0].status === 'DELIVERY_CONFIRMED',
+      'email webhook: a signed delivered event confirms delivery', r);
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } });
+    check(r.status === 200 && r.json.duplicate === true, 'email webhook: the same event delivered again is a no-op', r);
+    r = await hook('msg_api_2', { type: 'email.bounced', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'], bounce: { type: 'Permanent' } } });
+    check(r.status === 200 && (await db.query(`select 1 from public.email_suppressions where email = 'client@email-api.example' and active`)).rowCount === 1,
+      'email webhook: a hard bounce suppresses the address', r);
+    sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined, { category: 'INVOICE', context: { customerId: cust.id } });
+    check(!sent.ok && !sent.retry && mails.length === 2, 'email: a suppressed address is not sent to (no provider can bypass it)', sent);
+
+    // history: scoped by the database
+    r = await api('sa', 'GET', '/email/history?category=INVOICE');
+    check(r.status === 200 && r.json.data.items.some((x: any) => x.status === 'BOUNCED'), 'email history: the Super Admin sees the invoice e-mail and its bounce', r.status);
+    r = await api('sa', 'GET', '/email/history?status=NOPE');
+    check(r.status === 422, 'email history: an unknown status is a validation error', r);
+    r = await api('hr', 'GET', '/email/history?category=AUTH');
+    check(r.status === 200 && r.json.data.items.length === 0, 'email history: HR never sees authentication e-mails', r.json?.data);
+    r = await api('sa', 'POST', '/email/admin/suppressions', { email: 'client@email-api.example', active: false, note: 'address fixed' });
+    check(r.status === 200 && r.json.data.some((x: any) => x.email === 'client@email-api.example' && !x.active), 'email admin: the Super Admin lifts a suppression (audited)', r);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await db.query(`delete from public.email_recipient_rules; delete from public.email_suppressions where email like '%@email-api.example'`);
+    mailSrv.close();
+  }
+}
+// --- CEO office arrival (migration 20270128000300): HR's button; information only, meeting requests work before and after ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false && r.json.data.canMark === false, 'CEO arrival API: an employee sees "not arrived" and has no button', r);
+  // a fixed time on a day no other block books (now + 23 days + 37 min collided with the Super Admin's 06:00 UTC role-request slots when the suite ran around 05:30 UTC)
+  const caxAt = (min: number) => { const d = new Date(Date.now() + 77 * 86400e3); d.setUTCHours(14, min, 0, 0); return d.toISOString(); };
+  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: caxAt(7),
+    endsAt: caxAt(37), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO arrival API: a meeting request before the arrival is saved as usual', r);
+  const reqId = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO arrival API: an employee cannot mark it', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO arrival API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.arrived === true && !!ceoOf(r.json.data)?.arrivedAt, 'CEO arrival API: HR marks it, with the time', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO arrival API: a second press (another HR person) changes nothing', r);
+  check((await db.query(`select count(*)::int n from public.ceo_office_arrivals where ceo_id = $1 and undone_at is null`, [saId])).rows[0].n === 1, 'CEO arrival API: one arrival today');
+  r = await api('tl2', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === true, 'CEO arrival API: everyone sees it', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [reqId])).rows[0].status === 'REQUESTED', 'CEO arrival API: the earlier request is neither confirmed nor rejected by it');
+  r = await api('hr', 'POST', '/meetings/ceo-office/undo', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false, 'CEO arrival API: HR undoes a mistaken press', r);
+  r = await api(null, 'GET', '/meetings/ceo-office');
+  check(r.status === 401, 'CEO arrival API: not for visitors', r);
+  await db.query(`delete from public.meetings where title like 'CAX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
+// --- Company Notice Board (migration 20270131000200): everyone reads; only the Super Admin, Operations Heads, HR and Developers publish ---
+{
+  const devId = deliveryMember as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, false) on conflict (profile_id) do nothing`, [devId]);
+  tokens.set('nbdev', tokenFor(devId));
+  const key = () => `nbx-${crypto.randomUUID().slice(0, 18)}`;
+  const wabastore = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  let r = await api('a', 'GET', '/notices/audience');
+  check(r.status === 200 && r.json.data.canPublish === false, 'notice board API: a Team Member has no Send Notice', r);
+  r = await api('a', 'POST', '/notices', { title: 'NBX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: key() });
+  check(r.status === 403, 'notice board API: a Team Member cannot publish (refused by the server)', r);
+  r = await api('th', 'POST', '/notices', { title: 'NBX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: key() });
+  check(r.status === 403, 'notice board API: nor a Team Lead', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Bad', body: 'x', category: 'GENERAL', audienceType: 'DEPARTMENT', clientRequestId: key() });
+  check(r.status === 422, 'notice board API: a department notice needs departments', r);
+  const k1 = key();
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Town hall at 5 pm', body: 'Everyone joins the town hall.', category: 'EVENT', priority: 'IMPORTANT', audienceType: 'COMPANY', clientRequestId: k1 });
+  check(r.status === 201 && r.json.data.status === 'PUBLISHED' && r.json.data.recipientCount >= 3 && r.json.data.publisherRole === 'SUPER_ADMIN' && !('deliveryIds' in r.json.data),
+    'notice board API: the Super Admin publishes to the entire company', r);
+  const n1 = r.json.data.id as string;
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Town hall at 5 pm', body: 'Everyone joins the town hall.', category: 'EVENT', audienceType: 'COMPANY', clientRequestId: k1 });
+  check(r.status === 201 && r.json.data.duplicate === true && r.json.data.id === n1, 'notice board API: the same form again is the same notice', r);
+  r = await api('hr', 'POST', '/notices', { title: 'NBX Wabastore leave rules', body: 'New leave rules for Wabastore.', category: 'HR', audienceType: 'DEPARTMENT', departmentIds: [wabastore], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'HR', 'notice board API: HR publishes to a department', r);
+  // 20270202000100: being in the Developers team is not the permission; the CRM team is a list of named accounts (notice_board_managers)
+  r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
+  check(r.status === 403, 'notice board API: a developer who is not on the CRM team list is refused (403)', r);
+  r = await api('nbdev', 'GET', '/notices/managers');
+  check(r.status === 403, 'notice board API: nor can they see who the managers are (403)', r);
+  r = await api('a', 'POST', `/notices/managers/${devId}`, { enabled: true });
+  check(r.status === 403, 'notice board API: a Team Member cannot add a manager (403)', r);
+  r = await api('sa', 'POST', `/notices/managers/${devId}`, { enabled: true });
+  check(r.status === 200 && r.json.data.manager === true, 'notice board API: the Super Admin adds a person to the CRM team', r);
+  r = await api('sa', 'GET', '/notices/managers');
+  check(r.status === 200 && r.json.data.managers.some((m: any) => m.profileId === devId), 'notice board API: the list shows them', r);
+  r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'CRM_TEAM', 'notice board API: a CRM team member publishes to designations', r);
+  const bell = (await db.query(`select count(*)::int n from public.notifications where type = 'COMPANY_NOTICE' and entity_id = $1`, [n1])).rows[0].n;
+  check(bell === r.json.data.recipientCount || bell >= 3, 'notice board API: the targeted employees are notified in the bell');
+
+  r = await api('a', 'GET', '/notices/unread-count');
+  check(r.status === 200 && r.json.data.unread >= 1, 'notice board API: the employee has unread notices', r);
+  const before = r.json.data.unread as number;
+  r = await api('a', 'GET', '/notices?unread=true');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === n1 && n.read === false), 'notice board API: the employee sees it, unread', r);
+  r = await api('a', 'GET', `/notices/${n1}`);
+  check(r.status === 200 && r.json.data.read === true && r.json.data.body === 'Everyone joins the town hall.', 'notice board API: opening it marks it read', r);
+  r = await api('a', 'GET', '/notices/unread-count');
+  check(r.status === 200 && r.json.data.unread === before - 1, 'notice board API: the unread count goes down', r);
+  // the popup queue and the acknowledgement (20270202000100)
+  r = await api('a', 'GET', '/notices/pending');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === n1 && n.body === 'Everyone joins the town hall.') && r.json.data.pending === r.json.data.items.length,
+    'notice board API: the popup queue lists the notices not yet acknowledged, with their text', r);
+  r = await api(null, 'GET', '/notices/pending');
+  check(r.status === 401, 'notice board API: the queue is not for visitors', r);
+  r = await api('a', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice board API: the employee acknowledges it', r);
+  r = await api('a', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice board API: acknowledging twice is harmless', r);
+  r = await api('a', 'GET', '/notices/pending');
+  check(r.status === 200 && !r.json.data.items.some((n: any) => n.id === n1), 'notice board API: an acknowledged notice leaves the queue', r);
+  r = await api('sa', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 404, 'notice board API: the publisher is not a recipient: nothing to acknowledge', r);
+  r = await api('a', 'GET', '/notices/managers');
+  check(r.status === 403, 'notice board API: an employee gets 403 from the managers list', r);
+  r = await api('a', 'GET', `/notices/${n1}/receipts`);
+  check(r.status === 404, 'notice board API: an employee does not see the read receipts', r);
+  r = await api('a', 'POST', `/notices/${n1}/update`, { title: 'NBX Hacked' });
+  check(r.status === 404, 'notice board API: nor edit the notice', r);
+  r = await api('sa', 'GET', `/notices/${n1}/receipts`);
+  check(r.status === 200 && r.json.data.read >= 1 && r.json.data.total === r.json.data.read + r.json.data.unread && r.json.data.acknowledged >= 1
+    && r.json.data.rows.some((x: any) => x.acknowledgedAt), 'notice board API: the publisher sees who read and acknowledged it', r);
+  r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Everyone joins the town hall at 5:30 pm.', version: 1 });
+  check(r.status === 200 && r.json.data.version === 2, 'notice board API: the publisher edits it', r);
+  r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Stale', version: 1 });
+  check(r.status === 409, 'notice board API: a stale edit is refused', r);
+  r = await api('sa', 'POST', `/notices/${n1}/archive`, {});
+  check(r.status === 200 && r.json.data.status === 'ARCHIVED', 'notice board API: and archives it', r);
+  r = await api('a', 'GET', '/notices');
+  check(r.status === 200 && !r.json.data.items.some((n: any) => n.id === n1), 'notice board API: an archived notice leaves the board', r);
+  r = await api('a', 'GET', '/notices?scope=MINE');
+  check(r.status === 403, 'notice board API: an employee has no "my published notices"', r);
+  r = await api(null, 'GET', '/notices');
+  check(r.status === 401, 'notice board API: not for visitors', r);
+  // the chat and the other notifications keep working alongside
+  r = await api('a', 'GET', '/chat/internal');
+  check(r.status === 200, 'notice board API: the chat still answers', r);
+  await db.query(`delete from public.company_notices where title like 'NBX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
+  await db.query(`delete from public.notice_board_managers where profile_id = $1`, [devId]);
+}
+// --- CEO Availability (migration 20270201000100): HR sets CEO Arrived / CEO Not Arrived; stored; the same for everyone; never blocks a request ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  const when = (n: number) => new Date(Date.now() + n * 86400e3 + 41 * 60e3).toISOString();
+  const ask = (title: string, days: number) => api('a', 'POST', '/meetings', { title, description: 'Review of the quarterly plan', hostId: saId, startsAt: when(days),
+    endsAt: new Date(new Date(when(days)).getTime() + 30 * 60e3).toISOString(), mode: 'PHONE' });
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.updatedAt === null && r.json.data.canMark === false, 'CEO availability API: nothing recorded: not arrived, no update, no buttons for an employee', r);
+  r = await ask('CVX Not arrived', 31);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: a meeting request is saved while the CEO has not arrived', r);
+  r = await api('a', 'POST', '/meetings/ceo-office/not-arrived', {});
+  check(r.status === 403, 'CEO availability API: an employee cannot press CEO Not Arrived', r);
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO availability API: an employee cannot press CEO Arrived', r);
+  r = await api(null, 'POST', '/meetings/ceo-office/not-arrived', {});
+  check(r.status === 401, 'CEO availability API: not for visitors', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO availability API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.updatedStatus === 'NOT_ARRIVED' && !!ceoOf(r.json.data)?.updatedAt && !!ceoOf(r.json.data)?.updatedBy, 'CEO availability API: HR sets Not Arrived with the time and who', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO availability API: a second press (another HR person) changes nothing', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.status === 'ARRIVED' && ceoOf(r.json.data)?.updatedStatus === 'ARRIVED' && ceoOf(r.json.data)?.updatedToday === true, 'CEO availability API: HR sets Arrived', r);
+  // every dashboard (every role) reads the same latest status, from the database
+  for (const who of ['a', 'tl2', 'hr', 'hrmember', 'hrlead']) {
+    r = await api(who, 'GET', '/meetings/ceo-office');
+    check(r.status === 200 && ceoOf(r.json.data)?.status === 'ARRIVED' && ceoOf(r.json.data)?.updatedBy === ceoOf((await api('hr', 'GET', '/meetings/ceo-office')).json.data)?.updatedBy, `CEO availability API: ${who} reads the same latest status`, r);
+  }
+  r = await ask('CVX Arrived', 32);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: a meeting request is saved while the CEO has arrived', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.arrived === false, 'CEO availability API: Not Arrived after an arrival sets it back', r);
+  r = await ask('CVX Not arrived again', 33);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: Not Arrived never blocks a request', r);
+  r = await api('a', 'GET', '/meetings/ceo-requests?section=ALL');
+  check(r.status === 200 && ['CVX Not arrived', 'CVX Arrived', 'CVX Not arrived again'].every(t => r.json.data.items.some((m: any) => m.title === t && m.createdByName && m.startsAt && m.description)), 'CEO availability API: the requests are saved with who, when and the purpose', r);
+  r = await api('sa', 'GET', '/meetings/ceo-requests?section=ALL');
+  check(r.status === 200 && r.json.data.items.some((m: any) => m.title === 'CVX Arrived' && m.createdByName && m.createdByDepartment), 'CEO availability API: the CEO reviews them with the employee and department', r);
+  await db.query(`delete from public.meetings where title like 'CVX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
+// --- HR Awards (migration 20270203000100): seven monthly awards, many nominees, one or more winners, month-wise history; HR only ---
+{
+  await db.query(`delete from public.hr_award_winners; delete from public.hr_award_nominees; delete from public.hr_award_periods`);
+  const M = '2026-10';
+  let r = await api('a', 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 403, 'awards API: an employee cannot open Awards', r);
+  r = await api(null, 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 401, 'awards API: not for visitors', r);
+  r = await api('hr', 'GET', '/hr/awards?month=October');
+  check(r.status === 422, 'awards API: the month is checked (YYYY-MM)', r);
+  r = await api('hr', 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 200 && r.json.data.awards.length === 7 && r.json.data.awards.every((a: any) => a.nominees === 0 && a.status === 'NO_NOMINEES')
+    && r.json.data.awards.map((a: any) => a.name).join('|') === ['Professionalism Excellence of the Month', 'Rising Star of the Month', 'Player of the Month',
+      'Emerging Leader of the Month', 'Department of the Month', 'Team of the Month', 'Business Icon of the Month'].join('|'), 'awards API: HR sees all seven awards for the month', r);
+  r = await api('hr', 'GET', '/hr/awards/options');
+  const opts = r.json.data;
+  check(r.status === 200 && opts.employees.length >= 3 && opts.teams.length >= 1 && opts.departments.length >= 1, 'awards API: employees, teams and departments come from the CRM', r);
+  const people = opts.employees.slice(0, 3) as { id: string; name: string }[];
+  for (const [i, p] of people.entries()) {
+    r = await api(i === 2 ? 'hrmember' : 'hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: p.id, reason: `Great month number ${i + 1}`, remarks: i === 0 ? 'Supporting note' : null });
+    check(r.status === 201 && r.json.data.totalNominees === i + 1, `awards API: nominee ${i + 1} added under the same award`, r);
+  }
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[0].id, reason: 'Again' });
+  check(r.status === 409, 'awards API: the same person twice for the same award and month is a conflict', r);
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[1].id, reason: 'x' });
+  check(r.status === 422, 'awards API: the reason is validated', r);
+  r = await api('a', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[1].id, reason: 'I want it' });
+  check(r.status === 403, 'awards API: an employee cannot nominate', r);
+  r = await api('hr', 'POST', '/hr/awards/TEAM/nominees', { month: M, nomineeType: 'TEAM', entityId: opts.teams[0].id, reason: 'Delivered together' });
+  check(r.status === 201 && r.json.data.nominees[0].nomineeType === 'TEAM' && r.json.data.nominees[0].name === opts.teams[0].name, 'awards API: a team for Team of the Month', r);
+  r = await api('hr', 'POST', '/hr/awards/DEPARTMENT/nominees', { month: M, nomineeType: 'DEPARTMENT', entityId: opts.departments[0].id, reason: 'Best results' });
+  check(r.status === 201 && r.json.data.nominees[0].nomineeType === 'DEPARTMENT', 'awards API: a department for Department of the Month', r);
+  r = await api('hr', 'GET', `/hr/awards/RISING_STAR?month=${M}`);
+  const nominees = r.json.data.nominees as { id: string; name: string; status: string }[];
+  check(r.status === 200 && nominees.length === 3 && nominees.every(n => n.status === 'NOMINATED'), 'awards API: the detail lists the three nominees (saved: read again)', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${nominees[2].id}/update`, { reason: 'Edited reason text', remarks: 'Edited remarks' });
+  check(r.status === 200 && r.json.data.nominees.find((n: any) => n.id === nominees[2].id)?.reason === 'Edited reason text', 'awards API: HR edits a nominee', r);
+  r = await api('hr', 'POST', '/hr/awards/winners', { nomineeIds: [nominees[0].id], remarks: 'Clear winner' });
+  check(r.status === 200 && r.json.data.totalWinners === 1 && r.json.data.status === 'WINNERS_DECLARED', 'awards API: one winner declared', r);
+  r = await api('hr', 'POST', '/hr/awards/winners', { nomineeIds: [nominees[0].id, nominees[1].id] });
+  check(r.status === 200 && r.json.data.totalWinners === 2 && r.json.data.totalNominees === 3
+    && r.json.data.nominees.filter((n: any) => n.status === 'WINNER').length === 2, 'awards API: a second winner for the same award; the third stays a nominee', r);
+  const winners = r.json.data.winners as { id: string; nomineeId: string }[];
+  r = await api('a', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: 'Not allowed' });
+  check(r.status === 403, 'awards API: an employee cannot revoke a winner', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${winners[1].nomineeId}/remove`, {});
+  check(r.status === 409, 'awards API: a winner cannot be removed before the declaration is revoked', r);
+  r = await api('hr', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: '' });
+  check(r.status === 422, 'awards API: revoking needs a reason', r);
+  r = await api('hr', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: 'Declared by mistake' });
+  check(r.status === 200 && r.json.data.totalWinners === 1 && r.json.data.revokedWinners.length === 1, 'awards API: HR revokes a winner (kept on record)', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${nominees[2].id}/remove`, { reason: 'Duplicate' });
+  check(r.status === 200 && r.json.data.totalNominees === 2 && r.json.data.removedNominees === 1, 'awards API: HR removes a nominee', r);
+  // another month: the same award starts empty and October stays as it was
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: '2026-11', nomineeType: 'INDIVIDUAL', entityId: people[0].id, reason: 'Another strong month' });
+  check(r.status === 201 && r.json.data.month === '2026-11' && r.json.data.totalNominees === 1, 'awards API: the next month has its own nominees', r);
+  r = await api('hr', 'GET', `/hr/awards?month=${M}`);
+  const card = r.json.data.awards.find((a: any) => a.code === 'RISING_STAR');
+  check(r.status === 200 && card.nominees === 2 && card.winners === 1 && card.winnerNames.length === 1
+    && r.json.data.history.some((h: any) => h.month === '2026-11') && r.json.data.history.some((h: any) => h.month === M), 'awards API: October is intact, both months in the history', r);
+  r = await api('sa', 'GET', `/hr/awards/RISING_STAR?month=${M}`);
+  check(r.status === 200 && r.json.data.totalWinners === 1, 'awards API: the Super Admin reads the awards', r);
+  r = await api('hr', 'GET', `/hr/awards/NOPE?month=${M}`);
+  check(r.status === 422, 'awards API: an unknown award', r);
+  await db.query(`delete from public.hr_award_winners; delete from public.hr_award_nominees; delete from public.hr_award_periods`);
+}
+// --- International / Reseller recognised by the database flag, not by a slug (migration 20270202000300) ---
+{
+  const r = await api('sa', 'GET', '/departments');
+  const by = (slug: string) => r.json.data.find((d: any) => d.slug === slug);
+  check(r.status === 200 && by('international')?.unifiedSalesSupport === true && by('reseller')?.unifiedSalesSupport === true, 'departments API: International and Reseller are flagged unified (Sales + Support)', r);
+  check(by('wabastore')?.unifiedSalesSupport === false && r.json.data.filter((d: any) => d.unifiedSalesSupport).every((d: any) => /international|reseller/i.test(`${d.name} ${d.slug}`)), 'departments API: no Sales or Support department is flagged', r);
+  const a = await api('a', 'GET', '/departments');
+  check(a.status === 200 && a.json.data.every((d: any) => typeof d.unifiedSalesSupport === 'boolean'), 'departments API: every signed-in person reads the flag', a);
 }
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();

@@ -68,6 +68,10 @@ export type DefaultDashboard =
   | 'ai-studio-head'
   | 'ai-studio-lead'
   | 'ai-studio-member'
+  /** International / Reseller (departments flagged unified_sales_support, migration 20270127000100): Sales and Support in one dashboard for each role. */
+  | 'unified-head'
+  | 'unified-lead'
+  | 'unified-member'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -106,6 +110,8 @@ export interface Department extends DepartmentRef {
   /** Set for a department that is the Sales or Support side of another one (Wabatalk = the Support side of D Talk). */
   facetOf: string | null;
   facetDivision: HeadDivision | null;
+  /** Sales AND Support in one department (International, Reseller): decided by the database, never by the slug (20270127000100, 20270202000300). */
+  unifiedSalesSupport?: boolean;
   createdAt: string;
 }
 
@@ -2967,6 +2973,8 @@ export interface ChatConversation {
   isAdmin: boolean;
   /** Client chat: false until a Team Member or Team Lead is assigned (nobody can answer yet). */
   assigned: boolean | null;
+  /** Client chat, employees only: who is handling it now (20270129000100). Never sent to the client. */
+  handler?: ChatHandler | null;
   lastSeq: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
@@ -3106,6 +3114,18 @@ export interface ChatDirectoryPerson {
   /** The employee's designation (or position); from migration 20261228000300, absent before it. */
   designation?: string | null;
   departmentId?: string | null;
+}
+/** Who is handling a client conversation or ticket right now (20270129000100). Information only; the Relationship Manager is never changed by it. */
+export interface ChatHandler { id: string; name: string; at: string; active: boolean; me: boolean }
+/** A client conversation on the shared Support desk: the department's customers for Support employees covering for a colleague. */
+export interface ChatDeskClient extends Omit<ChatMyClient, 'role'> {
+  role: ChatMyClient['role'] | 'Support desk';
+  rm: { id: string; name: string } | null;
+  handler: ChatHandler | null;
+  lastSenderName: string | null;
+  /** The client wrote last and no employee has answered yet. */
+  awaitingReply: boolean;
+  shared: true;
 }
 export interface ChatMyClient {
   customerId: string;
@@ -4552,13 +4572,18 @@ export interface EmployeeIssue {
   employee: CaseEmployee;
   /** Set when a submission was recognised as one that already exists. */
   duplicate?: boolean;
+  /** Issue routing (20270128000200): an employee issue goes to HR; HR may escalate it to the Developer Team (one linked issue) */
+  recipient?: 'HR';
+  routing?: 'WITH_HR' | 'ESCALATED_TO_DEVELOPERS';
+  escalation?: { bugId: string; reference: string; status: DevBugStatus; assigneeName: string | null; resolutionNote: string | null;
+    updatedAt: string; escalatedAt: string | null; escalatedBy: string | null } | null;
 }
 export interface CaseEvent {
   id: number;
   kind: string;
   /** EMPLOYEE: the employee reads it; HR: an internal note, only HR ever gets it. */
   visibility: 'EMPLOYEE' | 'HR';
-  side: 'EMPLOYEE' | 'HR';
+  side: 'EMPLOYEE' | 'HR' | 'DEVELOPER';
   actorName: string | null;
   body: string | null;
   fromStatus: string | null;
@@ -4566,9 +4591,11 @@ export interface CaseEvent {
   createdAt: string;
 }
 export interface IssueAttachment { id: string; name: string; mime: string; size: number; eventId: number | null; createdAt: string }
-export interface EmployeeIssueDetail { issue: EmployeeIssue; events: CaseEvent[]; attachments: IssueAttachment[] }
+export interface EmployeeIssueDetail { issue: EmployeeIssue; events: CaseEvent[]; attachments: IssueAttachment[];
+  /** HR: what the Developer Team told the reporter about the escalated issue (status changes, replies), never internal comments */
+  escalationHistory?: DevBugHistoryEntry[]; duplicate?: boolean }
 export interface EmployeeIssueList { items: EmployeeIssue[]; total: number; limit: number; offset: number }
-export interface EmployeeIssueOverview { total: number; new: number; inProgress: number; awaiting: number; resolved: number; closed: number; urgent: number }
+export interface EmployeeIssueOverview { total: number; new: number; inProgress: number; awaiting: number; resolved: number; closed: number; urgent: number; escalated?: number }
 export interface HrAssignee { id: string; name: string; designation: string }
 export interface CaseDepartment { id: string; name: string }
 export interface IssueUploadTicket {
@@ -5867,6 +5894,18 @@ export interface CeoPresence {
 /** What Exit Meeting scheduled. */
 export interface CeoAutoScheduled { id: string; title: string; startsAt: string; endsAt: string; requestedStartsAt: string; moved: boolean; requestedBy: string | null }
 export interface CeoPresenceExit extends CeoPresence { scheduled: CeoAutoScheduled[] }
+/** CEO office arrival (20270128000300): HR marks it once a day; it only drives the banner on "Ask the CEO for time", never the requests. */
+export interface CeoOfficeCeo {
+  ceoId: string; name: string; position: string | null; arrived: boolean; arrivedAt: string | null; markedBy: string | null; presence: 'AVAILABLE' | 'BUSY';
+  // CEO Availability (20270201000100): today's status and the latest status update (the time and the person); optional so an older database still works
+  status?: 'ARRIVED' | 'NOT_ARRIVED';
+  updatedAt?: string | null;
+  updatedStatus?: 'ARRIVED' | 'NOT_ARRIVED' | null;
+  updatedBy?: string | null;
+  /** False when the latest update is from an earlier day (today has no update yet). */
+  updatedToday?: boolean;
+}
+export interface CeoOfficeStatus { day: string; canMark: boolean; ceos: CeoOfficeCeo[]; duplicate?: boolean }
 
 export interface MeetingSettings {
   timezone: string;
@@ -6035,6 +6074,13 @@ export const AI_DESIGN_STUDIO_SLUG = 'ai-design-studio';
 export const AMUWA_DESIGN_STUDIO_SLUG = 'designstudio';
 /** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
 export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AI_DESIGN_STUDIO_SLUG, AMUWA_DESIGN_STUDIO_SLUG];
+
+// ---- International and Reseller (migration 20270127000100): Sales AND Support in one dashboard for every role ----
+/**
+ * The departments flagged unified_sales_support in the database. Used by the forms only, to offer the plain roles (Department Head, Team Lead, Team Member),
+ * the department's one team and no Sales / Support side; the database decides who may do what (the flag, private.dept_is_unified).
+ */
+export const UNIFIED_DEPARTMENT_SLUGS: readonly string[] = ['international', 'reseller'];
 
 export const ADS_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export type AdsPriority = (typeof ADS_PRIORITIES)[number];
@@ -6699,32 +6745,45 @@ export interface MeetingMail {
 // ---------------------------------------------------------------------------
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
-export type DevBugStatus = 'PENDING' | 'IN_PROGRESS' | 'RESOLVED' | 'REJECTED';
+export type DevBugStatus = 'PENDING' | 'UNDER_REVIEW' | 'IN_PROGRESS' | 'NEEDS_INFO' | 'RESOLVED' | 'REJECTED' | 'CLOSED';
+/** Issue routing (20270128000200): EMPLOYEE (an employee reported it), HR_REPORT (HR reported it), HR_ESCALATION (HR escalated an employee issue) */
+export type DevBugSource = 'EMPLOYEE' | 'HR_REPORT' | 'HR_ESCALATION';
+export type DevIssueCategory = 'BUG' | 'FEATURE_REQUEST' | 'ACCESS_LOGIN' | 'DATA_ISSUE' | 'PERFORMANCE' | 'OTHER';
+export type DevIssuePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export interface DevBugRouting {
+  category?: DevIssueCategory; priority?: DevIssuePriority; source?: DevBugSource; sourceIssueReference?: string | null;
+  affectedDepartment?: string | null; affectedEmployee?: string | null;
+}
 export type DevBugAssignmentStatus = 'UNASSIGNED' | 'ASSIGNED';
-export interface DevBugRow {
+export interface DevBugRow extends DevBugRouting {
   id: string; reference: string; title: string; status: DevBugStatus; reporterName: string; department: string | null; designation: string | null;
   assigneeId: string | null; assigneeName: string | null; attachmentCount: number; createdAt: string; updatedAt: string; resolvedAt: string | null;
   /** UNASSIGNED: every developer sees it; ASSIGNED: the Team Lead and the assigned developer only (20270122000400) */
   assignmentStatus: DevBugAssignmentStatus; assignedByName: string | null; assignedAt: string | null;
   /** the reporter's own list carries the resolution note */
   resolutionNote?: string | null;
+  /** the last message of the conversation between the reporter and the developers */
+  lastMessage?: { from: 'REPORTER' | 'DEVELOPER'; note: string | null; by: string | null; at: string } | null;
 }
-export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; at: string }
-export interface DevBug {
+export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT' | 'MESSAGE'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; at: string }
+export interface DevBug extends DevBugRouting {
+  sourceIssueId?: string | null; affectedDepartmentId?: string | null; affectedEmployeeId?: string | null;
   id: string; reference: string; title: string; description: string; steps: string | null; status: DevBugStatus;
   reporterId: string; reporterName: string; department: string | null; designation: string | null;
   assigneeId: string | null; assigneeName: string | null; resolutionNote: string | null; resolvedAt: string | null; createdAt: string; updatedAt: string;
   assignmentStatus: DevBugAssignmentStatus; assignedById: string | null; assignedByName: string | null; assignedAt: string | null;
   /** the assignment history (the team only; empty for the reporter) */
   assignments: { to: string | null; by: string | null; at: string }[];
-  attachments: { id: string; name: string; mime: string; size: number }[];
+  /** fromIssue: a file of the escalated employee issue (referenced, not copied) */
+  attachments: { id: string; name: string; mime: string; size: number; fromIssue?: boolean }[];
   /** internal comments only for the developers */
   history: DevBugHistoryEntry[];
   duplicate?: boolean;
 }
 export interface DevBugList {
   total: number;
-  counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number };
+  counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number;
+    UNDER_REVIEW?: number; NEEDS_INFO?: number; CLOSED?: number; OPEN?: number };
   /** the Team Lead sees every bug; a developer the unassigned ones and their own */
   isLead: boolean;
   /** the lead's view of the team's workload */
@@ -7018,3 +7077,146 @@ export interface NotificationHealthDetail {
 }
 /** A test notification: `sent` = devices whose push service accepted it. */
 export interface NotificationTestResult { devices: number; sent: number; retry: number; failed: number; gone: number; pushConfigured: boolean }
+
+// ---------------------------------------------------------------------------
+// Email Management (migration 20270201000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
+// e-mail; DELIVERY_CONFIRMED needs the provider's own delivery event.
+// ---------------------------------------------------------------------------
+export type EmailProviderName = 'resend' | 'ses' | 'smtp' | 'brevo';
+export interface EmailSettings {
+  providerOrder: ('resend' | 'ses' | 'smtp')[] | null;
+  quotaThresholds: number[];
+  resendDailyLimit: number;
+  resendMonthlyLimit: number;
+  sesDailyLimit: number | null;
+  criticalReserve: number;
+  maxAutoRecipients: number;
+  allowedSenderDomains: string[];
+  updatedAt?: string;
+}
+export interface EmailSender { category: string; fromEmail: string; fromName: string; replyTo: string | null; enabled: boolean; updatedAt?: string }
+export interface EmailRule {
+  id: string; name: string; category: string; application: string | null; departmentId: string | null; workflow: string | null;
+  mode: 'CC' | 'BCC'; target: string; profileIds: string[]; addresses: string[]; excludeProfileIds: string[]; priority: number; enabled: boolean;
+  effectiveFrom: string | null; effectiveTo: string | null; updatedAt?: string;
+}
+export interface EmailProviderState {
+  provider: 'resend' | 'ses' | 'smtp';
+  pausedUntil: string | null; pauseReason: string | null; lastSuccessAt: string | null; lastErrorAt: string | null; lastErrorCategory: string | null;
+  reportedDaily: string | null; reportedMonthly: string | null; reportedAt: string | null; usedToday: number; usedMonth: number;
+}
+export interface EmailDiagnostics {
+  route: EmailProviderName[]; intended: EmailProviderName | null; excluded: { provider: EmailProviderName; reason: string }[]; fallback: boolean;
+  sesProductionEnabled: boolean; configured: Record<'resend' | 'ses' | 'smtp', boolean>; sesRegion: string | null; sesRegionExplicit: boolean;
+  sesConfigurationSet: boolean; smtpHost: string | null; fromEmail: string; replyTo: string; globalCc: number; globalBcc: number;
+  resendWebhookSecret: boolean; orderFromEnv: string | null;
+}
+export interface EmailOverview {
+  settings: EmailSettings;
+  today: { submitted: number; accepted: number; deliveryConfirmed: number; failed: number; bounced: number; complained: number; unknown: number;
+           suppressed: number; retryPending: number; processing: number; fallbacks: number };
+  providers: EmailProviderState[];
+  senders: EmailSender[];
+  rules: EmailRule[];
+  suppressions: number;
+  webhookEvents24h: number;
+  lastWebhookAt: string | null;
+  diagnostics: EmailDiagnostics;
+}
+export interface EmailProviderCheck { provider: 'resend' | 'ses' | 'smtp'; ok: boolean; checkedAt: string; summary: string; details: Record<string, unknown> }
+export interface EmailHistoryItem {
+  id: string; application: string; category: string; template: string | null; priority: string; sender: string | null; recipient: string;
+  cc: string[]; bccCount: number; bcc: string[] | null; status: string; provider: EmailProviderName | null; fallbackUsed: boolean; attempts: number;
+  errorCategory: string | null; customerId: string | null; applicationId: string | null; createdAt: string; acceptedAt: string | null;
+  deliveredAt: string | null; bouncedAt: string | null; complainedAt: string | null;
+}
+export interface EmailHistoryPage { total: number; items: EmailHistoryItem[] }
+export interface EmailHistoryDetail {
+  attempts: { provider: string; outcome: string; errorCategory: string | null; statusCode: number | null; ms: number | null; at: string }[];
+  events: { type: string; bounceType: string | null; at: string }[];
+}
+export interface EmailSuppression { email: string; active: boolean; reason: string; source: string; note: string | null; updatedAt: string }
+export interface EmailRulePreview { rule: string; recipients: { mode: 'CC' | 'BCC'; email: string; name: string | null }[] }
+
+// ---------------------------------------------------------------------------
+// Company Notice Board (migration 20270131000200)
+// ---------------------------------------------------------------------------
+export type NoticeCategory = 'GENERAL' | 'HR' | 'POLICY' | 'EVENT' | 'HOLIDAY' | 'IT_SYSTEM' | 'OPERATIONS' | 'OTHER';
+export type NoticePriority = 'NORMAL' | 'IMPORTANT' | 'URGENT';
+export type NoticeAudienceType = 'COMPANY' | 'DEPARTMENT' | 'ROLE' | 'EMPLOYEES';
+/** SUPER_ADMIN / HR / DEVELOPER: any audience; OPERATIONS_HEAD: only the departments they own */
+/** 20270202000100: SUPER_ADMIN, HR and CRM_TEAM (Ashish, Shreya, Siddhesh by profile id) publish; the earlier OPERATIONS_HEAD / DEVELOPER only mark old notices. */
+export type NoticePublisherRole = 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'HR' | 'DEVELOPER' | 'CRM_TEAM';
+export interface CompanyNotice {
+  id: string; reference: string; title: string; body: string; category: NoticeCategory; priority: NoticePriority;
+  status: 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED'; expired: boolean; publishAt: string; expiresAt: string | null; releasedAt: string | null; updatedAt: string; version: number;
+  publisherId: string; publisherName: string | null; publisherRole: NoticePublisherRole;
+  audience: { type: NoticeAudienceType; departments: string[]; roles: string[]; employees: string[]; departmentNames: string[] };
+  isRecipient: boolean; read: boolean; readAt: string | null; canManage: boolean; recipientCount: number; readCount: number;
+  /** 20270202000100: the person's own acknowledgement, and (managers only; 0 for everybody else) how many acknowledged */
+  acknowledged: boolean; acknowledgedAt: string | null; acknowledgedCount: number;
+  attachments: { id: string; name: string; mime: string; size: number }[];
+  /** the publisher's / Super Admin's view of an opened notice: every version */
+  history?: { version: number; action: 'PUBLISHED' | 'EDITED' | 'ARCHIVED'; by: string | null; at: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null }[];
+  duplicate?: boolean; notified?: number;
+}
+export interface NoticeList { items: CompanyNotice[]; total: number; unread: number; publisherRole: NoticePublisherRole | null }
+export interface NoticeReceipts {
+  noticeId: string; status: CompanyNotice['status']; total: number; read: number; unread: number;
+  acknowledged: number; notAcknowledged: number; readPercent: number; acknowledgedPercent: number; version: number;
+  push: { devices: number; accepted: number; pending: number; failed: number; cancelled: number };
+  rows: { profileId: string; name: string; department: string | null; notifiedAt: string | null; readAt: string | null; acknowledgedAt: string | null; acknowledgedVersion: number | null }[];
+}
+/** 20270202000100: the popup queue (Urgent first, then Important, then Normal; the oldest first inside a priority), the acknowledgement, and the CRM team's access */
+export interface NoticePending { pending: number; items: CompanyNotice[] }
+export interface NoticeAcknowledged { noticeId: string; acknowledged: boolean; acknowledgedAt: string | null; pending: number }
+export interface NoticeManagers {
+  managers: { profileId: string; name: string; email: string | null; status: string; department: string | null; since: string }[];
+  candidates: { profileId: string; name: string; role: string; department: string | null }[];
+}
+export interface NoticeAudienceOptions {
+  canPublish: boolean; role: NoticePublisherRole | null; audiences: NoticeAudienceType[];
+  departments: { id: string; name: string }[]; roles: { id: string; label: string }[];
+  employees: { id: string; name: string; role: string; department: string | null; departmentId: string | null }[];
+}
+
+// ---------------------------------------------------------------------------
+// HR Awards (20270203000100): Award Management > Awards
+// ---------------------------------------------------------------------------
+export type HrAwardCode = 'PROFESSIONALISM_EXCELLENCE' | 'RISING_STAR' | 'PLAYER' | 'EMERGING_LEADER' | 'DEPARTMENT' | 'TEAM' | 'BUSINESS_ICON';
+export type HrAwardNomineeType = 'INDIVIDUAL' | 'TEAM' | 'DEPARTMENT';
+/** NO_NOMINEES: nothing yet; NOMINATIONS_OPEN: nominees, no winner yet; WINNERS_DECLARED: at least one winner */
+export type HrAwardStatus = 'NO_NOMINEES' | 'NOMINATIONS_OPEN' | 'WINNERS_DECLARED';
+export interface HrAwardCard {
+  code: HrAwardCode; name: string; description: string | null; nomineeType: HrAwardNomineeType;
+  periodId: string | null; nominees: number; winners: number; status: HrAwardStatus; winnerNames: string[];
+}
+export interface HrAwardsOverview {
+  month: string; monthLabel: string; awards: HrAwardCard[];
+  /** the months that have award records, newest first */
+  history: { month: string; monthLabel: string; nominees: number; winners: number }[];
+}
+export interface HrAwardNominee {
+  id: string; periodId: string; nomineeType: HrAwardNomineeType; entityId: string;
+  profileId: string | null; teamId: string | null; departmentId: string | null;
+  name: string; departmentName: string | null; teamName: string | null; designation: string | null;
+  reason: string; remarks: string | null; status: 'NOMINATED' | 'WINNER';
+  nominatedAt: string; nominatedBy: string | null; updatedAt: string; updatedBy: string | null;
+}
+export interface HrAwardWinner {
+  id: string; periodId: string; nomineeId: string; name: string; nomineeType: HrAwardNomineeType;
+  departmentName: string | null; teamName: string | null; designation: string | null; remarks: string | null;
+  declaredAt: string; declaredBy: string | null; updatedAt: string;
+  revokedAt: string | null; revokedBy: string | null; revokeReason: string | null;
+}
+export interface HrAwardDetail {
+  award: { code: HrAwardCode; name: string; description: string | null; nomineeType: HrAwardNomineeType };
+  month: string; monthLabel: string; periodId: string | null;
+  totalNominees: number; totalWinners: number; status: HrAwardStatus;
+  nominees: HrAwardNominee[]; winners: HrAwardWinner[]; revokedWinners: HrAwardWinner[]; removedNominees: number;
+}
+export interface HrAwardOptions {
+  employees: { id: string; name: string; departmentId: string | null; departmentName: string | null; teamId: string | null; teamName: string | null; designation: string | null }[];
+  teams: { id: string; name: string; departmentId: string; departmentName: string; members: number }[];
+  departments: { id: string; name: string; members: number }[];
+}

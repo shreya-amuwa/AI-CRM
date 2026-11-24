@@ -33,6 +33,8 @@ import { CustomerService } from './CustomerService.js';
 import { HrService } from './HrService.js';
 import { GeneratedInvoiceService } from './GeneratedInvoiceService.js';
 import { NotificationService } from './NotificationService.js';
+import { EmailAdminService } from './EmailAdminService.js';
+import { EmailAdminRepository } from '../repositories/EmailAdminRepository.js';
 import { NotificationHealthService } from './NotificationHealthService.js';
 import { NotificationHealthRepository } from '../repositories/NotificationHealthRepository.js';
 import { OrganizationService } from './OrganizationService.js';
@@ -53,6 +55,10 @@ import { TicketAttachmentService } from './TicketAttachmentService.js';
 import { EmployeeCaseService } from './EmployeeCaseService.js';
 import { BugService } from './BugService.js';
 import { BugRepository } from '../repositories/BugRepository.js';
+import { NoticeService } from './NoticeService.js';
+import { NoticeRepository } from '../repositories/NoticeRepository.js';
+import { HrAwardService } from './HrAwardService.js';
+import { HrAwardRepository } from '../repositories/HrAwardRepository.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
 import { WorkReportService } from './WorkReportService.js';
@@ -112,6 +118,7 @@ export function createServices(db: SupabaseClient) {
     customers: new CustomerService(new CustomerRepository(db)),
     approvals: new ApprovalService(new ApprovalRepository(db)),
     notifications: new NotificationService(new NotificationRepository(db)),
+    emailAdmin: new EmailAdminService(new EmailAdminRepository(db)),
     notificationHealth: new NotificationHealthService(new NotificationHealthRepository(db)),
     organization: new OrganizationService(new OrganizationRepository(db)),
     audit: new AuditService(new AuditRepository(db)),
@@ -129,6 +136,8 @@ export function createServices(db: SupabaseClient) {
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     meetings: new MeetingService(new MeetingRepository(db)),
     bugs: new BugService(new BugRepository(db)),
+    notices: new NoticeService(new NoticeRepository(db)),
+    hrAwards: new HrAwardService(new HrAwardRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),

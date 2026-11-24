@@ -1,5 +1,5 @@
 -- =============================================================================
--- Crocodial (migration 20270127000100): what each server sees of the token, and the scoped "Refresh" of every Sales role.
+-- Crocodial (migration 20270204000100): what each server sees of the token, and the scoped "Refresh" of every Sales role.
 -- Who may refresh whom is who may see whom: the person (only with an approved mapping), their own Team Lead (not another Team Lead, not
 -- merely the same department), a Department Head / Operations Head whose SALES scope covers the department (not a Support-only scope, not
 -- an unassigned department; a removed scope stops it at once), the Super Admin. Forged scopes, suspended accounts, revoked mappings and a
@@ -10,8 +10,8 @@
 \set QUIET 1
 \echo '--- 145. Crocodial: connection health per server, and the scoped refresh'
 reset role;
-\i supabase/migrations/20270127000100_crocodial_scoped_refresh.sql
-\i supabase/migrations/20270127000100_crocodial_scoped_refresh.sql
+\i supabase/migrations/20270204000100_crocodial_scoped_refresh.sql
+\i supabase/migrations/20270204000100_crocodial_scoped_refresh.sql
 
 delete from crocodial_connections where credential_ref like 'CROCODIAL_TOKEN_REFTEST%';
 delete from crocodial_refresh_requests;

@@ -142,13 +142,15 @@ const OwnerLine: React.FC<{ ticket: SupportTicket; people: Person[] }> = ({ tick
       </span>
     );
   }
-  const name = personName(people, owner);
+  const name = owner === t.assigneeId && t.assigneeName ? t.assigneeName : personName(people, owner);
+  const handling = t.handlingBy && t.handlingAt && Date.now() - new Date(t.handlingAt).getTime() < 15 * 60 * 1000 && t.handlingBy !== owner ? (t.handlerName || personName(people, t.handlingBy)) : '';
   return (
     <span className="flex items-center gap-1.5 text-xs font-medium text-blue-800 min-w-0">
       <Avatar name={name} />
       <span className="truncate">
         {name}
         {t.escalationLevel !== 'RM' ? ` (${TICKET_LEVEL_LABELS[t.escalationLevel]})` : ''} is working on this
+        {handling ? ` · ${handling} is handling it now` : ''}
       </span>
     </span>
   );
@@ -449,7 +451,7 @@ function buildEntries(ticket: SupportTicket, history: TicketUpdateRow[], people:
       day = d;
       out.push({ type: 'day', id: `d-${u.id}`, label: dayLabel(u.createdAt) });
     }
-    const who = personName(people, u.authorId);
+    const who = u.authorName || personName(people, u.authorId);
     if (u.clientAuthor && (u.kind === 'CLIENT_REPLY' || u.kind === 'CREATED') && u.note) {
       out.push({ type: 'msg', id: u.id, side: 'customer', name: ticket.customerName, role: 'Customer', text: u.note, at: u.createdAt, mine: false });
     } else if (u.kind === 'NOTE' && u.note) {
@@ -551,7 +553,12 @@ export const TicketPane: React.FC<{
   const me = profile?.id;
   const role = profile?.role;
   const managerRole = role === 'TEAM_HEAD' || role === 'DEPARTMENT_HEAD' || role === 'SUPER_ADMIN';
-  const canAct = !readOnly && (managerRole || ticket.assigneeId === me || ticket.escalatedTo === me);
+  // A ticket from the shared Support desk (20270129000100) says whether this person may MANAGE it (status, priority, assignment, escalation); anyone on the desk may reply
+  const canAct = !readOnly && (ticket.manageable !== undefined ? ticket.manageable : managerRole || ticket.assigneeId === me || ticket.escalatedTo === me);
+  const canReply = canAct || (!readOnly && !!ticket.viaDesk);
+  const handlerLabel = ticket.handlerName || (ticket.handlingBy ? personName(people, ticket.handlingBy) : '');
+  const handlerActive = !!ticket.handlingBy && !!ticket.handlingAt && Date.now() - new Date(ticket.handlingAt).getTime() < 15 * 60 * 1000;
+  const iAmHandling = handlerActive && ticket.handlingBy === me;
   const open = isTicketOpen(ticket.status);
   const customerConversation = !ticket.createdBy;
   const history = useMemo(() => data.updates.filter(u => u.ticketId === ticket.id), [data.updates, ticket.id]);
@@ -768,7 +775,19 @@ export const TicketPane: React.FC<{
 
         <div className={`${details ? 'flex' : 'hidden'} lg:flex flex-wrap items-center gap-2`}>
           {(team || teams) && <Chip>{team || 'No team yet'}</Chip>}
-          <Chip tone={ticket.assigneeId ? 'grey' : 'amber'}>{ticket.assigneeId ? `RM: ${personName(people, ticket.assigneeId)}` : 'Unassigned'}</Chip>
+          <Chip tone={ticket.assigneeId ? 'grey' : 'amber'}>{ticket.assigneeId ? `RM: ${ticket.assigneeName || personName(people, ticket.assigneeId)}` : 'Unassigned'}</Chip>
+          {handlerActive && <Chip tone="grey">Handling: {iAmHandling ? 'you' : handlerLabel || 'a colleague'}</Chip>}
+          {canReply && open && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void run(() => ticketApi.setHandling(ticket.id, iAmHandling ? 'RELEASE' : 'TAKE'), iAmHandling ? 'Released.' : 'You are marked as handling this ticket.')}
+              className="text-xs font-semibold text-blue-800 hover:underline disabled:opacity-50"
+            >
+              {iAmHandling ? 'Release' : handlerActive ? 'Take over' : 'I am handling this'}
+            </button>
+          )}
+          {ticket.viaDesk && !canAct && <Chip tone="grey">Covering: you can reply and add notes; the RM manages the ticket</Chip>}
           {open && owner && ticket.escalationLevel !== 'RM' && <Chip tone="rose">With {TICKET_LEVEL_LABELS[ticket.escalationLevel]}: {personName(people, owner)}</Chip>}
           <label className="sr-only" htmlFor="tp-priority">
             Priority
@@ -1076,7 +1095,7 @@ export const TicketPane: React.FC<{
         </div>
       )}
 
-      {canAct ? (
+      {canReply ? (
         ticket.status === 'CLOSED' && !internal ? (
           <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500 flex items-center justify-between gap-2">
             This ticket is closed. Reopen it to reply to the customer.

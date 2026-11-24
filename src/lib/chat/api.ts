@@ -1,7 +1,7 @@
 import type { ChatReceipt, ClientSupportGroup } from '../../../shared/contracts';
 import type {
   ChatAttachment, ChatChannel, ChatClientView, ChatConversation, ChatDeleteResult, ChatDirectoryPerson, ChatE2eeWrap, ChatKeyBackup, ChatKeyBackupBlob, ChatKeyStatus, ChatMemberKey, ChatMessage,
-  ChatMessagePage, ChatMyClient, ChatPublicKey, ChatReviewList, ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl,
+  ChatMessagePage, ChatMyClient, ChatDeskClient, ChatHandler, ChatPublicKey, ChatReviewList, ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl,
   ChatInboxDeleteResult, ChatReaction, ChatReactResult
 } from '../../../shared/contracts';
 import { api } from '../api/client';
@@ -131,6 +131,10 @@ export const chatKeysApi = {
 export const chatApi = {
   internal: (q?: string) => api.get<ChatConversation[]>('/chat/internal', { q }),
   myClients: (q?: string) => api.get<ChatMyClient[]>('/chat/my-clients', { q }),
+  /** The shared Support desk (20270129000100): the department's client conversations for Support employees covering for a colleague. */
+  deskClients: (q?: string) => api.get<ChatDeskClient[]>('/chat/desk-clients', { q }),
+  /** Take over or release "currently handling" on a client conversation (information only; the Relationship Manager is never changed). */
+  setHandling: (conversationId: string, action: 'TAKE' | 'RELEASE') => api.post<ChatHandler | null>(`/chat/conversations/${conversationId}/handling`, { action }),
   /** The customer's support group (20261230000500): who is in it, and (for the Team Lead / Department Head) who can be added. */
   supportGroup: (customerId: string) => api.get<ClientSupportGroup>(`/chat/customers/${customerId}/support-group`),
   saveSupportGroup: (customerId: string, b: { name?: string | null; add?: string[]; remove?: string[] }) => api.post<ClientSupportGroup>(`/chat/customers/${customerId}/support-group`, b),
