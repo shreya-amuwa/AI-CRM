@@ -5,6 +5,7 @@ import type { HrDocType } from '../../../../shared/contracts';
 import { fetchHrDirectory } from '../../../lib/hrDirectory';
 import { HrDocumentStudio } from './HrDocumentStudio';
 import { LetterTemplateManager } from './LetterTemplateManager';
+import { OfferLetterWorkspace } from '../../hr/offers/OfferLetterWorkspace';
 import { HrPageHeader, hrCard } from '../../hr/hrUi';
 
 /**
@@ -69,7 +70,7 @@ export const HrLettersPage: React.FC<Props> = ({ initialType = 'OFFER', employee
         </div>} />
       </div>
 
-      {type !== 'NDA' && (
+      {type === 'EXPERIENCE' && (
         <div role="group" aria-label={`${current.label} view`} className="flex gap-1.5 text-xs font-semibold">
           {(['generate', 'template'] as View[]).map(v => (
             <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
@@ -85,7 +86,10 @@ export const HrLettersPage: React.FC<Props> = ({ initialType = 'OFFER', employee
 
       {toast && <div role="status" className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">{toast}</div>}
 
-      {view === 'template' && type !== 'NDA'
+      {type === 'OFFER'
+        // the role-based Offer Letter (one template per designation, 20270206000100): its own Generate / Templates views
+        ? <OfferLetterWorkspace employees={employees ?? undefined} onToast={notify} />
+        : view === 'template' && type !== 'NDA'
         ? <LetterTemplateManager key={type} type={type} onSuccessToast={notify} />
         : loadError
         ? (

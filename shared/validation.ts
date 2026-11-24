@@ -3,6 +3,7 @@
  * feedback). The database enforces the same rules again with constraints.
  */
 import { z } from 'zod';
+import { OFFER_FIELD_KEY, offerTemplateProblems, type OfferTemplateContent } from './offerTemplates.js';
 import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
@@ -2823,7 +2824,8 @@ export const hrDocRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NDA'), employeeKey: hrDocEmployeeKeySchema, fields: hrNdaFieldsSchema }).strict(),
   // the Experience Letter may carry its edited wording and the Offer Letter always does (block "HR letters" below, migration 20261231000700)
   z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrExperienceLetterFieldsSchema) }).strict(),
-  z.object({ type: z.literal('OFFER'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrOfferFieldsSchema) }).strict()
+  // the Offer Letter: a role-based template (20270206000100: the template, its version and the values) or the earlier master template
+  z.object({ type: z.literal('OFFER'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => z.union([hrRoleOfferFieldsSchema, hrOfferFieldsSchema])) }).strict()
 ]);
 export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema.optional(), type: hrDocTypeSchema.optional() }).strict();
 
@@ -3819,3 +3821,60 @@ export const awardWinnerRevokeSchema = z.object({
   reason: z.string().trim().min(3, 'Enter the reason for revoking the winner (at least 3 characters).').max(500, 'Keep the reason under 500 characters.')
 }).strict();
 export type AwardNominateInput = z.input<typeof awardNominateSchema>;
+
+// ---------------------------------------------------------------------------
+// Role-based Offer Letter templates (20270206000100): HR > Offer Letter Generation. The shapes are in shared/offerTemplates.ts.
+// ---------------------------------------------------------------------------
+const offerText = (max: number) => z.string().max(max, `Keep each text under ${max} characters.`);
+const offerBlockSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('title'), text: offerText(300).min(1) }).strict(),
+  z.object({ type: z.literal('paragraph'), text: offerText(4000).min(1), align: z.literal('center').optional(), tight: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('heading'), text: offerText(300).min(1), plain: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('bullets'), items: z.array(offerText(2000).min(1)).min(1).max(60) }).strict(),
+  z.object({ type: z.literal('signature'), label: offerText(120).min(1) }).strict(),
+  z.object({ type: z.literal('pageBreak') }).strict()
+]);
+const offerFieldSchema = z.object({
+  key: z.string().regex(OFFER_FIELD_KEY, 'A field key is letters and digits starting with a small letter (for example joiningDate).'),
+  label: z.string().trim().min(1, 'Give each field a label.').max(80),
+  type: z.enum(['text', 'textarea', 'date', 'money', 'select']),
+  required: z.boolean(),
+  default: z.string().max(300).optional(),
+  options: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
+  source: z.enum(['employeeName', 'designation', 'department', 'joiningDate', 'monthlySalary', 'today']).optional(),
+  help: z.string().max(200).optional()
+}).strict();
+export const offerTemplateContentSchema = z.object({
+  dateLine: z.object({ left: offerText(200).optional(), right: offerText(200) }).strict(),
+  blocks: z.array(offerBlockSchema).min(1, 'The letter has no wording.').max(400, 'The letter has too many parts.'),
+  fields: z.array(offerFieldSchema).min(1, 'Add at least one field.').max(40, 'Use at most 40 fields.')
+}).strict().superRefine((c, ctx) => {
+  for (const message of offerTemplateProblems(c as OfferTemplateContent)) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+});
+export const offerLetterheadSchema = z.union([
+  z.object({ builtin: z.enum(['technical-support', 'customer-support', 'business-development', 'sales-executive', 'ai-developer']) }).strict(),
+  z.object({ fileId: uuidSchema }).strict()
+]);
+export const offerTemplateSaveSchema = z.object({
+  designation: z.string().trim().min(2, 'Enter the designation.').max(80, 'Keep the designation under 80 characters.'),
+  description: z.string().trim().max(300).optional().nullable(),
+  content: offerTemplateContentSchema,
+  letterhead: offerLetterheadSchema,
+  sampleFileId: uuidSchema.optional().nullable(),
+  baseVersion: z.number().int().min(0),
+  note: z.string().trim().max(200).optional().nullable()
+}).strict();
+export const OFFER_UPLOAD_MAX_BYTES = 2_500_000;
+export const OFFER_UPLOAD_MIME = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } as const;
+export const offerTemplateFileUploadSchema = z.object({
+  kind: z.enum(['SAMPLE', 'LETTERHEAD']),
+  fileName: z.string().trim().min(1).max(200),
+  mimeType: z.enum([OFFER_UPLOAD_MIME.pdf, OFFER_UPLOAD_MIME.docx], { errorMap: () => ({ message: 'Upload a PDF or a Word (.docx) file.' }) }),
+  dataBase64: z.string().min(8).max(Math.ceil(OFFER_UPLOAD_MAX_BYTES / 3) * 4 + 8, 'The file must be at most 2.5 MB.').regex(/^[A-Za-z0-9+/]+=*$/, 'The file could not be read.')
+}).strict().refine(v => v.kind !== 'LETTERHEAD' || v.mimeType === OFFER_UPLOAD_MIME.pdf, { message: 'A letterhead must be a PDF.', path: ['mimeType'] });
+export const hrRoleOfferFieldsSchema = z.object({
+  offerTemplateId: uuidSchema,
+  templateVersion: z.number().int().min(1),
+  values: z.record(z.string().regex(OFFER_FIELD_KEY), z.string().max(2000)).refine(v => Object.keys(v).length <= 40, 'Too many values.')
+}).strict();
+export const offerTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);

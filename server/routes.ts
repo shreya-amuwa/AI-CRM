@@ -897,6 +897,16 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/hr/letter-templates/:type', handler: hrDocs.templateState },
   { method: 'GET', path: '/hr/letter-templates/:type/versions/:version', handler: hrDocs.templateVersion },
   { method: 'POST', path: '/hr/letter-templates/:type', handler: hrDocs.saveTemplate, options: S },
+  // Role-based Offer Letter templates (20270206000100): HR staff read and generate; the Super Admin / HR Admin Head add, replace and upload
+  { method: 'GET', path: '/hr/offer-templates', handler: hrDocs.offerTemplates },
+  { method: 'GET', path: '/hr/offer-templates/letterheads', handler: hrDocs.offerLetterheads },
+  { method: 'POST', path: '/hr/offer-templates/preview', handler: hrDocs.previewOfferTemplate },
+  { method: 'POST', path: '/hr/offer-templates/files', handler: hrDocs.uploadOfferTemplateFile, options: S },
+  { method: 'GET', path: '/hr/offer-templates/files/:id/url', handler: hrDocs.offerTemplateFileUrl },
+  { method: 'POST', path: '/hr/offer-templates', handler: hrDocs.createOfferTemplate, options: S },
+  { method: 'GET', path: '/hr/offer-templates/:id', handler: hrDocs.offerTemplateHistory },
+  { method: 'GET', path: '/hr/offer-templates/:id/versions/:version', handler: hrDocs.offerTemplateVersion },
+  { method: 'POST', path: '/hr/offer-templates/:id', handler: hrDocs.saveOfferTemplate, options: S },
 
   { method: 'GET', path: '/audit-logs', handler: audit.list },
   // Security & Audit Logs viewer (read-only; scoped by the table's row-level security) and the record of browser-side exports
