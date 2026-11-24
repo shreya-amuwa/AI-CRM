@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3, CalendarDays } from 'lucide-react';
+import { LayoutDashboard, Users, GraduationCap, Settings, ArrowLeft, Radio, Palette, MessageSquare, Database, Bot, Send, ShoppingBag, ShoppingCart, MessageCircle, UserCheck, PhoneCall, PhoneForwarded, QrCode, BarChart3, Briefcase, ShieldCheck, Headphones, Target, Globe, FileSpreadsheet, Zap, Code, Share2, Phone, UserPlus, Bot as RobotIcon, Building2, HelpCircle, Bell, Edit3, BookOpen, DollarSign, Handshake, Filter, Award, FileText, LifeBuoy, AlertCircle, Clock, CheckCircle2, GitFork, Navigation, TrendingUp, Receipt, Wallet, Megaphone, MessageSquareWarning, CalendarClock, ClipboardCheck, MapPin, Clock3, CalendarDays, Crown } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { SalesLeadsSubNav } from '../departments/wabastore/superadmin/SalesLeadsSubNav';
@@ -94,6 +94,7 @@ export type ActiveTab =
   | 'my_attendance'
   | 'my_meetings'
   | 'my_notices'
+  | 'hr_ceo_availability'
   | 'business_reports'
   | 'chat'
   | 'notifications';
@@ -380,15 +381,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Attendance (Punch In / Out, lunch) is the first entry of every department's menu, as in every other dashboard
   const navItems: typeof departmentNav = [{ id: 'my_attendance' as ActiveTab, label: 'Attendance', icon: Clock3 }, { id: 'my_meetings' as ActiveTab, label: 'Meetings', icon: CalendarDays },
     // Notice Board (20270131000200): every employee reads; publishers also send
-    { id: 'my_notices' as ActiveTab, label: 'Notice Board', icon: Megaphone }, ...withChat];
+    { id: 'my_notices' as ActiveTab, label: 'Notice Board', icon: Megaphone },
+    // CEO Availability (20270201000100): in every HR dashboard, immediately below the Notice Board
+    ...(key === 'hr' ? [{ id: 'hr_ceo_availability' as ActiveTab, label: 'CEO Availability', icon: Crown }] : []), ...withChat];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
   const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
   const LETTER_IDS: string[] = key === 'hr' ? HR_LETTER_NAV.map(i => i.id) : [];
+  // Attendance, Meetings, Notice Board (and CEO Availability in HR) form the unlabelled top section
+  const topCount = key === 'hr' ? 4 : 3;
   const navSections = groupNavItems(navItems, [
-    { ids: navItems.slice(0, 3).map(i => i.id) },
-    { label: 'Work', ids: navItems.slice(3).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
+    { ids: navItems.slice(0, topCount).map(i => i.id) },
+    { label: 'Work', ids: navItems.slice(topCount).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },
     ...(LETTER_IDS.length ? [{ label: 'Employee Letters', ids: LETTER_IDS }] : []),
     { label: 'Team', ids: TEAM_IDS.filter(id => !COMMUNICATION_IDS.includes(id) && navItems.some(i => i.id === id)) },
     ...(COMMUNICATION_IDS.length ? [{ label: 'Communication', ids: COMMUNICATION_IDS.filter(id => navItems.some(i => i.id === id)) }] : [])

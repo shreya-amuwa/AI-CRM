@@ -39,6 +39,7 @@ export class MeetingRepository {
   ceoPresence() { return this.rpc<CeoPresence[]>('mtg_ceo_presence'); }
   ceoOffice() { return this.rpc<CeoOfficeStatus>('ceo_office_status'); }
   ceoArrived(ceoId?: string) { return this.rpc<CeoOfficeStatus>('ceo_mark_arrived', { p_ceo: ceoId ?? null }); }
+  ceoNotArrived(ceoId?: string) { return this.rpc<CeoOfficeStatus>('ceo_mark_not_arrived', { p_ceo: ceoId ?? null }); }
   ceoArrivalUndo(ceoId?: string) { return this.rpc<CeoOfficeStatus>('ceo_mark_arrival_undo', { p_ceo: ceoId ?? null }); }
   roomLink() { return this.rpc<{ roomLink: string | null }>('mtg_room_link'); }
   setRoomLink(link: string | null) { return this.rpc<{ roomLink: string | null }>('mtg_room_link_set', { p_link: link }); }

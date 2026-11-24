@@ -49,6 +49,7 @@ export const meetingsApi = {
   ceoPresence: () => api.get<CeoPresence[]>('/meetings/presence/ceo'),
   ceoOffice: () => api.get<CeoOfficeStatus>('/meetings/ceo-office'),
   ceoArrived: (ceoId?: string) => api.post<CeoOfficeStatus>('/meetings/ceo-office/arrived', ceoId ? { ceoId } : {}),
+  ceoNotArrived: (ceoId?: string) => api.post<CeoOfficeStatus>('/meetings/ceo-office/not-arrived', ceoId ? { ceoId } : {}),
   ceoArrivalUndo: (ceoId?: string) => api.post<CeoOfficeStatus>('/meetings/ceo-office/undo', ceoId ? { ceoId } : {}),
   roomLink: () => api.get<{ roomLink: string | null }>('/meetings/settings/room-link'),
   setRoomLink: (roomLink: string | null) => api.post<{ roomLink: string | null }>('/meetings/settings/room-link', { roomLink }),

@@ -207,6 +207,7 @@ export const meetingsController = {
   ceoPresence: (async ctx => ok(await svc(ctx).meetings.ceoPresence())) as Handler,
   ceoOffice: (async ctx => ok(await svc(ctx).meetings.ceoOffice())) as Handler,
   ceoArrived: (async ctx => ok(await svc(ctx).meetings.ceoArrived(ctx.req.body))) as Handler,
+  ceoNotArrived: (async ctx => ok(await svc(ctx).meetings.ceoNotArrived(ctx.req.body))) as Handler,
   ceoArrivalUndo: (async ctx => ok(await svc(ctx).meetings.ceoArrivalUndo(ctx.req.body))) as Handler,
   roomLink: (async ctx => ok(await svc(ctx).meetings.roomLink())) as Handler,
   setRoomLink: (async ctx => ok(await svc(ctx).meetings.setRoomLink(ctx.req.body))) as Handler,

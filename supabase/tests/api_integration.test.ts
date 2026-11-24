@@ -12417,6 +12417,50 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
   await db.query(`delete from public.notice_board_managers where profile_id = $1`, [devId]);
 }
+// --- CEO Availability (migration 20270201000100): HR sets CEO Arrived / CEO Not Arrived; stored; the same for everyone; never blocks a request ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  const when = (n: number) => new Date(Date.now() + n * 86400e3 + 41 * 60e3).toISOString();
+  const ask = (title: string, days: number) => api('a', 'POST', '/meetings', { title, description: 'Review of the quarterly plan', hostId: saId, startsAt: when(days),
+    endsAt: new Date(new Date(when(days)).getTime() + 30 * 60e3).toISOString(), mode: 'PHONE' });
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.updatedAt === null && r.json.data.canMark === false, 'CEO availability API: nothing recorded: not arrived, no update, no buttons for an employee', r);
+  r = await ask('CVX Not arrived', 31);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: a meeting request is saved while the CEO has not arrived', r);
+  r = await api('a', 'POST', '/meetings/ceo-office/not-arrived', {});
+  check(r.status === 403, 'CEO availability API: an employee cannot press CEO Not Arrived', r);
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO availability API: an employee cannot press CEO Arrived', r);
+  r = await api(null, 'POST', '/meetings/ceo-office/not-arrived', {});
+  check(r.status === 401, 'CEO availability API: not for visitors', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO availability API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.updatedStatus === 'NOT_ARRIVED' && !!ceoOf(r.json.data)?.updatedAt && !!ceoOf(r.json.data)?.updatedBy, 'CEO availability API: HR sets Not Arrived with the time and who', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO availability API: a second press (another HR person) changes nothing', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.status === 'ARRIVED' && ceoOf(r.json.data)?.updatedStatus === 'ARRIVED' && ceoOf(r.json.data)?.updatedToday === true, 'CEO availability API: HR sets Arrived', r);
+  // every dashboard (every role) reads the same latest status, from the database
+  for (const who of ['a', 'tl2', 'hr', 'hrmember', 'hrlead']) {
+    r = await api(who, 'GET', '/meetings/ceo-office');
+    check(r.status === 200 && ceoOf(r.json.data)?.status === 'ARRIVED' && ceoOf(r.json.data)?.updatedBy === ceoOf((await api('hr', 'GET', '/meetings/ceo-office')).json.data)?.updatedBy, `CEO availability API: ${who} reads the same latest status`, r);
+  }
+  r = await ask('CVX Arrived', 32);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: a meeting request is saved while the CEO has arrived', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.arrived === false, 'CEO availability API: Not Arrived after an arrival sets it back', r);
+  r = await ask('CVX Not arrived again', 33);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: Not Arrived never blocks a request', r);
+  r = await api('a', 'GET', '/meetings/ceo-requests?section=ALL');
+  check(r.status === 200 && ['CVX Not arrived', 'CVX Arrived', 'CVX Not arrived again'].every(t => r.json.data.items.some((m: any) => m.title === t && m.createdByName && m.startsAt && m.description)), 'CEO availability API: the requests are saved with who, when and the purpose', r);
+  r = await api('sa', 'GET', '/meetings/ceo-requests?section=ALL');
+  check(r.status === 200 && r.json.data.items.some((m: any) => m.title === 'CVX Arrived' && m.createdByName && m.createdByDepartment), 'CEO availability API: the CEO reviews them with the employee and department', r);
+  await db.query(`delete from public.meetings where title like 'CVX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

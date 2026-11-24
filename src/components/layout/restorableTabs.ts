@@ -83,6 +83,7 @@ const RESTORABLE: Partial<Record<ActiveTab, true>> = {
   hr_letter_experience: true,
   my_attendance: true,
   my_meetings: true,
+  hr_ceo_availability: true,
   business_reports: true,
   chat: true,
   notifications: true
