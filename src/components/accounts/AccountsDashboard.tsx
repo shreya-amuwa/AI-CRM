@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BarChart3, Bell, Building2, Crown, MailCheck, FileText, KeyRound, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
+import { BadgeCheck, BarChart3, Bell, Building2, Crown, MailCheck, FileText, KeyRound, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, PiggyBank, TrendingUp, Wallet, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -23,6 +23,8 @@ import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
 import { PayoutRequests } from './finance/PayoutRequests';
+import { WalletAdmin } from '../wallet/WalletAdmin';
+import { useOpenWalletAdminRequest } from '../wallet/walletEvents';
 import { payoutsApi } from '../../lib/payouts';
 import { CustomerRevenue } from './finance/CustomerRevenue';
 import { FinanceMails } from './finance/FinanceMails';
@@ -33,7 +35,7 @@ import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 
-const ACCOUNTS_PAGES = ['overview', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'payouts', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+const ACCOUNTS_PAGES = ['overview', 'wallet-admin', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'payouts', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
 type Page = (typeof ACCOUNTS_PAGES)[number];
 
 /**
@@ -64,6 +66,7 @@ export const AccountsDashboard: React.FC = () => {
   useEffect(refreshCounts, []);
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
+  useOpenWalletAdminRequest(React.useCallback(() => setPage('wallet-admin'), []));
   const reportsBadge = useReportsBadge();
   useOpenReportsRequest(React.useCallback(() => setPage('work-reports'), []));
   usePipelineRealtime(refreshCounts);
@@ -92,6 +95,8 @@ export const AccountsDashboard: React.FC = () => {
         { id: 'finance-mails', label: 'Finance e-mails', icon: MailCheck },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
         { id: 'payouts', label: 'Payout requests', icon: Wallet, badge: payoutsWaiting },
+        // bonuses, adjustments and refunds for employees' wallets (a second Accounts person approves), and the wallet report (20270206000100)
+        { id: 'wallet-admin', label: 'Wallet credits & report', icon: PiggyBank },
         { id: 'business-reports', label: 'Business Reports', icon: BarChart3 }
       ]
     },
@@ -144,6 +149,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
       {page === 'payouts' && <PayoutRequests key={pageKey} />}
+      {page === 'wallet-admin' && <WalletAdmin title="Wallet credits & report" />}
       {page === 'chat' && <ChatRoute />}
       {page === 'raise-issue' && <IssuesRoute />}
       {page === 'work-reports' && <ReportsRoute />}

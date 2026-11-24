@@ -7,6 +7,7 @@ import { openHrMeetingRequest, openMeeting, openMeetingReport } from '../meeting
 import { openWorkUpdate } from '../tasks/workUpdateEvents';
 import { openBugs } from '../bugs/bugEvents';
 import { openNotice } from '../notices/noticeEvents';
+import { openWallet, openWalletAdmin } from '../wallet/walletEvents';
 
 /** Other screens (a notification) can open the Raise an Issue page on one of the employee's own issues or meeting requests. */
 export const OPEN_ISSUES_EVENT = 'crm:open-issues';
@@ -76,6 +77,9 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.entityType === 'attendance') { openAttendance(); return true; }
   // a company notice (20270131000200): the Notice Board, on that notice
   if (n.entityType === 'company_notice') { openNotice(n.entityId ?? undefined); return true; }
+  // the wallet (20270206000100): an incentive credited, a bonus credited, a withdrawal submitted / approved; a credit waiting for approval opens Accounts' wallet page
+  if (n.entityType === 'wallet') { openWallet(); return true; }
+  if (n.entityType === 'wallet_credit') { openWalletAdmin(); return true; }
   // the Super Admin's 11:00 alert (20270131000100): straight to Today's Attendance Overview
   if (n.entityType === 'attendance_overview') { openAttendance('today'); return true; }
   // any task notification (assigned, an update requested / submitted, blocked, completed) opens the Task page that shows it, on that task
