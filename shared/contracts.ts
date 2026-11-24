@@ -110,6 +110,8 @@ export interface Department extends DepartmentRef {
   /** Set for a department that is the Sales or Support side of another one (Wabatalk = the Support side of D Talk). */
   facetOf: string | null;
   facetDivision: HeadDivision | null;
+  /** Sales AND Support in one department (International, Reseller): decided by the database, never by the slug (20270127000100, 20270202000300). */
+  unifiedSalesSupport?: boolean;
   createdAt: string;
 }
 
