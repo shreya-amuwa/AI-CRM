@@ -1,4 +1,4 @@
-// Meeting notices for the Managing Director (20270207000200), outside the database: the service worker opens the meeting when its push is
+// Meeting notices for the Managing Director (20270208000200), outside the database: the service worker opens the meeting when its push is
 // tapped, and the 5-minute reminders run checks the meeting reminders.
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';

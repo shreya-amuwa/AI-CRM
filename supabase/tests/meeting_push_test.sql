@@ -1,5 +1,5 @@
 -- =============================================================================
--- Meeting notifications on phones (migration 20270207000100): a meeting notification someone receives in the CRM (invited, moved,
+-- Meeting notifications on phones (migration 20270208000100): a meeting notification someone receives in the CRM (invited, moved,
 -- cancelled, reminders, approvals, reports) is also queued as a push to each of their active devices; information-only types stay in the
 -- bell; the lock-screen text never carries the agenda; reminders 15 minutes before and at the start, once per start time, following a
 -- reschedule and stopping on a cancellation. Reuses tm_a (host), sa (the Managing Director, invited) and ck_a. Synthetic data only.
@@ -8,8 +8,8 @@
 \set QUIET 1
 \echo '--- 136c. Meetings: notifications on phones'
 reset role;
-\i supabase/migrations/20270207000100_meeting_push.sql
-\i supabase/migrations/20270207000100_meeting_push.sql
+\i supabase/migrations/20270208000100_meeting_push.sql
+\i supabase/migrations/20270208000100_meeting_push.sql
 
 delete from notification_deliveries where kind = 'MEETING';
 delete from meetings where title like 'MPush %';

@@ -34,7 +34,7 @@ export const takePendingMeeting = (): string | null => {
 
 const MEETING_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /**
- * The CRM was opened from a tapped meeting push (/?open=meeting&id=..., 20270207000100): Meetings opens on that meeting.
+ * The CRM was opened from a tapped meeting push (/?open=meeting&id=..., 20270208000100): Meetings opens on that meeting.
  * A malformed id still opens Meetings, on no particular meeting.
  */
 export const meetingRequestedFromUrl = (search: string): boolean => {

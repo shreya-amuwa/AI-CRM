@@ -95,6 +95,7 @@ export type ActiveTab =
   | 'my_attendance'
   | 'my_meetings'
   | 'my_notices'
+  | 'my_wallet'
   | 'hr_ceo_availability'
   | 'business_reports'
   | 'chat'
@@ -384,14 +385,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // Notice Board (20270131000200): every employee reads; publishers also send
     { id: 'my_notices' as ActiveTab, label: 'Notice Board', icon: Megaphone },
     // CEO Availability (20270201000100): in every HR dashboard, immediately below the Notice Board
-    ...(key === 'hr' ? [{ id: 'hr_ceo_availability' as ActiveTab, label: 'Managing Director Availability', icon: Crown }] : []), ...withChat];
+    ...(key === 'hr' ? [{ id: 'hr_ceo_availability' as ActiveTab, label: 'Managing Director Availability', icon: Crown }] : []),
+    // Wallet (20270207000100): every employee reads their own; the Super Admin, who opens a department from the hub, has none
+    ...(user?.role === 'superadmin' ? [] : [{ id: 'my_wallet' as ActiveTab, label: 'Wallet', icon: Wallet }]),
+    ...withChat];
   // The menu reads in sections, like the Department Head's: the dashboard on top, then Work, then Team (staff, chat, notifications).
   const TEAM_IDS = ['team_members', 'staff_add', 'staff_access', 'client_notices', 'chat', 'notifications'];
   // the HR department (HR Assistant, HR Admin Head) reads like the HR Recruiter's menu: Chat and Notifications in their own Communication section
   const COMMUNICATION_IDS = key === 'hr' ? ['chat', 'notifications'] : [];
   const LETTER_IDS: string[] = key === 'hr' ? HR_LETTER_NAV.map(i => i.id) : [];
   // Attendance, Meetings, Notice Board (and CEO Availability in HR) form the unlabelled top section
-  const topCount = key === 'hr' ? 4 : 3;
+  const topCount = (key === 'hr' ? 4 : 3) + (user?.role === 'superadmin' ? 0 : 1);
   const navSections = groupNavItems(navItems, [
     { ids: navItems.slice(0, topCount).map(i => i.id) },
     { label: 'Work', ids: navItems.slice(topCount).map(i => i.id).filter(id => !TEAM_IDS.includes(id) && !LETTER_IDS.includes(id)) },

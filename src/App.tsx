@@ -16,6 +16,7 @@ import { useOpenChatRequest } from './components/chat/chatEvents';
 import { useOpenHrCaseRequest, useOpenIssuesRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
 import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
 import { useOpenNoticeRequest } from './components/notices/noticeEvents';
+import { useOpenWalletRequest } from './components/wallet/walletEvents';
 import { NoticePopupHost } from './components/notices/NoticePopupHost';
 import { TabBar } from './components/layout/TabBar';
 
@@ -54,6 +55,7 @@ const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews
 const AttendancePage = lazy(() => import('./components/attendance/AttendancePage'));
 const MeetingsPage = lazy(() => import('./components/meetings/MeetingsPage'));
 const NoticeBoard = lazy(() => import('./components/notices/NoticeBoard'));
+const WalletPage = lazy(() => import('./components/wallet/WalletPage'));
 const CeoAvailabilityPage = lazy(() => import('./components/meetings/CeoAvailabilityPage'));
 const UnifiedDepartmentMonitor = lazy(() => import('./components/unified/UnifiedOverview').then(m => ({ default: m.UnifiedDepartmentMonitor })));
 const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
@@ -112,6 +114,9 @@ const MainAppContent: React.FC = () => {
   // a notice notification in a department dashboard (the shell's dashboards handle their own): the Notice Board
   const showNotices = React.useRef<(() => void) | null>(null);
   useOpenNoticeRequest(React.useCallback(() => showNotices.current?.(), []));
+  // a wallet notification in a department dashboard: the Wallet
+  const showWallet = React.useRef<(() => void) | null>(null);
+  useOpenWalletRequest(React.useCallback(() => showWallet.current?.(), []));
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
@@ -541,6 +546,7 @@ const MainAppContent: React.FC = () => {
   showChat.current = () => handleTabUpdate('chat');
   showMeetings.current = () => { if (showSidebar) handleTabUpdate('my_meetings'); };
   showNotices.current = () => { if (showSidebar) handleTabUpdate('my_notices'); };
+  showWallet.current = () => { if (showSidebar && user.role !== 'superadmin') handleTabUpdate('my_wallet'); };
   showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
   showHrIssues.current = () => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate('hr_raise_issue'); };
 
@@ -575,6 +581,8 @@ const MainAppContent: React.FC = () => {
             <Suspense fallback={<ScreenLoader />}><MeetingsPage /></Suspense>
           ) : currentActiveTab === 'my_notices' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><NoticeBoard /></Suspense>
+          ) : currentActiveTab === 'my_wallet' && showSidebar && user.role !== 'superadmin' ? (
+            <Suspense fallback={<ScreenLoader />}><WalletPage /></Suspense>
           ) : currentActiveTab === 'hr_ceo_availability' && showSidebar && currentDeptId === 'hr' ? (
             <Suspense fallback={<ScreenLoader />}><CeoAvailabilityPage /></Suspense>
           ) : currentDept && currentDeptId ? (

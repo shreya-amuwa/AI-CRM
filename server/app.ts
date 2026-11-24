@@ -261,7 +261,7 @@ app.post('/internal/crocodial/sync', async c => {
 app.post('/internal/attendance/reminders', async c => {
   requireDispatchSecret(c.req.header('authorization'));
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
-  // meeting reminders (24 h, 1 h, 15 min, at the start; 20270207000100) are created first, so this run's delivery step sends them too
+  // meeting reminders (24 h, 1 h, 15 min, at the start; 20270208000100) are created first, so this run's delivery step sends them too
   // (two database calls only: Google sync and e-mails stay with the dispatch, so the attendance reminders keep their request budget)
   const meetings = await runMeetingsDispatch({ budgetMs: 8_000, remindersOnly: true }).catch(e => {
     log('error', 'meeting reminders failed', c, { message: e instanceof Error ? e.message : 'error' });

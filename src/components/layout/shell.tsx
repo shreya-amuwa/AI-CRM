@@ -1,6 +1,6 @@
 import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, Bug, CalendarDays, ChevronDown, Clock3, Crown, LogOut, Megaphone, Menu, X } from 'lucide-react';
+import { BookOpen, Bug, CalendarDays, ChevronDown, Clock3, Crown, LogOut, Megaphone, Menu, Wallet, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
@@ -12,6 +12,7 @@ import { useRememberedOverlay } from '../../hooks/useRememberedOverlay';
 import { useOpenBugsRequest } from '../bugs/bugEvents';
 import { noticeRequested, useOpenNoticeRequest } from '../notices/noticeEvents';
 import { useNoticeUnread } from '../notices/useNoticeUnread';
+import { useOpenWalletRequest } from '../wallet/walletEvents';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -28,7 +29,10 @@ export const NOTICES_NAV_ID = '__notices';
 // CEO Availability (20270201000100): the HR dashboards only, immediately below the Notice Board
 const CeoAvailabilityPage = React.lazy(() => import('../meetings/CeoAvailabilityPage'));
 export const CEO_AVAILABILITY_NAV_ID = '__ceo_availability';
-const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID] as const;
+// Wallet (20270207000100): every employee dashboard, below the Notice Board; each person sees only their own
+const WalletPage = React.lazy(() => import('../wallet/WalletPage'));
+export const WALLET_NAV_ID = '__wallet';
+const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID, WALLET_NAV_ID] as const;
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
 // ?tab=meetings, or a tapped meeting push (/?open=meeting&id=...: Meetings opens on that meeting)
 export const meetingsRequested = () => typeof window !== 'undefined'
@@ -368,6 +372,8 @@ interface DashboardShellProps {
   reminders?: boolean | 'meetings';
   /** HR dashboards: adds CEO Availability below the Notice Board (the HR Recruiter's dashboard). */
   ceoAvailability?: boolean;
+  /** The Wallet entry (every employee dashboard); off for the Super Admin, who has no wallet. */
+  wallet?: boolean;
   children: React.ReactNode;
 }
 
@@ -389,6 +395,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   flush = false,
   reminders = true,
   ceoAvailability = false,
+  wallet = true,
   children
 }) => {
   // only sections marked collapsible use this; the others are always open as before
@@ -398,11 +405,11 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // a tapped reminder opens the CRM on /?open=attendance
   const bugAccess = useBugAccess();
   // remembered across a refresh (per person and dashboard), so Meeting Request / Attendance / Bugs stay open instead of returning to the Overview
-  const [overlay, setOverlay] = useRememberedOverlay<typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID | typeof NOTICES_NAV_ID | typeof CEO_AVAILABILITY_NAV_ID>(OVERLAYS,
+  const [overlay, setOverlay] = useRememberedOverlay<typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID | typeof NOTICES_NAV_ID | typeof CEO_AVAILABILITY_NAV_ID | typeof WALLET_NAV_ID>(OVERLAYS,
     meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null);
   const noticeUnread = useNoticeUnread();
   // the HR page is only for a dashboard that asks for it (a remembered value from elsewhere is ignored)
-  const shownOverlay = overlay === CEO_AVAILABILITY_NAV_ID && !ceoAvailability ? null : overlay;
+  const shownOverlay = (overlay === CEO_AVAILABILITY_NAV_ID && !ceoAvailability) || (overlay === WALLET_NAV_ID && !wallet) ? null : overlay;
   const shownActive = shownOverlay ?? active;
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);
@@ -418,8 +425,10 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   useOpenBugsRequest(React.useCallback(() => setOverlay(BUGS_NAV_ID), []));
   // a notice notification was clicked: show the Notice Board (it opens the notice)
   useOpenNoticeRequest(React.useCallback(() => setOverlay(NOTICES_NAV_ID), []));
+  // a wallet notification was clicked: show the Wallet
+  useOpenWalletRequest(React.useCallback(() => { if (wallet) setOverlay(WALLET_NAV_ID); }, [wallet]));
   const select = (id: string) => {
-    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID || id === BUGS_NAV_ID || id === NOTICES_NAV_ID || id === CEO_AVAILABILITY_NAV_ID) { setOverlay(id); return; }
+    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID || id === BUGS_NAV_ID || id === NOTICES_NAV_ID || id === CEO_AVAILABILITY_NAV_ID || id === WALLET_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
     onSelect(id);
   };
@@ -428,8 +437,9 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
   const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
   const noticesItem: ShellNavItem = { id: NOTICES_NAV_ID, label: 'Notice Board', icon: Megaphone, badge: noticeUnread };
+  const walletItem: ShellNavItem = { id: WALLET_NAV_ID, label: 'Wallet', icon: Wallet };
   const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'Managing Director Availability', icon: Crown };
-  const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(ceoAvailability ? [ceoAvailabilityItem] : []), ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
+  const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(ceoAvailability ? [ceoAvailabilityItem] : []), ...(wallet ? [walletItem] : []), ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
     ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]
     : [{ items: shared }, ...groups];
@@ -493,7 +503,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} purpose={reminders === 'meetings' ? 'meetings' : 'attendance'} />{shownOverlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{shownOverlay === MEETINGS_NAV_ID ? <MeetingsPage /> : shownOverlay === BUGS_NAV_ID ? <BugsPage /> : shownOverlay === NOTICES_NAV_ID ? <NoticeBoard /> : shownOverlay === CEO_AVAILABILITY_NAV_ID ? <CeoAvailabilityPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} purpose={reminders === 'meetings' ? 'meetings' : 'attendance'} />{shownOverlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{shownOverlay === MEETINGS_NAV_ID ? <MeetingsPage /> : shownOverlay === BUGS_NAV_ID ? <BugsPage /> : shownOverlay === NOTICES_NAV_ID ? <NoticeBoard /> : shownOverlay === WALLET_NAV_ID ? <WalletPage /> : shownOverlay === CEO_AVAILABILITY_NAV_ID ? <CeoAvailabilityPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );
