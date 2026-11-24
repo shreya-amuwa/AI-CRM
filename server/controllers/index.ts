@@ -283,7 +283,8 @@ export const noticesController = {
   receipts: (async ctx => ok(await svc(ctx).notices.receipts(ctx.params.id))) as Handler,
   publish: (async ctx => ok(await svc(ctx).notices.publish(ctx.req.body), 201)) as Handler,
   update: (async ctx => ok(await svc(ctx).notices.update(ctx.params.id, ctx.req.body))) as Handler,
-  archive: (async ctx => ok(await svc(ctx).notices.archive(ctx.params.id))) as Handler
+  archive: (async ctx => ok(await svc(ctx).notices.archive(ctx.params.id))) as Handler,
+  delete: (async ctx => ok(await svc(ctx).notices.delete(ctx.params.id))) as Handler
 };
 
 export const employeeCasesController = {

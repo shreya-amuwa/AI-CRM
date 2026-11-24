@@ -79,11 +79,17 @@ export const NoticePopupHost: React.FC = () => {
       setPending(list => list.filter(x => x.id !== n.id));
       noticesChanged();
     } catch (e) {
+      // the notice was deleted while it was open: it is gone from the queue, nothing is left to acknowledge
+      if (e instanceof ApiError && e.status === 404) {
+        setPending(list => list.filter(x => x.id !== n.id));
+        void load();
+        return;
+      }
       setError(e instanceof ApiError || e instanceof Error ? e.message : 'The notice could not be acknowledged. Please try again.');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [load]);
   const later = useCallback((n: CompanyNotice) => setPostponed(s => new Set(s).add(n.id)), []);
 
   if (!me || queue.length === 0) return null;

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Archive, Bell, CheckCircle2, Loader2, Megaphone, Pencil, RefreshCw, Search, Send } from 'lucide-react';
+import { Archive, Bell, CheckCircle2, Loader2, Megaphone, Pencil, RefreshCw, Search, Send, Trash2 } from 'lucide-react';
 import type { CompanyNotice, NoticeAudienceOptions, NoticeAudienceType, NoticeList, NoticeManagers, NoticePriority, NoticeReceipts } from '../../../shared/contracts';
 import { NOTICE_CATEGORIES, NOTICE_CATEGORY_LABELS, NOTICE_PRIORITIES, noticePublishSchema } from '../../../shared/validation';
 import { ApiError } from '../../lib/api/client';
@@ -39,14 +39,52 @@ const PriorityPill: React.FC<{ p: NoticePriority }> = ({ p }) => (
   <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${PRIORITY_STYLE[p]}`} data-testid="notice-priority">{PRIORITY_LABEL[p]}</span>
 );
 
+// ---------------------------------------------------------------------------------------------------- delete
+/**
+ * "Delete Notice?" (20270205000100). Nothing is sent until Delete is pressed; Cancel closes without a request; while the request is running both buttons are off, so a
+ * double click sends one request. The database decides who may delete (the publisher, or the Super Admin) and keeps the record and its receipts: this screen only
+ * hides the button from people who cannot use it. A refusal or a failure is shown here and the notice stays.
+ */
+const DeleteNoticeDialog: React.FC<{ notice: { id: string; title: string }; onClose: () => void; onDeleted: (id: string) => void }> = ({ notice, onClose, onDeleted }) => {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await noticesApi.remove(notice.id);
+      onDeleted(notice.id);
+    } catch (e) {
+      setError(errText(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog title="Delete Notice?" description="Are you sure you want to delete this notice? This action cannot be undone." onClose={() => { if (!busy) onClose(); }} persistent>
+      <div className="space-y-3" data-testid="delete-notice-dialog">
+        <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-800 break-words">{notice.title}</p>
+        {error ? <ErrorBanner message={error} /> : null}
+        <div className="flex justify-end gap-2">
+          <button type="button" className={btn.secondary} disabled={busy} onClick={onClose} data-testid="cancel-delete">Cancel</button>
+          <button type="button" className={btn.danger} disabled={busy} onClick={() => void confirm()} data-testid="confirm-delete">
+            {busy ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Trash2 className="w-4 h-4" aria-hidden />} Delete
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
+
 // ---------------------------------------------------------------------------------------------------- one notice
-const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () => void }> = ({ id, onClose, onChanged }) => {
+const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () => void; onDeleted: (id: string) => void }> = ({ id, onClose, onChanged, onDeleted }) => {
   const [n, setN] = useState<CompanyNotice | null>(null);
   const [receipts, setReceipts] = useState<NoticeReceipts | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState<{ title: string; body: string; priority: NoticePriority; expiresAt: string; again: boolean } | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const load = useCallback(() => {
     setError('');
     noticesApi.open(id).then(x => {
@@ -143,6 +181,9 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
                   <button type="button" className={btn.secondary} onClick={() => setConfirmArchive(true)} data-testid="notice-archive"><Archive className="w-4 h-4" aria-hidden /> Archive</button>
                 </>
               ) : null}
+              {n.canManage && !edit ? (
+                <button type="button" className={btn.danger} onClick={() => setConfirmDelete(true)} data-testid="notice-delete"><Trash2 className="w-4 h-4" aria-hidden /> Delete</button>
+              ) : null}
               {n.isRecipient && !n.acknowledged && n.status === 'PUBLISHED' && !edit ? (
                 <button type="button" className={btn.primary} disabled={busy} data-testid="notice-acknowledge"
                   onClick={() => void run(async () => { await noticesApi.acknowledge(n.id); noticesChanged(); return noticesApi.open(n.id); })}><CheckCircle2 className="w-4 h-4" aria-hidden /> Acknowledge</button>
@@ -153,6 +194,7 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
           </>
         )}
       </div>
+      {confirmDelete && n ? <DeleteNoticeDialog notice={n} onClose={() => setConfirmDelete(false)} onDeleted={onDeleted} /> : null}
       {confirmArchive && n ? (
         <Dialog title="Archive this notice?" description="It leaves everyone's Notice Board. It is kept, with its read receipts and history." onClose={() => setConfirmArchive(false)} persistent>
           <div className="flex justify-end gap-2">
@@ -166,11 +208,11 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
 };
 
 // ---------------------------------------------------------------------------------------------------- the list
-const NoticeCard: React.FC<{ n: CompanyNotice; onOpen: () => void; showReceipts?: boolean }> = ({ n, onOpen, showReceipts }) => (
-  <li>
+const NoticeCard: React.FC<{ n: CompanyNotice; onOpen: () => void; showReceipts?: boolean; onDelete?: () => void }> = ({ n, onOpen, showReceipts, onDelete }) => (
+  <li className={onDelete ? 'flex items-start gap-2' : undefined}>
     {/* the whole card opens the notice */}
     <button type="button" onClick={onOpen} data-testid="notice-card" data-read={n.read ? 'true' : 'false'} aria-label={`Open notice: ${n.title}${n.read ? '' : ' (unread)'}`}
-      className={`w-full text-left rounded-2xl border p-4 transition-colors hover:border-blue-300 hover:bg-blue-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${n.priority === 'URGENT' ? 'border-l-4 border-l-rose-500' : n.priority === 'IMPORTANT' ? 'border-l-4 border-l-amber-400' : ''} ${n.read ? 'bg-white border-slate-200' : 'bg-blue-50/40 border-blue-200'}`}>
+      className={`w-full ${onDelete ? 'flex-1 min-w-0' : ''} text-left rounded-2xl border p-4 transition-colors hover:border-blue-300 hover:bg-blue-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${n.priority === 'URGENT' ? 'border-l-4 border-l-rose-500' : n.priority === 'IMPORTANT' ? 'border-l-4 border-l-amber-400' : ''} ${n.read ? 'bg-white border-slate-200' : 'bg-blue-50/40 border-blue-200'}`}>
       <div className="flex flex-wrap items-center gap-2">
         {!n.read ? <span className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">New</span> : null}
         <span className="flex-1 min-w-[10rem] text-[15px] font-bold text-slate-900">{n.title}</span>
@@ -186,6 +228,11 @@ const NoticeCard: React.FC<{ n: CompanyNotice; onOpen: () => void; showReceipts?
         {showReceipts ? <span className="ml-1 font-semibold text-slate-700" data-testid="notice-read-count"> · {n.readCount}/{n.recipientCount} read</span> : null}
       </p>
     </button>
+    {onDelete ? (
+      <button type="button" onClick={onDelete} aria-label={`Delete notice: ${n.title}`} title="Delete notice" data-testid="notice-card-delete" className={`${btn.danger} !px-2.5 shrink-0`}>
+        <Trash2 className="w-4 h-4" aria-hidden /><span className="sr-only sm:not-sr-only">Delete</span>
+      </button>
+    ) : null}
   </li>
 );
 
@@ -240,7 +287,7 @@ const ViewNotices: React.FC<{ canPublish: boolean; onOpen: (id: string) => void;
 };
 
 // ---------------------------------------------------------------------------------------------------- sending
-const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string) => void; reloadKey: number; onSent: () => void }> = ({ options, onOpen, reloadKey, onSent }) => {
+const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string) => void; reloadKey: number; onSent: () => void; onDeleted: (id: string) => void }> = ({ options, onOpen, reloadKey, onSent, onDeleted }) => {
   const [requestId, setRequestId] = useState(newRequestId);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
@@ -259,6 +306,7 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
   const [done, setDone] = useState<CompanyNotice | null>(null);
   const files = useTicketFiles(issueFileTransport, {});
   const [mine, setMine] = useState<NoticeList | null>(null);
+  const [deleting, setDeleting] = useState<CompanyNotice | null>(null);
   const loadMine = useCallback(() => { noticesApi.list({ scope: 'MINE', limit: 50 }).then(setMine, () => setMine({ items: [], total: 0, unread: 0, publisherRole: null })); }, []);
   useEffect(loadMine, [loadMine, reloadKey]);
   const toggle = (list: string[], set: (v: string[]) => void, id: string) => set(list.includes(id) ? list.filter(x => x !== id) : [...list, id]);
@@ -387,8 +435,12 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
       <section aria-label="My published notices" className="space-y-2">
         <h2 className="text-sm font-bold text-slate-900">{options.role === 'SUPER_ADMIN' ? 'All published notices (manage)' : 'My published notices'}</h2>
         {!mine ? <Spinner /> : mine.items.length === 0 ? <Card className="p-6 text-center text-sm text-slate-500">Nothing published yet.</Card>
-          : <ul className="space-y-2.5" data-testid="my-notices">{mine.items.map(n => <NoticeCard key={n.id} n={n} onOpen={() => onOpen(n.id)} showReceipts />)}</ul>}
+          : <ul className="space-y-2.5" data-testid="my-notices">{mine.items.map(n => <NoticeCard key={n.id} n={n} onOpen={() => onOpen(n.id)} showReceipts onDelete={n.canManage ? () => setDeleting(n) : undefined} />)}</ul>}
       </section>
+      {deleting ? (
+        <DeleteNoticeDialog notice={deleting} onClose={() => setDeleting(null)}
+          onDeleted={id => { setMine(m => (m ? { ...m, items: m.items.filter(x => x.id !== id), total: Math.max(0, m.total - 1) } : m)); setDeleting(null); onDeleted(id); }} />
+      ) : null}
     </section>
   );
 };
@@ -443,11 +495,14 @@ export const NoticeBoard: React.FC = () => {
   const [open, setOpen] = useState<string | null>(() => takePendingNotice()?.id ?? null);
   const [reloadKey, setReloadKey] = useState(0);
   const [unread, setUnread] = useState<number | null>(null);
+  const [flash, setFlash] = useState('');
   const reload = useCallback(() => setReloadKey(k => k + 1), []);
   useEffect(() => { noticesApi.audience().then(setOptions, () => setOptions({ canPublish: false, role: null, audiences: [], departments: [], roles: [], employees: [] })); }, []);
   useEffect(() => { noticesApi.unreadCount().then(setUnread, () => undefined); }, [reloadKey]);
   // a notice notification tapped while the board is open
   useOpenNoticeRequest(useCallback((id?: string) => { takePendingNotice(); setTab('VIEW'); if (id) setOpen(id); reload(); }, [reload]));
+  // a deleted notice leaves every list at once; the others read the database again
+  const deleted = useCallback(() => { setOpen(null); setFlash('Notice deleted.'); noticesChanged(); reload(); }, [reload]);
   const canPublish = !!options?.canPublish;
   return (
     <div className="space-y-5" data-testid="notice-board">
@@ -466,10 +521,16 @@ export const NoticeBoard: React.FC = () => {
           ))}
         </div>
       ) : null}
-      {tab === 'SEND' && canPublish && options ? <SendNotice options={options} onOpen={setOpen} reloadKey={reloadKey} onSent={reload} />
+      {flash ? (
+        <div role="status" className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800" data-testid="notice-flash">
+          <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden /> <span className="flex-1">{flash}</span>
+          <button type="button" onClick={() => setFlash('')} aria-label="Dismiss" className="text-emerald-700 hover:underline text-xs font-semibold">Dismiss</button>
+        </div>
+      ) : null}
+      {tab === 'SEND' && canPublish && options ? <SendNotice options={options} onOpen={setOpen} reloadKey={reloadKey} onSent={reload} onDeleted={deleted} />
         : tab === 'MANAGERS' && options?.role === 'SUPER_ADMIN' ? <Managers />
         : <ViewNotices canPublish={canPublish} onOpen={setOpen} reloadKey={reloadKey} />}
-      {open ? <NoticeDialog id={open} onClose={() => { setOpen(null); reload(); }} onChanged={() => noticesApi.unreadCount().then(setUnread, () => undefined)} /> : null}
+      {open ? <NoticeDialog id={open} onClose={() => { setOpen(null); reload(); }} onChanged={() => noticesApi.unreadCount().then(setUnread, () => undefined)} onDeleted={deleted} /> : null}
     </div>
   );
 };
