@@ -262,7 +262,7 @@ export const MeetingRequestsManagement: React.FC = () => {
           <select className={selectCls} aria-label="Meeting category" value={category} onChange={e => reset(() => setCategory(e.target.value))} data-testid="filter-category"><option value="">All categories</option>{MEETING_CATEGORIES.map(c => <option key={c} value={c}>{MEETING_CATEGORY_LABELS[c]}</option>)}</select>
           <select className={selectCls} aria-label="Assigned HR employee" value={assignee} onChange={e => reset(() => setAssignee(e.target.value))} data-testid="filter-assignee"><option value="">Any HR employee</option><option value="NONE">Not assigned</option>{assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           <label className="flex items-center gap-1.5 text-[11px] text-slate-500">Meeting from<input type="date" className={`${inputCls} !py-1.5`} aria-label="Meeting date from" value={from} max={to || undefined} onChange={e => reset(() => setFrom(e.target.value))} data-testid="filter-from" /></label>
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-500">to<input type="date" className={`${inputCls} !py-1.5`} aria-label="Meeting date to" value={to} min={from || undefined} onChange={e => reset(() => setTo(e.target.value))} data-testid="filter-to" /></label>
+          <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-500">to<input type="date" className={`${inputCls} !py-1.5 min-w-0`} aria-label="Meeting date to" value={to} min={from || undefined} onChange={e => reset(() => setTo(e.target.value))} data-testid="filter-to" /></label>
         </div>
       </Card>
 

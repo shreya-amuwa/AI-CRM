@@ -92,12 +92,33 @@ export const NoticePopupHost: React.FC = () => {
   }, [load]);
   const later = useCallback((n: CompanyNotice) => setPostponed(s => new Set(s).add(n.id)), []);
 
-  if (!me || queue.length === 0) return null;
+  // never two dialogs at once: while another modal dialog is open (a punch confirmation, a form), the notice waits and appears when it closes
+  const otherDialog = useOtherDialogOpen(!!me && queue.length > 0);
+
+  if (!me || queue.length === 0 || otherDialog) return null;
   return (
     <Suspense fallback={null}>
       <Viewer queue={queue} index={Math.min(index, queue.length - 1)} busy={busy} error={error} onIndex={setIndex} onAcknowledge={n => void acknowledge(n)} onLater={later} />
     </Suspense>
   );
 };
+
+/** Whether a modal dialog other than the notice popup is on screen; watched only while there is a notice to show (one check per frame at most). */
+function useOtherDialogOpen(active: boolean): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!active || typeof MutationObserver === 'undefined') { setOpen(false); return undefined; }
+    let frame = 0;
+    const check = () => {
+      frame = 0;
+      setOpen(!!document.querySelector('[aria-modal="true"]:not([data-testid="notice-popup"])'));
+    };
+    check();
+    const mo = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(check); });
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-modal'] });
+    return () => { mo.disconnect(); if (frame) cancelAnimationFrame(frame); };
+  }, [active]);
+  return open;
+}
 
 export default NoticePopupHost;

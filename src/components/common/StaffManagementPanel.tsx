@@ -701,7 +701,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
                 <CheckCircle2 className="w-4 h-4" /> Team Member Added Successfully: {created.profile.fullName} can now sign in
               </div>
               <div>
-                Login: <span className="font-mono">{created.profile.email}</span>
+                Login: <span className="font-mono break-all">{created.profile.email}</span>
                 <button
                   type="button"
                   onClick={() => navigator.clipboard?.writeText(created.profile.email)}

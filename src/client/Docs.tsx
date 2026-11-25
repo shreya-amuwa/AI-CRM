@@ -431,7 +431,7 @@ export const Docs: React.FC = () => {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header Banner */}
-      <div className="cd-card" style={{ padding: '28px 32px', background: 'linear-gradient(135deg, #0b4f3c 0%, #14634d 100%)', color: '#fff', borderRadius: 'var(--radius-lg)' }}>
+      <div className="cd-card cd-manual-banner" style={{ background: '#0b4f3c', color: '#fff', borderRadius: 'var(--radius-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
           <div style={{ maxWidth: 640 }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 12px', background: 'rgba(255,255,255,0.15)', borderRadius: 'var(--radius-pill)', fontSize: 13, fontWeight: 700, marginBottom: 12 }}>
@@ -442,7 +442,7 @@ export const Docs: React.FC = () => {
               Official guide for Amuwa clients. Learn how to track active services, download GST invoices, upload KYC documents, raise support tickets, and chat with your account team.
             </p>
           </div>
-          <div style={{ minWidth: 260, flex: 1, maxWidth: 360 }}>
+          <div className="cd-manual-search">
             <div style={{ position: 'relative' }}>
               <Search size={18} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
               <input
@@ -467,7 +467,7 @@ export const Docs: React.FC = () => {
       </div>
 
       {/* Main Content Grid: Sidebar + Active Article */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 300px) 1fr', gap: 24, alignItems: 'start' }}>
+      <div className="cd-manual-grid">
         {/* Guides Navigation List */}
         <div className="cd-card" style={{ padding: 16, borderRadius: 'var(--radius-md)' }}>
           <div style={{ padding: '8px 12px 12px', borderBottom: '1px solid var(--border-soft)', marginBottom: 8 }}>
@@ -510,8 +510,8 @@ export const Docs: React.FC = () => {
         </div>
 
         {/* Active Article Content */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div className="cd-card" style={{ padding: '28px 32px', borderRadius: 'var(--radius-md)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+          <div className="cd-card cd-manual-article" style={{ borderRadius: 'var(--radius-md)' }}>
             {/* Guide Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, borderBottom: '1px solid var(--border-soft)', paddingBottom: 20, marginBottom: 24 }}>
               <div>
