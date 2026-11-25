@@ -8,17 +8,21 @@ export const SideDrawer: React.FC<{ title: string; subtitle?: string; onClose: (
 }) => {
   const panel = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
+  // Callers pass a new onClose on every render (an inline arrow). If the effect depended on it, every keystroke in a field inside the drawer
+  // would run the cleanup (focus back to the button behind) and move focus to the panel: the person could type one character at a time.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   useEffect(() => {
     opener.current = document.activeElement;
     panel.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current();
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       (opener.current as HTMLElement | null)?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   // A portal: headers are sticky / blurred and would otherwise trap a fixed panel inside them.
   return createPortal(
