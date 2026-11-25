@@ -78,6 +78,7 @@ const AiStudioWorkspace = lazy(() => import('./components/ai-studio/AiStudioWork
 const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
 const BusinessAssociateDashboard = lazy(() => import('./components/business-associate/BusinessAssociateDashboard').then(m => ({ default: m.BusinessAssociateDashboard })));
 import { DepartmentPicker } from './components/scope/DepartmentPicker';
+import { GlobalSearchProvider } from './components/search/GlobalSearch';
 const SalesHeadDashboard = lazy(() => import('./components/sales-head/SalesHeadDashboard').then(m => ({ default: m.SalesHeadDashboard })));
 const SalesRolePending = lazy(() => import('./components/telecaller/SalesRolePending').then(m => ({ default: m.SalesRolePending })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
@@ -783,6 +784,12 @@ const MainAppContent: React.FC = () => {
 };
 
 /** Secure messaging starts for the signed-in employee as soon as they are in (their key is made on its own the first time). Always the same element, so nothing below it restarts when the profile arrives. */
+/** Global search (Ctrl / Cmd + K) for a signed-in, active employee; nothing for anyone else (signed out, pending, suspended). */
+const EmployeeSearch: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { profile } = useAuth();
+  return <GlobalSearchProvider userId={profile?.status === 'ACTIVE' ? profile.id : null}>{children}</GlobalSearchProvider>;
+};
+
 const EmployeeSecureChat: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { profile } = useAuth();
   return <SecureChatProvider userId={profile?.id ?? null}>{children}</SecureChatProvider>;
@@ -796,9 +803,11 @@ export function App() {
           <LeadStoreProvider>
             <NotificationProvider>
               <EmployeeSecureChat>
-                <Suspense fallback={<ScreenLoader />}>
-                  <MainAppContent />
-                </Suspense>
+                <EmployeeSearch>
+                  <Suspense fallback={<ScreenLoader />}>
+                    <MainAppContent />
+                  </Suspense>
+                </EmployeeSearch>
                 {/* company notices not yet acknowledged open here, on every employee dashboard (20270202000100) */}
                 <NoticePopupHost />
               </EmployeeSecureChat>

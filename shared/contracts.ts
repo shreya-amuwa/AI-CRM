@@ -7409,3 +7409,22 @@ export interface PerformanceSubjectRecord {
   reviewRemarks: string | null;
 }
 export interface PerformanceSubjectHistory { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; records: PerformanceSubjectRecord[] }
+
+/** Global search (Ctrl / Cmd + K): the kinds of records the database may return (public.global_search). */
+export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice'] as const;
+export type SearchRecordType = (typeof SEARCH_RECORD_TYPES)[number];
+export interface SearchRecord {
+  type: SearchRecordType;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  meta: string | null;
+  reference: string | null;
+  score: number;
+}
+export interface SearchResponse {
+  query: string;
+  groups: { type: SearchRecordType; items: SearchRecord[]; hasMore: boolean }[];
+}
+/** One opened result (GET /search/records/:type/:id): label / value pairs for display, in order. */
+export interface SearchRecordCard { type: SearchRecordType; id: string; title: string; fields: [string, string][] }
