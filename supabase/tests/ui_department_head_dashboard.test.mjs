@@ -381,7 +381,7 @@ try {
   const nav = () => page.getByRole('navigation');
   check(await nav().getByRole('button', { name: 'Leads', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Customers', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Invoices', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Team Attendance', exact: true }).isVisible(),
     'a Sales Department Head\'s navigation has Leads, Customers, Invoices and Team Attendance');
-  check(await nav().getByRole('button', { name: 'Assign', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Work Updates', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Team Members & Access', exact: true }).isVisible(),
+  check(await nav().getByRole('button', { name: 'Assign Task', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Work Updates', exact: true }).isVisible() && await nav().getByRole('button', { name: 'Team Members & Access', exact: true }).isVisible(),
     'the existing pages are still in the navigation');
   await page.getByTestId('dept-stats').waitFor();
   check(await page.getByTestId('ov-employees').isVisible(), 'the Overview now starts with the department statistics');

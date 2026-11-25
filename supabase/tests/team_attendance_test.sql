@@ -220,9 +220,9 @@ select test.check((select punch_out_at is null from attendance_records, tad wher
                   and (test.tacorr('ta_m2')).status = 'REJECTED' and (test.tacorr('ta_m2')).decision_note = 'Not what the gate log shows',
   'rejected (by the Managing Director, with a reason): the record is unchanged');
 
-\echo '   20270209000100: Punch Out before the shift end needs no reason'
-\i supabase/migrations/20270209000100_punch_out_no_reason.sql
-\i supabase/migrations/20270209000100_punch_out_no_reason.sql
+\echo '   20270210000100: Punch Out before the shift end needs no reason'
+\i supabase/migrations/20270210000100_punch_out_no_reason.sql
+\i supabase/migrations/20270210000100_punch_out_no_reason.sql
 select test.check((select not early_punch_out_reason_required from attendance_settings where id), 'the company rule is off');
 insert into attendance_reminder_prefs (profile_id, enabled, punch_in, lunch, punch_out) values (test.id('ta_mb'), true, '06:00', '11:00', '23:30')
 on conflict (profile_id) do update set punch_out = excluded.punch_out;

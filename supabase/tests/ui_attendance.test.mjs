@@ -92,7 +92,7 @@ try {
   const outText = await page.getByTestId('punch-out-confirm').innerText();
   check(/End your workday\?/.test(outText) && /8 h 05 min/.test(outText) && /0 h 52 min/.test(outText) && /7 h 13 min/.test(outText) && /7:00 PM IST/.test(outText)
     && /Continue Working/.test(outText), 'Punch Out shows the Punch In, worked, break and net time and the shift end, with "Continue Working"', outText);
-  // before the shift end (the stand-in server even says a reason is required, as a database without 20270209000100 would): no warning,
+  // before the shift end (the stand-in server even says a reason is required, as a database without 20270210000100 would): no warning,
   // no reason box, Confirm Punch Out works at once
   check(!/before your scheduled shift end/.test(outText) && await page.getByTestId('early-reason').count() === 0 && await page.getByTestId('confirm-punch-out').isEnabled(),
     'before the shift end: no early-leave warning and no reason asked; Confirm Punch Out is ready', outText);
