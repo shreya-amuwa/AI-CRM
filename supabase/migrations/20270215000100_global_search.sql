@@ -40,7 +40,7 @@ $$;
 
 -- meetings the caller may see (host, organiser, attendee, delegate, the Managing Director's own requests): through mtg_can_view
 create or replace function private.search_meetings(p_q text, p_tokens text[], p_limit integer)
-returns jsonb language sql stable security definer set search_path = '' set pg_trgm.word_similarity_threshold = 0.5 as $$
+returns jsonb language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_agg(x order by (x ->> 'score')::int desc, x ->> 'title', x ->> 'id'), '[]'::jsonb)
     from (
       select jsonb_build_object('type', 'meeting', 'id', m.id, 'title', m.title,
@@ -64,7 +64,7 @@ $$;
 
 -- notices the caller may read: through notice_visible (never a deleted or a scheduled one that is not theirs)
 create or replace function private.search_notices(p_q text, p_tokens text[], p_limit integer)
-returns jsonb language sql stable security definer set search_path = '' set pg_trgm.word_similarity_threshold = 0.5 as $$
+returns jsonb language sql stable security definer set search_path = '' as $$
   select coalesce(jsonb_agg(x order by (x ->> 'score')::int desc, x ->> 'title', x ->> 'id'), '[]'::jsonb)
     from (
       select jsonb_build_object('type', 'notice', 'id', n.id, 'title', n.title,
@@ -90,7 +90,7 @@ $$;
 -- is returned. They live in the private schema, which the API does not expose (PostgREST serves only public), and return ids only.
 -- ---------------------------------------------------------------------------
 create or replace function private.search_customer_candidates(p_q text, p_tokens text[], p_digits text, p_cap integer)
-returns uuid[] language plpgsql stable security definer set search_path = '' set pg_trgm.word_similarity_threshold = 0.5 as $$
+returns uuid[] language plpgsql stable security definer set search_path = '' as $$
 declare
   v uuid[];
 begin
@@ -120,7 +120,7 @@ begin
   return v;
 end $$;
 create or replace function private.search_profile_candidates(p_q text, p_tokens text[], p_digits text, p_cap integer)
-returns uuid[] language plpgsql stable security definer set search_path = '' set pg_trgm.word_similarity_threshold = 0.5 as $$
+returns uuid[] language plpgsql stable security definer set search_path = '' as $$
 declare
   v uuid[];
 begin
@@ -147,7 +147,7 @@ end $$;
 revoke all on function private.search_profile_candidates(text, text[], text, integer) from public, anon;
 grant execute on function private.search_profile_candidates(text, text[], text, integer) to authenticated;
 create or replace function private.search_ticket_candidates(p_q text, p_tokens text[], p_cap integer)
-returns uuid[] language sql stable security definer set search_path = '' set pg_trgm.word_similarity_threshold = 0.5 as $$
+returns uuid[] language sql stable security definer set search_path = '' as $$
   select coalesce(array_agg(t.id order by t.created_at desc, t.id), '{}') from (
     select t.id, t.created_at from public.support_tickets t
      where lower(t.subject) like '%' || p_tokens[1] || '%' or lower(coalesce(t.ticket_no, '')) like '%' || p_tokens[1] || '%'
@@ -172,7 +172,7 @@ grant execute on function private.search_caller() to authenticated;
 -- The search itself: security INVOKER (the caller's own row-level rules apply to every table read directly here)
 -- ---------------------------------------------------------------------------
 create or replace function public.global_search(p_query text, p_limit integer default 5)
-returns jsonb language plpgsql stable security invoker set search_path = '' set pg_trgm.word_similarity_threshold = 0.5 as $$
+returns jsonb language plpgsql stable security invoker set search_path = '' as $$
 declare
   v_q text := lower(btrim(regexp_replace(coalesce(p_query, ''), '\s+', ' ', 'g')));
   v_tokens text[];
@@ -199,6 +199,11 @@ begin
   if not coalesce(v_active, false) then
     raise exception 'FORBIDDEN: Your account is not active.' using errcode = '42501';
   end if;
+  -- The close-spelling threshold for the trigram "<%" operator, for this transaction only (the helpers below run inside it). It is set here and
+  -- not with a function-level "set pg_trgm.word_similarity_threshold" clause: the Supabase SQL editor runs as a role that is not a superuser,
+  -- and PostgreSQL refuses that clause from such a role when the pg_trgm library is not yet loaded in the session ("permission denied to set
+  -- parameter"), so the migration could not be pasted there.
+  perform set_config('pg_trgm.word_similarity_threshold', '0.5', true);
   -- punctuation other than what names, codes, e-mails and numbers use is ignored; at most 100 characters
   v_q := left(btrim(regexp_replace(v_q, '[^[:alnum:]@.+_\- ]', ' ', 'g')), 100);
   v_q := btrim(regexp_replace(v_q, '\s+', ' ', 'g'));
