@@ -34,4 +34,12 @@ check(/label: 'Performance Management'/.test(src('src/components/team-lead/TeamL
   && /label: 'Performance Management'/.test(src('src/components/tasks/DepartmentHeadDashboard.tsx')) && /label: 'Performance Management'/.test(src('src/components/sales-head/salesHeadNav.ts')),
   'the Team Lead, Support Team Lead, Department Head and Sales Department Head side panels have Performance Management');
 for (const who of ['HEAD', 'LEAD'] as const) check(unifiedMenu(who)[0].items.some(i => i.label === 'Performance Management'), `International / Reseller: Performance Management for the ${who === 'HEAD' ? 'Department Head' : 'Team Lead'}`);
+
+// AI Studio (20270214000100): its own dashboard, its own side panel. The entry is there for the Department Head and the Team Lead, opens the shared page,
+// and a Team Member neither sees it nor opens it by its address.
+const aiDash = src('src/components/ai-studio/AiStudioDashboard.tsx');
+check((aiDash.match(/\{ id: 'performance', label: 'Performance Management'/g) ?? []).length === 2, 'AI Studio: Performance Management in the Department Head\'s and the Team Lead\'s side panel');
+check(/who === 'LEAD' \? \[\{ id: 'performance', label: 'Performance Management'/.test(aiDash), 'AI Studio: for the Team Lead only, not the Team Member');
+check(/rawPage === 'performance' && who === 'MEMBER' \? 'overview'/.test(aiDash) && /page === 'performance' && who !== 'MEMBER' && \(\s*<PerformanceApprovals/.test(aiDash),
+  'AI Studio: the page opens the shared Performance Management; a Team Member\'s address falls back to the Overview');
 console.log(`=== PERFORMANCE SIDEBAR TESTS PASSED (${passed}) ===`);

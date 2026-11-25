@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type {
   DepartmentPerformanceOverview, LeadPerformanceMetrics, LeadPerformanceOverview, PerformanceLead, PerformanceMember,
   PerformanceOverview, PerformancePart, PerformancePerson, PerformanceRecordHistoryEntry, PerformanceRecordState, PerformanceSubjectHistory, PerformanceWork
@@ -6,8 +6,9 @@ import type {
 import { ApiError } from '../../lib/api/client';
 import { performanceApprovalApi } from '../../lib/api/taskReports';
 import { PageTitle } from '../layout/shell';
+import { ReportList as AiStudioReportList } from '../ai-studio/AiStudioReports';
 import { ApprovalPill, ChangeList, MemberTaskReports } from '../reports/TaskReports';
-import { timeLabel } from '../reports/reportUi';
+import { dateLabel, timeLabel } from '../reports/reportUi';
 import { Card, CardHead, fieldCls, LoadingLine, Tabs } from '../tasks/head/headParts';
 import { KpiCard } from './KpiCard';
 import { defaultPeriod, periodLabel, resolvePeriod, type PeriodChoice } from './periods';
@@ -145,7 +146,7 @@ const RecordActions: React.FC<{ person: PerformancePerson; onChanged: () => void
         <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2" data-testid="record-review">
           {waiting > 0 ? (
             <p role="status" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5" data-testid="record-waiting">
-              {waiting} daily report{waiting === 1 ? '' : 's'} of this team member {waiting === 1 ? 'is' : 'are'} still waiting for your review in this period. Approve or return {waiting === 1 ? 'it' : 'them'} in Daily Reports → Task Reports first: only approved reports count.
+              {waiting} daily report{waiting === 1 ? '' : 's'} of this team member {waiting === 1 ? 'is' : 'are'} still waiting for your review in this period. Approve or return {waiting === 1 ? 'it' : 'them'} first (open the member's daily reports below, or Daily Reports): only approved reports count.
             </p>
           ) : null}
           {/* the rating is asked where the department requires it (International / Reseller); other departments' form is unchanged */}
@@ -212,11 +213,14 @@ const LeadDetail: React.FC<{ m: LeadPerformanceMetrics }> = ({ m }) => (
   </div>
 );
 
-const TASK_STATUS: Record<string, string> = { ASSIGNED: 'Assigned', IN_PROGRESS: 'In progress', BLOCKED: 'Blocked', COMPLETED: 'Completed', NOT_COMPLETED: 'Not completed' };
+const TASK_STATUS: Record<string, string> = { ASSIGNED: 'Assigned', IN_PROGRESS: 'In progress', BLOCKED: 'Blocked', ON_HOLD: 'On hold', COMPLETED: 'Completed', NOT_COMPLETED: 'Not completed' };
+/** Who is looking (the overview's role): the AI Studio drill-down opens the Team Lead's or the Department Head's report list. */
+const ViewerRole = createContext<PerformanceOverview['role'] | null>(null);
 /** The reviewer's drill-down: one person's tasks in the period (with the latest report on each) and their daily reports, reviewed and edited in place. */
 const PersonWork: React.FC<{ id: string; name: string; start: string; end: string; reports: boolean; onChanged: () => void }> = ({ id, name, start, end, reports, onChanged }) => {
   const [work, setWork] = useState<PerformanceWork | null>(null);
   const [err, setErr] = useState('');
+  const viewer = useContext(ViewerRole);
   const load = useCallback(() => { setErr(''); performanceApprovalApi.work(id, { start, end }).then(setWork, e => setErr(errText(e))); }, [id, start, end]);
   useEffect(load, [load]);
   const changed = () => { load(); onChanged(); };
@@ -236,9 +240,9 @@ const PersonWork: React.FC<{ id: string; name: string; start: string; end: strin
             <tbody>
               {work.tasks.map(t => (
                 <tr key={t.id} className="border-b border-slate-50 align-top">
-                  <td className="px-3 py-1.5 font-semibold text-slate-800 break-words">{t.title}</td>
+                  <td className="px-3 py-1.5 font-semibold text-slate-800 break-words">{t.title}{t.project ? <span className="block text-[11px] font-normal text-slate-500">{t.project}</span> : null}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap">{TASK_STATUS[t.status] ?? t.status}{t.overdue ? <span className="ml-1 font-semibold text-rose-700">· overdue</span> : t.onTime === false ? <span className="ml-1 text-amber-700">· late</span> : t.onTime ? <span className="ml-1 text-emerald-700">· on time</span> : null}</td>
-                  <td className="px-3 py-1.5 whitespace-nowrap">{t.dueDate ? periodLabel(t.dueDate, t.dueDate) : '—'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap">{t.dueDate ? dateLabel(t.dueDate) : '—'}</td>
                   <td className="px-3 py-1.5 whitespace-nowrap">{t.lastReport ? <>{t.lastReport.progress}% · <ApprovalPill status={t.lastReport.status} /></> : <span className="text-slate-400">No report</span>}</td>
                   <td className="px-3 py-1.5 tabular-nums">{t.reports}{t.pendingReports ? <span className="text-sky-700"> ({t.pendingReports} waiting)</span> : null}</td>
                 </tr>
@@ -247,7 +251,13 @@ const PersonWork: React.FC<{ id: string; name: string; start: string; end: strin
           </table>
         </div>
       )}
-      {reports ? <>
+      {/* AI Studio keeps its own daily reports (Team Lead, then Department Head): the drill-down opens those, with the same review dialog as Daily Reports */}
+      {work?.source === 'AI_STUDIO' && (reports || viewer !== 'TEAM_HEAD') ? <>
+        <h3 className="text-sm font-bold text-slate-900">Daily reports of {name}</h3>
+        <div data-testid="person-ai-reports">
+          <AiStudioReportList view={viewer === 'TEAM_HEAD' ? 'team' : 'department'} projects={[]} initial={{ authorId: id, from: start, to: end }} onChanged={changed} />
+        </div>
+      </> : reports && work?.source !== 'AI_STUDIO' ? <>
         <h3 className="text-sm font-bold text-slate-900">Daily reports of {name}</h3>
         <MemberTaskReports memberId={id} from={start} to={end} onChanged={changed} />
       </> : null}
@@ -432,8 +442,10 @@ export const PerformanceApprovals: React.FC<{ departmentId?: string; title?: str
       </Card>
       {error ? <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm flex items-center justify-between gap-3"><span>{error}</span><button type="button" onClick={() => void load()} className="font-bold underline">Retry</button></div> : null}
       {!data && loading ? <LoadingLine /> : null}
-      {data?.role === 'TEAM_HEAD' ? <LeadView d={data} onChanged={() => void load()} /> : null}
-      {data && (data.role === 'DEPARTMENT_HEAD' || data.role === 'SUPER_ADMIN') ? <DepartmentView d={data} onChanged={() => void load()} /> : null}
+      <ViewerRole.Provider value={data?.role ?? null}>
+        {data?.role === 'TEAM_HEAD' ? <LeadView d={data} onChanged={() => void load()} /> : null}
+        {data && (data.role === 'DEPARTMENT_HEAD' || data.role === 'SUPER_ADMIN') ? <DepartmentView d={data} onChanged={() => void load()} /> : null}
+      </ViewerRole.Provider>
     </div>
   );
 };

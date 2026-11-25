@@ -93,4 +93,10 @@ export class AiStudioRepository {
   reviewReport(id: string, decision: string, comment?: string | null) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_review', { p_report: id, p_decision: decision, p_comment: comment ?? null });
   }
+  leadEditReport(id: string, e: { workCompleted: string; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) {
+    return this.rpc<AiStudioReportDetail>('ai_studio_report_lead_edit', {
+      p_report: id, p_work_completed: e.workCompleted, p_work_in_progress: e.workInProgress ?? null, p_pending_work: e.pendingWork ?? null,
+      p_blockers: e.blockers ?? null, p_remarks: e.remarks ?? null, p_reason: e.reason
+    });
+  }
 }

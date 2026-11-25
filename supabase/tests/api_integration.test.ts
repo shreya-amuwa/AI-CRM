@@ -12991,6 +12991,47 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- AI Studio: Performance Management reads AI Studio's own work; the Team Lead corrects a waiting report (migration 20270214000100) ---
+{
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const { rows: [project] } = await db.query(`select id from public.ai_studio_projects where name = 'AI CRM'`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const lead = await mkUser('apiAiLead', 'api.ai.lead@example.com', 'API AI Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const mem = await mkUser('apiAiMem', 'api.ai.member@example.com', 'API AI Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.ai_studio_tasks (project_id, title, assigned_by, assignee_id, due_date) values ($1, 'API AI task', $2, $3, current_date + 2) returning id`, [project.id, lead, mem]);
+  const { rows: [rep] } = await db.query(`insert into public.ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, status, lead_id, submitted_at)
+                                          values ($1, 'API AI Member', 'MEMBER', $2, $3, current_date, 'Built the first screen', 'PENDING_TL_APPROVAL', $4, now()) returning id`, [mem, project.id, task.id, lead]);
+  // a month either side: the task is due in two days
+  const span = `start=${new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)}&end=${new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)}`;
+  try {
+    let r = await api('apiAiLead', 'GET', `/performance-approval/overview?${span}`);
+    check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.members.some((m: any) => m.id === mem && m.metrics.tasks.total === 1 && m.metrics.reports.pending === 1),
+      'AI Studio: the Team Lead\'s Performance Management reads AI Studio\'s tasks and reports', r.json.data);
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: '' });
+    check(r.status === 422, 'AI Studio: a Team Lead\'s correction needs a reason (422)', r);
+    r = await api('apiAiMem', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Changed by me', reason: 'I want to' });
+    check(r.status === 403, 'AI Studio: the member cannot use the Team Lead\'s correction (403)', r);
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: 'Added the menu you also built' });
+    check(r.status === 200 && r.json.data.workCompleted === 'Built the first screen and the menu' && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.workCompleted),
+      'AI Studio: the Team Lead corrects the waiting report; the history keeps the change', r);
+    r = await api('apiAiLead', 'GET', `/performance-approval/people/${mem}/work?${span}`);
+    check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.tasks.some((t: any) => t.id === task.id && t.project === 'AI CRM'), 'AI Studio: the member\'s AI Studio task in the drill-down', r.json.data);
+    r = await api('apiAiMem', 'GET', `/performance-approval/overview?${span}`);
+    check(r.status === 403, 'AI Studio: the member has no performance view (403)', r);
+  } finally {
+    await db.query(`delete from public.ai_studio_daily_reports where id = $1`, [rep.id]);
+    await db.query(`delete from public.ai_studio_tasks where id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[lead, mem]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead]]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

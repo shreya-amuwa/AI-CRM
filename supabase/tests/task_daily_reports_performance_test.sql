@@ -16,6 +16,8 @@ select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270210000100_unified_performance_hierarchy.sql
 -- every department: the Team Lead evaluates members, members have no performance view (20270213000100), applied again after the two above
 \i supabase/migrations/20270213000100_performance_lead_primary.sql
+-- AI Studio reads its own work (20270214000100 replaces some of the functions above, so it is applied again after them)
+\i supabase/migrations/20270214000100_ai_studio_performance.sql
 
 create or replace function test.u(p_key text) returns uuid language sql stable as $$ select test.id(current_setting('tdr.' || p_key)) $$;
 grant execute on function test.u(text) to anon, authenticated, service_role;

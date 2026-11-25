@@ -6376,8 +6376,10 @@ export interface AiStudioReportSummary {
 }
 export interface AiStudioReportHistoryEntry {
   id: string;
-  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED';
+  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED' | 'EDITED';
   stage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
+  /** 20270214000100: what the Team Lead changed (field -> before / after) on an EDITED step. */
+  changes?: Record<string, { from: string | null; to: string | null }> | null;
   fromStatus: string | null;
   toStatus: AiStudioReportStatus;
   comment: string | null;
@@ -6400,6 +6402,8 @@ export interface AiStudioReportDetail extends AiStudioReportSummary {
   dhReviewerName: string | null;
   canEdit: boolean;
   canReview: boolean;
+  /** 20270214000100 (optional: absent on an older database): the Team Lead reviewing it may correct it before deciding. */
+  canLeadEdit?: boolean;
   reviewStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   history: AiStudioReportHistoryEntry[];
 }
@@ -7390,6 +7394,8 @@ export interface LeadPerformanceOverview extends PerformanceOverviewBase {
   pendingRecords: number;
   /** 20270210000100: only the Team Lead decides the members (International / Reseller). */
   leadDecidesMembers?: boolean;
+  /** 20270214000100: AI Studio's own reports (the drill-down opens those). */
+  source?: PerformanceSource;
 }
 export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
   role: 'DEPARTMENT_HEAD' | 'SUPER_ADMIN';
@@ -7401,6 +7407,8 @@ export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
   pendingRecords: number;
   /** 20270210000100: members without a Team Lead wait for one (International / Reseller) instead of being decided by the Department Head. */
   leadDecidesMembers?: boolean;
+  /** 20270214000100: AI Studio's own reports (the drill-down opens those). */
+  source?: PerformanceSource;
 }
 export type PerformanceOverview = MemberPerformanceOverview | LeadPerformanceOverview | DepartmentPerformanceOverview;
 export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED' | 'UPDATED' | 'REOPENED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null; rating?: number | null; changes?: FieldChanges | null }
@@ -7421,8 +7429,12 @@ export interface PerformanceWorkTask {
   reports: number;
   pendingReports: number;
   lastReport: { id: string; reportDate: string; progress: number; status: TaskReportStatus } | null;
+  /** AI Studio (20270214000100): the task's project. */
+  project?: string | null;
 }
-export interface PerformanceWork { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; periodStart: string; periodEnd: string; tasks: PerformanceWorkTask[] }
+/** Where the work comes from: the task records and task daily reports, or AI Studio's own tasks and daily reports (20270214000100). */
+export type PerformanceSource = 'TASKS' | 'AI_STUDIO';
+export interface PerformanceWork { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; periodStart: string; periodEnd: string; tasks: PerformanceWorkTask[]; source?: PerformanceSource }
 
 // ---- International / Reseller: performance evaluation history of one person (20270210000100) ----
 export interface PerformanceSubjectRecord {

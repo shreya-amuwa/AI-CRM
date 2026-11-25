@@ -13,6 +13,8 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270213000100_performance_lead_primary.sql
 \i supabase/migrations/20270213000100_performance_lead_primary.sql
+-- AI Studio reads its own work (20270214000100 replaces some of the functions above, so it is applied again after them)
+\i supabase/migrations/20270214000100_ai_studio_performance.sql
 
 select test.check(not has_function_privilege('anon', 'public.task_report_reviewer_edit(uuid, text, integer, text, text, text, text)', 'execute')
                   and not has_function_privilege('anon', 'public.performance_record_update_evaluation(uuid, integer, text)', 'execute')
@@ -175,6 +177,7 @@ reset role;
 insert into performance_records (subject_id, subject_role, department_id, team_id, period_start, period_end, metrics, score, status)
 select p.id, 'TEAM_MEMBER', p.department_id, p.team_id, date '2020-01-01', date '2020-01-31', '{}'::jsonb, 50, 'RETURNED' from profiles p where p.id = test.id('tdr_m1');
 \i supabase/migrations/20270213000100_performance_lead_primary.sql
+\i supabase/migrations/20270214000100_ai_studio_performance.sql
 select test.check((select r.status = 'PENDING' and exists (select 1 from performance_record_history h where h.record_id = r.id and h.action = 'REOPENED')
                      from performance_records r where r.subject_id = test.id('tdr_m1') and r.period_start = date '2020-01-01'),
   'reopened for the Team Lead, with a REOPENED step in its history');
