@@ -10,6 +10,8 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270205000200_team_attendance_corrections.sql
 \i supabase/migrations/20270205000200_team_attendance_corrections.sql
+-- the company-wide late rule (Late only after 10:30) replaces this migration's team rows; re-applied after it, as on the live database
+\i supabase/migrations/20270211000100_attendance_late_after_1030.sql
 
 delete from attendance_correction_requests where profile_id in (select id from test.users where name like 'ta\_%');
 delete from leave_requests where employee_id in (select id from test.users where name like 'ta\_%');
@@ -67,7 +69,7 @@ create temp table tad as select (private.office_today() - ((extract(isodow from 
                                  (private.office_today() - extract(isodow from private.office_today())::integer)::date as sun;
 grant select on tad to authenticated;
 insert into attendance_records (profile_id, attendance_date, punch_in_at) select test.id('ta_m1'), wed, test.ist(wed, '09:55') from tad;
-insert into attendance_records (profile_id, attendance_date, punch_in_at) select test.id('ta_m2'), wed, test.ist(wed, '10:20') from tad;
+insert into attendance_records (profile_id, attendance_date, punch_in_at) select test.id('ta_m2'), wed, test.ist(wed, '10:40') from tad;
 insert into attendance_records (profile_id, attendance_date, punch_in_at) select test.id('ta_tl'), wed, test.ist(wed, '09:50') from tad;
 insert into attendance_lunches (profile_id, attendance_date, started_at) select test.id('ta_tl'), wed, test.ist(wed, '11:30') from tad;
 insert into attendance_records (profile_id, attendance_date, punch_in_at, punch_out_at) select test.id('ta_dh'), wed, test.ist(wed, '09:30'), test.ist(wed, '11:45') from tad;
@@ -77,7 +79,7 @@ select test.id('ta_ops'), test.dept('ta-a'), 'HALF_DAY', wed, wed, 'MORNING', 't
 insert into leave_requests (employee_id, department_id, leave_type, start_date, end_date, reason, status)
 select test.id('ta_mb'), test.dept('ta-b'), 'FULL_DAY', wed, wed, 'test', 'APPROVED' from tad;
 select test.check(test.tastatus('ta_m1', wed, '12:00') = 'PRESENT', 'punched in on time: Present') from tad;
-select test.check(test.tastatus('ta_m2', wed, '12:00') = 'LATE', 'punched in after the start: Late') from tad;
+select test.check(test.tastatus('ta_m2', wed, '12:00') = 'LATE', 'punched in after 10:30: Late') from tad;
 select test.check(test.tastatus('ta_tl', wed, '12:00') = 'PRESENT', 'a lunch on a past day is not "on break"') from tad;
 select test.check(test.tastatus('ta_dh', wed, '12:00') = 'SHIFT_COMPLETED', 'punched out: Shift Completed') from tad;
 select test.check(test.tastatus('ta_ops', wed, '14:00') = 'HALF_DAY', 'morning leave and punched in: Half Day') from tad;
@@ -88,7 +90,7 @@ update attendance_settings set reminders_paused_on = (select wed from tad) where
 select test.check(test.tastatus('ta_mp', wed, '12:00') = 'HOLIDAY' and test.tastatus('ta_m1', wed, '12:00') = 'PRESENT',
   'HR''s day off: Holiday (someone who came in is still Present)') from tad;
 update attendance_settings set reminders_paused_on = null, late_grace_minutes = 30 where id;
-select test.check(test.tastatus('ta_m2', wed, '12:00') = 'PRESENT', 'within the grace period: Present, not Late') from tad;
+select test.check(test.tastatus('ta_m2', wed, '12:00') = 'LATE', 'the old grace setting does not change the company-wide 10:30 rule') from tad;
 update attendance_settings set late_grace_minutes = 0 where id;
 -- today, at fixed times
 delete from attendance_records where profile_id = test.id('ta_mp') and attendance_date = private.office_today();

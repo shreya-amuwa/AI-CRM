@@ -74,7 +74,7 @@ export const TodayOverview: React.FC = () => {
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-slate-500">Absent: not punched in and not on leave, {data.absentAfterMinutes} minutes after their day start. Late: punched in after their day start.</p>
+          <p className="text-[11px] text-slate-500">Absent: not punched in and not on leave, {data.absentAfterMinutes} minutes after their day start. Late: punched in after {data.lateAfter ?? '10:30'} (reporting time {data.reportingTime ?? '10:00'}; late minutes counted from {data.lateAfter ?? '10:30'}), for every department.</p>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -94,7 +94,7 @@ export const TodayOverview: React.FC = () => {
                   <thead className="text-xs text-slate-500"><tr>{['Employee', 'Department', 'Status', 'Day starts', 'Punched in'].map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {rows.map(r => (
-                      <tr key={r.profileId} data-testid="overview-row" data-category={r.category}>
+                      <tr key={r.profileId} data-testid="overview-row" data-category={r.category} data-late={r.late ? 'true' : undefined} className={r.late ? 'bg-orange-50/60' : undefined}>
                         <th scope="row" className="px-2 py-1.5 text-left font-semibold text-slate-900">{r.name}{r.designation ? <span className="block text-[11px] font-normal text-slate-500">{r.designation}</span> : null}</th>
                         <td className="px-2 py-1.5 text-slate-700">{r.department ?? '–'}</td>
                         <td className="px-2 py-1.5">

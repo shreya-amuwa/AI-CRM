@@ -55,6 +55,9 @@ try {
   check(/Left early: Doctor appointment/.test(await page.getByTestId('team-table').innerText()) && /Late by 25 min/.test(await page.getByTestId('team-table').innerText()),
     'remarks: late and the early Punch Out reason');
   check(await page.locator('[data-testid="team-table"] tr.bg-rose-50\\/40').count() === 3, 'the three people unavailable for work are highlighted');
+  check(await page.locator('[data-testid="team-table"] tr[data-late="true"].bg-amber-50\\/60').count() === 1
+    && /Lalit Late/.test(await page.locator('[data-testid="team-table"] tr[data-late="true"]').innerText()), 'the late arrival is highlighted (and nobody else)');
+  check(/Late = punched in after 10:30/.test(await page.locator('p', { hasText: 'Reporting time' }).innerText()), 'the rule is explained: Late only after 10:30');
   await page.getByTestId('team-card-ABSENT').click();
   await page.waitForFunction(() => window.__calls.filter(c => c.fn === 'attendance_team_overview').at(-1).args.p_status === 'ABSENT');
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="team-table"] tbody tr').length === 1);
