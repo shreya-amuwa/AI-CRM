@@ -15,7 +15,8 @@ type Pacing = {
   delay: () => number;
   setTimer: (fn: () => void, ms: number) => void;
   isHidden: () => boolean;
-  onVisible: (fn: () => void) => void;
+  /** Call fn whenever the tab is shown again; returns how to stop. */
+  onVisible: (fn: () => void) => () => void;
 };
 const visibleWaiters = new Set<() => void>();
 let visibilityHooked = false;
@@ -25,19 +26,21 @@ let pacing: Pacing = {
   isHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
   onVisible: fn => {
     visibleWaiters.add(fn);
-    if (visibilityHooked || typeof document === 'undefined') return;
+    const stop = () => { visibleWaiters.delete(fn); };
+    if (visibilityHooked || typeof document === 'undefined') return stop;
     visibilityHooked = true;
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState !== 'visible') return;
       for (const w of [...visibleWaiters]) w();
     });
+    return stop;
   }
 };
 /** Tests only: controllable timers and visibility. */
 export function setRealtimePacingForTests(p: Pacing) { pacing = p; }
 
 type Supabase = NonNullable<ReturnType<typeof getSupabase>>;
-type Shared = { sb: Supabase; channel: ReturnType<Supabase['channel']>; listeners: Set<() => void> };
+type Shared = { sb: Supabase; channel: ReturnType<Supabase['channel']>; listeners: Set<() => void>; stopVisible: () => void };
 const shared = new Map<string, Shared>();
 
 /** `client` is for tests only; the app always uses the browser's Supabase client. */
@@ -60,7 +63,7 @@ export function listenToTables(tables: readonly string[], listener: () => void, 
       if (pacing.isHidden()) { missed = true; return; }
       schedule();
     };
-    pacing.onVisible(() => {
+    const stopVisible = pacing.onVisible(() => {
       if (!missed || !listeners.size) return;
       missed = false;
       schedule();
@@ -68,7 +71,7 @@ export function listenToTables(tables: readonly string[], listener: () => void, 
     let channel = sb.channel(`shared-${key.replace(/[^a-z0-9_,]/gi, '')}-${Math.random().toString(36).slice(2, 8)}`);
     for (const table of tables) channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, notify);
     channel.subscribe();
-    entry = { sb, channel, listeners };
+    entry = { sb, channel, listeners, stopVisible };
     shared.set(key, entry);
   }
   entry.listeners.add(listener);
@@ -77,6 +80,7 @@ export function listenToTables(tables: readonly string[], listener: () => void, 
     mine.listeners.delete(listener);
     if (!mine.listeners.size && shared.get(key) === mine) {
       shared.delete(key);
+      mine.stopVisible();
       void mine.sb.removeChannel(mine.channel);
     }
   };

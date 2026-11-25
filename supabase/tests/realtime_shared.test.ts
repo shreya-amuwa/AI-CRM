@@ -4,12 +4,12 @@ import { listenToTables, setRealtimePacingForTests } from '../../src/lib/realtim
 // controllable timers and tab visibility (the app uses setTimeout, a random 0.4-2 s delay and document.visibilityState)
 let timers: (() => void)[] = [];
 let hidden = false;
-const visibleListeners: (() => void)[] = [];
+const visibleListeners = new Set<() => void>();
 setRealtimePacingForTests({
   delay: () => 1000,
   setTimer: (fn: () => void) => { timers.push(fn); },
   isHidden: () => hidden,
-  onVisible: (fn: () => void) => { visibleListeners.push(fn); }
+  onVisible: (fn: () => void) => { visibleListeners.add(fn); return () => { visibleListeners.delete(fn); }; }
 });
 const flush = () => { const t = timers; timers = []; t.forEach(f => f()); };
 
@@ -79,6 +79,7 @@ check(d === 2, 'shown again with nothing missed: no reload');
 check(opened.length === 3, 'listening again opens a fresh channel');
 stopD(); stopC();
 check(removed.length === 3, 'every channel is closed at the end');
+check(visibleListeners.size === 0, 'a closed channel stops waiting for the tab to be shown (nothing piles up as screens open and close)', visibleListeners.size);
 const noop = listenToTables(['customers'], () => a++, null);
 noop();
 check(opened.length === 3, 'without a Supabase client nothing is opened (as before)');
