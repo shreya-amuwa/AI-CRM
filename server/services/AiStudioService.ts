@@ -2,7 +2,7 @@ import type {
   AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
 } from '../../shared/contracts.js';
 import {
-  aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
+  aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioReportLeadEditSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
   aiStudioTaskEditSchema, aiStudioTasksQuerySchema, aiStudioTaskUpdateSchema, uuidSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
@@ -46,4 +46,6 @@ export class AiStudioService {
     const { decision, comment } = parse(aiStudioReportReviewSchema, body);
     return this.repo.reviewReport(parse(uuidSchema, id), decision, comment);
   }
+  /** The Team Lead corrects a report waiting for their approval (the database checks that the caller is that reviewer). */
+  leadEditReport(id: string, body: unknown): Promise<AiStudioReportDetail> { return this.repo.leadEditReport(parse(uuidSchema, id), parse(aiStudioReportLeadEditSchema, body)); }
 }

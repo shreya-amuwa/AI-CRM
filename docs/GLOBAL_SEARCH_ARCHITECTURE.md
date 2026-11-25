@@ -16,7 +16,7 @@ How people use it: `docs/COMMAND_PALETTE_GUIDE.md`.
 | Palette and record panel | `src/components/search/CommandPalette.tsx` (loaded on demand; preloaded 1.5 s after sign-in) | Results, keyboard, recent items, the record panel |
 | Matching, recent, shortcut | `src/lib/search/searchEngine.ts` (no React) | Page matching and aliases, ranking, per-person recent list, Ctrl/Cmd + K test |
 | API | `POST /api/v1/search` (`{ q, limit }`) and `GET /api/v1/search/records/:type/:id` | `server/services/SearchService.ts` → `SearchRepository` → database functions |
-| Database | `supabase/migrations/20270213000100_global_search.sql` | `public.global_search(q, limit)` and `public.search_record(type, id)` |
+| Database | `supabase/migrations/20270215000100_global_search.sql` | `public.global_search(q, limit)` and `public.search_record(type, id)` |
 
 The query is sent in a POST body, so it does not appear in addresses or access logs. The per-user request quota applies, and the palette
 sends one request after typing pauses (250 ms).

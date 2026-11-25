@@ -37,8 +37,9 @@ const leadMetrics = { own: { total: 2, completed: 1, overdue: 0, completionPct: 
   team: { members: 2, total: 4, completed: 1, pending: 2, overdue: 1, onTime: 0, late: 0, completionPct: 25, onTimePct: null, progressPct: 40 },
   reports: { submitted: 3, approved: 2, returned: 1, pending: 0, waitingOverOneDay: 0, reviewedPct: 100, avgReviewHours: 3.5 },
   management: { tasksAssignedToTeam: 4, tasksReceived: 2, handedDown: 1, handledOrDelegated: 2, delegationPct: 100 }, parts: [{ key: 'ownCompletion', label: 'Own task completion', weight: 20, value: 50 }], score: 58 };
-// International / Reseller (20270210000100): the Team Lead rates and approves a member (never returns them), not while a report waits; the head rates the lead
-let strict = false;
+// Team-Lead-first rules (20270210000100 for International / Reseller, every department since 20270213000100): the Team Lead rates and approves a member
+// (never returns them), not while a report waits; the head rates the lead. On by default; setStrict(false) keeps the older screens reachable.
+let strict = true;
 let waiting = 0;
 const strictFlags = (r: any, subject: 'member' | 'lead') => (strict ? { ...r, ratingRequired: true, waitingReports: subject === 'member' ? waiting : 0, canReturn: subject === 'member' ? false : r.canDecide && r.status === 'PENDING' } : r);
 let memberRec = rec('PENDING', { canDecide: true });
@@ -53,13 +54,13 @@ const overview = (departmentId?: string) => {
     unassignedMembers: [], pendingRecords: 1 };
   if (role === 'MEMBER') return { role: 'TEAM_MEMBER', ...base, me: person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), { ...memberRec, canDecide: false, canResubmit: memberRec.status === 'RETURNED' }) };
   if (role === 'TEAM_HEAD') return { role, ...base, me: person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, { ...leadRec, canDecide: false, canResubmit: leadRec.status === 'RETURNED' }),
-    members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), strictFlags(memberRec, 'member'))], pendingReports: 1, pendingRecords: 1, ...(strict ? { leadDecidesMembers: true } : {}) };
+    members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), { ...strictFlags(memberRec, 'member'), canUpdate: memberRec.status === 'APPROVED' })], pendingReports: 1, pendingRecords: 1, ...(strict ? { leadDecidesMembers: true } : {}) };
   return { role, ...base, department: { id: 'd1', name: 'International' }, tasks: { total: 9, completed: 4, pending: 3, overdue: 2, completionPct: 44.4 },
     reports: { submitted: 7, approved: 4, returned: 1, pending: 2, approvedPct: 57.1 },
     leads: [{ ...person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, strictFlags({ ...leadRec, canDecide: leadRec.status === 'PENDING' }, 'lead')), members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), strictFlags({ ...memberRec, canDecide: false }, 'member'))] }],
     unassignedMembers: [], pendingRecords: 1, ...(strict ? { leadDecidesMembers: true } : {}) };
 };
-const asReport = (r: any) => ({ ...r, canReview: role === 'TEAM_HEAD' && r.status === 'PENDING', canEdit: role === 'MEMBER' && r.status === 'RETURNED' });
+const asReport = (r: any) => ({ ...r, canReview: role === 'TEAM_HEAD' && r.status === 'PENDING', canReviewerEdit: role === 'TEAM_HEAD' && r.status === 'PENDING', canEdit: role === 'MEMBER' && r.status === 'RETURNED' });
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(String(input), location.origin);
@@ -90,7 +91,19 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const items = scoped.filter(r => !q.status || r.status === q.status).map(asReport);
     return ok({ counts: { pending: scoped.filter(r => r.status === 'PENDING').length, approved: scoped.filter(r => r.status === 'APPROVED').length, returned: scoped.filter(r => r.status === 'RETURNED').length, total: scoped.length }, total: items.length, items });
   }
-  let m = p.match(/^\/task-reports\/([^/]+)\/review$/);
+  // 20270213000100: the Team Lead edits a waiting report (the member's rules and a reason), kept in the history with each change
+  let m = p.match(/^\/task-reports\/([^/]+)\/edit$/);
+  if (m) {
+    const r = reports.find(x => x.id === m![1])!;
+    if (role !== 'TEAM_HEAD') return fail(403, 'FORBIDDEN', 'Only the Team Lead of this team member can edit this report.');
+    if ((body.reason || '').length < 5) return fail(400, 'VALIDATION_ERROR', 'Say why you changed the report (5 to 1000 characters); the team member reads it.');
+    const changes: Record<string, unknown> = {};
+    for (const k of ['workCompleted', 'progress', 'pendingWork', 'delayReason', 'remarks']) if ((r[k] ?? null) !== (body[k] ?? null)) changes[k] = { from: r[k] ?? null, to: body[k] ?? null };
+    Object.assign(r, { workCompleted: body.workCompleted, progress: body.progress, pendingWork: body.pendingWork ?? null, delayReason: body.delayReason ?? null, remarks: body.remarks ?? null, editedBy: 'Leena Lead', editedAt: new Date().toISOString() });
+    history[r.id].push({ action: 'EDITED', by: 'Leena Lead', at: r.editedAt, from: 'PENDING', to: 'PENDING', remarks: body.reason, revision: r.revision, changes });
+    return ok(asReport(r));
+  }
+  m = p.match(/^\/task-reports\/([^/]+)\/review$/);
   if (m) {
     const r = reports.find(x => x.id === m![1])!;
     if (role !== 'TEAM_HEAD') return fail(403, 'FORBIDDEN', 'Only the Team Lead of this team member can decide on this report.');
@@ -101,7 +114,22 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   m = p.match(/^\/task-reports\/([^/]+)$/);
   if (m) return ok({ ...asReport(reports.find(x => x.id === m![1])!), history: history[m[1]] });
-  if (p === '/performance-approval/overview') return ok(overview(url.searchParams.get('departmentId') ?? undefined));
+  if (p === '/performance-approval/overview') {
+    // every department (20270213000100): a Team Member has no performance view
+    if (role === 'MEMBER' && strict) return fail(403, 'FORBIDDEN', 'Performance Management is for Team Leads and Department Heads. Submit your daily reports on your assigned tasks; your Team Lead reviews them.');
+    return ok(overview(url.searchParams.get('departmentId') ?? undefined));
+  }
+  m = p.match(/^\/performance-approval\/people\/([^/]+)\/work$/);
+  if (m) return ok({ id: m[1], name: m[1] === 'm1' ? 'Mohan Member' : 'Leena Lead', role: m[1] === 'm1' ? 'TEAM_MEMBER' : 'TEAM_HEAD', periodStart: TODAY, periodEnd: TODAY, tasks: [
+    { id: tasks[0].id, title: tasks[0].title, status: 'IN_PROGRESS', priority: 'HIGH', dueDate: tasks[0].dueDate, progress: 10, assignedAt: TODAY, completedAt: null, overdue: false, onTime: null,
+      reports: reports.length, pendingReports: reports.filter(r => r.status === 'PENDING').length, lastReport: reports[0] ? { id: reports[0].id, reportDate: reports[0].reportDate, progress: reports[0].progress, status: reports[0].status } : null },
+    { id: tasks[1].id, title: tasks[1].title, status: 'ASSIGNED', priority: 'MEDIUM', dueDate: tasks[1].dueDate, progress: 0, assignedAt: '2019-12-01', completedAt: null, overdue: true, onTime: null, reports: 0, pendingReports: 0, lastReport: null }] });
+  m = p.match(/^\/performance-approval\/records\/([^/]+)\/evaluation$/);
+  if (m) {
+    if (!body.rating || body.rating < 1 || body.rating > 5) return fail(400, 'VALIDATION_ERROR', 'The rating is from 1 to 5.');
+    memberRec = { ...memberRec, rating: body.rating, reviewRemarks: body.remarks ?? null, reviewedAt: new Date().toISOString() };
+    return ok(memberRec);
+  }
   // AI Studio daily report form
   if (p === '/ai-studio/reports/context') return ok({ role: 'MEMBER', today: TODAY, reviewer: 'Pari Gupta', hasReviewer: true, route: 'TEAM_LEAD', projects: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'CRM Revamp' }], tasks: [] });
   // AI Design Studio daily report form
@@ -154,9 +182,17 @@ w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-memb
   }
   root.render(what.startsWith('reports')
     ? <TaskReports level={role === 'MEMBER' ? 'MEMBER' : role === 'TEAM_HEAD' ? 'TEAM_LEAD' : 'DEPARTMENT_HEAD'} />
-    : <PerformanceApprovals title={role === 'MEMBER' ? 'My Performance' : 'Performance Management'} />);
+    : <PerformanceApprovals title="Performance Management" />);
 };
 w.aiReports = () => aiReports;
-w.reset = () => { aiReports = []; try { localStorage.clear(); } catch { /* ignore */ } reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = false; waiting = 0; };
+w.reset = () => { aiReports = []; try { localStorage.clear(); } catch { /* ignore */ } reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = true; waiting = 0; };
+/** A waiting report of the member on the first task (for the Team Lead's drill-down). */
+w.seedReport = () => {
+  const t = tasks[0];
+  const r = { id: 'r1', taskId: t.id, taskTitle: t.title, taskStatus: t.status, taskPriority: t.priority, taskDueDate: t.dueDate, authorId: 'm1', author: 'Mohan Member', designation: null, departmentId: 'd1', teamId: 'tm',
+    reviewerId: 'l1', reportDate: TODAY, workCompleted: 'Updated half of the account list', progress: 40, pendingWork: 'The other half', delayReason: null, remarks: null,
+    status: 'PENDING', revision: 1, submittedAt: new Date().toISOString(), reviewedBy: null, reviewedAt: null, reviewRemarks: null, editedBy: null, editedAt: null };
+  reports = [r]; history.r1 = [{ action: 'SUBMITTED', by: 'Mohan Member', at: r.submittedAt, from: null, to: 'PENDING', remarks: null, revision: 1 }];
+};
 /** International / Reseller rules on (and how many of the member's reports are still waiting). */
 w.setStrict = (on: boolean, waitingReports = 0) => { strict = on; waiting = waitingReports; };

@@ -12,13 +12,17 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270210000100_unified_performance_hierarchy.sql
+-- 20270213000100 extends the Team-Lead-first rules to every department (applied again after the file above, as on the live database)
+\i supabase/migrations/20270213000100_performance_lead_primary.sql
+-- AI Studio reads its own work (20270214000100 replaces some of the functions above, so it is applied again after them)
+\i supabase/migrations/20270214000100_ai_studio_performance.sql
 
 \echo '   the migration'
 select test.check((select count(*) = 1 from pg_proc where proname = 'performance_record_review' and pronamespace = 'public'::regnamespace), 'one performance_record_review (the 4-argument version was replaced)');
 select test.check(not has_function_privilege('anon', 'public.performance_subject_history(uuid)', 'execute') and has_function_privilege('authenticated', 'public.performance_subject_history(uuid)', 'execute')
                   and not has_function_privilege('authenticated', 'private.perf2_strict(uuid)', 'execute'), 'grants: signed-in users call the public functions only');
-select test.check(private.perf2_strict(test.dept('international')) and private.perf2_strict(test.dept('reseller')) and not private.perf2_strict(test.dept('tdr-a')) and not private.perf2_strict(test.dept('wabastore')),
-  'the strict hierarchy applies to International and Reseller only');
+select test.check(private.perf2_strict(test.dept('international')) and private.perf2_strict(test.dept('reseller')) and private.perf2_strict(test.dept('tdr-a')) and private.perf2_strict(test.dept('wabastore')),
+  'the Team-Lead-first rules apply to every department (20270213000100)');
 select test.must_fail($$update performance_records set rating = 6 where id = (select id from performance_records limit 1)$$, 'a rating is 1 to 5 in the table too', 'rating_check');
 
 -- a member with nobody to lead them: International has two Team Leads in its one team, so a new member is not given one automatically
@@ -105,14 +109,14 @@ select test.check((select count(*) = 0 from performance_records) and (select cou
 select test.login('sa');
 select test.check(jsonb_array_length(performance_subject_history(test.id('i_m_a1')) -> 'records') >= 1, 'the Super Admin reads every history');
 
-\echo '   an ordinary department keeps the earlier rules'
+\echo '   an ordinary department: the same Team-Lead-first rules (20270213000100), the Department Head still stands in for members without a Team Lead'
 select test.login('tdr_m1');
-select test.check((performance_overview(current_date - 30, current_date + 30) ->> 'role') = 'TEAM_MEMBER', 'its member still opens their own performance');
-select test.check((performance_subject_history(test.id('tdr_m1')) ->> 'id') = test.id('tdr_m1')::text, 'and reads their own history');
+select test.must_fail($$select performance_overview(current_date - 30, current_date + 30)$$, 'its member has no performance view either', 'for Team Leads and Department Heads');
+select test.must_fail(format($$select performance_subject_history(%L)$$, test.id('tdr_m1')), 'nor their own history', 'not found');
 select test.login('tdr_dha');
 select test.check((performance_overview(current_date - 30, current_date + 30) ->> 'leadDecidesMembers')::boolean = false, 'its Department Head still stands in for members without a Team Lead');
-select test.check((select bool_and((x #>> '{record,ratingRequired}')::boolean = false) from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'leads') x where x -> 'record' <> 'null'::jsonb),
-  'and the rating is optional there');
+select test.check((select bool_and((x #>> '{record,ratingRequired}')::boolean) from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'leads') x where x -> 'record' <> 'null'::jsonb),
+  'and the rating is required there too');
 reset role;
 -- leave International as the other suites expect it (their counts are exact): this file's member, task, report and record go
 select set_config('request.jwt.claims', '', false);

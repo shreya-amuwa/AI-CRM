@@ -491,7 +491,10 @@ export const taskReportsController = {
   reviewRecord: (async ctx => ok(await svc(ctx).taskReports.reviewRecord(ctx.params.id, ctx.req.body))) as Handler,
   resubmitRecord: (async ctx => ok(await svc(ctx).taskReports.resubmitRecord(ctx.params.id))) as Handler,
   recordHistory: (async ctx => ok(await svc(ctx).taskReports.recordHistory(ctx.params.id))) as Handler,
-  subjectHistory: (async ctx => ok(await svc(ctx).taskReports.subjectHistory(ctx.params.id))) as Handler
+  subjectHistory: (async ctx => ok(await svc(ctx).taskReports.subjectHistory(ctx.params.id))) as Handler,
+  reviewerEdit: (async ctx => ok(await svc(ctx).taskReports.reviewerEdit(ctx.params.id, ctx.req.body))) as Handler,
+  updateEvaluation: (async ctx => ok(await svc(ctx).taskReports.updateEvaluation(ctx.params.id, ctx.req.body))) as Handler,
+  personWork: (async ctx => ok(await svc(ctx).taskReports.work(ctx.params.id, ctx.req.query))) as Handler
 };
 
 export const performanceController = {
@@ -1050,5 +1053,6 @@ export const aiStudioController = {
   createReport: (async ctx => ok(await svc(ctx).aiStudio.createReport(ctx.req.body), 201)) as Handler,
   updateReport: (async ctx => ok(await svc(ctx).aiStudio.updateReport(ctx.params.id, ctx.req.body))) as Handler,
   deleteDraft: (async ctx => { await svc(ctx).aiStudio.deleteDraft(ctx.params.id); return ok(null); }) as Handler,
-  reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler
+  reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler,
+  leadEditReport: (async ctx => ok(await svc(ctx).aiStudio.leadEditReport(ctx.params.id, ctx.req.body))) as Handler
 };

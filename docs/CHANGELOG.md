@@ -22,7 +22,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,
   departments and notices the person may already open. The database's row-level rules decide (security invoker). Results open the exact
   record: records open in a panel with its own address (Back / Forward / refresh), meetings and notices open on their pages. Recent items
-  are kept per person, by id only. The header has a search field (an icon on phones). Migration `20270213000100_global_search.sql`.
+  are kept per person, by id only. The header has a search field (an icon on phones). Migration `20270215000100_global_search.sql`.
 
 * **In-app feedback instead of browser pop-ups** (docs/APP_FEEDBACK_SYSTEM.md): toasts, confirmation dialogs (with a destructive style,
   a safe default button, an optional typed confirmation and in-dialog retry) and input dialogs for reasons. All 58 uses of the browser's
@@ -84,7 +84,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Database migrations in this release
 
-* `20270213000100_global_search.sql`: `global_search`, `search_record`, private candidate helpers and trigram indexes (additive; safe to run twice).
+* `20270215000100_global_search.sql`: `global_search`, `search_record`, private candidate helpers and trigram indexes (additive; safe to run twice).
 
 Run in the Supabase SQL editor, in this order, **before** the matching code is deployed. Every one is additive and safe to run twice. See
 `DEPLOYMENT_AND_ROLLBACK.md`.

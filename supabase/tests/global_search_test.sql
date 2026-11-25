@@ -10,8 +10,8 @@
 \set QUIET 1
 \echo '--- 146. Global search: only what each person may open'
 reset role;
-\i supabase/migrations/20270213000100_global_search.sql
-\i supabase/migrations/20270213000100_global_search.sql
+\i supabase/migrations/20270215000100_global_search.sql
+\i supabase/migrations/20270215000100_global_search.sql
 
 delete from public.customers where company like 'Zephyr%' or name like 'Zephyr%';
 delete from public.meetings where title like 'Zephyr%';

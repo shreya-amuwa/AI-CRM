@@ -17,7 +17,7 @@ Team Lead approves a Team Member's performance; Department Head approves a Team 
 | --- | --- | --- |
 | Department Head | **Assign Task**, **Daily Reports**, **Performance Management** | assigns to Team Leads (existing page); *Daily Reports -> Task Reports* lists every task report of the department with its status (read-only); *Performance Management -> Scores & Approvals* compares the Team Leads and teams and approves or returns each Team Lead's performance |
 | Team Lead | **Assign Task**, **Daily Reports**, **Performance Management** | assigns to members (existing page); *Task Reports* is the inbox: Approve, or Return for correction with a reason; *Scores & Approvals* shows each member's figures and the Team Lead's own, and approves or returns a member's performance |
-| Team Member | **My Assigned Tasks**, **Daily Reports**, **My Performance** | *Task Reports*: report on an assigned task (task, date, work completed, progress %, pending work, reason for delay, remarks); the list shows Pending / Approved / Returned for correction, the Team Lead's remarks and the approval history; a returned report is corrected and sent again |
+| Team Member | **My Assigned Tasks**, **Daily Reports** (no *My Performance* since `20270213000100`, see the last section) | *Task Reports*: report on an assigned task (task, date, work completed, progress %, pending work, reason for delay, remarks); the list shows Pending / Approved / Returned for correction, the Team Lead's remarks and the approval history; a returned report is corrected and sent again |
 
 The same entries exist in the International and Reseller dashboard (`UnifiedDashboard`), the Sales Team Lead, Support Team Lead, Department Head, Sales Department Head
 (new *Assign Task* entry, the same page the other heads use) and the Sales and Support Team Member dashboards. The existing *Reports* page is now called **Daily Reports**; its
@@ -147,3 +147,81 @@ International / Reseller first by default), and the page is the Department Head'
 approval status, for a weekly, monthly or custom period. It reads `GET /performance-approval/overview?departmentId=...` (`performance_overview(start, end, department)`, which already
 allowed the Super Admin), so no migration is needed. It is **read only**: the Team Lead decides the members, the Department Head decides the Team Leads, and the database refuses the
 Super Admin's decisions.
+
+## Team Lead and Department Head Performance Management, every department (migration 20270213000100)
+
+Migration `supabase/migrations/20270213000100_performance_lead_primary.sql` (run after `20270212000100`; safe to run twice; nothing is deleted). The rules of
+"International and Reseller: the strict hierarchy" above now apply to **every department** (existing and future), and three things are added.
+
+```
+Team Lead assigns a task -> Team Member submits a daily report on it
+-> Team Lead reviews it, edits it if necessary, approves or returns it
+-> Team Lead evaluates the member from the approved reports and the task records: approves with a rating (and may update the rating / remarks later)
+-> Department Head reads the member's performance and the Team Lead's decision
+-> Department Head evaluates the Team Lead: approves with a rating, or returns it (the Team Lead resubmits)
+```
+
+| Who | Side panel | Performance Management |
+| --- | --- | --- |
+| Team Member | no performance entry (*My Performance* removed from the Sales / general and Support member dashboards; an old address opens the dashboard) | refused by the database (`FORBIDDEN`); they submit daily reports and see their status |
+| Team Lead | **Performance Management** (Sales Team Lead, Support Team Lead, International / Reseller) | every member who reports to them; open a member: their **assigned tasks** (status, deadline, overdue / on time, latest report) and **daily reports** of the period, where the Team Lead **edits**, approves or returns each report; then approves the member's performance with a **rating 1 to 5** and remarks; **Update evaluation** changes the rating / remarks of an approved one; **Evaluation history** (every period) and **Approval history** (every step) |
+| Department Head | **Performance Management** (Department Head, Sales Department Head, International / Reseller) | department analytics; every Team Lead with their team; open a Team Lead: their figures and tasks, approve (with a rating) or return their performance, update an approved evaluation; each member's reports and evaluation with the Team Lead's decision, **read only** |
+
+* **Team Lead edits a report** (`POST /task-reports/:id/edit`, `task_report_reviewer_edit`; Zod `taskReportReviewerEditSchema`): only the member's reviewer, only while the report is
+  **Pending**; the member's own rules apply (work at least 10 characters, progress 0 to 100, pending work below 100%, the reason for the delay past the deadline) plus a **reason**
+  (5 to 1000 characters) the member reads. The report keeps who edited it and when (`edited_by`, `edited_at`); the history gets an `EDITED` step with the reason and every changed
+  field (`changes`: field -> from / to); the audit log `TASK_REPORT_EDITED`; the member is notified (`REPORT_TASK_EDITED`); the figures follow. Saving the same values again
+  records nothing. Then the Team Lead approves or returns it as before.
+* **Update an approved evaluation** (`POST /performance-approval/records/:id/evaluation` `{rating, remarks}`, `performance_record_update_evaluation`): the reviewer of that record
+  (Team Lead for a member, Department Head for a Team Lead), only when it is **Approved**; the approved figures are not changed. History `UPDATED` with the old and new values,
+  audit `PERFORMANCE_RECORD_EVALUATION_UPDATED`; a Team Lead is notified (`REPORT_PERFORMANCE_UPDATED`), a member is not (they have no performance view). The record carries
+  `canUpdate`.
+* **A person's work** (`GET /performance-approval/people/:id/work?start&end`, `performance_member_work`): the tasks the performance counts (by deadline, else assignment day; at
+  most 300) with the report counts and the latest report. Readable by whoever may read the person's performance, **never by the person themselves**; anyone else gets 404.
+* **Members without a Team Lead:** outside International / Reseller the Department Head covering them still reviews their reports and evaluates them (AI Studio has no Team Leads);
+  in International / Reseller they wait for a Team Lead, as before. The overview's `leadDecidesMembers` is `true` for a Team Lead, and for a Department Head says whether such
+  members wait (`true` in International / Reseller).
+* **Records returned under the old rules:** a member's record that was *Returned for correction* (which the member can no longer resubmit) goes back to **Pending** for the Team
+  Lead (history `REOPENED`); approved records are not touched.
+* AI Studio: see the next section (`20270214000100`). AI Design Studio keeps its own dashboard and reports.
+
+Tests: `supabase/tests/performance_lead_primary_test.sql` (edits, evaluation updates, a person's work, every refusal, the Department Head standing in for an unled member outside
+International / Reseller, the reopened records); `task_daily_reports_performance_test.sql` now runs the Team-Lead-first branch of the flow for the ordinary department too;
+`unified_performance_hierarchy_test.sql` (every department is Team-Lead-first); the "Performance Management in every department" block of `api_integration.test.ts`;
+`task_daily_reports.test.ts` (schemas and service); `performance_sidebar.test.ts` (side panels); `ui_task_reports_performance.test.mjs` (member refused, the drill-down, edit then
+approve, update evaluation, the head's read-only view).
+
+Rollout: run the migration in the Supabase SQL editor. Until it is run: members no longer see a performance entry (the screens changed); *Edit report* and *Update
+evaluation* do not appear (the database does not offer them yet: `canReviewerEdit` / `canUpdate` are absent); a member's tasks panel shows the database's error; everything else
+works as before.
+
+## AI Studio: Performance Management in its side panel (migration 20270214000100)
+
+**Why it was missing.** AI Studio people do not use the Team Lead / Department Head dashboards that received Performance Management: the app opens
+`AiStudioDashboard` for them (`user.role === 'ai-studio'`), whose side panel had Overview, Projects, (Tasks, Team Management), Daily Report(s) and the shared
+entries, and never a Performance Management entry. Behind it, AI Studio keeps its own tasks (`ai_studio_tasks`) and two-step daily reports
+(`ai_studio_daily_reports`: Team Lead, then Department Head), while the shared figures read `work_tasks` and `task_daily_reports` only, so even a link to the
+shared page would have shown an AI Studio team with no work.
+
+**What changed.**
+
+* Side panel (`src/components/ai-studio/AiStudioDashboard.tsx`): **Performance Management** for the Team Lead (after *Daily Report*) and the Department Head
+  (after *Daily Reports*), its own entry and page (`/ai-studio/dashboard/:id/performance`, which works after a reload). Daily Report(s) and its tabs are unchanged.
+  A Team Member has no entry, and the address opens their Overview (the database refuses them too).
+* The page is the shared Performance Management (`PerformanceApprovals`): same records, ratings, approvals, histories and permissions as every department. For AI
+  Studio people the database reads AI Studio's work (`perf2_member` / `perf2_lead` choose by department): tasks from `ai_studio_tasks` (progress from the task),
+  reports from `ai_studio_daily_reports`, where a report counts as **Approved** once its Team Lead approved it (or the Department Head, for a member without a Team
+  Lead), **Returned** when sent back at either step and **Pending** while it waits at the Team Lead's step. AI Studio has no task split, so "work handed down" is
+  not part of a Team Lead's AI Studio score. Every other department keeps the task-record figures (the 20270209000100 bodies, unchanged).
+* The drill-down: opening a member shows their AI Studio tasks (with the project) and their AI Studio daily reports (the same list and dialog as Daily Report);
+  the Team Lead **edits** a report waiting for them (`POST /ai-studio/reports/:id/lead-edit`, `ai_studio_report_lead_edit`: the author's rules plus a reason the
+  employee reads; history `EDITED` with each change, audit `AI_STUDIO_REPORT_EDITED`, notification), approves it, then approves the member's performance with a
+  rating. The Department Head sees the Team Lead's own reports and tasks, every member with the Team Lead's decision (read only), and evaluates the Team Lead.
+
+Tests: `supabase/tests/ai_studio_performance_test.sql`; the AI Studio block of `api_integration.test.ts`; `performance_sidebar.test.ts`; and the browser run
+`supabase/tests/e2e/run-performance-nav.sh`, which signs in through the login page as the Team Lead, the Department Head and the Team Member of AI Studio,
+International and Reseller (and a Sales Team Lead) and checks the side panel, the page, the data, the edit / approve / rate flow and the refusals (45 checks).
+
+Rollout: run the migration in the Supabase SQL editor. Before it is run the AI Studio entry already shows, but the page shows AI Studio people with no task data,
+and *Edit report* does not appear.
+

@@ -2,7 +2,10 @@
  * Task daily reports and performance approval (migration 20270209000100): the schemas the form and the server share, and the service that maps a request to
  * the database function (the database enforces the permissions; these checks prove nothing malformed or privileged is ever sent to it).
  */
-import { performanceOverviewQuerySchema, performanceRecordReviewSchema, taskReportListQuerySchema, taskReportReviewSchema, taskReportSubmitSchema } from '../../shared/validation.js';
+import {
+  performanceEvaluationUpdateSchema, performanceOverviewQuerySchema, performanceRecordReviewSchema, performanceWorkQuerySchema, taskReportListQuerySchema, taskReportReviewSchema,
+  taskReportReviewerEditSchema, taskReportSubmitSchema
+} from '../../shared/validation.js';
 import { TaskReportService } from '../../server/services/TaskReportService.js';
 import type { TaskReportRepository } from '../../server/repositories/TaskReportRepository.js';
 
@@ -65,4 +68,28 @@ check(calls[5].fn === 'subjectHistory' && calls[5].args[0] === ID, 'a person\'s 
 let badId = false;
 try { await svc.subjectHistory('not-an-id'); } catch { badId = true; }
 check(badId && calls.length === 6, 'a malformed person id is refused');
+
+// ---- 20270213000100: the Team Lead edits a waiting report, updates an approved evaluation, opens a member's work
+const edit = { workCompleted: 'Updated and checked half of the account list', progress: 60, pendingWork: 'The other half', reason: 'Checked against the sheet' };
+check(taskReportReviewerEditSchema.safeParse(edit).success, 'a reviewer edit with a reason is valid');
+check(!taskReportReviewerEditSchema.safeParse({ ...edit, reason: '' }).success && !taskReportReviewerEditSchema.safeParse({ ...edit, reason: 'ok' }).success, 'an edit needs a reason (5 characters) the member reads');
+check(!taskReportReviewerEditSchema.safeParse({ ...edit, pendingWork: undefined }).success && taskReportReviewerEditSchema.safeParse({ ...edit, progress: 100, pendingWork: undefined }).success,
+  'the member\'s rule applies to an edit: pending work below 100%');
+check(!taskReportReviewerEditSchema.safeParse({ ...edit, status: 'APPROVED' }).success && !taskReportReviewerEditSchema.safeParse({ ...edit, authorId: ID }).success && !taskReportReviewerEditSchema.safeParse({ ...edit, taskId: ID }).success,
+  'an edit cannot change the status, the author or the task');
+check(performanceEvaluationUpdateSchema.safeParse({ rating: 3, remarks: 'Adjusted' }).success && !performanceEvaluationUpdateSchema.safeParse({ remarks: 'no rating' }).success
+  && !performanceEvaluationUpdateSchema.safeParse({ rating: 6 }).success && !performanceEvaluationUpdateSchema.safeParse({ rating: 3, status: 'PENDING' }).success, 'an evaluation update needs a rating 1 to 5 and nothing else');
+check(performanceWorkQuerySchema.safeParse({ start: '2027-02-01', end: '2027-02-28' }).success && !performanceWorkQuerySchema.safeParse({ start: '2027-02-28', end: '2027-02-01' }).success
+  && !performanceWorkQuerySchema.safeParse({ start: '2027-02-01', end: '2027-02-28', memberId: ID }).success, 'a work period must end after it starts (the person is in the path, not the query)');
+await svc.reviewerEdit(ID, edit);
+check(calls[6].fn === 'reviewerEdit' && calls[6].args[0] === ID && (calls[6].args[1] as { reason: string; progress: number }).reason === 'Checked against the sheet', 'a reviewer edit reaches the repository with its reason');
+await svc.updateEvaluation(ID, { rating: 2, remarks: 'Missed two deadlines' });
+check(calls[7].fn === 'updateEvaluation' && calls[7].args[1] === 2 && calls[7].args[2] === 'Missed two deadlines', 'an evaluation update reaches the repository');
+await svc.work(ID, { start: '2027-02-01', end: '2027-02-28' });
+check(calls[8].fn === 'work' && calls[8].args[0] === ID && (calls[8].args[1] as { start: string }).start === '2027-02-01', 'a person\'s work is read by id and period');
+let refusedNew = 0;
+for (const f of [() => svc.reviewerEdit('nope', edit), () => svc.reviewerEdit(ID, { ...edit, reason: '' }), () => svc.updateEvaluation(ID, { rating: 0 }), () => svc.work('nope', { start: '2027-02-01', end: '2027-02-28' })]) {
+  try { await f(); } catch { refusedNew++; }
+}
+check(refusedNew === 4 && calls.length === 9, 'malformed edits, ratings and ids are refused before the database');
 console.log(`=== TASK DAILY REPORT UNIT TESTS PASSED (${passed}) ===`);
