@@ -14,6 +14,8 @@ select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270209000100_task_daily_reports_performance.sql
 -- International / Reseller: the Team Lead alone evaluates members (20270210000100 replaces some of the functions above, so it is applied again after them)
 \i supabase/migrations/20270210000100_unified_performance_hierarchy.sql
+-- every department: the Team Lead evaluates members, members have no performance view (20270213000100), applied again after the two above
+\i supabase/migrations/20270213000100_performance_lead_primary.sql
 
 create or replace function test.u(p_key text) returns uuid language sql stable as $$ select test.id(current_setting('tdr.' || p_key)) $$;
 grant execute on function test.u(text) to anon, authenticated, service_role;
@@ -64,7 +66,8 @@ select test.check(private.direct_lead_of(test.id('tdr_m1')) = test.id('tdr_tl1')
 select set_config('tdr.h', 'tdr_dha', false), set_config('tdr.l', 'tdr_tl1', false), set_config('tdr.m', 'tdr_m1', false), set_config('tdr.pl', 'tdr_tl2', false), set_config('tdr.pm', 'tdr_m2', false),
        set_config('tdr.oh', 'tdr_dhb', false), set_config('tdr.ol', 'tdr_tlb', false), set_config('tdr.om', 'tdr_mb', false), set_config('tdr.slug', 'tdr-a', false);
 \set tag 'existing department'
-\set strict false
+-- since 20270213000100 the Team-Lead-first rules (the flow's strict branch) apply to every department, not only International / Reseller
+\set strict true
 \i supabase/tests/task_daily_reports_flow.sql
 
 -- ===== International (a unified Sales + Support department) =====

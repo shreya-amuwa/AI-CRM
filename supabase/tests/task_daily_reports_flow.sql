@@ -3,7 +3,7 @@
 -- task_daily_reports_performance_test.sql once per department; the people come from the tdr.* settings the caller sets:
 --   h head, l team lead, m member of l, pl a second Team Lead of the SAME department (or another department's lead), pm that lead's member,
 --   oh / ol / om the head / lead / member of ANOTHER department, slug (the department's slug), tag (a short label for the output and the titles).
--- The psql variable `strict` is true for International and Reseller (20270210000100): there the Team Member has no performance view, the Team Lead
+-- The psql variable `strict` was true for International and Reseller only (20270210000100); since 20270213000100 every department runs it: there the Team Member has no performance view, the Team Lead
 -- alone finalizes a member's performance (with a rating, never returning it to the member, never while a report waits) and the Department Head rates
 -- the Team Lead. The "if strict" blocks hold those differences; everything else is the same run for every department.
 -- test.u('m') is the id of the person named by the setting.

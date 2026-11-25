@@ -16,8 +16,3 @@ export const PerformanceHub: React.FC<{ mode: 'TEAM_LEAD' | 'DEPARTMENT_HEAD'; /
     </div>
   );
 };
-
-/** My Performance (Team Member dashboards): the member's own figures and the approval status of their performance. */
-export const MyPerformance: React.FC = () => (
-  <PerformanceApprovals title="My Performance" subtitle="Your tasks and your approved daily reports, and whether your Team Lead has approved your performance." />
-);

@@ -3896,6 +3896,28 @@ export const taskReportReviewSchema = z
   .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional() })
   .strict()
   .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
+// ---- Performance Management for Team Leads and Department Heads, every department (20270213000100) ----
+/** The Team Lead edits a member's waiting report: the member's own rules apply, plus a reason the member reads. */
+export const taskReportReviewerEditSchema = z
+  .object({
+    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    pendingWork: trimmed(2000).optional(),
+    delayReason: trimmed(2000).optional(),
+    remarks: trimmed(2000).optional(),
+    reason: trimmed(1000).min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.')
+  })
+  .strict()
+  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+/** The reviewer updates the rating and remarks of an approved evaluation. */
+export const performanceEvaluationUpdateSchema = z
+  .object({ rating: z.number().int().min(1, 'The rating is from 1 to 5.').max(5, 'The rating is from 1 to 5.'), remarks: trimmed(2000).optional() })
+  .strict();
+/** One person's tasks and reports in a period (the reviewer's drill-down). */
+export const performanceWorkQuerySchema = z
+  .object({ start: isoDate, end: isoDate })
+  .strict()
+  .refine(v => v.end >= v.start, { message: 'The end date cannot be before the start date.', path: ['end'] });
 export const taskReportListQuerySchema = z
   .object({
     scope: z.enum(['MINE', 'TEAM']).default('MINE'),
