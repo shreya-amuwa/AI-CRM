@@ -30,7 +30,9 @@ for (const who of WHO) {
   check(groups.includes('Sales') && groups.includes('Support') && groups.indexOf('Sales') < groups.indexOf('Support'), `${who}: ONE sidebar with a Sales section and then a Support section`);
   check(unifiedMenu(who)[0].items[0].id === 'overview', `${who}: the sidebar starts with the Overview`);
   const all = unifiedMenu(who).flatMap(g => g.items.map(i => i.label));
-  for (const must of ['Task Management', 'Daily Reports', 'Chat', 'Notification Center', 'Profile', 'Raise an Issue']) check(all.includes(must), `${who}: ${must} is in the same sidebar`);
+  const taskEntry = { HEAD: 'Task Management', LEAD: 'Assign Task', MEMBER: 'My Assigned Tasks' }[who];
+  const perfEntry = who === 'MEMBER' ? 'My Performance' : 'Performance Management';
+  for (const must of [taskEntry, 'Daily Reports', perfEntry, 'Chat', 'Notification Center', 'Profile', 'Raise an Issue']) check(all.includes(must), `${who}: ${must} is in the same sidebar`);
   check(labelsOf(who, 'Sales').includes('Add Lead') && labelsOf(who, 'Sales').includes('My Leads'), `${who}: Sales has Add Lead and My Leads`);
   check(labelsOf(who, 'Sales').length > 0 && labelsOf(who, 'Support').length >= 2, `${who}: Sales and Support each have their pages`);
 }
@@ -43,7 +45,12 @@ check(labelsOf('MEMBER', 'Sales').join('|') === 'Add Lead|My Leads|Lead Follow-u
 check(labelsOf('MEMBER', 'Support').join('|') === 'My Customers|My Support Tickets', 'Team Member, Support: my customers and my tickets only');
 check(!labelsOf('MEMBER', 'Team').includes('Team Members') && labelsOf('LEAD', 'Team').includes('Team Members') && labelsOf('HEAD', 'Team').includes('Team Attendance'), 'only the Team Lead and the Department Head manage team members; only the head has Team Attendance');
 const headTasks = unifiedMenu('HEAD').find(g => g.label === 'Work')!.items[0];
-check(headTasks.children?.length === 4 && unifiedMenu('MEMBER').find(g => g.label === 'Work')!.items[0].id === 'tasks', 'the head\'s Task Management has assign, updates, reports and daily; the others one page');
+check(headTasks.children?.length === 4 && headTasks.children[0].label === 'Assign Task' && unifiedMenu('MEMBER').find(g => g.label === 'Work')!.items[0].id === 'tasks', 'the head\'s Task Management has assign, updates, reports and daily; the others one page');
+
+check(labelsOf('HEAD', 'Work').join('|') === 'Task Management|Daily Reports|Performance Management' && labelsOf('LEAD', 'Work').join('|') === 'Assign Task|Daily Reports|Performance Management'
+  && labelsOf('MEMBER', 'Work').join('|') === 'My Assigned Tasks|Daily Reports|My Performance', 'Work: Assign Task, Daily Reports and Performance Management for the head and the lead; My Assigned Tasks, Daily Reports and My Performance for the member');
+check(canOpen('HEAD', 'performance') && canOpen('LEAD', 'performance') && !canOpen('MEMBER', 'performance') && canOpen('MEMBER', 'my-performance') && !canOpen('HEAD', 'my-performance') && !canOpen('LEAD', 'my-performance'),
+  'Performance Management is for the head and the lead, My Performance for the member only');
 
 // ---- every sidebar entry is a real page that the role may open; addresses are unique, short and round-trip
 for (const who of WHO) check(pagesOf(who).every(p => canOpen(who, p)), `${who}: every sidebar page is one the role may open`);

@@ -472,6 +472,19 @@ export const payoutController = {
   checkRazorpay: (async ctx => ok(await svc(ctx).payouts.checkRazorpay(ctx.params.id))) as Handler
 };
 
+// Task daily reports (Team Member -> Team Lead) and performance approval (Team Member -> Team Lead -> Department Head)
+export const taskReportsController = {
+  myTasks: (async ctx => ok(await svc(ctx).taskReports.myTasks())) as Handler,
+  submit: (async ctx => ok(await svc(ctx).taskReports.submit(ctx.req.body), 201)) as Handler,
+  list: (async ctx => ok(await svc(ctx).taskReports.list(ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).taskReports.get(ctx.params.id))) as Handler,
+  review: (async ctx => ok(await svc(ctx).taskReports.review(ctx.params.id, ctx.req.body))) as Handler,
+  overview: (async ctx => ok(await svc(ctx).taskReports.overview(ctx.req.query))) as Handler,
+  reviewRecord: (async ctx => ok(await svc(ctx).taskReports.reviewRecord(ctx.params.id, ctx.req.body))) as Handler,
+  resubmitRecord: (async ctx => ok(await svc(ctx).taskReports.resubmitRecord(ctx.params.id))) as Handler,
+  recordHistory: (async ctx => ok(await svc(ctx).taskReports.recordHistory(ctx.params.id))) as Handler
+};
+
 export const performanceController = {
   people: (async ctx => ok(await svc(ctx).performance.people(ctx.req.query))) as Handler,
   report: (async ctx => ok(await svc(ctx).performance.report(ctx.req.query))) as Handler,
