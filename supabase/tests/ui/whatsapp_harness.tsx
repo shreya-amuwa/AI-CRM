@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WhatsAppField } from '../../../src/components/team-member/pipeline/WhatsAppField';
 import { startsSameAsMobile, whatsappValue } from '../../../shared/whatsapp';
+import './withAppFeedback';
 
 /** The same wiring as the Add lead and Edit lead forms: a mobile field, the WhatsApp field and what would be saved. */
 const Harness: React.FC<{ initialPhone?: string; initialWhatsapp?: string; edit?: boolean }> = ({ initialPhone = '', initialWhatsapp = '', edit }) => {

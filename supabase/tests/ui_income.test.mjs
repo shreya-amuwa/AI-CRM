@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
+import { answerAppDialogs, appDialogs } from './ui/appDialogs.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -61,7 +62,7 @@ const open = async (mount, arg, { width = 1280, before } = {}) => {
   const ctx = await browser.newContext({ viewport: { width, height: 900 } });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(String(e)));
-  page.on('dialog', d => d.accept());
+  await answerAppDialogs(page);
   await page.goto(base);
   if (before) await page.evaluate(before);
   await page.evaluate(([m, a]) => window[m](a), [mount, arg]);

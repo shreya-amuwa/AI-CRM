@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
+import { answerAppDialogs, appDialogs } from './ui/appDialogs.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -137,7 +138,7 @@ try {
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(String(e)));
-    page.on('dialog', d => d.accept());
+    await answerAppDialogs(page);
     await page.goto(base);
     await page.evaluate(() => window.mount());
     await page.getByRole('heading', { name: 'Crocodial Integration' }).waitFor();

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { AddLeadView, EditLeadView } from '../../../src/components/team-member/pipeline/LeadForms';
+import './withAppFeedback';
 
 /**
  * The real Add Lead and Edit Lead screens with the CRM API answered in the page (every request is recorded in window.__calls), so the

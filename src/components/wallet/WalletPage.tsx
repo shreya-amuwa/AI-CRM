@@ -6,6 +6,7 @@ import { TYPE_LABEL, monthLabel, walletApi, type TransactionType, type WalletMon
 import { PageTitle } from '../layout/shell';
 import { WithdrawDialog } from '../income/WithdrawDialog';
 import { Empty, Notice, Section, Tile, TransactionList, dayText, timeText } from './walletParts';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * The Wallet, in the side panel of every employee dashboard (20270207000100; docs/EMPLOYEE_WALLET.md). Every figure is read from the database for the
@@ -65,7 +66,7 @@ export const WalletPage: React.FC = () => {
     : null;
 
   const cancel = async (id: string) => {
-    if (!window.confirm('Cancel this withdrawal?')) return;
+    if (!(await confirmAction({ title: 'Cancel this withdrawal request?', description: 'The amount goes back to your available balance.', confirmLabel: 'Cancel withdrawal', cancelLabel: 'Keep request', variant: 'destructive' }))) return;
     try { await payoutsApi.cancel(id); setNotice('Withdrawal cancelled.'); void load(); } catch (e) { setError(errText(e, 'It could not be cancelled.')); }
   };
   const slip = (id: string) => { payoutsApi.downloadSlip(id).catch(e => setError(errText(e, 'The slip could not be downloaded.'))); };

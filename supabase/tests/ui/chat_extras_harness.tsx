@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { InternalChats } from '../../../src/components/chat/InternalChats';
+import './withAppFeedback';
 
 /**
  * The real internal chat (list, thread, composer) with the CRM API answered in the page, like the database: one group (me, Priya Shah,

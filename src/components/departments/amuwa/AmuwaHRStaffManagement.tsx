@@ -20,6 +20,7 @@ import {
   Building2,
   UserCheck
 } from 'lucide-react';
+import { confirmAction } from '../../feedback/AppFeedback';
 
 export interface HRStaffMember {
   id: string;
@@ -227,8 +228,12 @@ export const AmuwaHRStaffManagement: React.FC = () => {
     setShowModal(false);
   };
 
-  const handleDeleteStaff = (id: string, name: string) => {
-    if (window.confirm(`Are you sure you want to remove ${name} from the HR staff roster?`)) {
+  const handleDeleteStaff = async (id: string, name: string) => {
+    if (await confirmAction({
+      title: `Remove ${name} from the HR staff roster?`,
+      description: 'They are taken off this roster.',
+      confirmLabel: 'Remove from roster', cancelLabel: 'Keep on roster', variant: 'destructive'
+    })) {
       setStaffList(prev => prev.filter(s => s.id !== id));
       showToast(`🗑️ Removed ${name} from HR team.`);
     }

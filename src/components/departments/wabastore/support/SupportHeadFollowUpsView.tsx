@@ -3,6 +3,7 @@ import {
   Clock, CheckCircle2, AlertTriangle, Phone, MessageSquare, Video,
   Search, Filter, Send, Bell, Calendar, UserCheck
 } from 'lucide-react';
+import { toast } from '../../../feedback/AppFeedback';
 
 interface FollowUpItem {
   id: string;
@@ -92,9 +93,7 @@ export const SupportHeadFollowUpsView: React.FC = () => {
 
   const handleNudge = (id: string, agent: string) => {
     setNudgedAgents(prev => ({ ...prev, [id]: true }));
-    setTimeout(() => {
-      alert(`Urgent SLA push notification dispatched to ${agent}`);
-    }, 150);
+    toast.info(`Reminder noted for ${agent}. Push reminders from this view are not connected yet.`);
   };
 
   const filtered = followUps.filter(item => {

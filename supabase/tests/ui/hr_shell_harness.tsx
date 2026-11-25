@@ -5,6 +5,7 @@ import { Header } from '../../../src/components/layout/Header';
 import { Sidebar, type ActiveTab } from '../../../src/components/layout/Sidebar';
 import { HRDepartmentPanel } from '../../../src/components/departments/hr/HRDepartmentPanel';
 import { mainClassFor } from '../../../src/components/layout/mainLayout';
+import './withAppFeedback';
 
 const Shell: React.FC = () => {
   const [tab, setTab] = useState<ActiveTab>('dashboard');

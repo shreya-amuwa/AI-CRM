@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { NoticePopupHost } from '../../../src/components/notices/NoticePopupHost';
+import './withAppFeedback';
 
 /**
  * The real company-notice popup host with the CRM API answered in the page, like the database: GET /notices/pending returns the notices this employee has not

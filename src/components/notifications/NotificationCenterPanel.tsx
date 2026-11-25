@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Pager } from '../support-member/SupportParts';
 import { openChat } from '../chat/chatEvents';
 import { openFromNotification } from '../issues/issueEvents';
+import { toast } from '../feedback/AppFeedback';
 
 const PAGE_SIZE = 10;
 
@@ -75,13 +76,13 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
     });
 
     if (!result.ok) {
-      alert(result.message);
+      toast.error(result.message);
       return;
     }
     setShowComposeModal(false);
     setTitle('');
     setMessage('');
-    alert(result.message);
+    toast.success(result.message);
   };
 
   const filteredNotifications = userNotifications.filter(n => {

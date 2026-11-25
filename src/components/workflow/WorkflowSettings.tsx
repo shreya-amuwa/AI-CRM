@@ -3,6 +3,7 @@ import type { ServiceJourneySetting, VerificationRouteReviewItem, WorkflowSettin
 import { errorMessage } from '../../lib/api/client';
 import { pipelineApi, workflowApi } from '../../lib/api/endpoints';
 import { btn, ErrorBanner, inputCls, Pill, Spinner } from '../team-member/pipeline/shared';
+import { promptInput } from '../feedback/AppFeedback';
 
 /** How long the Technical Consultant waits after the hand-over. There is no default: until it is set, follow-ups wait. */
 const DelayCard: React.FC = () => {
@@ -145,8 +146,13 @@ const RouteReviewCard: React.FC = () => {
   }, []);
   useEffect(load, [load]);
   const move = async (i: VerificationRouteReviewItem) => {
-    const reason = window.prompt(`Move ${i.name} to the ${i.suggestedRoute === 'META' ? 'Meta Verifier' : 'Technical Consultant'}? Give the reason:`);
-    if (!reason || reason.trim().length < 3) return;
+    const to = i.suggestedRoute === 'META' ? 'Meta Verifier' : 'Technical Consultant';
+    const reason = await promptInput({
+      title: `Move ${i.name} to the ${to}?`, description: `The customer's verification moves to the ${to}. The reason is recorded.`,
+      label: 'Reason for moving', required: true, multiline: true, maxLength: 500, confirmLabel: `Move to ${to}`
+    });
+    if (reason === null) return;
+    if (reason.trim().length < 3) { setError('Give a reason of at least 3 characters.'); return; }
     setBusy(i.customerId);
     setError(null);
     try {

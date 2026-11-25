@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { StaffManagementPanel } from '../../../src/components/common/StaffManagementPanel';
 import { EmployeeRequestForm } from '../../../src/components/employees/EmployeeRequestForm';
+import './withAppFeedback';
 
 /** The department chosen at the top of the window drives the panel, exactly like the Super Admin's department hub. */
 const Harness: React.FC = () => {

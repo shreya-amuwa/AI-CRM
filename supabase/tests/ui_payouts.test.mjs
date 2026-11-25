@@ -7,6 +7,7 @@ import { createServer } from 'node:http';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
+import { answerAppDialogs, appDialogs } from './ui/appDialogs.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -51,12 +52,11 @@ const check = (cond, name, extra) => { if (!cond) { console.error('not ok -', na
 let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); srv.close(); process.exit(0); }
 const errors = [];
-const dialogs = [];
 const open = async (mount, { width = 1280, before } = {}) => {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(String(e)));
-  page.on('dialog', d => { dialogs.push(d.message()); d.accept(); });
+  await answerAppDialogs(page);
   await page.goto(base);
   if (before) await page.evaluate(before);
   await page.evaluate(m => window[m](), mount);
@@ -204,6 +204,7 @@ try {
   await det.getByLabel('TDS (₹)').fill('50.25');
   await det.getByRole('button', { name: 'Pay through Razorpay' }).click();
   await page.getByText('Sent to Razorpay.').waitFor();
+  const dialogs = await appDialogs(page);
   check(dialogs.some(m => m.includes('₹1,184.25') && m.includes('uma@okhdfcbank')), 'Pay through Razorpay asks first, with the net amount and where it goes', dialogs.at(-1));
   check(rzp.calls.at(-1).id === 'pr-r' && rzp.calls.at(-1).body.tds === 50.25 && !rzp.calls.at(-1).check, 'it sends the TDS to the server');
   await page.getByRole('button', { name: /Omar Overseas/ }).click();

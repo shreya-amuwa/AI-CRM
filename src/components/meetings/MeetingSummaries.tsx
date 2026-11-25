@@ -9,6 +9,7 @@ import { errorMessage } from '../../lib/api/client';
 import { meetingsApi, type MeetingReportFilters, type SummaryInput } from '../../lib/api/meetings';
 import { SideDrawer } from '../common/SideDrawer';
 import { relabelRoles } from '../../../shared/roleNames';
+import { promptInput } from '../feedback/AppFeedback';
 
 /**
  * Post-meeting summaries (Minutes of Meeting) of internal team meetings, and the CEO's Meeting Decisions (migration 20270124000200).
@@ -188,9 +189,14 @@ export const SummaryPanel: React.FC<{ meetingId: string; source?: 'meeting' | 'r
       {s?.content && !editing && (submitted || s.status === 'DRAFT') && (
         <ReportView view={view} busy={busy}
           onFlag={view.can.flag ? (type, id, flag) => {
-            const note = flag ? window.prompt('Note for the follow-up (optional)') : null;
+            void (async () => {
+            const note = flag ? await promptInput({
+              title: 'Mark for follow-up', description: 'The meeting leader is told about this item.',
+              label: 'Note for the follow-up', multiline: true, maxLength: 500, confirmLabel: 'Mark for follow-up'
+            }) : null;
             if (flag && note === null) return;
             act(() => meetingsApi.flagSummaryItem(meetingId, type, id, flag, note ?? undefined), flag ? 'Marked for follow-up. The leader is told.' : 'Follow-up mark removed.');
+            })();
           } : undefined}
           onActionStatus={view.can.updateActions ? (id, status) => {
             setBusy(true);

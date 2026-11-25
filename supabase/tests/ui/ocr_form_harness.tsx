@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { ShopPhotoScan } from '../../../src/components/common/ShopPhotoScan';
 import { planFill, type Flags } from '../../../src/lib/ocr/scanFill';
 import type { ShopScan } from '../../../src/lib/ocr/shopText';
+import './withAppFeedback';
 
 /** The same wiring as the Dispatch Field Visit form: the scan card, three fields, and the "read from the photo" notes. */
 const Harness: React.FC = () => {

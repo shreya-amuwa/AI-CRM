@@ -8,6 +8,7 @@ import { mkdtempSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { build } from 'esbuild';
+import { answerAppDialogs, appDialogs } from './ui/appDialogs.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -50,8 +51,7 @@ const calls = page => page.evaluate(() => window.__calls.filter(c => c.method !=
 try {
   {
     const page = await open('member');
-    const dialogs = [];
-    page.on('dialog', d => { dialogs.push(d.message()); d.accept('Client postponed the visit'); });
+    await answerAppDialogs(page, { value: 'Client postponed the visit' });
     // ---- three separate options
     for (const b of ['Ask the Managing Director for time', 'New meeting', 'Client meeting']) check(await page.isVisible(`button:has-text("${b}")`), `the Meetings page offers "${b}"`);
     await page.click('button:has-text("Client meeting")');
@@ -125,8 +125,9 @@ try {
     // ---- cancelling: the client is told
     await page.click('button:has-text("Cancel")');
     await page.waitForSelector('text=Client meetings');
-    check(dialogs.length === 1, 'cancelling asks for the reason');
-    const cancelled = await page.evaluate(() => window.__mails.some(m => m.kind === 'CANCELLED'));
+    check((await appDialogs(page)).length === 1, 'cancelling asks for the reason (in the CRM\'s own dialog)');
+    // the reason is given in the CRM's own dialog, so the cancellation is sent a moment after the click
+    const cancelled = await page.waitForFunction(() => window.__mails.some(m => m.kind === 'CANCELLED'), null, { timeout: 5000 }).then(() => true, () => false);
     check(cancelled, 'the cancellation e-mail to the client is queued');
     await page.waitForSelector('[data-testid="client-meeting-row"]:has-text("Cancelled")');
     check(true, 'the list shows it Cancelled');

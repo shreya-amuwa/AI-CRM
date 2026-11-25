@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { UnifiedDashboard } from '../../../src/components/unified/UnifiedDashboard';
+import './withAppFeedback';
 
 /**
  * The real unified dashboard (International / Reseller) inside the real dashboard shell and the real navigation, for a Department Head, a Team Lead or a

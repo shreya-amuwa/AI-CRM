@@ -26,6 +26,7 @@ import { errorMessage } from '../../lib/api/client';
 import { APPROVALS_CHANGED_EVENT } from '../../hooks/usePendingApprovalsCount';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
+import { confirmAction } from '../feedback/AppFeedback';
 
 interface UserAccessManagementModalProps {
   isOpen: boolean;
@@ -197,9 +198,14 @@ export const UserAccessManagementModal: React.FC<UserAccessManagementModalProps>
     );
   };
 
-  const handleReject = (u: StaffRow) => {
+  const handleReject = async (u: StaffRow) => {
     if (!u.requestId || busy) return;
-    if (window.confirm(`Are you sure you want to decline registration for ${u.name} (${u.email})?`)) {
+    if (await confirmAction({
+      title: `Decline ${u.name}'s registration?`,
+      description: 'They will not get access to the CRM. A declined registration cannot be restored.',
+      details: [u.email],
+      confirmLabel: 'Decline registration', cancelLabel: 'Keep pending', variant: 'destructive'
+    })) {
       void run(() => approvalsApi.reject(u.requestId!), `Declined registration for ${u.name}.`, 'danger');
     }
   };
@@ -226,12 +232,17 @@ export const UserAccessManagementModal: React.FC<UserAccessManagementModalProps>
     void run(() => usersApi.setStatus(u.id, 'ACTIVE'), `✓ System access restored for ${u.name}.`);
   };
 
-  const handleDeletePermanent = (u: StaffRow) => {
+  const handleDeletePermanent = async (u: StaffRow) => {
     if (!isSuperAdmin) {
       notify('Only a Managing Director can permanently delete users.', 'danger');
       return;
     }
-    if (window.confirm(`Permanently remove record for ${u.name}? This cannot be undone.`)) {
+    if (await confirmAction({
+      title: `Permanently delete ${u.name}?`,
+      description: 'Their record is removed for good. This cannot be undone.',
+      details: [u.email],
+      confirmLabel: 'Delete permanently', cancelLabel: 'Keep record', variant: 'destructive', requireText: 'DELETE'
+    })) {
       void run(() => usersApi.remove(u.id), `Removed ${u.name}.`, 'danger');
     }
   };

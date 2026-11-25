@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { DashboardShell } from '../../../src/components/layout/shell';
 import RaiseIssuePage from '../../../src/components/issues/RaiseIssuePage';
 import { HrRaiseIssuePage } from '../../../src/components/hr/HrRaiseIssuePage';
+import './withAppFeedback';
 
 /**
  * The real dashboard shell (its menu adds Attendance, Meetings and, for developers only, Bugs) with the real Raise an Issue page, and the

@@ -3,6 +3,7 @@ import { VISIT_PRIORITIES, type SalesVisitAssignee, type VisitPriority } from '.
 import { errorMessage } from '../../lib/api/client';
 import { fieldVisitApi } from '../../lib/api/endpoints';
 import { Dialog, ErrorBanner, Field, Spinner, btn, inputCls } from '../team-member/pipeline/shared';
+import { confirmAction } from '../feedback/AppFeedback';
 
 const PRIORITY_LABEL: Record<VisitPriority, string> = { LOW: 'Low', NORMAL: 'Normal', HIGH: 'High', URGENT: 'Urgent' };
 
@@ -86,8 +87,12 @@ export const AssignVisitDialog: React.FC<{ lead: { id: string; name: string }; o
             type="button"
             className={btn.danger}
             disabled={busy}
-            onClick={() => {
-              if (window.confirm(`Withdraw the field visit assignment of ${lead.name}?`)) void run(async () => {
+            onClick={async () => {
+              if (await confirmAction({
+                title: `Withdraw the field visit of ${lead.name}?`,
+                description: 'The person assigned no longer has this visit to do.',
+                confirmLabel: 'Withdraw assignment', cancelLabel: 'Keep assignment', variant: 'destructive'
+              })) void run(async () => {
                 await fieldVisitApi.cancelAssignment(lead.id);
                 return `The field visit assignment of ${lead.name} was withdrawn.`;
               });

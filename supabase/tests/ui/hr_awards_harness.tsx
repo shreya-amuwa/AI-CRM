@@ -2,6 +2,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { HRDepartmentPanel } from '../../../src/components/departments/hr/HRDepartmentPanel';
+import './withAppFeedback';
 
 let root: Root | null = null;
 (window as any).mount = () => {

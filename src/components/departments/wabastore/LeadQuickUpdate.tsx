@@ -50,6 +50,7 @@ const UPDATE_OPTIONS: Array<{
 
 export const LeadQuickUpdate: React.FC<LeadQuickUpdateProps> = ({ lead, onClose, onUpdate }) => {
   const [outcome, setOutcome] = useState<UpdateOutcome | null>(null);
+  const [outcomeError, setOutcomeError] = useState(false);
   const [followUpDate, setFollowUpDate] = useState('');
   const [followUpTime, setFollowUpTime] = useState('');
   const [notes, setNotes] = useState('');
@@ -57,7 +58,7 @@ export const LeadQuickUpdate: React.FC<LeadQuickUpdateProps> = ({ lead, onClose,
 
   const handleSubmit = () => {
     if (!outcome) {
-      alert('Please select an outcome');
+      setOutcomeError(true);
       return;
     }
 
@@ -117,7 +118,7 @@ export const LeadQuickUpdate: React.FC<LeadQuickUpdateProps> = ({ lead, onClose,
               {UPDATE_OPTIONS.map(option => (
                 <button
                   key={option.value}
-                  onClick={() => setOutcome(option.value)}
+                  onClick={() => { setOutcome(option.value); setOutcomeError(false); }}
                   className={`p-4 rounded-2xl border-2 text-left transition-all transform hover:scale-105 ${
                     outcome === option.value
                       ? 'border-blue-600 bg-gradient-to-br from-blue-50 to-blue-100 shadow-lg'
@@ -130,6 +131,7 @@ export const LeadQuickUpdate: React.FC<LeadQuickUpdateProps> = ({ lead, onClose,
                 </button>
               ))}
             </div>
+            {outcomeError ? <p role="alert" className="mt-2 text-sm font-semibold text-rose-700">Choose what happened with this lead first.</p> : null}
           </div>
 
           {outcome && (

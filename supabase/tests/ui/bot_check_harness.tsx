@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useBotCheck } from '../../../src/components/auth/useBotCheck';
 import { NewLinkRequest } from '../../../src/components/auth/NewLinkRequest';
+import './withAppFeedback';
 
 /** Like the client sign-in page: the hook lives in the page, the robot check only appears once "Forgot password?" is opened. */
 const LaterForm: React.FC = () => {

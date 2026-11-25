@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { IncomePage } from '../../../src/components/income/IncomePage';
 import { IncentiveSetup } from '../../../src/components/income/IncentiveSetup';
 import { DemoSchedulePage } from '../../../src/components/business-associate/DemoSchedulePage';
+import './withAppFeedback';
 
 const root = () => createRoot(document.getElementById('root')!);
 (window as any).mountIncome = () => root().render(<div className="p-4 max-w-6xl"><IncomePage /></div>);

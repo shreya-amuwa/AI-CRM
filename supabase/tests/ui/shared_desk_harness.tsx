@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { ClientChats } from '../../../src/components/chat/ClientChats';
+import './withAppFeedback';
 
 /**
  * The real "My clients" chat tab with the shared Support desk (20270129000100), the CRM API answered in the page like the database:

@@ -3,6 +3,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 const StaffApp = React.lazy(() => import('./App'));
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+import { AppFeedbackProvider } from './components/feedback/AppFeedback';
 import { installChunkReload } from './lib/chunkReload';
 import { watchOverlays } from './lib/overlayScrollLock';
 import './index.css';
@@ -41,6 +42,8 @@ const isPublicBooking = /^\/book\/[^/]+/.test(window.location.pathname);
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
+      {/* toasts and confirmation / input dialogs for every page (docs/APP_FEEDBACK_SYSTEM.md) */}
+      <AppFeedbackProvider>
       {isPublicBooking ? (
         <React.Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}><PublicBooking /></React.Suspense>
       ) : isStaffSetPassword ? (
@@ -48,6 +51,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       ) : isClientRoute ? (
         <React.Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}><ClientApp /></React.Suspense>
       ) : <React.Suspense fallback={<div style={{ padding: 24 }}>Loading workspace…</div>}><StaffApp /></React.Suspense>}
+      </AppFeedbackProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );

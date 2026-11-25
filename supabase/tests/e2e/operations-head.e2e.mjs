@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import pg from 'pg';
+import { answerAppDialogs } from '../ui/appDialogs.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -169,7 +170,8 @@ await expect(JSON.stringify(digBefore) === JSON.stringify(digAfter) && (await he
 await p1.ctx.close();
 
 // ------------------------------------------------------------------ 5. suspend and reactivate from the Operations Heads list
-sup.on('dialog', d => d.accept());
+// Suspend asks in the CRM's own dialog (not the browser's confirm)
+await answerAppDialogs(sup);
 const two = sup.locator('li', { hasText: 'ops.two@amuwa.com' });
 await two.getByRole('button', { name: 'Suspend' }).click();
 await until(async () => (await q(`select status from profiles where id = $1`, [op2.id]))[0].status === 'SUSPENDED');

@@ -7,6 +7,7 @@ import { SuperAdminPerformance } from '../../../src/components/superadmin/perfor
 import { DepartmentContext } from '../../../src/context/DepartmentContext';
 import { ReportForm as AdsReportForm } from '../../../src/components/ai-design-studio/AdsReports';
 import { AdsSessionProvider } from '../../../src/components/ai-design-studio/adsUi';
+import './withAppFeedback';
 
 /**
  * The real task daily report screens and the real performance approval page, for each role. The CRM API is a small stateful fake in the page that

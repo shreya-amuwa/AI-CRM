@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { MeetingsPage } from '../../../src/components/meetings/MeetingsPage';
 import { MyAvailabilityBadge } from '../../../src/components/meetings/CeoPresence';
 import { CeoArrivalControl } from '../../../src/components/meetings/CeoArrival';
+import './withAppFeedback';
 
 /**
  * The real Meetings page (and the header badge every dashboard shows) with the CRM API answered in the page. The stand-in keeps the

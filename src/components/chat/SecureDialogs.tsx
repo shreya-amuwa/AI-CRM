@@ -5,6 +5,7 @@ import { MIN_PASSPHRASE_LENGTH, formatFingerprint, passphraseProblem } from '../
 import type { PeerInfo, SecureChatClient } from '../../lib/chat/secureChat';
 import { useSecureSnapshot } from '../../lib/chat/useSecureChat';
 import { ChatModal } from './ChatBits';
+import { confirmAction } from '../feedback/AppFeedback';
 
 export type SecureMode = 'setup' | 'unlock' | 'reset';
 /** The dialogs the notice can open: the three above (a recovery passphrase) and the step for a new device that has no backup. */
@@ -179,9 +180,13 @@ const SelfSettings: React.FC<{ client: SecureChatClient; onReset: () => void }> 
         {snap.hasBackup && <button type="button" className="ch-link" style={{ marginLeft: 0 }} onClick={() => setOpen(o => !o)}>Change recovery passphrase</button>}
         <button type="button" className="ch-link" style={{ marginLeft: 0 }} onClick={onReset} data-testid="secure-reset">{snap.hasBackup ? 'Reset secure messaging' : 'Make a new key with a recovery passphrase'}</button>
         <button type="button" className="ch-link" style={{ marginLeft: 0 }} data-testid="secure-remove-device"
-          onClick={() => { if (window.confirm(snap.hasBackup
-            ? 'Remove your secure messaging keys from this device? You will need your recovery passphrase to read messages here again.'
-            : 'Remove your secure messaging keys from this device? You have no recovery passphrase, so the messages you have received cannot be read again on this device, and nobody can restore them. Your colleagues will be asked to accept a new key if you set secure messaging up here again.')) void client.removeFromDevice(); }}>Remove keys from this device</button>
+          onClick={async () => { if (await confirmAction({
+            title: 'Remove your secure messaging keys from this device?',
+            description: snap.hasBackup
+              ? 'You will need your recovery passphrase to read messages here again.'
+              : 'You have no recovery passphrase, so the messages you have received cannot be read again on this device, and nobody can restore them. Your colleagues will be asked to accept a new key if you set secure messaging up here again.',
+            confirmLabel: 'Remove keys', cancelLabel: 'Keep keys', variant: 'destructive'
+          })) void client.removeFromDevice(); }}>Remove keys from this device</button>
       </div>
       {open && (
         <form onSubmit={e => void change(e)} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

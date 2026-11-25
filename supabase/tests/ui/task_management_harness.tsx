@@ -5,6 +5,7 @@ import { TaskTracker } from '../../../src/components/tasks/TaskTracker';
 import { SubmitWorkUpdate } from '../../../src/components/tasks/WorkUpdateForm';
 import { MemberTasksView } from '../../../src/components/tasks/MemberTasksView';
 import { TeamLeadTasksView } from '../../../src/components/tasks/TeamLeadTasksView';
+import './withAppFeedback';
 
 const root = () => createRoot(document.getElementById('root')!);
 const w = window as any;

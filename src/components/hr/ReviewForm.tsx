@@ -6,6 +6,7 @@ import { ApiError } from '../../lib/api/client';
 import { hrReviewsApi } from '../../lib/api/reportPerformance';
 import { btn, ErrorBanner, Field, inputCls, selectCls } from '../team-member/pipeline/shared';
 import { dateLabel, pctLabel, Stat, timeLabel } from '../reports/reportUi';
+import { confirmAction } from '../feedback/AppFeedback';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
@@ -80,7 +81,11 @@ export const ReviewForm: React.FC<{
     const body = { packageId, subjectId: subject.id, rating, consistencyNote: consistency.trim() || undefined, workAssessment: assessment.trim() || undefined, comments: comments.trim() || undefined, recommendations: recs.trim() || undefined, submit };
     const parsed = hrReviewSaveSchema.safeParse(body);
     if (!parsed.success) { const e: Record<string, string> = {}; for (const i of parsed.error.issues) e[String(i.path[0])] ??= i.message; setErrors(e); return; }
-    if (submit && !window.confirm(`Submit the review of ${subject.name}? A submitted review cannot be changed.`)) return;
+    if (submit && !(await confirmAction({
+      title: `Submit the review of ${subject.name}?`,
+      description: 'A submitted review cannot be changed. Save it as a draft instead if you want to come back to it.',
+      confirmLabel: 'Submit review', cancelLabel: 'Keep editing'
+    }))) return;
     setErrors({});
     setBusy(submit ? 'submit' : 'draft');
     try {

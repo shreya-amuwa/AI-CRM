@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api/client';
 import { employeesApi, usersApi } from '../../lib/api/endpoints';
 import { weeklyReportsApi } from '../../lib/api/workReports';
 import { btn, Dialog, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * Super Admin: the Operations Heads, the departments each manages (a multi-select, stored as proper relations) and the ONE Operations Head accountable
@@ -33,7 +34,11 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
   // Suspending takes the access away at once (the sign-in is blocked and the person supervises nothing); reactivating gives the same departments back.
   const toggleStatus = async (h: OperationsHeadAdmin) => {
     const next = h.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    if (next === 'SUSPENDED' && !window.confirm(`Suspend ${h.name}? They cannot sign in until you reactivate them. Their departments, Department Heads and records stay as they are.`)) return;
+    if (next === 'SUSPENDED' && !(await confirmAction({
+      title: `Suspend ${h.name}?`,
+      description: 'They cannot sign in until you reactivate them. Their departments, Department Heads and records stay as they are.',
+      confirmLabel: 'Suspend CEO', cancelLabel: 'Keep active', variant: 'destructive'
+    }))) return;
     setNotice(null);
     try {
       await usersApi.setStatus(h.id, next, next === 'SUSPENDED' ? 'Suspended from CEOs' : undefined);

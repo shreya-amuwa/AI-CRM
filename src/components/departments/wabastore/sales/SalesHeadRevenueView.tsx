@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock
 } from 'lucide-react';
+import { toast } from '../../../feedback/AppFeedback';
 
 export const SalesHeadRevenueView: React.FC = () => {
   const formatINR = (val: number) => {
@@ -83,7 +84,7 @@ export const SalesHeadRevenueView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => alert('Exporting Department Revenue Ledger (Excel/CSV)...')}
+          onClick={() => toast.info('Exporting the revenue ledger is not available on this view yet.')}
           className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold rounded-xl flex items-center gap-2 shadow-2xs transition-colors"
         >
           <Download className="w-3.5 h-3.5" />

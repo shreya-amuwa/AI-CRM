@@ -4,6 +4,7 @@ import type { DepartmentAccessInfo, OperationsHeadReviewItem, Profile } from '..
 import { usersApi } from '../../lib/api/endpoints';
 import { errorMessage } from '../../lib/api/client';
 import { DIVISIONS, cellAvailable, cellKey, cellReason, isDirty, lockedCell, pairsToSave, savedSet, summary } from '../../lib/scope/accessMatrix';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * Access Control (Super Admin): pick an existing employee, then tick the departments and functions (Sales / Support) they work in.
@@ -79,8 +80,12 @@ export const AccessControlTab: React.FC<{
     void load(profileId);
   }, [profileId, load]);
 
-  const choose = (id: string) => {
-    if (id !== profileId && dirty && !window.confirm('You have unsaved access changes. Switch employee anyway? They will be lost.')) return;
+  const choose = async (id: string) => {
+    if (id !== profileId && dirty && !(await confirmAction({
+      title: 'Switch employee without saving?',
+      description: 'The access changes you made for this employee are not saved yet and will be lost.',
+      confirmLabel: 'Switch without saving', cancelLabel: 'Stay and save', variant: 'destructive'
+    }))) return;
     setProfileId(id);
   };
 
@@ -96,10 +101,10 @@ export const AccessControlTab: React.FC<{
   /** Make the selected Department Head an Operations Head (or take it back). Only the Super Admin; the database audits it and tells the person. */
   const changeRole = async (value: boolean) => {
     if (!selected) return;
-    const text = value
-      ? `Make ${selected.fullName} an CEO? They will be able to oversee the departments you tick below.`
-      : `Remove ${selected.fullName} as CEO? The departments other than their own are withdrawn (their own department stays).`;
-    if (!window.confirm(text)) return;
+    const ok = await confirmAction(value
+      ? { title: `Make ${selected.fullName} a CEO?`, description: 'They will be able to oversee the departments you tick below. They are told, and the change is recorded.', confirmLabel: 'Make CEO' }
+      : { title: `Remove ${selected.fullName} as CEO?`, description: 'The departments other than their own are withdrawn; their own department stays.', confirmLabel: 'Remove as CEO', cancelLabel: 'Keep as CEO', variant: 'destructive' });
+    if (!ok) return;
     setRoleBusy(true);
     setMessage(null);
     try {

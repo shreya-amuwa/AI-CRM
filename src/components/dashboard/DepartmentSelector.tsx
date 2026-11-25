@@ -10,6 +10,7 @@ import { useTabs } from '../../context/TabContext';
 import { Department } from '../../types/crm';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
 import { AI_DESIGN_STUDIO_SLUG } from '../../../shared/contracts';
+import { confirmAction } from '../feedback/AppFeedback';
 
 const getFallbackIcon = (iconName: string) => {
   switch (iconName) {
@@ -101,9 +102,13 @@ export const DepartmentGrid: React.FC = () => {
               {/* Delete button for custom added departments */}
               {isCustom && isSuperAdmin && (
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    if (!window.confirm(`Delete ${dept.name}? This cannot be undone.`)) return;
+                    if (!(await confirmAction({
+                      title: `Delete the ${dept.name} department?`,
+                      description: 'The department is removed. This cannot be undone.',
+                      confirmLabel: 'Delete department', cancelLabel: 'Keep department', variant: 'destructive', requireText: dept.name
+                    }))) return;
                     void deleteDepartment(dept.id).then(r => !r.ok && showNotice(r.error || 'Could not delete department.'));
                   }}
                   title="Delete custom department"

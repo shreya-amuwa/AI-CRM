@@ -8,6 +8,7 @@ import { useStaffReminders } from '../../../src/components/attendance/StaffRemin
 import { OPEN_CHAT_EVENT } from '../../../src/components/chat/chatEvents';
 import { NotificationHealth } from '../../../src/components/notifications/NotificationHealth';
 import { DepartmentContext } from '../../../src/context/DepartmentContext';
+import './withAppFeedback';
 (window as any).__chatOpened = [];
 window.addEventListener(OPEN_CHAT_EVENT, e => (window as any).__chatOpened.push((e as CustomEvent).detail));
 

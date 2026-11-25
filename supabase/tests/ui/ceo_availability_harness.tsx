@@ -5,6 +5,7 @@ import { DashboardShell } from '../../../src/components/layout/shell';
 import { CeoAvailabilityPage } from '../../../src/components/meetings/CeoAvailabilityPage';
 import { MeetingsPage } from '../../../src/components/meetings/MeetingsPage';
 import { Inbox } from 'lucide-react';
+import './withAppFeedback';
 
 /**
  * CEO Availability (migration 20270201000100) with the CRM API answered in the page, stored like the database: ONE status for the CEO, set by HR
