@@ -1,11 +1,23 @@
 import React, { useState } from 'react';
-import { Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { DepartmentCustomers } from '../handover/DepartmentCustomers';
 import { CustomerQuickView } from '../team-member/pipeline/CustomerQuickView';
 import { Dialog, Pager, useDebounced } from '../team-member/pipeline/shared';
 import { Avatar, Card, CardHead, fieldCls, ghostBtn, LoadingLine, StatCard, Tabs } from '../tasks/head/headParts';
 import { dayText, headApi, inr, useHeadData, type CustomerStatus } from '../../lib/headDashboard';
 import { Badge, CUSTOMER_BADGE, EmptyRow, InvoiceBadge, OpenInvoice, PageError, Th } from './headBits';
+import { AddCustomerPage } from '../support-member/AddCustomerPage';
+import { useWorkTasks, type Person, type TeamRef } from '../../lib/workTasks';
+import { useAuth } from '../../context/AuthContext';
+
+/**
+ * The people a Support Department Head may give a new customer to: active members of a Support team in the department the head works in.
+ * Only a convenience for the list; create_support_customer checks the same rules again.
+ */
+export function supportTeamPeople(people: Person[], teams: TeamRef[], departmentId: string | null | undefined): Person[] {
+  const supportTeams = new Set(teams.filter(t => t.division === 'SUPPORT').map(t => t.id));
+  return people.filter(p => p.status === 'ACTIVE' && !!p.teamId && supportTeams.has(p.teamId) && (!departmentId || p.departmentId === departmentId));
+}
 
 type Filter = 'ALL' | CustomerStatus;
 type View = 'overview' | 'handover';
@@ -113,13 +125,24 @@ const CustomerPanel: React.FC<{ id: string; onClose: () => void; onOpenRecord: (
  * Customers of the department. "Overview": the summary cards, search, a status filter and the table; a click opens the customer. "Hand-overs & tickets" is
  * the page that was here before, unchanged. The numbers and rows come from read-only database functions scoped to the head's department.
  */
-export const HeadCustomersPage: React.FC<{ initialSearch?: string; waitingForLead?: number | null; onOpenHandovers?: () => void }> = ({ initialSearch = '', waitingForLead, onOpenHandovers }) => {
+export const HeadCustomersPage: React.FC<{
+  initialSearch?: string;
+  waitingForLead?: number | null;
+  onOpenHandovers?: () => void;
+  /**
+   * Support team members the head may give a new customer to. When set, the page offers "Add customer" (a Support Department Head); the database
+   * (create_support_customer) still checks that the person is an active Support team member of the head's own department.
+   */
+  addCustomerPeople?: Person[];
+}> = ({ initialSearch = '', waitingForLead, onOpenHandovers, addCustomerPeople }) => {
   const [view, setView] = useState<View>(initialSearch ? 'handover' : 'overview');
   const [filter, setFilter] = useState<Filter>('ALL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [openId, setOpenId] = useState<string | null>(null);
   const [recordId, setRecordId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const q = useDebounced(search, 300);
   const { data, error, loading, reload } = useHeadData(
     () => (view === 'overview' ? headApi.customers({ search: q, status: filter === 'ALL' ? null : filter, limit: PAGE, offset: (page - 1) * PAGE }) : Promise.resolve(null)),
@@ -127,12 +150,46 @@ export const HeadCustomersPage: React.FC<{ initialSearch?: string; waitingForLea
   );
   const s = data?.summary;
 
+  if (adding && addCustomerPeople) {
+    return (
+      <AddCustomerPage
+        people={addCustomerPeople}
+        onCancel={() => setAdding(false)}
+        onCreated={name => {
+          setNotice(`${name} was added.`);
+          setAdding(false);
+          setView('overview');
+          void reload();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Customers</h1>
-        <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Your department's customers, who looks after them, their services and invoices.</p>
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[26px] leading-tight font-extrabold tracking-tight text-slate-900">Customers</h1>
+          <p className="mt-1.5 text-[15px] text-slate-600 max-w-2xl">Your department's customers, who looks after them, their services and invoices.</p>
+        </div>
+        {addCustomerPeople && (
+          <button
+            type="button"
+            onClick={() => {
+              setNotice(null);
+              setAdding(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 self-start"
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" /> Add customer
+          </button>
+        )}
       </div>
+      {notice && (
+        <p className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm" role="status">
+          {notice}
+        </p>
+      )}
       <Tabs<View> label="Customers view" value={view} onChange={setView} options={[{ id: 'overview', label: 'Overview' }, { id: 'handover', label: 'Hand-overs & tickets' }]} />
       {view === 'handover' ? (
         <DepartmentCustomers initialSearch={initialSearch} waitingForLead={waitingForLead} onOpenHandovers={onOpenHandovers} />
@@ -190,4 +247,12 @@ export const HeadCustomersPage: React.FC<{ initialSearch?: string; waitingForLea
       {recordId && <CustomerQuickView id={recordId} onClose={() => setRecordId(null)} />}
     </div>
   );
+};
+
+/** The Customers page of a unified department's Support section for its head: the same page, with "Add customer". */
+export const HeadSupportCustomersPage: React.FC = () => {
+  const { profile } = useAuth();
+  const data = useWorkTasks();
+  const people = React.useMemo(() => supportTeamPeople(data.people, data.teams, profile?.departmentId), [data.people, data.teams, profile?.departmentId]);
+  return <HeadCustomersPage addCustomerPeople={people} />;
 };

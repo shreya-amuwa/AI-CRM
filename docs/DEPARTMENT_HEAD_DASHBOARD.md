@@ -64,3 +64,19 @@ signed-out caller to no one. The Team Lead's own flow is unchanged. Sending the 
 **Tests.** `department_head_dashboard_test.sql` section 8 (the Team Lead still adds their lead; the head's lead appears in the list and moves the statistics; one lead per
 request id; a smuggled department is ignored; every refused combination; the Support head), `department_head_add_lead.test.ts` (what the API accepts) and the browser
 test (same fields as the Team Lead's form plus the owner choice, validation, success, refresh, double click, server error, the Overview button).
+
+## Add customer for a Support Department Head
+
+Customers → **Add customer** (Support Department Head, and the head of a unified department in its Support section). Before, the head could only upload a sheet
+(Import Customers). The button opens the same Add Customer form the Support Team Lead uses; the sheet upload is still on the same page and in Import Customers.
+
+**Who owns the customer.** A Department Head is on no Support team, so the customer cannot be theirs: the form starts with **nobody chosen** and lists only active
+members of a Support team in the department the head works in. Saving without a choice shows "Choose who will look after this customer." The chosen member is told
+("Customer assigned"), and the customer's record says the head added it.
+
+**Rules (no migration).** `create_support_customer` already allows a Department Head and checks the choice again: an active Support team member of the head's own
+department (`private.can_assign_customer_owner`), never the head, a Sales member or another department; the duplicate phone / e-mail check applies as for everyone.
+A Sales-side head does not get the button (the database would refuse a Sales owner).
+
+**Tests.** `support_head_add_customer_test.sql`: the head adds a customer for a Support member (owner, activity, notification, visible to the head); refused with nobody
+chosen, for a Sales member, for another department's Support member and for a duplicate; a refused customer leaves nothing; another department does not see it.
