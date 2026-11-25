@@ -24,7 +24,7 @@ import { SalesPerformance } from '../sales-head/SalesPerformance';
 import { SalesReports } from '../sales-head/SalesReports';
 import { HeadAttendancePage } from '../department-head/HeadAttendancePage';
 import { HeadLeadsPage } from '../department-head/HeadLeadsPage';
-import { HeadCustomersPage } from '../department-head/HeadCustomersPage';
+import { HeadSupportCustomersPage } from '../department-head/HeadCustomersPage';
 import { SupportDeskPage } from '../support-member/SupportDeskPage';
 import { SupportLeadCustomers, SupportLeadTickets } from '../support-member/SupportLeadViews';
 import { TasksPage as MemberTasksPage } from '../support-member/TasksPage';
@@ -137,7 +137,7 @@ export const UnifiedDashboard: React.FC = () => {
       case 'sales-follow-ups': return <FollowUps userId={userId} userName={displayName} />;
       case 'sales-performance': return who === 'HEAD' ? <SalesPerformance /> : <PerformanceManagement mode="TEAM_LEAD" />;
       case 'sales-reports': return <SalesReports />;
-      case 'support-customers': return who === 'HEAD' ? <HeadCustomersPage /> : who === 'LEAD' ? <SupportLeadCustomers /> : <UnifiedMemberCustomers />;
+      case 'support-customers': return who === 'HEAD' ? <HeadSupportCustomersPage /> : who === 'LEAD' ? <SupportLeadCustomers /> : <UnifiedMemberCustomers />;
       case 'support-tickets': return who === 'MEMBER' ? <UnifiedMemberTickets /> : <SupportLeadTickets />;
       case 'support-desk': return <SupportDeskPage />;
       case 'support-activity': return <TeamActivityPage />;

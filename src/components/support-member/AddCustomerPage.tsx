@@ -16,12 +16,14 @@ interface AddCustomerPageProps {
 /** Validated form; saved straight to the CRM database (duplicates are refused there). */
 export const AddCustomerPage: React.FC<AddCustomerPageProps> = ({ people, onCreated, onCancel }) => {
   const { profile } = useAuth();
+  // A Department Head belongs to no Support team, so the customer cannot be theirs: they choose a Support team member in the form.
+  const defaultAssignee = profile?.role === 'DEPARTMENT_HEAD' ? undefined : profile?.id;
   return (
     <div className="space-y-5 max-w-4xl">
       <PageHeader title="Add Customer" subtitle="Register a new customer. Phone and e-mail are checked against existing customers so nobody is added twice." />
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6">
         <CustomerForm
-          initial={emptyCustomerInput(profile?.id)}
+          initial={emptyCustomerInput(defaultAssignee)}
           people={people}
           submitLabel="Save customer"
           idPrefix="ac"

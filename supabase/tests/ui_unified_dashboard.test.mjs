@@ -174,7 +174,7 @@ try {
   await opens(page, 'Lead Assignment', 'LeadAssign');
   await opens(page, 'Sales Performance', 'SalesPerformance');
   await opens(page, 'Sales Reports', 'SalesReports');
-  await opens(page, 'Customers', 'HeadCustomersPage');
+  await opens(page, 'Customers', 'HeadSupportCustomersPage'); // the head's Customers page with "Add customer"
   await opens(page, 'Support Tickets', 'SupportLeadTickets');
   await opens(page, 'Customer Issues', 'SupportDeskPage');
   await opens(page, 'Team Activity', 'TeamActivityPage');

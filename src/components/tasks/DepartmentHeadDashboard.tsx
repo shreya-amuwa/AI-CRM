@@ -57,7 +57,7 @@ import { useOpenWorkUpdateRequest } from './workUpdateEvents';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 import { HeadAttendancePage } from '../department-head/HeadAttendancePage';
 import { HeadLeadsPage } from '../department-head/HeadLeadsPage';
-import { HeadCustomersPage } from '../department-head/HeadCustomersPage';
+import { HeadCustomersPage, supportTeamPeople } from '../department-head/HeadCustomersPage';
 import { HeadInvoicesPage } from '../department-head/HeadInvoicesPage';
 import { TeamAttendanceSummary } from '../attendance/TeamAttendance';
 
@@ -152,6 +152,12 @@ export const DepartmentHeadDashboard: React.FC = () => {
     ];
   }, [isAccounts, supportSide, operationsHead, waiting, chatUnread, reportsBadge, updateCounts?.pending]);
 
+  // A Support Department Head may add a customer by hand (not only by sheet); it goes to an active Support team member of the department they work in.
+  const supportPeople = useMemo(
+    () => (supportSide ? supportTeamPeople(data.people, data.teams, profile?.departmentId) : undefined),
+    [supportSide, data.people, data.teams, profile?.departmentId]
+  );
+
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
     lastHeadPage = p;
@@ -216,7 +222,9 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'support' && <SupportDeskPage />}
       {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
       {nav === 'leads' && !isAccounts && <HeadLeadsPage startAdd={addLead} />}
-      {nav === 'customers' && <HeadCustomersPage initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
+      {nav === 'customers' && (
+        <HeadCustomersPage initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} addCustomerPeople={supportPeople} />
+      )}
       {nav === 'invoices' && !isAccounts && <HeadInvoicesPage />}
       {nav === 'team-attendance' && <HeadAttendancePage />}
       {nav === 'notices' && <ClientNotices />}

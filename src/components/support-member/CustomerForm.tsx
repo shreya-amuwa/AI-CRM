@@ -48,7 +48,7 @@ export const customerToInput = (c: SupportCustomer): CustomerInput => ({
   assigneeId: c.ownerId
 });
 
-type Errors = Partial<Record<'name' | 'contact' | 'email' | 'phone' | 'whatsapp' | 'service', string>>;
+type Errors = Partial<Record<'name' | 'contact' | 'email' | 'phone' | 'whatsapp' | 'service' | 'assignee', string>>;
 
 function validateWhatsApp(code: string, d: WhatsAppDetails): string | undefined {
   if (!isWhatsAppService(code)) return undefined;
@@ -143,6 +143,8 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
     ev.preventDefault();
     setServerError(null);
     const e = validate(form);
+    // A head starts with nobody chosen (they are on no Support team themselves): saving without a choice would only be refused by the database.
+    if (isLead && !form.assigneeId) e.assignee = 'Choose who will look after this customer.';
     // A service picked but not yet added is added automatically.
     const list = addDraft();
     if (list === null) {
@@ -317,7 +319,19 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
           htmlFor={id('assignee')}
           hint={assigneeHint || (isLead ? 'Choose who will look after this customer.' : 'Your customers are assigned to you.')}
         >
-          <select id={id('assignee')} value={form.assigneeId || ''} onChange={e => set('assigneeId', e.target.value)} disabled={!isLead} className={inputClass}>
+          <select
+            id={id('assignee')}
+            value={form.assigneeId || ''}
+            onChange={e => {
+              set('assigneeId', e.target.value);
+              setErrors(x => ({ ...x, assignee: undefined }));
+            }}
+            disabled={!isLead}
+            aria-invalid={!!errors.assignee}
+            aria-describedby={errors.assignee ? id('assignee-error') : undefined}
+            className={inputClass}
+          >
+            {isLead && !form.assigneeId && <option value="">Choose a team member</option>}
             {assigneeOptions.map(p => (
               <option key={p.id} value={p.id}>
                 {p.fullName}
@@ -325,6 +339,11 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
               </option>
             ))}
           </select>
+          {errors.assignee && (
+            <p id={id('assignee-error')} className="text-[11px] text-rose-600" role="alert">
+              {errors.assignee}
+            </p>
+          )}
         </FormField>
       </div>
       <FormField label="Customer query or requirement" htmlFor={id('req')}>
