@@ -58,3 +58,24 @@ Sentry and then **deleted from the build**: visitors never get them.
 
 Tests: `supabase/tests/sentry_scrub.test.ts` (masking, what is reported). The first reports of both projects were sent from the real handler
 and the real built website and checked in Sentry (e-mail masked, no user, no cookies, page address without query or tokens).
+
+## The "Something went wrong" flash after a deployment (2026-11-25)
+
+**Symptom:** for 2 to 4 seconds a dark "Something went wrong" page appeared, then the CRM came back by itself.
+
+**Cause:** a tab opened before a deployment asks for a screen of the previous build, whose files no longer exist.
+1. `installChunkReload` cancelled Vite's `vite:preloadError` (`preventDefault`) and reloaded the page.
+2. Because the error was cancelled, Vite gave `React.lazy` an empty module instead of the screen.
+3. React then failed with "Cannot read properties of undefined (reading 'default')" (in Safari, "evaluating 'x.default'"). The error
+   page did not recognise that message as a new version, so it showed its dark error page until the reload finished.
+
+**Fix** (`src/lib/chunkReload.ts`, `src/components/common/ErrorBoundary.tsx`):
+- The preload error is no longer cancelled. The screen receives the real "failed to fetch module" error.
+- The empty-module messages also count as a new version.
+- While the reload runs, the error page shows a quiet "Loading the latest version…" on a light background instead. The reload
+  starts the moment the error is caught, still at most once per 30 seconds.
+- A real crash still shows "Something went wrong" (now light, with **Reload page** and **Go to home page**). It no longer prints the
+  raw error text on screen; the error goes to error reporting (Sentry) as before.
+
+**Test:** `supabase/tests/ui_app_update.test.mjs` (browser). A missing module and an empty module each reload the page without ever
+showing "Something went wrong", a failed preload is not cancelled, and a real crash shows the light error page without internal details.

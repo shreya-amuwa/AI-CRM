@@ -88,16 +88,19 @@ try {
   check((await page.getByTestId('attendance-status').textContent()) === 'Resumed Work', 'Resume Work: state "Resumed Work"');
   await ctx.setGeolocation({ latitude: 18.559, longitude: 73.7868, accuracy: 9 });
   await page.getByTestId('punch-out').click();
-  await page.getByTestId('punch-out-confirm').getByText('You are punching out before your scheduled shift end time.').waitFor();
+  await page.getByTestId('punch-out-confirm').getByText('7:00 PM IST').waitFor();
   const outText = await page.getByTestId('punch-out-confirm').innerText();
   check(/End your workday\?/.test(outText) && /8 h 05 min/.test(outText) && /0 h 52 min/.test(outText) && /7 h 13 min/.test(outText) && /7:00 PM IST/.test(outText)
     && /Continue Working/.test(outText), 'Punch Out shows the Punch In, worked, break and net time and the shift end, with "Continue Working"', outText);
-  check(await page.getByTestId('confirm-punch-out').isDisabled(), 'before the shift end: Confirm stays off until a reason is given');
-  await page.getByTestId('early-reason').fill('Doctor appointment');
+  // before the shift end (the stand-in server even says a reason is required, as a database without 20270209000100 would): no warning,
+  // no reason box, Confirm Punch Out works at once
+  check(!/before your scheduled shift end/.test(outText) && await page.getByTestId('early-reason').count() === 0 && await page.getByTestId('confirm-punch-out').isEnabled(),
+    'before the shift end: no early-leave warning and no reason asked; Confirm Punch Out is ready', outText);
   await page.getByTestId('confirm-punch-out').click();
   await page.getByText(/^Punched out at/).waitFor();
-  const sentOut = (await calledRpc(page, 'attendance_punch_out_confirmed'))[0];
-  check(sentOut.p_early_reason === 'Doctor appointment' && typeof sentOut.p_request === 'string', 'the reason is sent with the confirmed Punch Out', sentOut);
+  const sentOut = (await calledRpc(page, 'attendance_punch_out'))[0];
+  check(sentOut && !('p_early_reason' in sentOut) && typeof sentOut.p_request === 'string' && (await calledRpc(page, 'attendance_punch_out_confirmed')).length === 0,
+    'the Punch Out is sent without a reason (the existing Punch Out, with its request id)', sentOut);
   check(Math.abs(sentOut.p_lat - 18.559) < 1e-6 && Math.abs(sentOut.p_lng - 73.7868) < 1e-6 && sentOut.p_accuracy === 9, 'Punch Out sends a fresh position (not the Punch In one)', sentOut);
   check((await page.getByTestId('punch-out-time').textContent()) === '6:10 PM IST', 'Punch Out time in IST (12:40 UTC = 6:10 PM IST)');
   check((await page.getByTestId('attendance-status').textContent()) === 'Punched Out' && await page.getByTestId('punch-in').isDisabled()
