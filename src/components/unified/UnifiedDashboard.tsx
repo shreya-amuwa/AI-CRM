@@ -16,7 +16,7 @@ import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { PerformanceManagement } from '../performance/PerformanceManagement';
-import { MyPerformance, PerformanceHub } from '../performance/PerformanceHub';
+import { PerformanceHub } from '../performance/PerformanceHub';
 import { ReportsRoute } from '../reports/ReportsRoute';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { LeadAssign } from '../sales-head/LeadAssign';
@@ -51,7 +51,7 @@ import {
 const ICONS: Record<string, React.ElementType> = {
   overview: LayoutDashboard, 'sales-add-lead': UserPlus, 'sales-my-leads': Briefcase, 'sales-dept-leads': Target, 'sales-team-leads': Users, 'sales-assign': Crosshair,
   'sales-follow-ups': CalendarCheck, 'sales-performance': LineChart, 'sales-reports': BarChart3, 'support-customers': Users, 'support-tickets': Headset,
-  'support-desk': Megaphone, 'support-activity': Activity, tasks: ClipboardList, 'tasks-group': ClipboardList, 'daily-reports': FileText, performance: LineChart, 'my-performance': LineChart,
+  'support-desk': Megaphone, 'support-activity': Activity, tasks: ClipboardList, 'tasks-group': ClipboardList, 'daily-reports': FileText, performance: LineChart,
   team: UserCheck, 'team-attendance': Clock3, 'raise-issue': ISSUES_NAV.icon, chat: CHAT_NAV.icon, notifications: Bell, profile: UserCircle
 };
 
@@ -148,7 +148,6 @@ export const UnifiedDashboard: React.FC = () => {
       case 'task-daily': return <HeadDailyPage />;
       case 'daily-reports': return <ReportsRoute />;
       case 'performance': return <PerformanceHub mode={who === 'HEAD' ? 'DEPARTMENT_HEAD' : 'TEAM_LEAD'} />;
-      case 'my-performance': return <MyPerformance />;
       case 'team': return <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} />;
       case 'team-attendance': return <HeadAttendancePage />;
       case 'raise-issue': return <IssuesRoute />;

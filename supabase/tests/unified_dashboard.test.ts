@@ -31,8 +31,7 @@ for (const who of WHO) {
   check(unifiedMenu(who)[0].items[0].id === 'overview', `${who}: the sidebar starts with the Overview`);
   const all = unifiedMenu(who).flatMap(g => g.items.map(i => i.label));
   const taskEntry = { HEAD: 'Task Management', LEAD: 'Assign Task', MEMBER: 'My Assigned Tasks' }[who];
-  const perfEntry = who === 'MEMBER' ? 'My Performance' : 'Performance Management';
-  for (const must of [taskEntry, 'Daily Reports', perfEntry, 'Chat', 'Notification Center', 'Profile', 'Raise an Issue']) check(all.includes(must), `${who}: ${must} is in the same sidebar`);
+  for (const must of [taskEntry, 'Daily Reports', 'Chat', 'Notification Center', 'Profile', 'Raise an Issue']) check(all.includes(must), `${who}: ${must} is in the same sidebar`);
   check(labelsOf(who, 'Sales').includes('Add Lead') && labelsOf(who, 'Sales').includes('My Leads'), `${who}: Sales has Add Lead and My Leads`);
   check(labelsOf(who, 'Sales').length > 0 && labelsOf(who, 'Support').length >= 2, `${who}: Sales and Support each have their pages`);
 }
@@ -48,9 +47,11 @@ const headTasks = unifiedMenu('HEAD').find(g => g.label === 'Work')!.items[0];
 check(headTasks.children?.length === 4 && headTasks.children[0].label === 'Assign Task' && unifiedMenu('MEMBER').find(g => g.label === 'Work')!.items[0].id === 'tasks', 'the head\'s Task Management has assign, updates, reports and daily; the others one page');
 
 check(labelsOf('HEAD', 'Work').join('|') === 'Task Management|Daily Reports|Performance Management' && labelsOf('LEAD', 'Work').join('|') === 'Assign Task|Daily Reports|Performance Management'
-  && labelsOf('MEMBER', 'Work').join('|') === 'My Assigned Tasks|Daily Reports|My Performance', 'Work: Assign Task, Daily Reports and Performance Management for the head and the lead; My Assigned Tasks, Daily Reports and My Performance for the member');
-check(canOpen('HEAD', 'performance') && canOpen('LEAD', 'performance') && !canOpen('MEMBER', 'performance') && canOpen('MEMBER', 'my-performance') && !canOpen('HEAD', 'my-performance') && !canOpen('LEAD', 'my-performance'),
-  'Performance Management is for the head and the lead, My Performance for the member only');
+  && labelsOf('MEMBER', 'Work').join('|') === 'My Assigned Tasks|Daily Reports', 'Work: Assign Task, Daily Reports and Performance Management for the head and the lead; only My Assigned Tasks and Daily Reports for the member');
+check(canOpen('HEAD', 'performance') && canOpen('LEAD', 'performance') && !canOpen('MEMBER', 'performance'), 'Performance Management is for the head and the lead only');
+// 20270210000100: the Team Member has no performance page at all (no "My Performance"; an old address opens the Overview, which the member may open)
+check(!unifiedMenu('MEMBER').some(g => g.items.some(i => /performance/i.test(i.label) || (i.children ?? []).some(c => /performance/i.test(c.label)))), 'the Team Member\'s sidebar has no performance entry of any kind');
+check(!('my-performance' in UNIFIED_PATHS) && parseUnifiedPage('/unified/dashboard/u1/my-performance') === 'overview', 'there is no My Performance page; its old address opens the Overview');
 
 // ---- every sidebar entry is a real page that the role may open; addresses are unique, short and round-trip
 for (const who of WHO) check(pagesOf(who).every(p => canOpen(who, p)), `${who}: every sidebar page is one the role may open`);
