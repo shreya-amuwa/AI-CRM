@@ -12422,7 +12422,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
   const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
-  const when = (n: number) => new Date(Date.now() + n * 86400e3 + 41 * 60e3).toISOString();
+  // a fixed time of day (10:41 UTC) clear of the 06:00-07:00 UTC slots earlier blocks book for the Managing Director ("now + 41 minutes"
+  // collided with them when the suite ran between about 05:20 and 06:20 UTC)
+  const when = (n: number) => { const d = new Date(Date.now() + n * 86400e3); d.setUTCHours(10, 41, 0, 0); return d.toISOString(); };
   const ask = (title: string, days: number) => api('a', 'POST', '/meetings', { title, description: 'Review of the quarterly plan', hostId: saId, startsAt: when(days),
     endsAt: new Date(new Date(when(days)).getTime() + 30 * 60e3).toISOString(), mode: 'PHONE' });
   let r = await api('a', 'GET', '/meetings/ceo-office');
