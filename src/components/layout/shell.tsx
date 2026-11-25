@@ -411,6 +411,8 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // the HR page is only for a dashboard that asks for it (a remembered value from elsewhere is ignored)
   const shownOverlay = (overlay === CEO_AVAILABILITY_NAV_ID && !ceoAvailability) || (overlay === WALLET_NAV_ID && !wallet) ? null : overlay;
   const shownActive = shownOverlay ?? active;
+  // opening another section starts it at the top (the page used to stay scrolled where the previous section was)
+  useEffect(() => { window.scrollTo({ top: 0, left: 0 }); }, [shownActive]);
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);
   useEffect(() => {
