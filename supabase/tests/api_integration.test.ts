@@ -11412,11 +11412,14 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'BUSY', 'CEO queue: the Super Admin enters a meeting: BUSY', r);
   r = await api('a', 'GET', '/meetings/presence/ceo');
   check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === saId)?.status === 'BUSY', 'CEO queue: employees see the CEO BUSY', r);
-  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 30), mode: 'PHONE' });
+  // start and end from one clock reading: two Date.now() calls a millisecond apart made the request 30 min + 1 ms long, and the
+  // "as long as asked" check below then failed now and then
+  const queuedAt = (min: number) => { const t0 = Date.now(); return { startsAt: new Date(t0 + 2 * 24 * 60 * 60_000).toISOString(), endsAt: new Date(t0 + (2 * 24 * 60 + min) * 60_000).toISOString() }; };
+  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, ...queuedAt(30), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: a request while the CEO is BUSY joins the queue', r);
   const first = r.json.data.id as string;
   await db.query(`update public.meetings set created_at = now() - interval '5 minutes' where id = $1`, [first]);
-  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 20), mode: 'PHONE' });
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, ...queuedAt(20), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: and another', r);
   const second = r.json.data.id as string;
   r = await api('sa', 'GET', '/meetings/presence');

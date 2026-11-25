@@ -90,7 +90,7 @@ midnight. Supporting them would mean a shift model first.
 - **End your workday?** shows the Punch In, the current time, the total working time, breaks, the net working time and the
   scheduled shift end. These come from the server (`attendance_punch_out_preview`).
 - **No reason is asked** before the shift end, and no early-leave warning is shown (owner's decision, 2026-11-25; migration
-  `20270210000100_punch_out_no_reason.sql`). The confirmation is enough.
+  `20270211000100_punch_out_no_reason.sql`). The confirmation is enough.
 - **Continue Working** closes the dialog. **Confirm Punch Out** records it.
 
 **Behaviour of both dialogs:**
@@ -157,7 +157,7 @@ With a reason (5 to 1000 characters) and optional supporting information, for a 
 | Column | Default | Meaning |
 | --- | --- | --- |
 | `late_grace_minutes` | 0 | Minutes after the start before "Late" (0 = today's rule) |
-| `early_punch_out_reason_required` | false (since `20270210000100`) | Whether `attendance_punch_out_confirmed` requires a reason before the shift end. The screen does not ask for one |
+| `early_punch_out_reason_required` | false (since `20270211000100`) | Whether `attendance_punch_out_confirmed` requires a reason before the shift end. The screen does not ask for one |
 | `correction_window_days` | 30 | How far back a correction may be asked |
 
 Change them with SQL, e.g. `update public.attendance_settings set late_grace_minutes = 10;`.
