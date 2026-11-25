@@ -82,14 +82,15 @@ Run in the Supabase SQL editor, in this order, **before** the matching code is d
 | `20270205000200_team_attendance_corrections.sql` | #290 |
 | `20270208000100_meeting_push.sql` | #292 |
 | `20270208000200_meeting_oversight_notifications.sql` | #292 |
-| `20270210000100_punch_out_no_reason.sql` | #296 |
+| `20270211000100_punch_out_no_reason.sql` | #296 |
 
 Also on `main`, from other work merged in the same period, so they go out with the same deployment:
 
 - `20270205000100_notice_board_delete.sql` (#289);
 - `20270206000100_hr_offer_templates.sql` (#291);
 - `20270207000100_employee_wallet.sql` (#293);
-- `20270209000100_task_daily_reports_performance.sql` (#297).
+- `20270209000100_task_daily_reports_performance.sql` (#297);
+- `20270210000100_unified_performance_hierarchy.sql` (#300).
 
 Check which of these have already been run (see `DEPLOYMENT_AND_ROLLBACK.md`, "Which migrations have run?").
 

@@ -29,7 +29,7 @@ select to_regclass('public.attendance_correction_requests') is not null as m2027
        to_regclass('public.meeting_oversight_log') is not null        as m20270208000200,
        exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'notification_deliveries'
                and column_name = 'notification_id')                    as m20270208000100,
-       (select not early_punch_out_reason_required from public.attendance_settings where id) as m20270210000100;
+       (select not early_punch_out_reason_required from public.attendance_settings where id) as m20270211000100;
 ```
 
   If `m20270205000200` is false, the last query fails because the column does not exist yet. Run the migrations first, then check again.
@@ -45,7 +45,8 @@ Paste each file whole and run it, in this order. Each one is safe to run again.
 5. `20270208000100_meeting_push.sql`
 6. `20270208000200_meeting_oversight_notifications.sql`
 7. `20270209000100_task_daily_reports_performance.sql` (#297, if not already run)
-8. `20270210000100_punch_out_no_reason.sql`
+8. `20270210000100_unified_performance_hierarchy.sql` (#300, if not already run)
+9. `20270211000100_punch_out_no_reason.sql` (renamed from `20270210000100_punch_out_no_reason.sql`: if that one was already run, running this is a no-op)
 
 Each ends with `notify pgrst, 'reload schema'`, so the API sees new functions at once.
 
