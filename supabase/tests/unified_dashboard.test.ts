@@ -46,8 +46,12 @@ check(!labelsOf('MEMBER', 'Team').includes('Team Members') && labelsOf('LEAD', '
 const headTasks = unifiedMenu('HEAD').find(g => g.label === 'Work')!.items[0];
 check(headTasks.children?.length === 4 && headTasks.children[0].label === 'Assign Task' && unifiedMenu('MEMBER').find(g => g.label === 'Work')!.items[0].id === 'tasks', 'the head\'s Task Management has assign, updates, reports and daily; the others one page');
 
-check(labelsOf('HEAD', 'Work').join('|') === 'Task Management|Daily Reports|Performance Management' && labelsOf('LEAD', 'Work').join('|') === 'Assign Task|Daily Reports|Performance Management'
-  && labelsOf('MEMBER', 'Work').join('|') === 'My Assigned Tasks|Daily Reports', 'Work: Assign Task, Daily Reports and Performance Management for the head and the lead; only My Assigned Tasks and Daily Reports for the member');
+check(labelsOf('HEAD', 'Work').join('|') === 'Task Management|Daily Reports' && labelsOf('LEAD', 'Work').join('|') === 'Assign Task|Daily Reports'
+  && labelsOf('MEMBER', 'Work').join('|') === 'My Assigned Tasks|Daily Reports', 'Work: Assign Task / Task Management and Daily Reports; only My Assigned Tasks and Daily Reports for the member');
+// Performance Management sits right under the Overview (in sight without scrolling past Sales and Support) for the head and the lead; the member has none
+const top = (w: UnifiedWho) => unifiedMenu(w)[0].items.map(i => i.label).join('|');
+check(top('HEAD') === 'Overview|Performance Management' && top('LEAD') === 'Overview|Performance Management' && top('MEMBER') === 'Overview',
+  'Performance Management is the second entry of the sidebar for the Department Head and the Team Lead (under the Overview), and absent for the member');
 check(canOpen('HEAD', 'performance') && canOpen('LEAD', 'performance') && !canOpen('MEMBER', 'performance'), 'Performance Management is for the head and the lead only');
 // 20270210000100: the Team Member has no performance page at all (no "My Performance"; an old address opens the Overview, which the member may open)
 check(!unifiedMenu('MEMBER').some(g => g.items.some(i => /performance/i.test(i.label) || (i.children ?? []).some(c => /performance/i.test(c.label)))), 'the Team Member\'s sidebar has no performance entry of any kind');

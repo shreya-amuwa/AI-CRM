@@ -111,12 +111,13 @@ export function unifiedMenu(who: UnifiedWho): UnifiedMenuGroup[] {
       ] }
     : leaf('tasks', who === 'LEAD' ? 'Assign Task' : 'My Assigned Tasks');
   return [
-    { items: [leaf('overview', 'Overview')] },
+    // Performance Management is the Team Lead's and the Department Head's (20270210000100), right under the Overview so it is in sight without scrolling past
+    // the Sales and Support pages. A Team Member has their tasks and Daily Reports only and no performance page at all (the database refuses them too); an
+    // old /my-performance address opens the Overview.
+    { items: [leaf('overview', 'Overview'), ...(who === 'MEMBER' ? [] : [leaf('performance', 'Performance Management')])] },
     { label: 'Sales', items: sales },
     { label: 'Support', items: support },
-    // Performance Management is the Team Lead's and the Department Head's (20270210000100): a Team Member has their tasks and Daily Reports only, and
-    // no performance page at all (the database refuses them too); an old /my-performance address opens the Overview
-    { label: 'Work', items: [tasks, leaf('daily-reports', 'Daily Reports'), ...(who === 'MEMBER' ? [] : [leaf('performance', 'Performance Management')])] },
+    { label: 'Work', items: [tasks, leaf('daily-reports', 'Daily Reports')] },
     {
       label: 'Team',
       items: [
