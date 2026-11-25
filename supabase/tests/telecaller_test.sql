@@ -115,12 +115,12 @@ create temp table t_ids as select (x ->> 'id')::uuid id, row_number() over () n 
 grant select on t_ids to authenticated;
 select test.check((telecaller_contact_update((select id from t_ids where n = 1), 'CONTACTED', 'Asked to call back', null, true) ->> 'callCount') = '1', 'a call is recorded: status, remarks, count');
 select test.check((select last_called_at is not null from telecaller_contacts where id = (select id from t_ids where n = 1)), 'and the time of the call');
-select test.check((telecaller_contact_update((select id from t_ids where n = 2), 'FOLLOW_UP_REQUIRED', 'Busy', (current_date + 1), true) ->> 'followUpDate') = (current_date + 1)::text, 'a follow-up date is saved');
+select test.check((telecaller_contact_update((select id from t_ids where n = 2), 'FOLLOW_UP_REQUIRED', 'Busy', ((now() at time zone 'Asia/Kolkata')::date + 1), true) ->> 'followUpDate') = ((now() at time zone 'Asia/Kolkata')::date + 1)::text, 'a follow-up date is saved');
 select test.must_fail($$select telecaller_contact_update((select id from t_ids where n = 3), 'FOLLOW_UP_REQUIRED', null, null, true)$$, 'a follow-up needs a date', 'follow-up date');
 select test.must_fail($$select telecaller_contact_update((select id from t_ids where n = 3), 'DONE', null, null, true)$$, 'an unknown status is refused', 'call status');
 select test.must_fail($$select telecaller_contact_update((select id from t_ids where n = 3), 'CONTACTED', repeat('x', 1001), null, true)$$, 'remarks are limited', 'too long');
-select test.check((telecaller_contact_update((select id from t_ids where n = 4), 'INTERESTED', 'Wants a demo', current_date, true) ->> 'callStatus') = 'INTERESTED', 'Interested');
-select telecaller_contact_update((select id from t_ids where n = 5), 'NOT_INTERESTED', null, current_date + 3, true);
+select test.check((telecaller_contact_update((select id from t_ids where n = 4), 'INTERESTED', 'Wants a demo', (now() at time zone 'Asia/Kolkata')::date, true) ->> 'callStatus') = 'INTERESTED', 'Interested');
+select telecaller_contact_update((select id from t_ids where n = 5), 'NOT_INTERESTED', null, (now() at time zone 'Asia/Kolkata')::date + 3, true);
 select test.check((select follow_up_date is null from telecaller_contacts where id = (select id from t_ids where n = 5)), 'a Not interested contact has no follow-up');
 select telecaller_contact_update((select id from t_ids where n = 6), 'COMPLETED', 'Done', null, true);
 select test.check((telecaller_contacts_list(null, null, 'PENDING', 1, 50) ->> 'total')::int = 40, 'the Pending filter counts the rest');
@@ -172,7 +172,7 @@ select test.login('tc_a');
 select test.check((select (h ->> 'totalAssigned')::int = 45 and (h ->> 'callsPending')::int = 40 and (h ->> 'callsCompleted')::int = 5 and (h ->> 'totalLeads')::int = 3 and (h ->> 'hotLeads')::int = 2
                      from (select telecaller_home() h) q), 'the counts come from the data');
 select test.check((telecaller_home() ->> 'followUpsDueToday')::int = 2, 'follow-ups due today: one contact (Interested today) + the Warm lead');
-select test.check((telecaller_home() ->> 'followUpsDueToday')::int = (select count(*) from jsonb_array_elements(telecaller_home() -> 'focus' -> 'followUps') f where f ->> 'date' = current_date::text), 'and today''s focus lists them');
+select test.check((telecaller_home() ->> 'followUpsDueToday')::int = (select count(*) from jsonb_array_elements(telecaller_home() -> 'focus' -> 'followUps') f where f ->> 'date' = (now() at time zone 'Asia/Kolkata')::date::text), 'and today''s focus lists them');
 select test.check(jsonb_array_length(telecaller_home() -> 'focus' -> 'pendingCalls') = 6, 'the focus lists the next pending calls');
 select test.login('tc_b');
 select test.check((telecaller_home() ->> 'totalAssigned')::int = 3 and (telecaller_home() ->> 'totalLeads')::int = 0, 'another Telecaller has their own counts');
