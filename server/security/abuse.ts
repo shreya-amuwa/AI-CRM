@@ -101,6 +101,25 @@ export function turnstileConfig(env: NodeJS.ProcessEnv = process.env): Turnstile
   };
 }
 
+/**
+ * The CRM's own public forms (staff and client "Forgot password", "Send me a new link"): TURNSTILE_CRM_MODE (off by default, log,
+ * enforce), TURNSTILE_CRM_SECRET_KEY (else TURNSTILE_SECRET_KEY), and tokens only from TURNSTILE_CRM_HOSTNAMES (default: APP_URL's host name). Separate from TURNSTILE_MODE,
+ * which the candidate portal already enforces: switching it on before the CRM pages have the site key (VITE_TURNSTILE_SITE_KEY) would
+ * refuse every reset request.
+ */
+export function crmTurnstileConfig(env: NodeJS.ProcessEnv = process.env): TurnstileConfig {
+  // the CRM's own host name (APP_URL, else the production address): never empty, so a token made on another site is refused
+  let appHost = 'crm.amuwacorporation.com';
+  try { if (env.APP_URL) appHost = new URL(env.APP_URL).hostname.toLowerCase(); } catch { /* keep the production host */ }
+  return turnstileConfig({
+    ...env,
+    TURNSTILE_MODE: env.TURNSTILE_CRM_MODE || 'off',
+    // a widget made only for the CRM has its own secret key; otherwise the portal's widget (with the CRM's domain added) is shared
+    TURNSTILE_SECRET_KEY: env.TURNSTILE_CRM_SECRET_KEY || env.TURNSTILE_SECRET_KEY,
+    TURNSTILE_ALLOWED_HOSTNAMES: env.TURNSTILE_CRM_HOSTNAMES || appHost
+  });
+}
+
 export interface TurnstileOutcome {
   /** false only when the request must be refused */
   allowed: boolean;

@@ -110,7 +110,9 @@ export const customersController = {
   addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
   /** Support: the Excel sheet of existing customers (preview or save) and the client's set-password e-mail. */
   importExisting: (async ctx => ok(await svc(ctx).customerImport.importExisting(ctx.actor, ctx.req.body, ctx.req.headers.origin))) as Handler,
-  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler
+  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler,
+  /** The "Client login" card on the customer's page (20270212000100). */
+  clientLoginStatus: (async ctx => ok(await svc(ctx).customerImport.clientLoginStatus(ctx.params.id))) as Handler
 };
 
 export const chatController = {

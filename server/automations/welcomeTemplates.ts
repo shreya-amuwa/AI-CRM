@@ -1,4 +1,5 @@
 import { toText, type RenderedEmail } from './templates.js';
+import { linkLifetimeText } from '../security/linkLifetime.js';
 
 /**
  * The welcome e-mail a new employee receives once their account is active. Every value comes from the database (the employee's own record) and
@@ -53,7 +54,7 @@ export function renderWelcomeEmail(p: WelcomeMailPayload): RenderedEmail {
 <p style="font-size:12px;color:#52607a;margin:0 0 4px">If the button does not work, copy this address into your browser:<br><span style="word-break:break-all">${esc(p.setupUrl)}</span></p>
 <div style="background:#fff7e6;border:1px solid #f3d9a4;border-radius:8px;padding:12px 14px;margin:18px 0">
 <b>Important - your password</b><br>
-No password is sent in this e-mail. You must choose your own password before you can sign in, and only you will know it. The link works once and only for a limited time; if it has expired or stopped working, ask HR to send you a new welcome e-mail. Never share the link or your password with anyone: Amuwa staff will never ask you for your password.
+No password is sent in this e-mail. You must choose your own password before you can sign in, and only you will know it. ${linkLifetimeText()} If it has expired or stopped working, open it anyway and choose "Send me a new link", or ask HR to send you a new welcome e-mail. Never share the link or your password with anyone: Amuwa staff will never ask you for your password.
 </div>
 <p>If you need help signing in, write to <a href="mailto:${esc(p.supportEmail)}" style="color:#2f5fd0">${esc(p.supportEmail)}</a>${p.supportPhone ? ` or call ${esc(p.supportPhone)}` : ''}.</p>
 <p style="margin-bottom:0">Warm regards,<br>HR Team<br>Amuwa Corporation</p>
