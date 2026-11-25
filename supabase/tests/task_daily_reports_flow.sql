@@ -3,6 +3,9 @@
 -- task_daily_reports_performance_test.sql once per department; the people come from the tdr.* settings the caller sets:
 --   h head, l team lead, m member of l, pl a second Team Lead of the SAME department (or another department's lead), pm that lead's member,
 --   oh / ol / om the head / lead / member of ANOTHER department, slug (the department's slug), tag (a short label for the output and the titles).
+-- The psql variable `strict` is true for International and Reseller (20270210000100): there the Team Member has no performance view, the Team Lead
+-- alone finalizes a member's performance (with a rating, never returning it to the member, never while a report waits) and the Department Head rates
+-- the Team Lead. The "if strict" blocks hold those differences; everything else is the same run for every department.
 -- test.u('m') is the id of the person named by the setting.
 -- =============================================================================
 \echo '   ===== department flow: ' :tag
@@ -119,11 +122,21 @@ reset role;
 update work_tasks set status = 'COMPLETED', progress = 100, completed_at = now() where id = (select v from tdr_ids where k = 'T1M');
 
 set role authenticated;
-select test.login(current_setting('tdr.m'));
 create temp table if not exists tdr_json (k text primary key, j jsonb);
 grant all on tdr_json to anon, authenticated;
 delete from tdr_json;
+\if :strict
+-- the member has no performance view: the same figures are read from their Team Lead's view (the checks below then run as the member)
+select test.login(current_setting('tdr.m'));
+select test.must_fail($$select performance_overview(current_date - 30, current_date + 30)$$, 'a member cannot open performance (it is the Team Lead''s)', 'for Team Leads and Department Heads');
+select test.login(current_setting('tdr.l'));
+insert into tdr_json select 'm', jsonb_build_object('me', x) from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') x where x ->> 'id' = test.u('m')::text;
+insert into tdr_ids select 'PM', (j #>> '{me,record,id}')::uuid from tdr_json where k = 'm';
+select test.login(current_setting('tdr.m'));
+\else
+select test.login(current_setting('tdr.m'));
 insert into tdr_json select 'm', performance_overview(current_date - 30, current_date + 30);
+\endif
 -- the figures equal what the real records say (the fixtures of other suites may already have given this person tasks)
 select test.check((select (j #>> '{me,metrics,tasks,total}')::int = (select count(*) from work_tasks where assignee_id = test.u('m'))
                      and (j #>> '{me,metrics,tasks,completed}')::int = (select count(*) from work_tasks where assignee_id = test.u('m') and status = 'COMPLETED')
@@ -139,11 +152,20 @@ select test.check((select current_setting('tdr.slug') <> 'tdr-a' or ((j #>> '{me
   :'tag' || ': worked example (clean department): 1 of 3 tasks completed = 33.3%, on time 100%, progress 50% from the approved reports, score = the weighted parts');
 select test.check((select (j #>> '{me,metrics,score}')::numeric between 0 and 100 and j #>> '{me,record,status}' = 'PENDING' and (j #>> '{me,record,version}')::int >= 1 from tdr_json where k = 'm'),
   :'tag' || ': a score is calculated and the record waits for the Team Lead (Pending)');
+\if :strict
+select test.check((select count(*) = 0 from performance_records), :'tag' || ': the member reads no performance record, not even their own');
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'self approval', null, 5)$$, (select v from tdr_ids where k = 'PM')), 'a member cannot approve their own performance', 'not found');
+select test.must_fail(format($$select performance_record_history(%L)$$, (select v from tdr_ids where k = 'PM')), 'nor read its approval history', 'not found');
+select test.must_fail(format($$select performance_subject_history(%L)$$, test.u('m')), 'nor their evaluation history', 'not found');
+select test.login(current_setting('tdr.om'));
+select test.must_fail($$select performance_overview(current_date - 30, current_date + 30)$$, 'another unified department''s member has no performance view either', 'for Team Leads and Department Heads');
+\else
 select test.check((select count(*) = 1 from performance_records), :'tag' || ': the member reads only their own performance record');
 select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'self approval', null)$$, (select (j #>> '{me,record,id}')::uuid from tdr_json where k = 'm')), 'a member cannot approve their own performance', 'Only the Team Lead');
 -- the member of another Team Lead / department
 select test.login(current_setting('tdr.om'));
 select test.check((select j #>> '{me,id}' = test.u('om')::text and not j ? 'members' and not j ? 'leads' and (j #>> '{me,metrics,tasks,total}')::int = (select count(*) from work_tasks where assignee_id = test.u('om')) from (select performance_overview(current_date - 30, current_date + 30) j) x), :'tag' || ': another department''s member sees only their own performance');
+\endif
 
 -- 5. Team Lead: performance of the team and of themselves
 select test.login(current_setting('tdr.l'));
@@ -158,6 +180,40 @@ select test.check((select (j #>> '{me,metrics,reports,approved}')::int = 3 and (
   :'tag' || ': the Team Lead''s own performance uses team progress, report reviews and task assignment');
 select test.check((select j #>> '{me,record,status}' = 'PENDING' and (j #>> '{me,record,canDecide}')::boolean = false from tdr_json where k = 'l'), :'tag' || ': the Team Lead''s record is Pending and they cannot decide on it themselves');
 select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', null, null)$$, (select (j #>> '{me,record,id}')::uuid from tdr_json where k = 'l')), 'the Team Lead cannot approve their own performance', 'Department Head');
+\if :strict
+-- International / Reseller: the Team Lead finalizes the member's performance with a rating; it is never returned to the member, and never approved while a report waits
+select test.must_fail(format($$select performance_record_review(%L, 'RETURN', 'Please explain the overdue paperwork', null)$$, (select (x #>> '{record,id}')::uuid from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text)), 'a member''s performance is not returned to them (their reports are)', 'not returned to them');
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', null, 999, 4)$$, (select (x #>> '{record,id}')::uuid from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text)), 'figures that changed after opening are refused', 'figures changed');
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'Reviewed with the member', null)$$, (select (x #>> '{record,id}')::uuid from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text)), 'approving needs a rating', 'Give a rating');
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'Reviewed with the member', null, 9)$$, (select (x #>> '{record,id}')::uuid from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text)), 'the rating is 1 to 5', 'rating is from 1 to 5');
+select test.check((select (x #>> '{record,canDecide}')::boolean and not (x #>> '{record,canReturn}')::boolean and (x #>> '{record,ratingRequired}')::boolean
+                     from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text), :'tag' || ': the Team Lead may approve the member''s performance (with a rating), not return it');
+-- a report still waiting blocks the approval: only approved reports finalize the performance
+select test.check(assign_team_task('TDR ' || :'tag' || ' log the call outcomes', 'A note for each call', 'LOW', current_date + 3, null, array[test.u('m')]) = 1, :'tag' || ': the Team Lead assigns one more task');
+reset role;
+insert into tdr_ids select 'T4', id from work_tasks where title = 'TDR ' || :'tag' || ' log the call outcomes' and assignee_id = test.u('m');
+set role authenticated;
+select test.login(current_setting('tdr.m'));
+insert into tdr_ids select 'R4', (task_report_submit((select v from tdr_ids where k = 'T4'), current_date, 'Logged the outcome of four calls', 40, 'Six more call notes') ->> 'id')::uuid;
+select test.login(current_setting('tdr.l'));
+select test.check((select (r -> 'record' ->> 'waitingReports')::int = 1 from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') r where r ->> 'id' = test.u('m')::text),
+  :'tag' || ': the Team Lead sees that one report of the member is still waiting');
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'Reviewed with the member', null, 4)$$, (select v from tdr_ids where k = 'PM')), 'not while a report of the member is still waiting', 'still waiting for your review');
+select test.check((task_report_review((select v from tdr_ids where k = 'R4'), 'RETURN', 'Add the customer name to each note') ->> 'status') = 'RETURNED', :'tag' || ': the Team Lead returns that report for correction');
+select test.check((select r ->> 'status' = 'APPROVED' and (r ->> 'rating')::int = 4 and r ->> 'reviewRemarks' = 'Reviewed with the member'
+                     from (select performance_record_review((select v from tdr_ids where k = 'PM'), 'APPROVE', 'Reviewed with the member', null, 4) r) x),
+  :'tag' || ': the Team Lead finalizes the member''s performance: approved with a rating of 4');
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', null, null, 5)$$, (select v from tdr_ids where k = 'PM')), 'an approved record is final', 'already decided');
+select test.check((select string_agg(h ->> 'action', ',' order by ord) filter (where h ->> 'action' <> 'REFRESHED') = 'GENERATED,APPROVED'
+                          and bool_or(h ->> 'action' = 'APPROVED' and h ->> 'by' is not null and (h ->> 'rating')::int = 4 and h ->> 'remarks' = 'Reviewed with the member')
+                     from jsonb_array_elements(performance_record_history((select v from tdr_ids where k = 'PM'))) with ordinality a(h, ord)),
+  :'tag' || ': the approval history keeps the approver, the time, the remarks and the rating');
+select test.check((select count(*) = 1 from jsonb_array_elements(performance_subject_history(test.u('m')) -> 'records') x where x ->> 'status' = 'APPROVED' and (x ->> 'rating')::int = 4),
+  :'tag' || ': the member''s evaluation history (every period) keeps the approved rating for the Team Lead');
+select test.login(current_setting('tdr.m'));
+select test.must_fail(format($$select performance_record_resubmit(%L)$$, (select v from tdr_ids where k = 'PM')), 'the member cannot send their performance again', 'Team Lead decides');
+select test.login(current_setting('tdr.l'));
+\else
 -- the member's performance: the Team Lead returns it, the member resubmits, the Team Lead approves
 select test.must_fail(format($$select performance_record_review(%L, 'RETURN', null, null)$$, (select (x #>> '{record,id}')::uuid from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text)), 'a return needs the reason', 'what must be corrected');
 select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', null, 999)$$, (select (x #>> '{record,id}')::uuid from tdr_json, jsonb_array_elements(j -> 'members') x where x ->> 'id' = test.u('m')::text)), 'figures that changed after opening are refused', 'figures changed');
@@ -173,16 +229,26 @@ select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', n
 select test.check((select string_agg(h ->> 'action', ',' order by ord) = 'GENERATED,RETURNED,RESUBMITTED,APPROVED' and bool_or(h ->> 'by' is not null and h ->> 'remarks' = 'Reviewed with the member')
                      from jsonb_array_elements(performance_record_history((select id from performance_records where subject_id = test.u('m') limit 1))) with ordinality a(h, ord)),
   :'tag' || ': the approval history of the performance record is kept (approver, time, remarks)');
+\endif
 
 -- an approved record keeps the approved figures while the live figures move on
 reset role;
 insert into work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date, status, progress, completed_at)
 select p.department_id, p.team_id, 'TDR ' || :'tag' || ' extra task', test.u('l'), p.id, current_date + 1, 'COMPLETED', 100, now() from profiles p where p.id = test.u('m');
+\if :strict
+set role authenticated;
+select test.login(current_setting('tdr.l'));
+select test.check((select (x #>> '{metrics,tasks,total}')::int = (select (metrics #>> '{tasks,total}')::int + 1 from performance_records where id = (select v from tdr_ids where k = 'PM'))
+                          and x #>> '{record,status}' = 'APPROVED' and (x #>> '{record,rating}')::int = 4
+                     from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') x where x ->> 'id' = test.u('m')::text),
+  :'tag' || ': the live figures move on (one more task) while the approved record keeps what was approved, with its rating');
+\else
 set role authenticated;
 select test.login(current_setting('tdr.m'));
 select test.check((select (j #>> '{me,metrics,tasks,total}')::int = (select count(*) from work_tasks where assignee_id = test.u('m')) and j #>> '{me,record,status}' = 'APPROVED'
                           and (j #>> '{me,metrics,tasks,total}')::int = (select (metrics #>> '{tasks,total}')::int + 1 from performance_records where subject_id = test.u('m') limit 1) from (select performance_overview(current_date - 30, current_date + 30) j) x),
   :'tag' || ': the live figures move on (one more task) while the approved record keeps what was approved');
+\endif
 
 -- 6. Department Head: every team, every Team Lead; approves the Team Lead
 select test.login(current_setting('tdr.h'));
@@ -203,7 +269,13 @@ select test.login(current_setting('tdr.l'));
 select test.check((performance_overview(current_date - 30, current_date + 30) #>> '{me,record,status}') = 'RETURNED', :'tag' || ': the Team Lead sees Returned for Correction');
 select test.check((performance_record_resubmit((select id from performance_records where subject_id = test.u('l') limit 1)) ->> 'status') = 'PENDING', :'tag' || ': the Team Lead resubmits');
 select test.login(current_setting('tdr.h'));
+\if :strict
+select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'Team progress is on track', null)$$, (select id from performance_records where subject_id = test.u('l') limit 1)), 'the Department Head rates the Team Lead when approving', 'Give a rating');
+select test.check((select r ->> 'status' = 'APPROVED' and (r ->> 'rating')::int = 5 from (select performance_record_review((select id from performance_records where subject_id = test.u('l') limit 1), 'APPROVE', 'Team progress is on track', null, 5) r) x),
+  :'tag' || ': the Department Head approves the Team Lead''s performance with a rating of 5');
+\else
 select test.check((performance_record_review((select id from performance_records where subject_id = test.u('l') limit 1), 'APPROVE', 'Team progress is on track', null) ->> 'status') = 'APPROVED', :'tag' || ': the Department Head approves the Team Lead''s performance');
+\endif
 select test.check((select string_agg(h ->> 'action', ',' order by ord) filter (where h ->> 'action' <> 'REFRESHED') = 'GENERATED,RETURNED,RESUBMITTED,APPROVED' and bool_or(h ->> 'by' is not null and h ->> 'remarks' = 'Team progress is on track')
                      from jsonb_array_elements(performance_record_history((select id from performance_records where subject_id = test.u('l') limit 1))) with ordinality a(h, ord)), :'tag' || ': the Team Lead''s approval history shows approver, time and remarks');
 -- the other department's head and lead
@@ -225,6 +297,7 @@ select test.must_fail($$select performance_overview(current_date - 30, current_d
 select test.check((select count(*) >= 3 from task_daily_reports where department_id = (select id from departments where slug = current_setting('tdr.slug'))), :'tag' || ': and reads every report');
 select test.must_fail($$select performance_overview(current_date, current_date - 1)$$, 'a period must be valid', 'period');
 reset role;
-select test.check((select count(*) >= 1 from notifications where recipient_id = test.u('m') and type = 'REPORT_PERFORMANCE_APPROVED')
+select test.check((select case when :'strict' = 'true' then count(*) = 0 else count(*) filter (where type = 'REPORT_PERFORMANCE_APPROVED') >= 1 end
+                      from notifications where recipient_id = test.u('m') and type like 'REPORT_PERFORMANCE_%')
                    and (select count(*) >= 1 from notifications where recipient_id = test.u('l') and type = 'REPORT_PERFORMANCE_RETURNED')
                    and (select count(*) >= 1 from audit_logs where action = 'PERFORMANCE_RECORD_APPROVED' and entity_id = (select id from performance_records where subject_id = test.u('l') limit 1)), :'tag' || ': performance decisions notify the person and are audited');

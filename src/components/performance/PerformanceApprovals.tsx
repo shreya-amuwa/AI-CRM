@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   DepartmentPerformanceOverview, LeadPerformanceMetrics, LeadPerformanceOverview, MemberPerformanceMetrics, MemberPerformanceOverview, PerformanceLead, PerformanceMember,
-  PerformanceOverview, PerformancePart, PerformancePerson, PerformanceRecordHistoryEntry, PerformanceRecordState
+  PerformanceOverview, PerformancePart, PerformancePerson, PerformanceRecordHistoryEntry, PerformanceRecordState, PerformanceSubjectHistory
 } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { performanceApprovalApi } from '../../lib/api/taskReports';
@@ -19,6 +19,10 @@ const num = (v: number | null | undefined) => (v === null || v === undefined ? '
 const btnPrimary = 'inline-flex items-center justify-center h-8 px-3 rounded-lg bg-emerald-700 text-white text-xs font-bold hover:bg-emerald-800 disabled:opacity-50';
 const btnGhost = 'inline-flex items-center justify-center h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 disabled:opacity-50';
 const btnDanger = 'inline-flex items-center justify-center h-8 px-3 rounded-lg border border-rose-200 bg-white text-rose-700 text-xs font-semibold hover:bg-rose-50 disabled:opacity-50';
+
+// The rating a reviewer gives when approving (20270210000100; required for International / Reseller)
+export const RATING_LABELS: Record<number, string> = { 1: 'Poor', 2: 'Needs improvement', 3: 'Meets expectations', 4: 'Good', 5: 'Excellent' };
+const ratingText = (r: number | null | undefined) => (r ? `${r}/5 · ${RATING_LABELS[r] ?? ''}` : null);
 
 /** The approval state of a performance record: Pending, Approved or Returned for correction (a person with no data yet has no record). */
 export const RecordStatus: React.FC<{ record: PerformanceRecordState | null }> = ({ record }) =>
@@ -53,25 +57,63 @@ const HistoryList: React.FC<{ id: string }> = ({ id }) => {
     <ol className="space-y-1.5 text-xs" data-testid="record-history">
       {rows.map((h, i) => (
         <li key={i} className="rounded-lg bg-slate-50 px-3 py-2">
-          <span className="font-semibold text-slate-800">{word[h.action]}</span>{h.by ? ` by ${h.by}` : ''} · {timeLabel(h.at)}{h.score !== null ? ` · score ${h.score}` : ''}{h.remarks ? <> · “{h.remarks}”</> : null}
+          <span className="font-semibold text-slate-800">{word[h.action]}</span>{h.by ? ` by ${h.by}` : ''} · {timeLabel(h.at)}{h.score !== null ? ` · score ${h.score}` : ''}{h.rating ? ` · rating ${ratingText(h.rating)}` : ''}{h.remarks ? <> · “{h.remarks}”</> : null}
         </li>
       ))}
     </ol>
   );
 };
 
+/** Every evaluation of one person (all periods): the Team Lead keeps their members' history, the Department Head the department's. */
+const PersonHistory: React.FC<{ id: string }> = ({ id }) => {
+  const [data, setData] = useState<PerformanceSubjectHistory | null>(null);
+  const [err, setErr] = useState('');
+  useEffect(() => { performanceApprovalApi.personHistory(id).then(setData, e => setErr(errText(e))); }, [id]);
+  if (err) return <p role="alert" className="text-xs text-rose-700">{err}</p>;
+  if (!data) return <LoadingLine />;
+  if (data.records.length === 0) return <p className="text-xs text-slate-500">No evaluation yet.</p>;
+  return (
+    <div className="relative overflow-x-auto">
+      <table className="w-full text-xs" data-testid="person-history">
+        <caption className="sr-only">Evaluation history of {data.name}</caption>
+        <thead><tr className="text-left text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-100"><th scope="col" className="px-3 py-1.5 font-semibold">Period</th><th scope="col" className="px-3 py-1.5 font-semibold">Status</th><th scope="col" className="px-3 py-1.5 font-semibold">Score</th><th scope="col" className="px-3 py-1.5 font-semibold">Rating</th><th scope="col" className="px-3 py-1.5 font-semibold">Decided by</th></tr></thead>
+        <tbody>
+          {data.records.map(r => (
+            <tr key={r.id} className="border-b border-slate-50 align-top">
+              <td className="px-3 py-1.5 whitespace-nowrap">{periodLabel(r.periodStart, r.periodEnd)}</td>
+              <td className="px-3 py-1.5"><ApprovalPill status={r.status} /></td>
+              <td className="px-3 py-1.5 tabular-nums">{num(r.score)}</td>
+              <td className="px-3 py-1.5">{ratingText(r.rating) ?? '—'}</td>
+              <td className="px-3 py-1.5">{r.reviewedAt ? <>{r.reviewedBy ?? 'the reviewer'} · {timeLabel(r.reviewedAt)}{r.reviewRemarks ? <> · “{r.reviewRemarks}”</> : null}</> : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 /** Approve or return one record, with remarks; or send a returned one again; or read its history. */
-const RecordActions: React.FC<{ person: PerformancePerson; onChanged: () => void; /** open the decision form at once (the reviewer already chose Review) */ autoReview?: boolean }> = ({ person, onChanged, autoReview }) => {
+const RecordActions: React.FC<{ person: PerformancePerson; onChanged: () => void; /** open the decision form at once (the reviewer already chose Review) */ autoReview?: boolean;
+  /** offer the person's evaluations of every period (for the reviewer, not on one's own record) */ showEvaluations?: boolean }> = ({ person, onChanged, autoReview, showEvaluations }) => {
   const rec = person.record;
-  const [mode, setMode] = useState<'' | 'review' | 'history'>(autoReview && rec?.canDecide ? 'review' : '');
+  const [mode, setMode] = useState<'' | 'review' | 'history' | 'evaluations'>(autoReview && rec?.canDecide ? 'review' : '');
   const [remarks, setRemarks] = useState('');
+  const [rating, setRating] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   if (!rec) return null;
+  // International / Reseller: the rating is required, a member's performance is not returned, and nothing is approved while a report waits
+  const canReturn = rec.canReturn !== false;
+  const waiting = rec.ratingRequired ? rec.waitingReports ?? 0 : 0;
   const decide = async (decision: 'APPROVE' | 'RETURN') => {
     if (decision === 'RETURN' && remarks.trim().length < 5) { setErr('Say what must be corrected (at least 5 characters).'); return; }
+    if (decision === 'APPROVE' && rec.ratingRequired && !rating) { setErr('Give a rating from 1 to 5 before approving.'); return; }
     setBusy(true); setErr('');
-    try { await performanceApprovalApi.review(rec.id, decision, remarks.trim() || undefined, rec.version); setMode(''); setRemarks(''); onChanged(); } catch (e) { setErr(errText(e)); onChanged(); } finally { setBusy(false); }
+    try {
+      await performanceApprovalApi.review(rec.id, decision, remarks.trim() || undefined, rec.version, decision === 'APPROVE' && rating ? Number(rating) : undefined);
+      setMode(''); setRemarks(''); setRating(''); onChanged();
+    } catch (e) { setErr(errText(e)); onChanged(); } finally { setBusy(false); }
   };
   const resubmit = async () => {
     setBusy(true); setErr('');
@@ -83,18 +125,36 @@ const RecordActions: React.FC<{ person: PerformancePerson; onChanged: () => void
         {rec.canDecide ? <button type="button" className={btnPrimary} onClick={() => setMode(mode === 'review' ? '' : 'review')} aria-expanded={mode === 'review'}>Review</button> : null}
         {rec.canResubmit ? <button type="button" className={btnPrimary} onClick={() => void resubmit()} disabled={busy}>Send again for approval</button> : null}
         <button type="button" className={btnGhost} onClick={() => setMode(mode === 'history' ? '' : 'history')} aria-expanded={mode === 'history'}>Approval history</button>
+        {showEvaluations ? <button type="button" className={btnGhost} onClick={() => setMode(mode === 'evaluations' ? '' : 'evaluations')} aria-expanded={mode === 'evaluations'}>Evaluation history</button> : null}
       </div>
       {mode === 'review' ? (
         <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2" data-testid="record-review">
-          <label className="block text-xs font-medium text-slate-600" htmlFor={`rr-${rec.id}`}>Remarks (required when you return it)</label>
+          {waiting > 0 ? (
+            <p role="status" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5" data-testid="record-waiting">
+              {waiting} daily report{waiting === 1 ? '' : 's'} of this team member {waiting === 1 ? 'is' : 'are'} still waiting for your review in this period. Approve or return {waiting === 1 ? 'it' : 'them'} in Daily Reports → Task Reports first: only approved reports count.
+            </p>
+          ) : null}
+          {/* the rating is asked where the department requires it (International / Reseller); other departments' form is unchanged */}
+          {rec.ratingRequired ? (
+            <>
+              <label className="block text-xs font-medium text-slate-600" htmlFor={`rt-${rec.id}`}>Rating (required to approve)</label>
+              <select id={`rt-${rec.id}`} className={`${fieldCls} w-full sm:w-64`} value={rating} onChange={e => setRating(e.target.value)} disabled={busy} data-testid="record-rating">
+                <option value="">Choose a rating</option>
+                {[5, 4, 3, 2, 1].map(n => <option key={n} value={String(n)}>{n} · {RATING_LABELS[n]}</option>)}
+              </select>
+            </>
+          ) : null}
+          <label className="block text-xs font-medium text-slate-600" htmlFor={`rr-${rec.id}`}>{canReturn ? 'Remarks (required when you return it)' : 'Remarks (optional)'}</label>
           <textarea id={`rr-${rec.id}`} rows={2} className={`${fieldCls} h-auto`} value={remarks} onChange={e => setRemarks(e.target.value)} maxLength={2000} disabled={busy} />
           <div className="flex flex-wrap gap-1.5">
-            <button type="button" className={btnPrimary} disabled={busy} onClick={() => void decide('APPROVE')}>Approve</button>
-            <button type="button" className={btnDanger} disabled={busy} onClick={() => void decide('RETURN')}>Return for correction</button>
+            <button type="button" className={btnPrimary} disabled={busy || waiting > 0} onClick={() => void decide('APPROVE')}>Approve</button>
+            {canReturn ? <button type="button" className={btnDanger} disabled={busy} onClick={() => void decide('RETURN')}>Return for correction</button> : null}
           </div>
+          {!canReturn ? <p className="text-[11px] text-slate-500">A team member&apos;s performance is not returned to them: return their daily reports for correction instead.</p> : null}
         </div>
       ) : null}
       {mode === 'history' ? <HistoryList id={rec.id} /> : null}
+      {mode === 'evaluations' ? <PersonHistory id={person.id} /> : null}
       {err ? <p role="alert" className="text-xs text-rose-700">{err}</p> : null}
     </div>
   );
@@ -105,7 +165,7 @@ const RecordNote: React.FC<{ record: PerformanceRecordState | null }> = ({ recor
   return (
     <p className="text-xs text-slate-600" data-testid="record-note">
       {record.status === 'PENDING' ? 'Waiting for approval.' : null}
-      {record.reviewedAt ? <>{record.status === 'APPROVED' ? 'Approved' : 'Returned for correction'} by {record.reviewedBy ?? 'the reviewer'} on {timeLabel(record.reviewedAt)}{record.reviewRemarks ? <> · “{record.reviewRemarks}”</> : null}</> : null}
+      {record.reviewedAt ? <>{record.status === 'APPROVED' ? 'Approved' : 'Returned for correction'} by {record.reviewedBy ?? 'the reviewer'} on {timeLabel(record.reviewedAt)}{record.reviewRemarks ? <> · “{record.reviewRemarks}”</> : null}{record.status === 'APPROVED' && record.rating ? <> · rating <b data-testid="record-rating-value">{ratingText(record.rating)}</b></> : null}</> : null}
       {record.status === 'APPROVED' ? ' The approved figures are kept; the live figures above may have moved on.' : null}
     </p>
   );
@@ -159,14 +219,14 @@ const PeopleTable: React.FC<{ people: PerformanceMember[]; onChanged: () => void
                 <td className="px-3 py-3 tabular-nums">{pct(p.metrics.onTimePct)}</td>
                 <td className="px-3 py-3 tabular-nums">{p.metrics.reports.submitted} / {p.metrics.reports.approved}</td>
                 <td className="px-3 py-3 font-bold tabular-nums">{num(p.metrics.score)}</td>
-                <td className="px-3 py-3"><RecordStatus record={p.record} /></td>
+                <td className="px-3 py-3"><RecordStatus record={p.record} />{p.record?.status === 'APPROVED' && p.record.rating ? <span className="block text-[11px] text-slate-600 mt-0.5">Rating {p.record.rating}/5</span> : null}</td>
                 <td className="px-5 py-3 text-right">{p.record ? <button type="button" className={btnGhost} aria-expanded={open === p.id} onClick={() => setOpen(open === p.id ? null : p.id)}>{p.record.canDecide ? 'Review' : 'Details'}</button> : null}</td>
               </tr>
               {open === p.id ? (
                 <tr className="border-b border-slate-100 bg-slate-50/40"><td colSpan={10} className="px-5 py-4 space-y-3">
                   <ScoreParts parts={p.metrics.parts} score={p.metrics.score} />
                   <RecordNote record={p.record} />
-                  <RecordActions person={p} onChanged={onChanged} autoReview />
+                  <RecordActions person={p} onChanged={onChanged} autoReview showEvaluations />
                 </td></tr>
               ) : null}
             </React.Fragment>
@@ -193,7 +253,7 @@ const LeadView: React.FC<{ d: LeadPerformanceOverview; onChanged: () => void }> 
   <div className="space-y-6">
     <LeadDetail m={d.me.metrics} />
     <Card label="Team members">
-      <CardHead title="Team members" hint={`${d.pendingReports} task report${d.pendingReports === 1 ? '' : 's'} waiting for your decision · ${d.pendingRecords} performance record${d.pendingRecords === 1 ? '' : 's'} pending`} />
+      <CardHead title="Team members" hint={`${d.leadDecidesMembers ? 'You evaluate your members: review their daily reports, then approve each member\'s performance with a rating. ' : ''}${d.pendingReports} task report${d.pendingReports === 1 ? '' : 's'} waiting for your decision · ${d.pendingRecords} performance record${d.pendingRecords === 1 ? '' : 's'} pending`} />
       <PeopleTable people={d.members} onChanged={onChanged} empty="No team member has tasks or reports in this period." label="Team member performance" />
     </Card>
     <Card label="My own performance">
@@ -217,7 +277,7 @@ const LeadRow: React.FC<{ lead: PerformanceLead; onChanged: () => void }> = ({ l
         <td className="px-3 py-3 tabular-nums">{m.team.pending} / <span className={m.team.overdue ? 'text-rose-700 font-semibold' : ''}>{m.team.overdue}</span></td>
         <td className="px-3 py-3 tabular-nums">{m.reports.approved} / {m.reports.pending} / {m.reports.returned}</td>
         <td className="px-3 py-3 font-bold tabular-nums">{num(m.score)}</td>
-        <td className="px-3 py-3"><RecordStatus record={lead.record} /></td>
+        <td className="px-3 py-3"><RecordStatus record={lead.record} />{lead.record?.status === 'APPROVED' && lead.record.rating ? <span className="block text-[11px] text-slate-600 mt-0.5">Rating {lead.record.rating}/5</span> : null}</td>
         <td className="px-5 py-3 text-right"><button type="button" className={btnGhost} aria-expanded={open} onClick={() => setOpen(o => !o)}>{lead.record?.canDecide ? 'Review' : 'Open'}</button></td>
       </tr>
       {open ? (
@@ -225,7 +285,7 @@ const LeadRow: React.FC<{ lead: PerformanceLead; onChanged: () => void }> = ({ l
           <LeadDetail m={m} />
           <ScoreParts parts={m.parts} score={m.score} />
           <RecordNote record={lead.record} />
-          <RecordActions person={lead} onChanged={onChanged} autoReview />
+          <RecordActions person={lead} onChanged={onChanged} autoReview showEvaluations />
           <div><h3 className="text-sm font-bold text-slate-900 mb-1">Team members of {lead.name}</h3>
             <PeopleTable people={lead.members} onChanged={onChanged} empty="No team member under this Team Lead." label={`Team members of ${lead.name}`} /></div>
         </td></tr>
@@ -244,7 +304,9 @@ const DepartmentView: React.FC<{ d: DepartmentPerformanceOverview; onChanged: ()
       <KpiCard label="Records to approve" value={d.pendingRecords} tone={d.pendingRecords ? 'amber' : 'neutral'} testId="pf-dept-pending" description="Team Lead performance records pending" />
     </div>
     <Card label="Teams and Team Leads">
-      <CardHead title={`${d.department.name}: Team Leads and teams`} hint="Compare the teams. Open a Team Lead to read their figures, approve or return their performance and see every member." />
+      <CardHead title={`${d.department.name}: Team Leads and teams`} hint={d.leadDecidesMembers
+        ? 'Compare the teams. Open a Team Lead to read their figures, approve (with a rating) or return their performance, and see each member with the Team Lead\'s decision (read only: the Team Lead evaluates members).'
+        : 'Compare the teams. Open a Team Lead to read their figures, approve or return their performance and see every member.'} />
       {d.leads.length === 0 ? <p className="px-5 pb-5 text-sm text-slate-500">No active Team Lead has people or tasks in this department yet.</p> : (
         <div className="relative overflow-x-auto">
           <table className="w-full text-sm" data-testid="leads-table">
@@ -261,7 +323,7 @@ const DepartmentView: React.FC<{ d: DepartmentPerformanceOverview; onChanged: ()
     </Card>
     {d.unassignedMembers.length ? (
       <Card label="Members without a Team Lead">
-        <CardHead title="Team members without a Team Lead" hint="Reviewed by the Department Head." />
+        <CardHead title="Team members without a Team Lead" hint={d.leadDecidesMembers ? 'Name a Team Lead for them: only their Team Lead reviews their daily reports and evaluates their performance. Their waiting reports are kept until then.' : 'Reviewed by the Department Head.'} />
         <PeopleTable people={d.unassignedMembers} onChanged={onChanged} empty="" label="Members without a Team Lead" />
       </Card>
     ) : null}
@@ -270,7 +332,7 @@ const DepartmentView: React.FC<{ d: DepartmentPerformanceOverview; onChanged: ()
 
 /**
  * Performance and approvals. One page for every role (the database says who the caller is and what they may see):
- *   Team Member: their own figures and approval status (My Performance).
+ *   Team Member: their own figures and approval status (My Performance; not in International / Reseller, where only the Team Lead sees them).
  *   Team Lead: each member's figures and the approval of their performance, and the Team Lead's own performance.
  *   Department Head: every Team Lead and team of the department, compared, with approval of each Team Lead's performance.
  * The figures come from the task records and the approved daily reports of the chosen period; nothing is typed in.

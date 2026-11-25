@@ -3913,6 +3913,10 @@ export const performanceOverviewQuerySchema = z
   .strict()
   .refine(v => v.end >= v.start, { message: 'The end date cannot be before the start date.', path: ['end'] });
 export const performanceRecordReviewSchema = z
-  .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional(), version: z.number().int().min(1).optional() })
+  .object({
+    decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional(), version: z.number().int().min(1).optional(),
+    // 20270210000100: the rating given when approving (required by the database for International / Reseller)
+    rating: z.number().int().min(1, 'The rating is from 1 to 5.').max(5, 'The rating is from 1 to 5.').optional()
+  })
   .strict()
   .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });

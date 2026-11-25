@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  PerformanceOverview, PerformanceRecordHistoryEntry, PerformanceRecordState, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportTaskOption
+  PerformanceOverview, PerformanceRecordHistoryEntry, PerformanceRecordState, PerformanceSubjectHistory, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportTaskOption
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -36,9 +36,13 @@ export class TaskReportRepository {
   overview(q: { start: string; end: string; departmentId?: string }) {
     return this.rpc<PerformanceOverview>('performance_overview', { p_start: q.start, p_end: q.end, p_department: q.departmentId ?? null });
   }
-  reviewRecord(id: string, decision: 'APPROVE' | 'RETURN', remarks?: string, version?: number) {
-    return this.rpc<PerformanceRecordState>('performance_record_review', { p_record: id, p_decision: decision, p_remarks: remarks ?? null, p_version: version ?? null });
+  reviewRecord(id: string, decision: 'APPROVE' | 'RETURN', remarks?: string, version?: number, rating?: number) {
+    // p_rating is sent only when given, so the call still works on a database without 20270210000100
+    return this.rpc<PerformanceRecordState>('performance_record_review', {
+      p_record: id, p_decision: decision, p_remarks: remarks ?? null, p_version: version ?? null, ...(rating === undefined ? {} : { p_rating: rating })
+    });
   }
   resubmitRecord(id: string) { return this.rpc<PerformanceRecordState>('performance_record_resubmit', { p_record: id }); }
   recordHistory(id: string) { return this.rpc<PerformanceRecordHistoryEntry[]>('performance_record_history', { p_record: id }); }
+  subjectHistory(id: string) { return this.rpc<PerformanceSubjectHistory>('performance_subject_history', { p_subject: id }); }
 }

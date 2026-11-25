@@ -7349,6 +7349,14 @@ export interface PerformanceRecordState {
   reviewRemarks: string | null;
   canDecide: boolean;
   canResubmit: boolean;
+  /** 20270210000100 (optional: absent on an older database). The rating (1 to 5) given when approving. */
+  rating?: number | null;
+  /** The reviewer may return it (false for a member of International / Reseller: their reports are returned, not their performance). */
+  canReturn?: boolean;
+  /** Approving needs a rating (International / Reseller). */
+  ratingRequired?: boolean;
+  /** The member's daily reports in the period still waiting for review (International / Reseller cannot approve until they are decided). */
+  waitingReports?: number;
 }
 export interface PerformancePerson<M = MemberPerformanceMetrics | LeadPerformanceMetrics> {
   id: string;
@@ -7371,6 +7379,8 @@ export interface LeadPerformanceOverview extends PerformanceOverviewBase {
   members: PerformanceMember[];
   pendingReports: number;
   pendingRecords: number;
+  /** 20270210000100: only the Team Lead decides the members (International / Reseller). */
+  leadDecidesMembers?: boolean;
 }
 export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
   role: 'DEPARTMENT_HEAD' | 'SUPER_ADMIN';
@@ -7380,6 +7390,22 @@ export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
   leads: PerformanceLead[];
   unassignedMembers: PerformanceMember[];
   pendingRecords: number;
+  /** 20270210000100: members without a Team Lead wait for one (International / Reseller) instead of being decided by the Department Head. */
+  leadDecidesMembers?: boolean;
 }
 export type PerformanceOverview = MemberPerformanceOverview | LeadPerformanceOverview | DepartmentPerformanceOverview;
-export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null }
+export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null; rating?: number | null }
+
+// ---- International / Reseller: performance evaluation history of one person (20270210000100) ----
+export interface PerformanceSubjectRecord {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  status: TaskReportStatus;
+  score: number | null;
+  rating: number | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+}
+export interface PerformanceSubjectHistory { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; records: PerformanceSubjectRecord[] }

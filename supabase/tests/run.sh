@@ -224,3 +224,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/meeting_push_test.sql 2>&1 | sed -
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/team_attendance_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/meeting_oversight_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/task_daily_reports_performance_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/unified_performance_hierarchy_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

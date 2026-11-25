@@ -53,5 +53,16 @@ for (const bad of [() => svc.submit({ ...good, workCompleted: '' }), () => svc.r
 }
 check(refused === 8 && calls.length === 3, 'malformed requests are refused before the database is called', { refused, calls: calls.length });
 await svc.reviewRecord(ID, { decision: 'APPROVE', remarks: 'Good', version: 2 });
-check(calls[3].fn === 'reviewRecord' && calls[3].args[3] === 2, 'a record decision carries the version that was reviewed');
+check(calls[3].fn === 'reviewRecord' && calls[3].args[3] === 2 && calls[3].args[4] === undefined, 'a record decision carries the version that was reviewed (and no rating when none was given)');
+// 20270210000100: the rating (1 to 5) given when approving
+await svc.reviewRecord(ID, { decision: 'APPROVE', version: 3, rating: 4 });
+check(calls[4].fn === 'reviewRecord' && calls[4].args[4] === 4, 'the rating reaches the repository');
+let badRatings = 0;
+for (const rating of [0, 6, 2.5, '4']) { try { await svc.reviewRecord(ID, { decision: 'APPROVE', rating }); } catch { badRatings++; } }
+check(badRatings === 4 && calls.length === 5, 'a rating outside 1 to 5 (or not a whole number) is refused before the database');
+await svc.subjectHistory(ID);
+check(calls[5].fn === 'subjectHistory' && calls[5].args[0] === ID, 'a person\'s evaluation history is read by id');
+let badId = false;
+try { await svc.subjectHistory('not-an-id'); } catch { badId = true; }
+check(badId && calls.length === 6, 'a malformed person id is refused');
 console.log(`=== TASK DAILY REPORT UNIT TESTS PASSED (${passed}) ===`);

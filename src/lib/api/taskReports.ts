@@ -1,5 +1,5 @@
 import type {
-  PerformanceOverview, PerformanceRecordHistoryEntry, PerformanceRecordState, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportTaskOption
+  PerformanceOverview, PerformanceRecordHistoryEntry, PerformanceRecordState, PerformanceSubjectHistory, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportTaskOption
 } from '../../../shared/contracts';
 import { api } from './client';
 
@@ -25,8 +25,10 @@ export const taskReportsApi = {
 
 export const performanceApprovalApi = {
   overview: (q: { start: string; end: string; departmentId?: string }) => api.get<PerformanceOverview>('/performance-approval/overview', { ...q }),
-  review: (id: string, decision: 'APPROVE' | 'RETURN', remarks?: string, version?: number) =>
-    api.post<PerformanceRecordState>(`/performance-approval/records/${id}/review`, { decision, remarks, version }),
+  review: (id: string, decision: 'APPROVE' | 'RETURN', remarks?: string, version?: number, rating?: number) =>
+    api.post<PerformanceRecordState>(`/performance-approval/records/${id}/review`, { decision, remarks, version, rating }),
   resubmit: (id: string) => api.post<PerformanceRecordState>(`/performance-approval/records/${id}/resubmit`, {}),
-  history: (id: string) => api.get<PerformanceRecordHistoryEntry[]>(`/performance-approval/records/${id}/history`)
+  history: (id: string) => api.get<PerformanceRecordHistoryEntry[]>(`/performance-approval/records/${id}/history`),
+  /** Every evaluation of one person, all periods (Team Lead: their members; Department Head: the department). */
+  personHistory: (id: string) => api.get<PerformanceSubjectHistory>(`/performance-approval/people/${id}/history`)
 };
