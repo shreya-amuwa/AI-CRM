@@ -191,7 +191,7 @@ Tests: `supabase/tests/unified_existing_departments_test.sql`, `supabase/tests/u
 
 # Performance Management: Team Lead and Department Head only (migration 20270210000100)
 
-In International and Reseller, **Performance Management** is in the side panel of the Team Lead and the Department Head only. The Team Member has *My Assigned Tasks* and *Daily Reports* (they report
+In International and Reseller, **Performance Management** is in the side panel of the Team Lead and the Department Head only. It is the second entry of the sidebar, right under *Overview* (at the bottom of *Work* it was below the visible part of the sidebar on a laptop screen). The Team Member has *My Assigned Tasks* and *Daily Reports* (they report
 on the tasks their Team Lead gave them) and no performance page; the database refuses them as well. The Team Lead reviews the daily reports and finalizes each member's performance with a rating;
 the Department Head approves or returns the Team Lead's performance and reads the members'. Details: [TASK_DAILY_REPORTS_PERFORMANCE.md](TASK_DAILY_REPORTS_PERFORMANCE.md), section
 "International and Reseller: the strict hierarchy".

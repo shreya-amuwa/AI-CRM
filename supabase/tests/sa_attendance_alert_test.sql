@@ -12,7 +12,7 @@ select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270131000100_super_admin_attendance_alert.sql
 \i supabase/migrations/20270131000100_super_admin_attendance_alert.sql
 -- the company-wide late rule (Late only after 10:30) replaces this migration's overview; re-applied after it, as on the live database
-\i supabase/migrations/20270211000100_attendance_late_after_1030.sql
+\i supabase/migrations/20270212000100_attendance_late_after_1030.sql
 create temp table sa_saved as select reminder_days, reminders_paused_on, absent_after_minutes, sa_alert_time from attendance_settings where id;
 update attendance_settings set reminder_days = '{1,2,3,4,5,6,7}', reminders_paused_on = null, absent_after_minutes = 60, sa_alert_time = '11:00' where id;
 delete from sa_attendance_alerts;

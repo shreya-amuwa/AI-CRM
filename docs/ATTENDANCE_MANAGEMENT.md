@@ -89,8 +89,8 @@ midnight. Supporting them would mean a shift model first.
 
 - **End your workday?** shows the Punch In, the current time, the total working time, breaks, the net working time and the
   scheduled shift end. These come from the server (`attendance_punch_out_preview`).
-- Before the shift end it says **"You are punching out before your scheduled shift end time."** and requires a reason
-  (`attendance_settings.early_punch_out_reason_required`, on by default).
+- **No reason is asked** before the shift end, and no early-leave warning is shown (owner's decision, 2026-11-25; migration
+  `20270211000100_punch_out_no_reason.sql`). The confirmation is enough.
 - **Continue Working** closes the dialog. **Confirm Punch Out** records it.
 
 **Behaviour of both dialogs:**
@@ -105,8 +105,9 @@ midnight. Supporting them would mean a shift model first.
   it once (the existing `client_request_id` rule).
 - **Server checks:** the database still checks every transition (one Punch In a day, no Punch Out before Punch In, no lunch after
   Punch Out), the location rules and the server time.
-- **The early reason:** `attendance_punch_out_confirmed` checks it, calls the existing `attendance_punch_out` in the same transaction
-  and stores the reason with that punch (`attendance_events.note`, audited as `ATTENDANCE_EARLY_PUNCH_OUT`).
+- **The Punch Out itself:** the screen calls the existing `attendance_punch_out`, with no reason. It works whether or not the migration
+  has been run. `attendance_punch_out_confirmed` (an optional reason, kept with the punch and audited as `ATTENDANCE_EARLY_PUNCH_OUT`)
+  stays in the database in case the rule is switched back on.
 - **Errors:** an error (no location, offline) stays in the dialog. Confirm again is the same request.
 - **Before the migration runs:** the screen falls back to the existing Punch Out.
 
@@ -155,15 +156,15 @@ With a reason (5 to 1000 characters) and optional supporting information, for a 
 
 | Column | Default | Meaning |
 | --- | --- | --- |
-| `late_grace_minutes` | 0 | **Not used** since `20270211000100` (late marking is the fixed company-wide 10:30 rule) |
-| `early_punch_out_reason_required` | true | A reason is required before the shift end |
+| `late_grace_minutes` | 0 | **Not used** since `20270212000100` (late marking is the fixed company-wide 10:30 rule) |
+| `early_punch_out_reason_required` | false (since `20270211000100`) | Whether `attendance_punch_out_confirmed` requires a reason before the shift end. The screen does not ask for one |
 | `correction_window_days` | 30 | How far back a correction may be asked |
 
 Change them with SQL, e.g. `update public.attendance_settings set correction_window_days = 45;`.
 
 ## Late marking (company-wide: Late only after 10:30)
 
-Migration `20270211000100_attendance_late_after_1030.sql`. One rule for **every employee in every department** (Sales, Support, Accounts,
+Migration `20270212000100_attendance_late_after_1030.sql`. One rule for **every employee in every department** (Sales, Support, Accounts,
 Technical Consultant, AI Studio, AI Design Studio, International, Reseller, HR and any future department) and every role:
 
 | Punch In (India time) | Status | Late minutes |

@@ -1530,6 +1530,12 @@ check(normal.headers.get('ratelimit-limit') === '5000' && normal.headers.get('x-
 
 const health = await fetch(base + '/health').then(x => x.json()) as any;
 check(health.success && health.data.checks.database.startsWith('ok'), 'public health check reports database ok', health);
+{
+  const dbHealth = await fetch(base + '/health/database');
+  const dbBody = await dbHealth.json() as any;
+  check(dbHealth.status === 200 && dbBody.data?.database === 'ok' && typeof dbBody.data?.latencyMs === 'number' && dbHealth.headers.get('cache-control') === 'no-store',
+    'uptime check: /health/database answers 200 with the time the database took, without signing in', dbBody);
+}
 const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=approval-requests/' + orphanReq.id + '/approve', {
   method: 'POST', headers: { authorization: `Bearer ${tokens.get('sa')}`, 'content-type': 'application/json' }, body: '{}'
 });
@@ -11406,11 +11412,14 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'BUSY', 'CEO queue: the Super Admin enters a meeting: BUSY', r);
   r = await api('a', 'GET', '/meetings/presence/ceo');
   check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === saId)?.status === 'BUSY', 'CEO queue: employees see the CEO BUSY', r);
-  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 30), mode: 'PHONE' });
+  // start and end from one clock reading: two Date.now() calls a millisecond apart made the request 30 min + 1 ms long, and the
+  // "as long as asked" check below then failed now and then
+  const queuedAt = (min: number) => { const t0 = Date.now(); return { startsAt: new Date(t0 + 2 * 24 * 60 * 60_000).toISOString(), endsAt: new Date(t0 + (2 * 24 * 60 + min) * 60_000).toISOString() }; };
+  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, ...queuedAt(30), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: a request while the CEO is BUSY joins the queue', r);
   const first = r.json.data.id as string;
   await db.query(`update public.meetings set created_at = now() - interval '5 minutes' where id = $1`, [first]);
-  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, startsAt: soon(2 * 24 * 60), endsAt: soon(2 * 24 * 60 + 20), mode: 'PHONE' });
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, ...queuedAt(20), mode: 'PHONE' });
   check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: and another', r);
   const second = r.json.data.id as string;
   r = await api('sa', 'GET', '/meetings/presence');
@@ -12422,7 +12431,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
   await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
   const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
-  const when = (n: number) => new Date(Date.now() + n * 86400e3 + 41 * 60e3).toISOString();
+  // a fixed time of day (10:41 UTC) clear of the 06:00-07:00 UTC slots earlier blocks book for the Managing Director ("now + 41 minutes"
+  // collided with them when the suite ran between about 05:20 and 06:20 UTC)
+  const when = (n: number) => { const d = new Date(Date.now() + n * 86400e3); d.setUTCHours(10, 41, 0, 0); return d.toISOString(); };
   const ask = (title: string, days: number) => api('a', 'POST', '/meetings', { title, description: 'Review of the quarterly plan', hostId: saId, startsAt: when(days),
     endsAt: new Date(new Date(when(days)).getTime() + 30 * 60e3).toISOString(), mode: 'PHONE' });
   let r = await api('a', 'GET', '/meetings/ceo-office');

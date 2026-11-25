@@ -1,7 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw, Home } from 'lucide-react';
 import * as Sentry from '@sentry/react';
-import { isChunkLoadError, reloadForNewVersion } from '../../lib/chunkReload';
+import { isChunkLoadError, isReloadingForNewVersion, reloadForNewVersion } from '../../lib/chunkReload';
 
 interface Props {
   children: ReactNode;
@@ -20,6 +20,9 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   public static getDerivedStateFromError(error: Error): State {
+    // a screen of the previous build could not be loaded: start the reload now, so the first thing shown is "Loading the latest
+    // version", not an error page (once per 30 seconds; after that the page offers the reload button instead)
+    if (isChunkLoadError(error)) reloadForNewVersion();
     return { hasError: true, error };
   }
 
@@ -52,45 +55,54 @@ export class ErrorBoundary extends Component<Props, State> {
       }
 
       const updated = isChunkLoadError(this.state.error);
+      // a new version is being loaded (the page reloads in a moment): a quiet light screen, never a dark error page that flashes
+      if (updated && isReloadingForNewVersion()) {
+        return (
+          <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6" role="status" aria-live="polite" data-testid="app-updating">
+            <p className="flex items-center gap-2 text-sm text-slate-600">
+              <Loader2 className="w-4 h-4 animate-spin text-slate-400" aria-hidden />
+              Loading the latest version…
+            </p>
+          </div>
+        );
+      }
       return (
-        <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center p-6">
-          <div className="max-w-md w-full bg-slate-800/90 border border-slate-700 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-5 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 mx-auto flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8" />
+        <div className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-4 sm:p-6" data-testid="app-error">
+          <div role="alert" className="max-w-md w-full bg-white border border-slate-200 rounded-xl p-6 shadow-sm space-y-4 text-center">
+            <div className="w-12 h-12 rounded-lg bg-slate-100 text-slate-500 mx-auto flex items-center justify-center">
+              {updated ? <RefreshCw className="w-6 h-6" aria-hidden /> : <AlertTriangle className="w-6 h-6" aria-hidden />}
             </div>
 
-            <div className="space-y-2">
-              <h2 className="text-xl font-bold font-heading text-white">
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-semibold text-slate-900">
                 {updated ? 'A new version is available' : 'Something went wrong'}
               </h2>
-              <p className="text-xs text-slate-400 font-sans leading-relaxed">
+              <p className="text-sm text-slate-600 leading-relaxed">
                 {updated
-                  ? 'The app was just updated. Reload the page to continue.'
-                  : 'An unexpected interface error occurred. You can reload the page or reset the view to recover instantly.'}
+                  ? 'The CRM was just updated. Reload the page to continue.'
+                  : 'This screen could not be shown. Reload the page; if it happens again, go back to the home page.'}
               </p>
             </div>
 
-            {this.state.error && (
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-left font-mono text-[11px] text-rose-300 max-h-32 overflow-y-auto">
-                {this.state.error.toString()}
-              </div>
-            )}
-
-            <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2">
+            <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
               <button
+                type="button"
                 onClick={this.handleReset}
-                className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="w-full sm:flex-1 h-10 px-4 rounded-lg bg-blue-700 hover:bg-blue-800 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
               >
-                <RefreshCw className="w-4 h-4" />
-                <span>Reload Page</span>
+                <RefreshCw className="w-4 h-4" aria-hidden />
+                <span>Reload page</span>
               </button>
-              <button
-                onClick={this.handleResetState}
-                className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-200 font-mono text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Home className="w-4 h-4" />
-                <span>Reset View</span>
-              </button>
+              {!updated ? (
+                <button
+                  type="button"
+                  onClick={this.handleResetState}
+                  className="w-full sm:flex-1 h-10 px-4 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-sm font-semibold flex items-center justify-center gap-1.5"
+                >
+                  <Home className="w-4 h-4" aria-hidden />
+                  <span>Go to home page</span>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

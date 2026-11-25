@@ -51,7 +51,7 @@ export interface OverviewRow {
 }
 export interface AttendanceOverview {
   date: string; today: string; workingDay: boolean; timeZone: string; absentAfterMinutes: number; generatedAt: string; totals: OverviewCounts;
-  /** The company-wide late rule (20270211000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
+  /** The company-wide late rule (20270212000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
   reportingTime?: string; lateAfter?: string; graceMinutes?: number;
   departments: (OverviewCounts & { id: string | null; name: string })[]; rows: OverviewRow[];
 }
@@ -214,16 +214,6 @@ export const attendanceApi = {
       p_status: q.status || null, p_search: q.search || null }),
   /** The Punch Out dialog's figures, from the server's clock. */
   punchOutPreview: () => rpc<PunchOutPreview>('attendance_punch_out_preview'),
-  /** Punch Out after the confirmation; before the shift end the reason is required (checked again by the database). */
-  punchOutConfirmed: async (l: CapturedLocation, reason: string | null, request: string): Promise<AttendanceDayData> => {
-    try {
-      return await rpc<AttendanceDayData>('attendance_punch_out_confirmed', { ...punchArgs(l, request), p_early_reason: reason });
-    } catch (e) {
-      // before the migration is run: the existing Punch Out (same request id, so never a second punch)
-      if (e instanceof Error && /attendance_punch_out_confirmed|could not find the function/i.test(e.message)) return rpc<AttendanceDayData>('attendance_punch_out', punchArgs(l, request));
-      throw e;
-    }
-  },
   requestCorrection: (b: { date: string; kind: CorrectionKind; time: string | null; reason: string; details: string | null }, request: string) =>
     rpc<AttendanceCorrection>('attendance_correction_request', { p_date: b.date, p_kind: b.kind, p_time: b.time, p_reason: b.reason, p_details: b.details, p_request: request }),
   cancelCorrection: (id: string) => rpc<AttendanceCorrection>('attendance_correction_cancel', { p_id: id }),
@@ -255,7 +245,7 @@ export interface TeamAttendanceRow {
 }
 export interface TeamAttendance {
   date: string; today: string; serverTime: string; workingDay: boolean; graceMinutes: number; absentAfterMinutes: number;
-  /** The company-wide late rule (20270211000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
+  /** The company-wide late rule (20270212000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
   reportingTime?: string; lateAfter?: string;
   totals: { total: number; scheduled: number; present: number; absent: number; notPunchedIn: number; shiftNotStarted: number; late: number;
     onLeave: number; halfDay: number; onBreak: number; shiftCompleted: number; offToday: number };

@@ -42,7 +42,7 @@ revoke all on function private.attendance_reporting_time(), private.attendance_l
   private.attendance_late_minutes(timestamptz) from public, anon, authenticated;
 
 comment on column public.attendance_settings.late_grace_minutes is
-  'Not used since 20270211000100: late marking is the company-wide rule private.attendance_late_minutes (Late only after 10:30 India time).';
+  'Not used since 20270212000100: late marking is the company-wide rule private.attendance_late_minutes (Late only after 10:30 India time).';
 
 -- ---------------------------------------------------------------------------
 -- 2. Team attendance (managers, HR, Super Admin): same rows, the late rule from section 1

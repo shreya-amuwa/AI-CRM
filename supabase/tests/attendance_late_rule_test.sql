@@ -1,5 +1,5 @@
 -- =============================================================================
--- Company-wide late marking (migration 20270211000100): Late only after 10:30 India time, the late minutes counted from 10:30, the same
+-- Company-wide late marking (migration 20270212000100): Late only after 10:30 India time, the late minutes counted from 10:30, the same
 -- for every department (ten synthetic ones named after the real ones, plus a "future" one), every role and every view; nothing (a personal
 -- reminder time, the old grace setting) overrides it; past days are corrected without changing any attendance row.
 -- Fixed past Wednesdays are used, so the suite does not depend on when it runs; own rows are removed at the end.
@@ -19,8 +19,8 @@ delete from departments where slug like 'lr-%';
 
 -- the attendance rows before the migration runs again: it must not change one of them
 create temp table lr_before as select md5(coalesce(string_agg(a::text, '|' order by a.id), '')) as h, count(*) as n from attendance_records a;
-\i supabase/migrations/20270211000100_attendance_late_after_1030.sql
-\i supabase/migrations/20270211000100_attendance_late_after_1030.sql
+\i supabase/migrations/20270212000100_attendance_late_after_1030.sql
+\i supabase/migrations/20270212000100_attendance_late_after_1030.sql
 select test.check((select h = (select md5(coalesce(string_agg(a::text, '|' order by a.id), '')) from attendance_records a)
                           and n = (select count(*) from attendance_records) from lr_before),
   'running the migration (twice) changes, adds and removes no attendance record');
