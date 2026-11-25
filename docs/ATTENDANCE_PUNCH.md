@@ -185,7 +185,7 @@ Clicking the alert, in the bell or on a phone or laptop, opens **Attendance → 
 | Group | Rule |
 | --- | --- |
 | Present | punched in |
-| Late | punched in after their day start (their own Punch In time, else the company's) |
+| Late | punched in after 10:30 India time, for everyone (company-wide rule, docs/ATTENDANCE_MANAGEMENT.md "Late marking") |
 | On leave | approved full-day leave, or morning half-day leave and not punched in |
 | Absent | not punched in, not on leave, and their day start + `absent_after_minutes` (60 by default) has passed; on an earlier day, absent |
 | Not yet marked | not punched in, not on leave, before that point (or a day that is not a working day) |

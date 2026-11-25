@@ -23,6 +23,8 @@ const FILTERS: { key: string; label: string; count: (t: TeamAttendanceData['tota
   { key: 'SHIFT_COMPLETED', label: 'Shift completed', count: t => t.shiftCompleted }
 ];
 const UNAVAILABLE: TeamStatus[] = ['ABSENT', 'NOT_PUNCHED_IN', 'APPROVED_LEAVE'];
+// unavailable people stand out in red, late arrivals (the database's company-wide rule: after 10:30) in amber
+const rowTone = (r: TeamAttendanceRow) => (UNAVAILABLE.includes(r.status) ? 'bg-rose-50/40' : r.late ? 'bg-amber-50/60' : '');
 
 const initials = (n: string) => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]?.toUpperCase()).join('');
 const minsLate = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
@@ -169,7 +171,7 @@ export const TeamAttendance: React.FC = () => {
       </div>
       <p className="text-xs text-slate-500">
         {data ? `${istLongDate(data.date)}${data.workingDay ? '' : ' · not a working day'} · ` : ''}
-        Late = punched in after the person&apos;s start time{data?.graceMinutes ? ` (+${data.graceMinutes} min grace)` : ''}; absent {data?.absentAfterMinutes ?? 60} min after it without a Punch In. Each person has one status.
+        Reporting time {data?.reportingTime ?? '10:00'}; Late = punched in after {data?.lateAfter ?? '10:30'} (late minutes counted from {data?.lateAfter ?? '10:30'}), the same for every department; absent {data?.absentAfterMinutes ?? 60} min after the person&apos;s start time without a Punch In. Each person has one status.
       </p>
       {error ? <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
       {!data && !error ? <p role="status" className="text-sm text-slate-500">Loading team attendance…</p> : null}
@@ -223,7 +225,7 @@ export const TeamAttendance: React.FC = () => {
             {/* phones: a compact list (each person's details stay one tap away) */}
             <ul className="md:hidden divide-y divide-slate-100" data-testid="team-list">
               {data.rows.map(r => (
-                <li key={r.profileId} className={`px-4 py-2.5 ${UNAVAILABLE.includes(r.status) ? 'bg-rose-50/40' : ''}`}>
+                <li key={r.profileId} className={`px-4 py-2.5 ${rowTone(r)}`} data-late={r.late ? 'true' : undefined}>
                   <details>
                     <summary className="flex cursor-pointer list-none items-center gap-2">
                       <Avatar r={r} />
@@ -251,7 +253,7 @@ export const TeamAttendance: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.rows.map(r => (
-                    <tr key={r.profileId} className={UNAVAILABLE.includes(r.status) ? 'bg-rose-50/40' : ''}>
+                    <tr key={r.profileId} className={rowTone(r)} data-late={r.late ? 'true' : undefined}>
                       <td className="px-3 py-2"><span className="flex items-center gap-2"><Avatar r={r} /><span className="font-medium text-slate-900">{r.name}</span></span></td>
                       <td className="px-3 py-2 text-slate-600">{r.designation || r.role}</td>
                       <td className="px-3 py-2 text-slate-600">{r.department ?? '-'}{r.team ? <span className="block text-xs text-slate-500">{r.team}</span> : null}</td>

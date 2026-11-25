@@ -11,6 +11,8 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270131000100_super_admin_attendance_alert.sql
 \i supabase/migrations/20270131000100_super_admin_attendance_alert.sql
+-- the company-wide late rule (Late only after 10:30) replaces this migration's overview; re-applied after it, as on the live database
+\i supabase/migrations/20270212000100_attendance_late_after_1030.sql
 create temp table sa_saved as select reminder_days, reminders_paused_on, absent_after_minutes, sa_alert_time from attendance_settings where id;
 update attendance_settings set reminder_days = '{1,2,3,4,5,6,7}', reminders_paused_on = null, absent_after_minutes = 60, sa_alert_time = '11:00' where id;
 delete from sa_attendance_alerts;
@@ -71,15 +73,15 @@ select test.check((select push_status = 'PUSH_OFF' from sa_attendance_alerts whe
 reset role;
 delete from attendance_records where profile_id in (test.id('tm_a'), test.id('tm_b'), test.id('tm_c')) and attendance_date = private.office_today();
 delete from leave_requests where employee_id in (test.id('tm_b')) and reason = 'SA alert test';
--- tm_a punched in at 10:30 (late: the day starts at 10:00), tm_b is on approved leave, tm_c has not punched in
-insert into attendance_records (profile_id, attendance_date, punch_in_at) values (test.id('tm_a'), private.office_today(), test.sa_at('10:30'));
+-- tm_a punched in at 10:45 (late by 15 minutes: Late only after 10:30), tm_b is on approved leave, tm_c has not punched in
+insert into attendance_records (profile_id, attendance_date, punch_in_at) values (test.id('tm_a'), private.office_today(), test.sa_at('10:45'));
 insert into leave_requests (employee_id, leave_type, start_date, end_date, reason, status)
 values (test.id('tm_b'), 'FULL_DAY', private.office_today(), private.office_today(), 'SA alert test', 'APPROVED');
 delete from attendance_reminder_prefs where profile_id in (test.id('tm_a'), test.id('tm_b'), test.id('tm_c'));
 create or replace function test.sa_cat(p_user text, p_hhmm text) returns jsonb language sql stable security definer set search_path = '' as $$
   select x from jsonb_array_elements(private.attendance_overview_json(private.office_today(), test.sa_at(p_hhmm)) -> 'rows') x where (x ->> 'profileId')::uuid = test.id(p_user) $$;
-select test.check((select x ->> 'category' = 'PRESENT' and (x ->> 'late')::boolean and (x ->> 'lateMinutes')::int = 30 from (select test.sa_cat('tm_a', '11:05') as x) s),
-  'punched in at 10:30: Present, and Late by 30 minutes');
+select test.check((select x ->> 'category' = 'PRESENT' and (x ->> 'late')::boolean and (x ->> 'lateMinutes')::int = 15 from (select test.sa_cat('tm_a', '11:05') as x) s),
+  'punched in at 10:45: Present, and Late by 15 minutes (counted from 10:30)');
 select test.check((test.sa_cat('tm_b', '11:05') ->> 'category') = 'ON_LEAVE' and (test.sa_cat('tm_b', '11:05') ->> 'leave') = 'FULL_DAY', 'approved leave: On leave (not absent)');
 select test.check((test.sa_cat('tm_c', '10:30') ->> 'category') = 'NOT_MARKED', 'not punched in at 10:30: Not yet marked');
 select test.check((test.sa_cat('tm_c', '11:05') ->> 'category') = 'ABSENT', 'not punched in, an hour past the day start: Absent');
@@ -112,7 +114,7 @@ select test.login('sa');
 select test.must_fail($$select attendance_today_overview(private.office_today() + 1)$$, 'no future date', 'up to today');
 
 reset role;
-delete from attendance_records where profile_id = test.id('tm_a') and attendance_date = private.office_today() and punch_in_at = test.sa_at('10:30');
+delete from attendance_records where profile_id = test.id('tm_a') and attendance_date = private.office_today() and punch_in_at = test.sa_at('10:45');
 delete from leave_requests where reason = 'SA alert test';
 delete from notification_deliveries where kind = 'SA_ATTENDANCE';
 delete from push_subscriptions where id in ('aaaaaaaa-0000-4000-8000-00000000a001', 'aaaaaaaa-0000-4000-8000-00000000a002');

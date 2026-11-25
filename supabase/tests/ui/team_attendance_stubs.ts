@@ -9,7 +9,7 @@ const rows = [
   row('p1', 'Asha Absent', 'Sales', 'ABSENT'),
   row('p2', 'Nikhil Notin', 'Sales', 'NOT_PUNCHED_IN'),
   row('p3', 'Leena Leave', 'Support', 'APPROVED_LEAVE', { leave: 'FULL_DAY' }),
-  row('p4', 'Lalit Late', 'Sales', 'LATE', { late: true, lateMinutes: 25, punchInAt: '2026-11-09T04:55:00Z' }),
+  row('p4', 'Lalit Late', 'Sales', 'LATE', { late: true, lateMinutes: 25, punchInAt: '2026-11-09T05:25:00Z' }),  // 10:55 India time: 25 min after 10:30
   row('p5', 'Priya Present', 'Support', 'PRESENT', { punchInAt: '2026-11-09T04:25:00Z' }),
   row('p6', 'Esha Early', 'Sales', 'SHIFT_COMPLETED', { punchInAt: '2026-11-09T04:20:00Z', punchOutAt: '2026-11-09T10:00:00Z', earlyOutReason: 'Doctor appointment' })
 ];

@@ -51,6 +51,8 @@ export interface OverviewRow {
 }
 export interface AttendanceOverview {
   date: string; today: string; workingDay: boolean; timeZone: string; absentAfterMinutes: number; generatedAt: string; totals: OverviewCounts;
+  /** The company-wide late rule (20270212000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
+  reportingTime?: string; lateAfter?: string; graceMinutes?: number;
   departments: (OverviewCounts & { id: string | null; name: string })[]; rows: OverviewRow[];
 }
 export interface AttendanceRegister {
@@ -243,6 +245,8 @@ export interface TeamAttendanceRow {
 }
 export interface TeamAttendance {
   date: string; today: string; serverTime: string; workingDay: boolean; graceMinutes: number; absentAfterMinutes: number;
+  /** The company-wide late rule (20270212000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
+  reportingTime?: string; lateAfter?: string;
   totals: { total: number; scheduled: number; present: number; absent: number; notPunchedIn: number; shiftNotStarted: number; late: number;
     onLeave: number; halfDay: number; onBreak: number; shiftCompleted: number; offToday: number };
   departments: { id: string | null; name: string; total: number; available: number; present: number; unavailable: number; late: number }[];

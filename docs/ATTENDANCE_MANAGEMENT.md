@@ -45,7 +45,7 @@ Managing Director's 11:00 alert):
 | Shift Completed | punched in and out |
 | On Break | punched in, a lunch is open (today) |
 | Half Day | punched in, with approved half-day leave |
-| Late | punched in after their start + `attendance_settings.late_grace_minutes` (new; **0** by default = the current rule) |
+| Late | punched in **after 10:30** India time, for everyone (see [Late marking](#late-marking-company-wide-late-only-after-1030)) |
 | Present | punched in otherwise |
 | Approved Leave | full-day leave, or morning half-day leave and not punched in |
 | Weekly Off / Holiday | not a working day / HR's day off, and not punched in |
@@ -156,11 +156,36 @@ With a reason (5 to 1000 characters) and optional supporting information, for a 
 
 | Column | Default | Meaning |
 | --- | --- | --- |
-| `late_grace_minutes` | 0 | Minutes after the start before "Late" (0 = today's rule) |
+| `late_grace_minutes` | 0 | **Not used** since `20270212000100` (late marking is the fixed company-wide 10:30 rule) |
 | `early_punch_out_reason_required` | false (since `20270211000100`) | Whether `attendance_punch_out_confirmed` requires a reason before the shift end. The screen does not ask for one |
 | `correction_window_days` | 30 | How far back a correction may be asked |
 
-Change them with SQL, e.g. `update public.attendance_settings set late_grace_minutes = 10;`.
+Change them with SQL, e.g. `update public.attendance_settings set correction_window_days = 45;`.
+
+## Late marking (company-wide: Late only after 10:30)
+
+Migration `20270212000100_attendance_late_after_1030.sql`. One rule for **every employee in every department** (Sales, Support, Accounts,
+Technical Consultant, AI Studio, AI Design Studio, International, Reseller, HR and any future department) and every role:
+
+| Punch In (India time) | Status | Late minutes |
+| --- | --- | --- |
+| up to and including 10:30 (e.g. 09:59, 10:00, 10:01, 10:15, 10:30) | Present | 0 |
+| 10:31 | Late | 1 |
+| 10:45 | Late | 15 |
+| 11:00 | Late | 30 |
+
+- The official reporting time stays **10:00** (reminders, "Not punched in" and "Absent" are unchanged). Late counts from **10:30**.
+- The Punch In is read in Asia/Kolkata and cut to the whole minute (10:30:59 is still Present), matching the time shown on screen.
+- It lives in one database function, `private.attendance_late_minutes(punch_in_at)` (with `private.attendance_reporting_time()` and
+  `private.attendance_late_after()`). Team attendance (`attendance_team_overview`: Department Heads, CEOs, Team Leads, HR, Super Admin,
+  its Late arrivals filter and counts), Today's Attendance Overview and the Super Admin's 11:00 alert all use it; the screens, the mobile
+  layout and the API only display what it returns (`late`, `lateMinutes`, plus `reportingTime`, `lateAfter`, `graceMinutes` = 30).
+- Nothing overrides it: not a department, not a person's own Punch In reminder time, not `attendance_settings.late_grace_minutes`.
+- **History:** no late flag is stored; every view recomputes it from `attendance_records.punch_in_at`, so all past days show the corrected
+  status as soon as the migration runs. No attendance row is changed, added or removed; approved corrections and leave stay as they are.
+- The dashboards highlight late rows (amber in Team attendance, orange in Today's overview) and show "Late by N min".
+- Tests: `supabase/tests/attendance_late_rule_test.sql` (every case above in ten departments and three roles, both views, the API
+  functions, the overrides, and that the migration changes no attendance record).
 
 ## Files
 
