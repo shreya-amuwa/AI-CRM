@@ -53,7 +53,7 @@ if (typeof window !== 'undefined') {
  * Supabase access token, unwraps the `{ success, data | error }` envelope
  * and throws ApiError on failure.
  */
-export async function apiRequest<T>(method: string, path: string, options: { query?: Query; body?: unknown } = {}): Promise<T> {
+export async function apiRequest<T>(method: string, path: string, options: { query?: Query; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
   const session = (await getSupabase()?.auth.getSession())?.data.session;
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(options.query || {})) {
@@ -65,7 +65,9 @@ export async function apiRequest<T>(method: string, path: string, options: { que
     ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     // the department / function a Department Head works in (the server and the database check it against what was authorised)
-    ...scopeHeaders()
+    ...scopeHeaders(),
+    // e.g. the "confirm you are not a robot" token on public forms (x-turnstile-token)
+    ...(options.headers ?? {})
   };
   const send = async (): Promise<RawResponse> => {
     let res: Response;

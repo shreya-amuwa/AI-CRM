@@ -30,7 +30,7 @@ const daysBack = (n: number) => {
 };
 
 // ---------------------------------------------------------------------------------------------------- the report form
-const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string) => void }> = ({ initial, onSaved }) => {
+export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string) => void }> = ({ initial, onSaved }) => {
   const { ctx } = useAdsSession();
   const clients = useAdsData(() => aiDesignStudioApi.clients({ status: 'ACTIVE' }), []);
   const assignments = useAdsData(() => aiDesignStudioApi.assignments({ view: 'mine' }), []);
@@ -47,6 +47,10 @@ const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string) => voi
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(newRequestId());
+  // The report asks what was completed, what is pending and any challenge. "Work in progress" (the same as pending work) and "Remarks" were dropped from the form to
+  // keep it short; an older report that already has them still shows them here (and keeps them when it is sent again).
+  const showWip = !!initial?.workInProgress?.trim();
+  const showRemarks = !!initial?.remarks?.trim();
 
   const route = isHead(ctx)
     ? null
@@ -109,18 +113,22 @@ const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string) => voi
         <FormField label="Work completed today" htmlFor="rep-done" required error={errors.workCompleted} className="md:col-span-3">
           <textarea id="rep-done" rows={3} className={textareaCls} value={workCompleted} maxLength={4000} disabled={busy} aria-invalid={!!errors.workCompleted} aria-describedby={errors.workCompleted ? 'rep-done-error' : undefined} onChange={e => setWorkCompleted(e.target.value)} />
         </FormField>
-        <FormField label="Work in progress" htmlFor="rep-wip" error={errors.workInProgress} className="md:col-span-1">
-          <textarea id="rep-wip" rows={3} className={textareaCls} value={workInProgress} maxLength={4000} disabled={busy} onChange={e => setWorkInProgress(e.target.value)} />
-        </FormField>
-        <FormField label="Pending work" htmlFor="rep-pending" error={errors.pendingWork}>
+        <FormField label="Pending work" htmlFor="rep-pending" error={errors.pendingWork} className="md:col-span-3">
           <textarea id="rep-pending" rows={3} className={textareaCls} value={pendingWork} maxLength={4000} disabled={busy} onChange={e => setPendingWork(e.target.value)} />
         </FormField>
-        <FormField label="Challenges or blockers" htmlFor="rep-challenges" error={errors.challenges}>
+        <FormField label="Challenges or blockers" htmlFor="rep-challenges" error={errors.challenges} className="md:col-span-3">
           <textarea id="rep-challenges" rows={3} className={textareaCls} value={challenges} maxLength={4000} disabled={busy} onChange={e => setChallenges(e.target.value)} />
         </FormField>
-        <FormField label="Remarks" htmlFor="rep-remarks" error={errors.remarks} className="md:col-span-3">
-          <textarea id="rep-remarks" rows={2} className={textareaCls} value={remarks} maxLength={2000} disabled={busy} onChange={e => setRemarks(e.target.value)} />
-        </FormField>
+        {showWip && (
+          <FormField label="Work in progress" htmlFor="rep-wip" error={errors.workInProgress} className="md:col-span-3">
+            <textarea id="rep-wip" rows={3} className={textareaCls} value={workInProgress} maxLength={4000} disabled={busy} onChange={e => setWorkInProgress(e.target.value)} />
+          </FormField>
+        )}
+        {showRemarks && (
+          <FormField label="Remarks" htmlFor="rep-remarks" error={errors.remarks} className="md:col-span-3">
+            <textarea id="rep-remarks" rows={2} className={textareaCls} value={remarks} maxLength={2000} disabled={busy} onChange={e => setRemarks(e.target.value)} />
+          </FormField>
+        )}
         <div className="md:col-span-3">
           <div className="text-[13px] font-semibold text-slate-700 mb-1">Supporting attachments (links)</div>
           <LinksField idPrefix="rep-link" value={links} onChange={setLinks} disabled={busy} />
@@ -242,10 +250,11 @@ const ReportDrawer: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
               <DetailRow label="Client">{data.clientName}</DetailRow>
               <DetailRow label="Assignment">{data.assignmentTitle}</DetailRow>
               <div className="col-span-2"><DetailRow label="Work completed today">{data.workCompleted}</DetailRow></div>
-              <div className="col-span-2"><DetailRow label="Work in progress">{data.workInProgress}</DetailRow></div>
               <div className="col-span-2"><DetailRow label="Pending work">{data.pendingWork}</DetailRow></div>
               <div className="col-span-2"><DetailRow label="Challenges or blockers">{data.challenges}</DetailRow></div>
-              <div className="col-span-2"><DetailRow label="Remarks">{data.remarks}</DetailRow></div>
+              {/* parts no longer asked for: shown only on an older report that has them */}
+              {data.workInProgress?.trim() ? <div className="col-span-2"><DetailRow label="Work in progress">{data.workInProgress}</DetailRow></div> : null}
+              {data.remarks?.trim() ? <div className="col-span-2"><DetailRow label="Remarks">{data.remarks}</DetailRow></div> : null}
               <div className="col-span-2"><DetailRow label="Attachments"><LinksList links={data.attachments} /></DetailRow></div>
               <DetailRow label="Last sent">{fmtDateTime(data.submittedAt)}</DetailRow>
             </dl>

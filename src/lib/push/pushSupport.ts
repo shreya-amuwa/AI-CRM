@@ -129,6 +129,31 @@ const keyBytes = (base64url: string) => {
   return Uint8Array.from(bin, c => c.charCodeAt(0));
 };
 
+/**
+ * Chrome says "Registration failed - push service error" when the phone cannot reach its push service (Google's FCM): no Play services,
+ * Data Saver, a VPN or ad blocker, a flaky connection, or Brave with push messaging switched off. It is often brief, so try once more,
+ * then say what to check instead of showing the browser's raw text.
+ */
+const PUSH_SERVICE_HELP = "This phone could not reach its push service. Check your internet connection, turn off Data Saver, a VPN or an ad blocker, "
+  + 'and update Google Play services and Chrome, then tap "Turn on notifications" again. In Brave: Settings > Privacy and security > turn on '
+  + '"Use Google Services for Push Messaging".';
+async function subscribeWithRetry(reg: ServiceWorkerRegistration, applicationServerKey: BufferSource): Promise<PushSubscription> {
+  const attempt = () => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  try {
+    return await attempt();
+  } catch (first) {
+    if (!isPushServiceError(first)) throw first;
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      return await attempt();
+    } catch (second) {
+      throw isPushServiceError(second) ? new Error(PUSH_SERVICE_HELP) : second;
+    }
+  }
+}
+const isPushServiceError = (e: unknown) =>
+  e instanceof Error && (e.name === 'AbortError' || e.name === 'NetworkError' || /push service|registration failed/i.test(e.message));
+
 const parts = (sub: PushSubscription) => {
   const json = sub.toJSON();
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) throw new Error('This browser did not give a usable subscription.');
@@ -165,8 +190,7 @@ export async function subscribeThisDevice(): Promise<void> {
   }
   const reg = await registerServiceWorker();
   if (!reg) throw new Error('This browser cannot show notifications.');
-  const sub = (await reg.pushManager.getSubscription())
-    ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }));
+  const sub = (await reg.pushManager.getSubscription()) ?? (await subscribeWithRetry(reg, keyBytes(key)));
   await save(sub);
   setPushActiveOnThisDevice(true);
 }

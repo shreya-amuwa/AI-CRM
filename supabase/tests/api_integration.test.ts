@@ -2580,6 +2580,13 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 404, 'import: someone else cannot send the set-password e-mail', r);
   r = await api('sm', 'POST', `/customers/${impCustomer}/client-password-email`);
   check(r.status === 200 && r.json.data.sent === true && r.json.data.email === 'imp.client@example.com', 'import: the member sends the set-password e-mail again', r);
+  r = await api('sm', 'POST', `/customers/${impCustomer}/client-password-email`);
+  check(r.status === 409, 'client links: a second link within 2 minutes is refused (no flooding the client\'s inbox)', r);
+  r = await api('sm', 'GET', `/customers/${impCustomer}/client-login`);
+  check(r.status === 200 && r.json.data.hasLogin === true && !!r.json.data.lastLinkSentAt && !!r.json.data.linkExpiresAt && r.json.data.canSend === false && r.json.data.sendsToday === 1,
+    'client links: the card shows the link sent, until when it works, and that the next must wait', r);
+  r = await api('a', 'GET', `/customers/${impCustomer}/client-login`);
+  check(r.status === 404, 'client links: someone else does not see the card', r);
   const n0 = outbox.filter(o => o.path === '/emails').length;
   const forgot = (email: string) => fetch(`${base}/client-auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ email }) })
     .then(async x => ({ status: x.status, json: (await x.json()) as any }));
@@ -2624,6 +2631,22 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
     check(r.status === 200 && mails().length === m0, 'staff forgot password: never for a client login', r);
     r = await staffForgot('not-an-email');
     check(r.status === 422, 'staff forgot password: a wrong e-mail is refused', r);
+    {
+      // "confirm you are not a robot" on the CRM's forms (TURNSTILE_CRM_MODE): without a token, refused before anything is looked up or sent
+      const was = { m: process.env.TURNSTILE_CRM_MODE, k: process.env.TURNSTILE_SECRET_KEY };
+      process.env.TURNSTILE_CRM_MODE = 'enforce';
+      process.env.TURNSTILE_SECRET_KEY = 'ts-test-secret';
+      try {
+        const before = mails().length;
+        const a = await staffForgot('SM@amuwa.com');
+        const b = await forgot('imp.client@example.com');
+        check(a.status === 403 && JSON.stringify(a.json).includes('BOT_CHECK_FAILED') && b.status === 403 && JSON.stringify(b.json).includes('BOT_CHECK_FAILED') && mails().length === before,
+          'with the robot check on, a staff or client "Forgot password" without it is refused and nothing is sent', { a, b });
+      } finally {
+        if (was.m === undefined) delete process.env.TURNSTILE_CRM_MODE; else process.env.TURNSTILE_CRM_MODE = was.m;
+        if (was.k === undefined) delete process.env.TURNSTILE_SECRET_KEY; else process.env.TURNSTILE_SECRET_KEY = was.k;
+      }
+    }
     m0 = mails().length;
     r = await forgot('imp.client@example.com');
     const clientMail = mails().slice(m0).find(o => o.body.to?.[0] === 'imp.client@example.com');

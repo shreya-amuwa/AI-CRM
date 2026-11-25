@@ -60,11 +60,11 @@ await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${srv.address().port}`;
 
 // The stand-in for the browser's push service, installed before the page's own code runs.
-const fakePush = ({ permission = 'default', grant = 'granted', subscribed = false, pushManager = true } = {}) => {
-  window.__push = { permission, grant, requested: 0, opts: null, sub: null, unsubscribed: 0 };
+const fakePush = ({ permission = 'default', grant = 'granted', subscribed = false, pushManager = true, failSubscribe = 0 } = {}) => {
+  window.__push = { permission, grant, requested: 0, opts: null, sub: null, unsubscribed: 0, subscribeCalls: 0, failLeft: failSubscribe };
   const fakeSub = ep => ({ endpoint: ep, toJSON: () => ({ endpoint: ep, keys: { p256dh: 'BPk-test', auth: 'auth-test' } }), unsubscribe: async () => { window.__push.unsubscribed++; window.__push.sub = null; return true; } });
   if (subscribed) window.__push.sub = fakeSub('https://push.example.com/dev-ui');
-  const reg = { pushManager: { getSubscription: async () => window.__push.sub, subscribe: async opts => { window.__push.opts = opts; window.__push.sub = fakeSub('https://push.example.com/dev-ui'); return window.__push.sub; } } };
+  const reg = { pushManager: { getSubscription: async () => window.__push.sub, subscribe: async opts => { window.__push.subscribeCalls++; if (window.__push.failLeft-- > 0) { const e = new Error('Registration failed - push service error'); e.name = 'AbortError'; throw e; } window.__push.opts = opts; window.__push.sub = fakeSub('https://push.example.com/dev-ui'); return window.__push.sub; } } };
   if (pushManager) {
     window.__swListeners = [];
     Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: { register: async () => reg, ready: Promise.resolve(reg), getRegistration: async () => reg,
@@ -176,6 +176,22 @@ try {
   await page.getByText('Notifications are not set up yet. Ask your administrator.').waitFor();
   check((await calls(page, 'push_subscription_save')).length === 0, 'no VAPID key: shows "Notifications are not set up yet" and does not throw');
   pushKey = KEY;
+  await ctx.close();
+
+  // 6b. the phone cannot reach its push service ("Registration failed - push service error"): one quiet retry, then what to check
+  ({ ctx, page } = await open({ failSubscribe: 1 }));
+  await page.getByRole('button', { name: 'Turn on notifications' }).click();
+  await page.waitForFunction(() => window.__push.subscribeCalls === 2 && window.__push.sub, null, { timeout: 8000 });
+  await page.getByRole('button', { name: 'Turn on notifications' }).waitFor({ state: 'detached' });
+  check(await page.evaluate(() => window.__push.subscribeCalls) === 2 && (await calls(page, 'push_subscription_save')).length === 1,
+    'a brief push-service failure is retried once and then the device is saved');
+  await ctx.close();
+  ({ ctx, page } = await open({ failSubscribe: 2 }));
+  await page.getByRole('button', { name: 'Turn on notifications' }).click();
+  await page.getByText(/could not reach its push service/).waitFor();
+  const raw = await page.getByText('Registration failed - push service error').count();
+  check(raw === 0 && (await calls(page, 'push_subscription_save')).length === 0 && await page.getByText(/Data Saver/).isVisible(),
+    'a push service that stays unreachable shows what to check (not the browser\'s raw text) and saves nothing');
   await ctx.close();
 
   // 7. the Reminders tab: my times, my devices, the company defaults (HR)
