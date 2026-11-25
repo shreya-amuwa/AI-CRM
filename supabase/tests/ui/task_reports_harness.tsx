@@ -5,6 +5,8 @@ import { PerformanceApprovals } from '../../../src/components/performance/Perfor
 import { ReportForm } from '../../../src/components/ai-studio/AiStudioReports';
 import { SuperAdminPerformance } from '../../../src/components/superadmin/performance/SuperAdminPerformance';
 import { DepartmentContext } from '../../../src/context/DepartmentContext';
+import { ReportForm as AdsReportForm } from '../../../src/components/ai-design-studio/AdsReports';
+import { AdsSessionProvider } from '../../../src/components/ai-design-studio/adsUi';
 import './withAppFeedback';
 
 /**
@@ -102,6 +104,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   if (p === '/performance-approval/overview') return ok(overview(url.searchParams.get('departmentId') ?? undefined));
   // AI Studio daily report form
   if (p === '/ai-studio/reports/context') return ok({ role: 'MEMBER', today: TODAY, reviewer: 'Pari Gupta', hasReviewer: true, route: 'TEAM_LEAD', projects: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'CRM Revamp' }], tasks: [] });
+  // AI Design Studio daily report form
+  if (p === '/ai-design-studio/clients' || p === '/ai-design-studio/assignments') return ok([]);
+  if (p === '/ai-design-studio/reports' && method === 'POST') { aiReports.push({ ads: true, ...body }); return ok({ id: 'ads1', ...body, status: 'PENDING_TL' }); }
   if (p.startsWith('/ai-studio/reports') && (method === 'POST' || method === 'PATCH')) { aiReports.push(body); return ok({ id: 'ai1', ...body, status: body.submit ? 'SUBMITTED' : 'DRAFT' }); }
   m = p.match(/^\/performance-approval\/records\/([^/]+)\/review$/);
   if (m) {
@@ -128,11 +133,19 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 let root: ReturnType<typeof createRoot> | null = null;
 const OLD_AI_REPORT = { id: 'ai0', reportDate: TODAY, projectId: 'aaaaaaaa-0000-4000-8000-000000000001', taskId: null, workCompleted: 'Old work', workInProgress: 'Old progress notes', pendingWork: 'Old pending',
   blockers: null, remarks: null, status: 'RETURNED_BY_TL', tlComment: 'Add detail', dhComment: null } as any;
-w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-member' | 'perf-lead' | 'perf-head' | 'perf-sa' | 'ai-report' | 'ai-report-old') => {
+const OLD_ADS_REPORT = { id: 'aaaaaaaa-0000-4000-8000-0000000000a5', reportDate: TODAY, clientId: null, assignmentId: null, workCompleted: 'Old poster', workInProgress: null, pendingWork: 'Old pending',
+  challenges: null, remarks: 'Old remark kept', attachments: [], status: 'RETURNED' } as any;
+w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-member' | 'perf-lead' | 'perf-head' | 'perf-sa' | 'ai-report' | 'ai-report-old' | 'ads-report' | 'ads-report-old') => {
   role = what === 'perf-sa' ? 'SUPER_ADMIN' : what.endsWith('member') ? 'MEMBER' : what.endsWith('lead') ? 'TEAM_HEAD' : 'DEPARTMENT_HEAD';
   root?.unmount();
   document.body.innerHTML = '<div id="root"></div>';
   root = createRoot(document.getElementById('root')!);
+  if (what === 'ads-report' || what === 'ads-report-old') {
+    root.render(<AdsSessionProvider value={{ ctx: { role: 'TEAM_MEMBER', unassigned: false, leadName: 'Pari Gupta' } as any, people: [], reloadPeople: () => undefined }}>
+      <AdsReportForm initial={what === 'ads-report-old' ? OLD_ADS_REPORT : undefined} onSaved={() => { w.__adsDone = true; }} />
+    </AdsSessionProvider>);
+    return;
+  }
   if (what === 'ai-report' || what === 'ai-report-old') { root.render(<ReportForm existing={what === 'ai-report-old' ? OLD_AI_REPORT : undefined} onDone={() => { w.__aiDone = true; }} />); return; }
   if (what === 'perf-sa') {
     const departments = Object.entries(SA_DEPTS).map(([dbId, name], i) => ({ id: i ? 'reseller' : 'international', dbId, name, description: '', iconName: 'Building2', accentColor: 'blue', totalLeads: 0, activeSessions: 0, maxSessions: 2, locked: false, createdAt: TODAY }));

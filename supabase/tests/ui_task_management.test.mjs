@@ -58,6 +58,15 @@ try {
   check(await page.getByText('Task information').isVisible() && await page.getByText('Assignment', { exact: true }).isVisible(), 'the panel has a Task information and an Assignment section');
   check(await page.getByRole('radio').count() === 4 && await page.getByRole('radio', { name: 'Urgent' }).isVisible(), 'priority offers Low, Medium, High and Urgent');
   check(await page.getByText('Support Executive · Support A').isVisible() && await page.getByText('MM', { exact: true }).first().isVisible(), 'each person shows initials, name, designation and team');
+  // typing one key at a time keeps the cursor in the field (the drawer once took the focus back after every character)
+  await page.getByLabel('Task title *').click();
+  await page.keyboard.type('Call back', { delay: 30 });
+  await page.getByLabel('Description').click();
+  await page.keyboard.type('open tickets', { delay: 30 });
+  check(await page.getByLabel('Task title *').inputValue() === 'Call back' && await page.getByLabel('Description').inputValue() === 'open tickets',
+    'typing in the panel keeps the cursor in the field: the whole text is entered, not one character');
+  await page.getByLabel('Task title *').fill('');
+  await page.getByLabel('Description').fill('');
   const dlg = page.getByRole('dialog', { name: 'Assign task' });
   await dlg.getByRole('button', { name: 'Assign task' }).click();
   check(await page.getByText('Give the task a title.').isVisible() && await page.getByText('Choose who the task is for.').isVisible(), 'submitting an empty form says what is missing');
