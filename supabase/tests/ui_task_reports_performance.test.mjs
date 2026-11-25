@@ -168,6 +168,60 @@ try {
   await page.getByTestId('record-history').first().waitFor();
   check((await page.getByTestId('record-history').first().innerText()).includes('Generated'), 'and the approval history opens');
 
+  // outside International / Reseller the decision form is unchanged: no rating is asked
+  await page.evaluate(() => window.reset());
+  await mount(page, 'perf-lead');
+  await page.getByTestId('people-row').getByRole('button', { name: 'Review' }).click();
+  await page.getByTestId('record-review').waitFor();
+  check(await page.getByTestId('record-rating').count() === 0 && await page.getByTestId('record-review').getByRole('button', { name: 'Return for correction' }).count() === 1,
+    'other departments: no rating is asked and Return stays');
+  // ===== International / Reseller (20270210000100): the Team Lead rates and approves a member, never returns them, not while a report waits
+  await page.evaluate(() => { window.reset(); window.setStrict(true, 1); });
+  await mount(page, 'perf-lead');
+  check((await page.getByTestId('performance-approvals').innerText()).includes('You evaluate your members'), 'strict: the Team Lead is told they evaluate their members');
+  await page.getByTestId('people-row').getByRole('button', { name: 'Review' }).click();
+  await page.getByTestId('record-review').waitFor();
+  check(await page.getByTestId('record-review').getByRole('button', { name: 'Return for correction' }).count() === 0, 'strict: a member\'s performance has no Return button (their reports are returned instead)');
+  check(await page.getByTestId('record-waiting').count() === 1 && await page.getByTestId('record-review').getByRole('button', { name: 'Approve', exact: true }).isDisabled(),
+    'strict: with a daily report still waiting, the Team Lead is told to review it first and cannot approve');
+  await page.evaluate(() => window.setStrict(true, 0));
+  await mount(page, 'perf-lead');
+  await page.getByTestId('people-row').getByRole('button', { name: 'Review' }).click();
+  await page.getByTestId('record-review').waitFor();
+  check((await page.getByTestId('record-review').innerText()).includes('Rating (required to approve)'), 'strict: the rating is required');
+  const before = (await page.evaluate(() => window.__calls.filter(c => c.path.endsWith('/review')).length));
+  await page.getByTestId('record-review').getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.waitForTimeout(150);
+  check((await page.locator('[role="alert"]').allInnerTexts()).some(x => x.includes('Give a rating from 1 to 5')) && (await page.evaluate(() => window.__calls.filter(c => c.path.endsWith('/review')).length)) === before,
+    'strict: approving without a rating is stopped on the form (no request)');
+  await page.getByTestId('record-rating').selectOption('4');
+  await page.fill('textarea[id^="rr-"]', 'Reviewed with the member');
+  await page.getByTestId('record-review').getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.waitForTimeout(300);
+  const sent = await page.evaluate(() => window.__calls.filter(c => c.path === '/performance-approval/records/rec1/review').pop()?.body);
+  check(sent && sent.decision === 'APPROVE' && sent.rating === 4 && sent.remarks === 'Reviewed with the member', 'strict: the Team Lead approves the member with a rating of 4', sent);
+  // the row stays open after the decision; open it only if it was closed
+  if ((await page.getByTestId('people-row').getByRole('button', { name: 'Details' }).getAttribute('aria-expanded')) !== 'true') await page.getByTestId('people-row').getByRole('button', { name: 'Details' }).click();
+  await page.waitForTimeout(150);
+  check((await page.getByTestId('people-row').innerText()).includes('Rating 4/5') && (await page.getByTestId('record-rating-value').first().innerText()).includes('4/5'), 'strict: the approved rating is shown on the row and in the decision note');
+  await page.getByRole('button', { name: 'Evaluation history' }).first().click();
+  await page.getByTestId('person-history').waitFor();
+  check((await page.getByTestId('person-history').innerText()).includes('Steady month') && (await page.evaluate(() => window.__calls.some(c => c.path === '/performance-approval/people/m1/history'))),
+    'strict: the Team Lead opens the member\'s evaluation history of every period');
+  // the Department Head: rates and approves (or returns) the Team Lead; the member's performance is read only
+  await page.evaluate(() => { window.reset(); window.setStrict(true, 0); });
+  await mount(page, 'perf-head');
+  await page.getByTestId('lead-row').getByRole('button', { name: 'Review' }).click();
+  await page.getByTestId('record-review').waitFor();
+  check(await page.getByTestId('record-review').getByRole('button', { name: 'Return for correction' }).count() === 1, 'strict: the Department Head may return a Team Lead\'s performance');
+  check(await page.getByTestId('people-table').getByRole('button', { name: 'Review' }).count() === 0, 'strict: the Department Head only reads the members\' performance');
+  await page.getByTestId('record-rating').first().selectOption('5');
+  await page.getByTestId('record-review').getByRole('button', { name: 'Approve', exact: true }).click();
+  await page.waitForTimeout(300);
+  const headSent = await page.evaluate(() => window.__calls.filter(c => c.path === '/performance-approval/records/rec2/review').pop()?.body);
+  check(headSent && headSent.decision === 'APPROVE' && headSent.rating === 5, 'strict: the Department Head approves the Team Lead with a rating of 5', headSent);
+  await page.evaluate(() => window.reset());
+
   // phone width: the page itself does not scroll sideways (wide tables scroll inside their own box)
   await page.close();
   const phone = await newPage({ width: 375, height: 800 });

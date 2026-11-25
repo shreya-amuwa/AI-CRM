@@ -188,3 +188,10 @@ department list loads (`registerUnifiedDepartments`). The two seeded slugs stay 
 Each sees only their own department's leads and tickets (member: their own; Team Lead: their members'; head: the department). Super Admin and every existing Sales / Support department are unchanged.
 
 Tests: `supabase/tests/unified_existing_departments_test.sql`, `supabase/tests/unified_dashboard.test.ts` (registry), `supabase/tests/ui_unified_existing_departments.test.mjs` (the real Add Team Member form), the `departments API` checks of `api_integration.test.ts`.
+
+# Performance Management: Team Lead and Department Head only (migration 20270210000100)
+
+In International and Reseller, **Performance Management** is in the side panel of the Team Lead and the Department Head only. The Team Member has *My Assigned Tasks* and *Daily Reports* (they report
+on the tasks their Team Lead gave them) and no performance page; the database refuses them as well. The Team Lead reviews the daily reports and finalizes each member's performance with a rating;
+the Department Head approves or returns the Team Lead's performance and reads the members'. Details: [TASK_DAILY_REPORTS_PERFORMANCE.md](TASK_DAILY_REPORTS_PERFORMANCE.md), section
+"International and Reseller: the strict hierarchy".

@@ -869,6 +869,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/performance-approval/records/:id/review', handler: taskReports.reviewRecord, options: S },
   { method: 'POST', path: '/performance-approval/records/:id/resubmit', handler: taskReports.resubmitRecord, options: S },
   { method: 'GET', path: '/performance-approval/records/:id/history', handler: taskReports.recordHistory },
+  { method: 'GET', path: '/performance-approval/people/:id/history', handler: taskReports.subjectHistory },
   { method: 'GET', path: '/performance/people', handler: performance.people },
   { method: 'GET', path: '/performance/report', handler: performance.report },
   { method: 'POST', path: '/performance/report', handler: performance.generate, options: S },

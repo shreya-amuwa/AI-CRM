@@ -1,5 +1,5 @@
 import type {
-  PerformanceOverview, PerformanceRecordHistoryEntry, PerformanceRecordState, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportTaskOption
+  PerformanceOverview, PerformanceRecordHistoryEntry, PerformanceRecordState, PerformanceSubjectHistory, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportTaskOption
 } from '../../shared/contracts.js';
 import {
   performanceOverviewQuerySchema, performanceRecordReviewSchema, taskReportListQuerySchema, taskReportReviewSchema, taskReportSubmitSchema, uuidSchema
@@ -29,8 +29,10 @@ export class TaskReportService {
   overview(query: unknown): Promise<PerformanceOverview> { return this.repo.overview(parse(performanceOverviewQuerySchema, query)); }
   reviewRecord(id: string, body: unknown): Promise<PerformanceRecordState> {
     const b = parse(performanceRecordReviewSchema, body);
-    return this.repo.reviewRecord(parse(uuidSchema, id), b.decision, b.remarks, b.version);
+    return this.repo.reviewRecord(parse(uuidSchema, id), b.decision, b.remarks, b.version, b.rating);
   }
   resubmitRecord(id: string): Promise<PerformanceRecordState> { return this.repo.resubmitRecord(parse(uuidSchema, id)); }
   recordHistory(id: string): Promise<PerformanceRecordHistoryEntry[]> { return this.repo.recordHistory(parse(uuidSchema, id)); }
+  /** Every evaluation of one person (all periods); the database decides who may read it (their Team Lead, their Department Head, the Super Admin). */
+  subjectHistory(id: string): Promise<PerformanceSubjectHistory> { return this.repo.subjectHistory(parse(uuidSchema, id)); }
 }

@@ -28,6 +28,10 @@ const leadMetrics = { own: { total: 2, completed: 1, overdue: 0, completionPct: 
   team: { members: 2, total: 4, completed: 1, pending: 2, overdue: 1, onTime: 0, late: 0, completionPct: 25, onTimePct: null, progressPct: 40 },
   reports: { submitted: 3, approved: 2, returned: 1, pending: 0, waitingOverOneDay: 0, reviewedPct: 100, avgReviewHours: 3.5 },
   management: { tasksAssignedToTeam: 4, tasksReceived: 2, handedDown: 1, handledOrDelegated: 2, delegationPct: 100 }, parts: [{ key: 'ownCompletion', label: 'Own task completion', weight: 20, value: 50 }], score: 58 };
+// International / Reseller (20270210000100): the Team Lead rates and approves a member (never returns them), not while a report waits; the head rates the lead
+let strict = false;
+let waiting = 0;
+const strictFlags = (r: any, subject: 'member' | 'lead') => (strict ? { ...r, ratingRequired: true, waitingReports: subject === 'member' ? waiting : 0, canReturn: subject === 'member' ? false : r.canDecide && r.status === 'PENDING' } : r);
 let memberRec = rec('PENDING', { canDecide: true });
 let leadRec = rec('PENDING', { id: 'rec2' });
 const person = (id: string, name: string, role2: 'TEAM_MEMBER' | 'TEAM_HEAD', metrics: any, record: any) => ({ id, name, designation: null, role: role2, teamId: 'tm', team: 'Team', metrics, liveScore: metrics.score, record });
@@ -35,11 +39,11 @@ const overview = () => {
   const base = { periodStart: TODAY, periodEnd: TODAY, today: TODAY };
   if (role === 'MEMBER') return { role: 'TEAM_MEMBER', ...base, me: person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), { ...memberRec, canDecide: false, canResubmit: memberRec.status === 'RETURNED' }) };
   if (role === 'TEAM_HEAD') return { role, ...base, me: person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, { ...leadRec, canDecide: false, canResubmit: leadRec.status === 'RETURNED' }),
-    members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), memberRec)], pendingReports: 1, pendingRecords: 1 };
+    members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), strictFlags(memberRec, 'member'))], pendingReports: 1, pendingRecords: 1, ...(strict ? { leadDecidesMembers: true } : {}) };
   return { role, ...base, department: { id: 'd1', name: 'International' }, tasks: { total: 9, completed: 4, pending: 3, overdue: 2, completionPct: 44.4 },
     reports: { submitted: 7, approved: 4, returned: 1, pending: 2, approvedPct: 57.1 },
-    leads: [{ ...person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, { ...leadRec, canDecide: leadRec.status === 'PENDING' }), members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), { ...memberRec, canDecide: false })] }],
-    unassignedMembers: [], pendingRecords: 1 };
+    leads: [{ ...person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, strictFlags({ ...leadRec, canDecide: leadRec.status === 'PENDING' }, 'lead')), members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), strictFlags({ ...memberRec, canDecide: false }, 'member'))] }],
+    unassignedMembers: [], pendingRecords: 1, ...(strict ? { leadDecidesMembers: true } : {}) };
 };
 const asReport = (r: any) => ({ ...r, canReview: role === 'TEAM_HEAD' && r.status === 'PENDING', canEdit: role === 'MEMBER' && r.status === 'RETURNED' });
 const realFetch = window.fetch.bind(window);
@@ -87,13 +91,20 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   m = p.match(/^\/performance-approval\/records\/([^/]+)\/review$/);
   if (m) {
     const target = m[1] === 'rec1' ? 'member' : 'lead';
+    if (strict && target === 'member' && body.decision === 'RETURN') return fail(400, 'VALIDATION_ERROR', 'A team member\'s performance is not returned to them. Return their daily reports for correction, then approve the performance.');
     if (body.decision === 'RETURN' && (body.remarks || '').length < 5) return fail(400, 'VALIDATION_ERROR', 'Say what must be corrected (at least 5 characters).');
-    const next = rec(body.decision === 'APPROVE' ? 'APPROVED' : 'RETURNED', { id: m[1], reviewedBy: role === 'DEPARTMENT_HEAD' ? 'Ira Head' : 'Leena Lead', reviewedAt: new Date().toISOString(), reviewRemarks: body.remarks ?? null });
+    if (strict && body.decision === 'APPROVE' && !body.rating) return fail(400, 'VALIDATION_ERROR', 'Give a rating from 1 to 5 before approving.');
+    if (strict && target === 'member' && body.decision === 'APPROVE' && waiting > 0) return fail(409, 'CONFLICT', '1 daily report of this team member is still waiting for your review in this period. Approve or return it first.');
+    const next = rec(body.decision === 'APPROVE' ? 'APPROVED' : 'RETURNED', { id: m[1], reviewedBy: role === 'DEPARTMENT_HEAD' ? 'Ira Head' : 'Leena Lead', reviewedAt: new Date().toISOString(), reviewRemarks: body.remarks ?? null,
+      rating: body.decision === 'APPROVE' ? body.rating ?? null : null });
     if (target === 'member') memberRec = next; else leadRec = next;
     return ok(next);
   }
   m = p.match(/^\/performance-approval\/records\/([^/]+)\/resubmit$/);
   if (m) { if (m[1] === 'rec1') memberRec = rec('PENDING', { id: 'rec1', version: 2 }); else leadRec = rec('PENDING', { id: 'rec2', version: 2 }); return ok(rec('PENDING')); }
+  m = p.match(/^\/performance-approval\/people\/([^/]+)\/history$/);
+  if (m) return ok({ id: m[1], name: m[1] === 'm1' ? 'Mohan Member' : 'Leena Lead', role: m[1] === 'm1' ? 'TEAM_MEMBER' : 'TEAM_HEAD', records: [
+    { id: 'old1', periodStart: '2027-01-01', periodEnd: '2027-01-31', status: 'APPROVED', score: 72, rating: 4, reviewedBy: 'Leena Lead', reviewedAt: '2027-02-02T10:00:00Z', reviewRemarks: 'Steady month' }] });
   m = p.match(/^\/performance-approval\/records\/([^/]+)\/history$/);
   if (m) return ok([{ action: 'GENERATED', by: 'Mohan Member', at: new Date().toISOString(), from: null, to: 'PENDING', score: 61.5, remarks: null }, ...(memberRec.status === 'APPROVED' ? [{ action: 'APPROVED', by: 'Leena Lead', at: new Date().toISOString(), from: 'PENDING', to: 'APPROVED', score: 61.5, remarks: memberRec.reviewRemarks }] : [])]);
   return ok([]);
@@ -109,4 +120,6 @@ w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-memb
     ? <TaskReports level={role === 'MEMBER' ? 'MEMBER' : role === 'TEAM_HEAD' ? 'TEAM_LEAD' : 'DEPARTMENT_HEAD'} />
     : <PerformanceApprovals title={role === 'MEMBER' ? 'My Performance' : 'Performance Management'} />);
 };
-w.reset = () => { reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; };
+w.reset = () => { reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = false; waiting = 0; };
+/** International / Reseller rules on (and how many of the member's reports are still waiting). */
+w.setStrict = (on: boolean, waitingReports = 0) => { strict = on; waiting = waitingReports; };

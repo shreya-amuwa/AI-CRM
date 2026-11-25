@@ -12810,6 +12810,71 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- International / Reseller: Performance Management is the Team Lead's and the Department Head's, never the Team Member's (migration 20270210000100) ---
+{
+  const { rows: [intl] } = await db.query(`select d.id, (select t.id from public.teams t where t.department_id = d.id order by t.created_at limit 1) as team from public.departments d where d.slug = 'international'`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const head = await mkUser('uphHead', 'uph.head@example.com', 'UPH Head', { provisioned_role: 'DEPARTMENT_HEAD', provisioned_department_id: intl.id });
+  const lead = await mkUser('uphLead', 'uph.lead@example.com', 'UPH Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: intl.team });
+  const mem = await mkUser('uphMem', 'uph.member@example.com', 'UPH Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: intl.team });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
+                                            values ($1, $2, 'UPH API follow-up list', $3, $4, current_date + 3) returning id`, [intl.id, intl.team, lead, mem]);
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);   // the office day (India), as the database counts it
+  const period = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) };
+  const q = `?start=${period.start}&end=${period.end}`;
+  try {
+    let r = await api('uphMem', 'GET', `/performance-approval/overview${q}`);
+    check(r.status === 403 && /for Team Leads and Department Heads/.test(r.json.error?.message ?? ''), 'International: a Team Member has no performance view (403)', r);
+    r = await api('uphMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared half of the follow-up list', progress: 40, pendingWork: 'The other half' });
+    check(r.status === 201 && r.json.data.status === 'PENDING', 'International: the member still submits a daily report on the assigned task', r);
+    const reportId = r.json.data.id;
+    r = await api('uphLead', 'GET', `/performance-approval/overview${q}`);
+    const m = r.json.data?.members?.find((x: any) => x.id === mem);
+    check(r.status === 200 && m?.record?.ratingRequired === true && m.record.canReturn === false && m.record.waitingReports === 1 && r.json.data.leadDecidesMembers === true,
+      'International: the Team Lead sees the member, a rating is required, no return, one report waiting', r.json.data);
+    const recId = m.record.id;
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 4 });
+    check(r.status === 409 && /still waiting/.test(r.json.error?.message ?? ''), 'International: the performance cannot be approved while a report waits', r);
+    r = await api('uphLead', 'POST', `/task-reports/${reportId}/review`, { decision: 'APPROVE' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED', 'International: the Team Lead approves the daily report', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR' && /rating/.test(r.json.error?.message ?? ''), 'International: approving needs a rating', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 9 });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR', 'International: a rating outside 1 to 5 is refused', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'RETURN', remarks: 'Please redo the list' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR' && /not returned to them/.test(r.json.error?.message ?? ''), 'International: a member\'s performance is not returned (their reports are)', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 4, remarks: 'Good first week' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.rating === 4, 'International: the Team Lead finalizes the member\'s performance with a rating of 4', r);
+    r = await api('uphLead', 'GET', `/performance-approval/people/${mem}/history`);
+    check(r.status === 200 && r.json.data.records.some((x: any) => x.id === recId && x.rating === 4 && x.reviewedBy === 'UPH Lead'), 'International: the member\'s evaluation history keeps the rating', r);
+    r = await api('uphMem', 'GET', `/performance-approval/people/${mem}/history`);
+    check(r.status === 404, 'International: the member cannot read their own evaluation history', r);
+    r = await api('uphMem', 'GET', `/performance-approval/records/${recId}/history`);
+    check(r.status === 404, 'International: nor the approval history of their record', r);
+    r = await api('uphHead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 3 });
+    check(r.status === 403 || r.status === 409, 'International: the Department Head does not decide a member\'s performance', r);
+    r = await api('uphHead', 'GET', `/performance-approval/overview${q}`);
+    const l = r.json.data?.leads?.find((x: any) => x.id === lead);
+    check(r.status === 200 && l?.members?.some((x: any) => x.id === mem && x.record?.status === 'APPROVED' && x.record.rating === 4) && l.record?.canDecide === true && l.record.canReturn === true,
+      'International: the Department Head sees the member\'s approved evaluation and may decide the Team Lead\'s', r.json.data);
+    r = await api('uphHead', 'POST', `/performance-approval/records/${l.record.id}/review`, { decision: 'APPROVE' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR' && /rating/.test(r.json.error?.message ?? ''), 'International: the Department Head rates the Team Lead when approving', r);
+    r = await api('uphHead', 'POST', `/performance-approval/records/${l.record.id}/review`, { decision: 'APPROVE', rating: 5, remarks: 'Team on track' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.rating === 5, 'International: the Department Head approves the Team Lead\'s performance with a rating of 5', r);
+  } finally {
+    await db.query(`delete from public.task_daily_reports where task_id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[head, lead, mem]]);
+    await db.query(`delete from public.work_tasks where id = $1`, [task.id]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead, head]]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

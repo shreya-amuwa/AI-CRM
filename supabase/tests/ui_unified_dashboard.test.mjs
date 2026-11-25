@@ -96,14 +96,16 @@ try {
   await open(page, 'member', 'International');
   check((await page.locator('nav').count()) >= 1, 'a sidebar is shown');
   const nav = (await page.locator('nav').first().innerText());
-  for (const t of ['Overview', 'Sales', 'Support', 'Add Lead', 'My Leads', 'Lead Follow-ups', 'My Customers', 'My Support Tickets', 'My Assigned Tasks', 'Daily Reports', 'My Performance', 'Chat', 'Notification Center', 'Profile', 'Raise an Issue', 'Attendance', 'Meeting Request'])
+  for (const t of ['Overview', 'Sales', 'Support', 'Add Lead', 'My Leads', 'Lead Follow-ups', 'My Customers', 'My Support Tickets', 'My Assigned Tasks', 'Daily Reports', 'Chat', 'Notification Center', 'Profile', 'Raise an Issue', 'Attendance', 'Meeting Request'])
     check(nav.toLowerCase().includes(t.toLowerCase()), `Team Member: the sidebar has ${t}`, nav);
-  const lines = nav.split('\n').map(x => x.trim().toLowerCase());
+  // the order of the entries in the sidebar text (innerText does not always break between neighbouring entries, so positions are compared, not lines)
+  const lines = nav.toLowerCase();
   const at = t => lines.indexOf(t.toLowerCase());
   check(at('Sales') > -1 && at('Support') > -1 && (await page.locator('nav').count()) === 1, 'Team Member: Sales and Support are two sections of the SAME sidebar', lines);
   check(at('Sales') < at('Add Lead') && at('Add Lead') < at('Lead Follow-ups') && at('Lead Follow-ups') < at('Support') && at('Support') < at('My Customers') && at('My Customers') < at('My Support Tickets'),
     'Team Member: the Sales entries come under Sales and the Support entries under Support');
-  for (const t of ['Team Members', 'Department Leads', 'Lead Assignment', 'Sales Reports', 'Customer Issues', 'Team Attendance', 'Team Activity']) check(!(await has(page, t)), `Team Member: no ${t}`);
+  for (const t of ['Team Members', 'Department Leads', 'Lead Assignment', 'Sales Reports', 'Customer Issues', 'Team Attendance', 'Team Activity', 'My Performance', 'Performance Management']) check(!(await has(page, t)), `Team Member: no ${t}`);
+  check(!/performance/i.test(nav), 'Team Member: no performance entry of any kind in the sidebar (20270210000100)', nav);
   check((await page.locator('[data-testid="unified-page-overview"] [data-stub="UnifiedOverview"]').count()) === 1, 'the Overview opens first');
   check(JSON.parse(await page.locator('[data-testid="unified-page-overview"] [data-stub="UnifiedOverview"]').getAttribute('data-props')).who === 'MEMBER', 'the Overview is the Team Member\'s');
   await opens(page, 'Add Lead', 'PipelineWorkspace', p => p.section === 'leads' && p.startWithAdd === true && p.ownOnly === true);
@@ -117,8 +119,6 @@ try {
   await opens(page, 'My Support Tickets', 'UnifiedMemberTickets');
   await opens(page, 'My Assigned Tasks', 'TasksPage');
   await opens(page, 'Daily Reports', 'ReportsRoute');
-  await opens(page, 'My Performance', 'MyPerformance');
-  check((await where(page)) === '/unified/dashboard/u1/my-performance', 'My Performance has its own address');
   await opens(page, 'Chat', 'ChatRoute');
   await opens(page, 'Notification Center', 'NotificationsPage');
   await click(page, 'Profile');

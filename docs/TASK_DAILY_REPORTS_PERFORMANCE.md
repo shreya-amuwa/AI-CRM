@@ -96,3 +96,46 @@ Nothing new is hard-coded: the rules are the existing hierarchy (`direct_lead_of
 Run the migration in the Supabase SQL editor. The screens call the new functions, so until it is run the *Task Reports* tab and the *Scores & Approvals* tab show the database's error; the rest of
 the CRM is unaffected. Not built: reports for Team Leads' or Department Heads' own tasks (the report chain of [WORK_REPORTS.md](WORK_REPORTS.md) covers their own daily report), a Department Head's
 second approval of members' performance (the head reads it), attachments on a task report.
+
+## International and Reseller: the strict hierarchy (migration 20270210000100)
+
+Migration `supabase/migrations/20270210000100_unified_performance_hierarchy.sql` (run after `20270209000100`; safe to run twice; nothing is deleted). For a department flagged
+`unified_sales_support` (International, Reseller; `private.perf2_strict`) the rules above change as follows. **Every other department keeps the rules above unchanged.**
+
+```
+Team Lead assigns a task -> Team Member submits a daily report on it -> Team Lead approves or returns the report
+-> Team Lead evaluates and approves the member's performance (with a rating; only approved reports count)
+Team Lead's performance -> Department Head approves (with a rating) or returns it
+```
+
+| Feature | Team Member | Team Lead | Department Head |
+| --- | --- | --- | --- |
+| Assign tasks | no | yes | yes |
+| Submit daily reports on assigned tasks | yes | - | - |
+| Approve / return a member's daily report | no | yes (their own members) | no (reads) |
+| Performance Management in the side panel | **no** | yes | yes |
+| Member's performance | **cannot read, calculate, change or approve it** | evaluates and approves it, with a rating | reads it and the Team Lead's decision |
+| Team Lead's performance | - | reads it, resubmits when returned | evaluates, approves (with a rating) or returns it |
+
+* **Team Member.** *My Performance* is removed from the International / Reseller dashboard (an old `/my-performance` address opens the Overview). The database refuses them too:
+  `performance_overview` returns `FORBIDDEN`, their records and histories are not readable (row level security and the functions), `performance_record_resubmit` is refused, and they
+  are not notified of performance decisions. Their task daily reports work as before (submit, see Pending / Approved / Returned, correct and resubmit).
+* **Team Lead decides members.** Approving a member's performance needs a **rating 1 to 5** (`rating`, stored on the record and in its history) and is refused (`CONFLICT`) while any
+  of that member's daily reports in the period is still **Pending**: approve or return them first, so the evaluation uses approved work only. A member's performance is **not returned**
+  (`VALIDATION_ERROR`): the member cannot correct a record, so the Team Lead returns the daily reports instead and approves once they are right.
+* **Department Head.** Approves a Team Lead's performance with a rating, or returns it with a reason (the Team Lead resubmits). Reads every member's performance with the Team Lead's
+  decision. **Never decides a member's report or performance**, also for a member without a Team Lead: such a member's reports wait (nothing is lost) and the Team Lead named later
+  decides them; the screen asks the head to name one.
+* **Evaluation history.** `GET /performance-approval/people/:id/history` (`performance_subject_history`): every record of one person (all periods: status, score, rating, who decided, when,
+  remarks), for their Team Lead, their Department Head and the Super Admin; anyone else gets 404. The screen's *Evaluation history* button opens it.
+* **API.** `POST /performance-approval/records/:id/review` takes an optional `rating` (1 to 5; Zod `performanceRecordReviewSchema`); the database requires it here. The record gains
+  `rating`, `canReturn`, `ratingRequired`, `waitingReports`; the Team Lead's and the head's overview gain `leadDecidesMembers` (all optional, so the screens work before the migration).
+* **Fixed for every department:** `tdr_reviews`, `tdr_can_view` and `perf2_can_view` could return NULL (instead of false) for a member without a Team Lead, which the `if not ...` guards let
+  through (for example, someone who may read a report could decide it). They now always return true or false.
+
+Tests: the strict branch of `supabase/tests/task_daily_reports_flow.sql` (run for International and Reseller), `supabase/tests/unified_performance_hierarchy_test.sql` (member without a Team Lead,
+history access, null-safety, other departments unchanged), the "International / Reseller: Performance Management" block of `api_integration.test.ts`, `task_daily_reports.test.ts` (rating
+validation), `unified_dashboard.test.ts` / `ui_unified_dashboard.test.mjs` (no performance entry for the member) and `ui_task_reports_performance.test.mjs` (rating, no Return, waiting reports, history).
+
+Rollout: run the migration in the Supabase SQL editor. Before it is run, the new screens still work (the new fields are optional) and the member's sidebar no longer offers performance;
+the database rules above apply once it is run.
