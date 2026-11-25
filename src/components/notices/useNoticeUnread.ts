@@ -15,12 +15,16 @@ export function useNoticeUnread(enabled = true): number {
     if (!enabled) return;
     reload();
     const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
+    // a burst of notifications (e.g. the backlog after a stall) reloads the count once, 1 s after the last one
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const soon = () => { if (timer) clearTimeout(timer); timer = setTimeout(reload, 1000); };
     window.addEventListener(NOTICES_CHANGED_EVENT, reload);
-    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, reload);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, soon);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener(NOTICES_CHANGED_EVENT, reload);
-      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, reload);
+      if (timer) clearTimeout(timer);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, soon);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [enabled, reload]);

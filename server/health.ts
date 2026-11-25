@@ -41,12 +41,21 @@ type Readiness = { status: 200 | 503; body: { database: 'ok' | 'slow' | 'down'; 
 const SLOW_MS = 3_000;
 const REUSE_MS = 10_000;
 let last: { at: number; result: Readiness } | null = null;
-export function resetDatabaseReadinessForTests() { last = null; }
+// one check at a time: callers arriving while a check runs share it (no pile-up while the database is slow)
+let inflight: Promise<Readiness> | null = null;
+export function resetDatabaseReadinessForTests() { last = null; inflight = null; }
 
-export async function databaseReadiness(opts: { ping?: () => Promise<void>; now?: () => number; timeoutMs?: number } = {}): Promise<Readiness> {
+type ReadinessOpts = { ping?: () => Promise<void>; now?: () => number; timeoutMs?: number };
+export async function databaseReadiness(opts: ReadinessOpts = {}): Promise<Readiness> {
   const now = opts.now ?? Date.now;
+  if (last && now() - last.at < REUSE_MS) return { status: last.result.status, body: { ...last.result.body, cached: true } };
+  if (inflight) return inflight;
+  inflight = checkDatabase(opts, now).finally(() => { inflight = null; });
+  return inflight;
+}
+
+async function checkDatabase(opts: ReadinessOpts, now: () => number): Promise<Readiness> {
   const start = now();
-  if (last && start - last.at < REUSE_MS) return { status: last.result.status, body: { ...last.result.body, cached: true } };
   const ping = opts.ping ?? (async () => {
     const { error } = await getAnonClient().rpc('list_registration_options');
     if (error) throw new Error('database error');

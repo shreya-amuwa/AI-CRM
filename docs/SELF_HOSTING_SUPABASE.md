@@ -23,26 +23,41 @@ it up, backups, security, moving the data and the way back. Read `docs/OUTAGES.m
 Use Supabase's official self-hosting setup: Docker Compose from `supabase/supabase` → `docker/`, as described at
 https://supabase.com/docs/guides/self-hosting/docker. Pin a release; do not track `master`.
 
-In `.env`, set:
+In `.env` (these fill in `docker-compose.yml`), set:
 - `POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`, `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`: new strong values,
   generated as Supabase's guide describes. Keep them in a password manager, never in the repository or in chat.
 - `SITE_URL=https://crm.amuwacorporation.com` and `API_EXTERNAL_URL=https://db.<your domain>` (the address the CRM will use).
+- **Sign-up closed:** `DISABLE_SIGNUP=true`, `ENABLE_PHONE_SIGNUP=false`, `ENABLE_ANONYMOUS_USERS=false`. The example file ships with
+  sign-up **open**, and the anon key is public, so anyone could create accounts and make the CRM send e-mails. Staff, client and
+  candidate accounts are all created by the CRM's server (`auth.admin.createUser`), so this does not affect them.
+
+These go in **`docker-compose.yml` under `services.auth.environment`**, not only in `.env`. The auth container only receives the variables
+listed there; the hook lines ship commented out and the OTP expiry is not listed. Then run `docker compose up -d auth`.
 - **E-mail:** the CRM sends Auth e-mails through its hook (`docs/EMPLOYEE_WELCOME_EMAIL.md`, `server/automations/authEmailHook.ts`):
-  - `GOTRUE_HOOK_SEND_EMAIL_ENABLED=true`
-  - `GOTRUE_HOOK_SEND_EMAIL_URI=https://crm.amuwacorporation.com/api/v1/internal/auth/email-hook`
-  - `GOTRUE_HOOK_SEND_EMAIL_SECRETS=<the same v1,whsec_... value as the Worker's SUPABASE_AUTH_HOOK_SECRET>`
-- **Link lifetime (24 hours):** `GOTRUE_MAILER_OTP_EXP=86400`.
-- Sign-up stays closed as today (staff are created by HR; candidates register through the CRM's own endpoint).
+  - `GOTRUE_HOOK_SEND_EMAIL_ENABLED: "true"`
+  - `GOTRUE_HOOK_SEND_EMAIL_URI: https://crm.amuwacorporation.com/api/v1/internal/auth/email-hook`
+  - `GOTRUE_HOOK_SEND_EMAIL_SECRETS: <the same v1,whsec_... value as the Worker's SUPABASE_AUTH_HOOK_SECRET>`
+- **Link lifetime (24 hours):** `GOTRUE_MAILER_OTP_EXP: "86400"`.
+
+Check both after starting: a test password-reset e-mail arrives (through the CRM, not Supabase's own mailer) and its link still works
+after a few hours.
 
 Extensions the CRM uses: `pg_trgm` and `pg_cron` (both in Supabase's Postgres image). `pg_cron` is optional; the Worker's cron does the
 same work.
 
 ## 3. Security (before any data goes on it)
 
-- **Firewall** (ufw): allow only 22 (SSH), 80 and 443. **Postgres (5432/6543) and Studio are never open to the internet.** Reach Studio
-  through an SSH tunnel.
+- **Ports: ufw alone does not protect Docker.** Supabase's compose file publishes the database pooler (5432, 6543) and Kong (8000, 8443)
+  on every address, and Docker's own firewall rules bypass ufw.
+  - In `docker-compose.yml`, bind every published port to the machine itself: `127.0.0.1:5432:5432`, `127.0.0.1:6543:6543`,
+    `127.0.0.1:8000:8000`, `127.0.0.1:8443:8443`. Only Caddy/nginx (80, 443) and SSH (22) face the internet.
+  - Also turn on Contabo's network firewall allowing only 22, 80 and 443.
+  - **Check from another machine:** `nmap -p 1-65535 <server IP>` must show only 22, 80 and 443 open.
+- **Studio is never public.** Kong's default `kong.yml` serves Studio at `/` behind a basic password. In Caddy/nginx, pass only
+  `/auth/v1`, `/rest/v1`, `/realtime/v1`, `/storage/v1` and `/functions/v1` to Kong and refuse everything else (or remove the dashboard
+  route from `kong.yml`). Reach Studio through an SSH tunnel: `ssh -L 8000:127.0.0.1:8000 <server>`, then open http://localhost:8000.
 - **SSH:** keys only, no passwords, no root login; fail2ban on.
-- **TLS:** put Caddy or nginx in front of Kong, with Let's Encrypt, for `db.<your domain>`.
+- **TLS:** put Caddy or nginx in front of Kong, with Let's Encrypt, for `db.<your domain>` (with the path rule above).
 - **Updates:** unattended security upgrades on. Supabase images: upgrade on a schedule (monthly), after a backup, using a rehearsal copy
   first.
 - **Docker logs:** rotate them (`max-size`), or the disk fills up.
@@ -79,9 +94,15 @@ same work.
    - `supabase db dump --db-url "<hosted>" -f schema.sql`
    - `supabase db dump --db-url "<hosted>" -f data.sql --use-copy --data-only`
    - The hosted copy includes the `auth` schema, so every staff, client and candidate password keeps working.
-4. **Restore** with `psql` into the new server, in that order (roles, schema, data).
+4. **Restore** in one transaction, stopping at the first error, with triggers switched off for the data. Otherwise the CRM's own
+   triggers fire while rows are copied, write duplicate rows, and a later table's copy fails and is skipped:
+   `psql --single-transaction -v ON_ERROR_STOP=1 -f roles.sql -f schema.sql -c 'SET session_replication_role = replica' -f data.sql -d "$NEW_DB_URL"`
 5. **Check the copy:**
-   - row counts of the main tables (profiles, customers, attendance_records, notifications, chat_messages) match;
+   - row counts of the main tables (`auth.users`, profiles, customers, attendance_records, notifications, chat_messages) match;
+   - the CRM's triggers on sign-in accounts exist (they create a new employee's profile):
+     `select tgname from pg_trigger where tgrelid = 'auth.users'::regclass and not tgisinternal;` must list `on_auth_user_created`,
+     `on_auth_user_created_deferred` and `on_auth_user_email_changed`. If any is missing, re-run its `create trigger` from
+     `supabase/migrations/20261008000800_provision_staff_after_app_metadata.sql` and `20261006000300_domain_triggers.sql`;
    - `select * from pg_publication_tables where pubname = 'supabase_realtime'` lists the same tables as before.
 6. **Switch the CRM:**
    - Worker secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`;
