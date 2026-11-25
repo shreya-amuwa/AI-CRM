@@ -36,6 +36,9 @@ import { usePipelineCounts } from '../team-member/pipeline/shared';
 
 import { IncomePage } from '../income/IncomePage';
 import { IncentiveSetup } from '../income/IncentiveSetup';
+import { PerformanceHub } from '../performance/PerformanceHub';
+import { HeadAssign } from '../tasks/head/HeadAssign';
+import { useWorkTasks } from '../../lib/workTasks';
 import { PATHS, SALES_HEAD_BASE, parseSalesHeadPage, parseSalesHeadPerson, type SalesHeadNavigate, type SalesHeadPage } from './salesHeadPaths';
 import { SalesRoleListPage, SalesRolePersonPage } from './roles/SalesRoleSection';
 import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamPanel';
@@ -54,6 +57,9 @@ const MY_PAGE: Record<PipelineSection, SalesHeadPage> = { leads: 'my-leads', pot
  * enforces it). It shares the CRM's design pieces with the other dashboards; the Support Department Head keeps the shared Department Head
  * dashboard and its data.
  */
+/** Assign Task: the same page the other Department Heads use (the tasks are loaded only when it opens). */
+const SalesHeadAssign: React.FC = () => { const data = useWorkTasks(); return <HeadAssign data={data} />; };
+
 export const SalesHeadDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const userId = user?.id || profile?.id || '';
@@ -144,7 +150,8 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'work-updates' && <WorkUpdatesPanel />}
       {page === 'field-visit-leads' && !operationsHead && <FieldVisitLeadQueuePage />}
       {page === 'field-tracking' && <ActiveFieldVisits audience="manager" />}
-      {page === 'performance' && <SalesPerformance />}
+      {page === 'assign-task' && <SalesHeadAssign />}
+      {page === 'performance' && <PerformanceHub mode="DEPARTMENT_HEAD" existing={{ label: 'Sales Performance', node: <SalesPerformance /> }} />}
       {page === 'telecallers' && (personId
         ? <SalesRolePersonPage key={personId} role="TELECALLER" id={personId} onBack={() => go('telecallers')} />
         : <SalesRoleListPage role="TELECALLER" onOpen={id => openPerson('telecallers', id)} />)}

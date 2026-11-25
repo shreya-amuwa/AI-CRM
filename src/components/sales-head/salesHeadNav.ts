@@ -1,4 +1,4 @@
-import { Bell, Briefcase, Building2, CalendarCheck, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import type { ShellNavGroup, ShellNavItem } from '../layout/shell';
 
 /**
@@ -54,6 +54,7 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
       {
         label: 'Work',
         items: [
+          { id: 'assign-task', label: 'Assign Task', icon: ClipboardList },
           { id: 'tasks', label: 'Daily Tasks', icon: CalendarCheck },
           { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: o.pendingUpdates },
           { id: 'performance', label: 'Performance Management', icon: LineChart },

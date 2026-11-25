@@ -96,6 +96,8 @@ import { TrainingRepository } from '../repositories/TrainingRepository.js';
 import { RecruitmentRepository } from '../repositories/RecruitmentRepository.js';
 import { PerformanceRepository } from '../repositories/PerformanceRepository.js';
 import { PerformersRepository } from '../repositories/PerformersRepository.js';
+import { TaskReportRepository } from '../repositories/TaskReportRepository.js';
+import { TaskReportService } from './TaskReportService.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
@@ -141,6 +143,7 @@ export function createServices(db: SupabaseClient) {
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),
+    taskReports: new TaskReportService(new TaskReportRepository(db)),
     aiDesignStudio: new AiDesignStudioService(new AiDesignStudioRepository(db)),
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),

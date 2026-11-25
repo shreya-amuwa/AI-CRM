@@ -13,7 +13,7 @@ export type UnifiedPage =
   // Support
   | 'support-customers' | 'support-tickets' | 'support-desk' | 'support-activity'
   // Work
-  | 'tasks' | 'task-updates' | 'task-reports' | 'task-daily' | 'daily-reports'
+  | 'tasks' | 'task-updates' | 'task-reports' | 'task-daily' | 'daily-reports' | 'performance' | 'my-performance'
   // Team and shared
   | 'team' | 'team-attendance' | 'raise-issue' | 'chat' | 'notifications' | 'profile';
 
@@ -42,6 +42,8 @@ export const UNIFIED_PATHS: Record<UnifiedPage, string> = {
   'task-reports': 'tasks/reports',
   'task-daily': 'tasks/daily',
   'daily-reports': 'daily-reports',
+  performance: 'performance',
+  'my-performance': 'my-performance',
   team: 'team',
   'team-attendance': 'team-attendance',
   'raise-issue': 'raise-issue',
@@ -66,7 +68,7 @@ const ROLES: Record<UnifiedPage, UnifiedWho[]> = {
   'sales-dept-leads': ['HEAD'], 'sales-team-leads': ['LEAD'], 'sales-assign': ['HEAD'], 'sales-follow-ups': ['LEAD', 'MEMBER'],
   'sales-performance': ['HEAD', 'LEAD'], 'sales-reports': ['HEAD'],
   'support-customers': ALL, 'support-tickets': ALL, 'support-desk': ['HEAD'], 'support-activity': ['HEAD', 'LEAD'],
-  tasks: ALL, 'task-updates': ['HEAD'], 'task-reports': ['HEAD'], 'task-daily': ['HEAD'], 'daily-reports': ALL,
+  tasks: ALL, 'task-updates': ['HEAD'], 'task-reports': ['HEAD'], 'task-daily': ['HEAD'], 'daily-reports': ALL, performance: ['HEAD', 'LEAD'], 'my-performance': ['MEMBER'],
   team: ['HEAD', 'LEAD'], 'team-attendance': ['HEAD'], 'raise-issue': ALL, chat: ALL, notifications: ALL, profile: ALL
 };
 export const canOpen = (who: UnifiedWho, page: UnifiedPage): boolean => ROLES[page].includes(who);
@@ -105,15 +107,15 @@ export function unifiedMenu(who: UnifiedWho): UnifiedMenuGroup[] {
   ];
   const tasks: UnifiedMenuItem = who === 'HEAD'
     ? { id: 'tasks-group', label: 'Task Management', children: [
-        { id: 'tasks', label: 'Assign tasks' }, { id: 'task-updates', label: 'Work updates' },
+        { id: 'tasks', label: 'Assign Task' }, { id: 'task-updates', label: 'Work updates' },
         { id: 'task-reports', label: 'Task reports' }, { id: 'task-daily', label: 'Daily tasks' }
       ] }
-    : leaf('tasks', 'Task Management');
+    : leaf('tasks', who === 'LEAD' ? 'Assign Task' : 'My Assigned Tasks');
   return [
     { items: [leaf('overview', 'Overview')] },
     { label: 'Sales', items: sales },
     { label: 'Support', items: support },
-    { label: 'Work', items: [tasks, leaf('daily-reports', 'Daily Reports')] },
+    { label: 'Work', items: [tasks, leaf('daily-reports', 'Daily Reports'), who === 'MEMBER' ? leaf('my-performance', 'My Performance') : leaf('performance', 'Performance Management')] },
     {
       label: 'Team',
       items: [

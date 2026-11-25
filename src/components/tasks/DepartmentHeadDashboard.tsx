@@ -47,7 +47,7 @@ import { HeadAssign } from './head/HeadAssign';
 import { HeadReports } from './head/HeadReports';
 import { HeadDaily } from './head/HeadDaily';
 import { HeadSearch } from './head/HeadSearch';
-import { PerformanceManagement } from '../performance/PerformanceManagement';
+import { PerformanceHub } from '../performance/PerformanceHub';
 import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
@@ -94,7 +94,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
 
   const groups: ShellNavGroup[] = useMemo(() => {
     const work = [
-      { id: 'assign', label: 'Assign', icon: ClipboardList },
+      { id: 'assign', label: 'Assign Task', icon: ClipboardList },
       { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: updateCounts?.pending || 0 },
       { id: 'reports', label: 'Task Reports', icon: BarChart3 },
       { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
@@ -215,7 +215,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
       {nav === 'work-updates' && <WorkUpdatesPanel />}
       {nav === 'reports' && <HeadReports data={data} />}
-      {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}
+      {nav === 'performance' && <PerformanceHub mode="DEPARTMENT_HEAD" />}
       {nav === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {nav === 'daily' && <HeadDaily data={data} />}
       {nav === 'activity' && <TeamActivityPage />}

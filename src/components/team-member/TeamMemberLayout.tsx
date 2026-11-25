@@ -27,8 +27,9 @@ import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
+import { MyPerformance } from '../performance/PerformanceHub';
 import { ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, meetingsRequested } from '../layout/shell';
-import { CalendarDays, Clock3, Megaphone, Wallet as WalletIcon } from 'lucide-react';
+import { CalendarDays, Clock3, LineChart, Megaphone, Wallet as WalletIcon } from 'lucide-react';
 import { useOpenWalletRequest } from '../wallet/walletEvents';
 import { noticeRequested, useOpenNoticeRequest } from '../notices/noticeEvents';
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -42,7 +43,7 @@ const WALLET_NAV = '__wallet';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
 
-export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', '__notices', '__wallet', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications', 'income'] as const;
+export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', '__notices', '__wallet', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'my-performance', 'notifications', 'income'] as const;
 export type TeamMemberNav = (typeof TEAM_MEMBER_NAVS)[number];
 
 interface TeamMemberLayoutProps {
@@ -83,10 +84,11 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'customers' as TeamMemberNav, label: 'My Customers', icon: Users },
     { id: 'calendar' as TeamMemberNav, label: 'Calendar', icon: CalendarIcon },
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
-    { id: 'work-tasks' as TeamMemberNav, label: 'My Tasks', icon: ClipboardList },
+    { id: 'work-tasks' as TeamMemberNav, label: 'My Assigned Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
     ...(sales ? [{ id: 'income' as TeamMemberNav, label: 'My Income', icon: IndianRupee }] : []),
     { id: REPORTS_NAV.id as TeamMemberNav, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
+    { id: 'my-performance' as TeamMemberNav, label: 'My Performance', icon: LineChart },
     // services other departments sent here for delivery (empty for most teams)
     { id: 'delivery' as TeamMemberNav, label: 'Delivery Queue', icon: PackageCheck },
     { id: 'settings' as TeamMemberNav, label: 'Settings', icon: Settings },
@@ -235,12 +237,13 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {currentNav === 'chat' && <ChatRoute />}
           {currentNav === 'raise-issue' && <IssuesRoute />}
           {currentNav === 'work-reports' && <ReportsRoute />}
+          {currentNav === 'my-performance' && <MyPerformance />}
           {currentNav === 'income' && sales && <IncomePage />}
           {currentNav === ATTENDANCE_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense>}
           {currentNav === MEETINGS_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><MeetingsPage /></React.Suspense>}
           {currentNav === NOTICES_NAV && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><NoticeBoard /></React.Suspense>}
           {currentNav === WALLET_NAV && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><WalletPage /></React.Suspense>}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || (currentNav === 'income' && sales) || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID || currentNav === NOTICES_NAV || currentNav === WALLET_NAV}>{children}</div>
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || currentNav === 'my-performance' || (currentNav === 'income' && sales) || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID || currentNav === NOTICES_NAV || currentNav === WALLET_NAV}>{children}</div>
         </main>
       </div>
     </div>

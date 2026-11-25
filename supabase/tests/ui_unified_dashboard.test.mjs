@@ -24,7 +24,7 @@ const STUBBED = [
   'sales-head/SalesPerformance.tsx', 'sales-head/SalesReports.tsx', 'department-head/HeadAttendancePage.tsx', 'department-head/HeadLeadsPage.tsx', 'department-head/HeadCustomersPage.tsx',
   'support-member/SupportDeskPage.tsx', 'support-member/SupportLeadViews.tsx', 'support-member/TasksPage.tsx', 'support-member/TeamActivityPage.tsx', 'team-lead/TeamCustomers.tsx',
   'common/TeamMemberManagement.tsx', 'tasks/head/HeadAssign.tsx', 'tasks/head/HeadDaily.tsx', 'tasks/head/HeadReports.tsx', 'tasks/TeamLeadTasksView.tsx', 'tasks/WorkUpdates.tsx',
-  'performance/PerformanceManagement.tsx', 'reports/ReportsRoute.tsx', 'reports/reportEvents.ts', 'unified/UnifiedOverview.tsx', 'unified/UnifiedSupport.tsx', 'chat/ChatRoute.tsx',
+  'performance/PerformanceManagement.tsx', 'performance/PerformanceHub.tsx', 'reports/ReportsRoute.tsx', 'reports/reportEvents.ts', 'unified/UnifiedOverview.tsx', 'unified/UnifiedSupport.tsx', 'chat/ChatRoute.tsx',
   'issues/IssuesRoute.tsx', 'notifications/NotificationBell.tsx', 'notifications/NotificationsPage.tsx', 'leave/LeaveCenter.tsx', '@context/NotificationContext.tsx', '@lib/workTasks.ts'
 ].map(p => p.startsWith('@') ? path.resolve('src', p.slice(1)) : path.resolve('src/components', p));
 const FIXED = {
@@ -96,7 +96,7 @@ try {
   await open(page, 'member', 'International');
   check((await page.locator('nav').count()) >= 1, 'a sidebar is shown');
   const nav = (await page.locator('nav').first().innerText());
-  for (const t of ['Overview', 'Sales', 'Support', 'Add Lead', 'My Leads', 'Lead Follow-ups', 'My Customers', 'My Support Tickets', 'Task Management', 'Daily Reports', 'Chat', 'Notification Center', 'Profile', 'Raise an Issue', 'Attendance', 'Meeting Request'])
+  for (const t of ['Overview', 'Sales', 'Support', 'Add Lead', 'My Leads', 'Lead Follow-ups', 'My Customers', 'My Support Tickets', 'My Assigned Tasks', 'Daily Reports', 'My Performance', 'Chat', 'Notification Center', 'Profile', 'Raise an Issue', 'Attendance', 'Meeting Request'])
     check(nav.toLowerCase().includes(t.toLowerCase()), `Team Member: the sidebar has ${t}`, nav);
   const lines = nav.split('\n').map(x => x.trim().toLowerCase());
   const at = t => lines.indexOf(t.toLowerCase());
@@ -115,8 +115,10 @@ try {
   await opens(page, 'My Customers', 'UnifiedMemberCustomers');
   check((await where(page)) === '/unified/dashboard/u1/support/customers', 'the address names the Support page');
   await opens(page, 'My Support Tickets', 'UnifiedMemberTickets');
-  await opens(page, 'Task Management', 'TasksPage');
+  await opens(page, 'My Assigned Tasks', 'TasksPage');
   await opens(page, 'Daily Reports', 'ReportsRoute');
+  await opens(page, 'My Performance', 'MyPerformance');
+  check((await where(page)) === '/unified/dashboard/u1/my-performance', 'My Performance has its own address');
   await opens(page, 'Chat', 'ChatRoute');
   await opens(page, 'Notification Center', 'NotificationsPage');
   await click(page, 'Profile');
@@ -141,7 +143,7 @@ try {
   page = await newPage();
   await open(page, 'lead', 'International');
   const leadNav = await page.locator('nav').first().innerText();
-  for (const t of ['Add Lead', 'My Leads', 'Team Leads', 'Lead Follow-ups', 'Sales Performance', 'Customers', 'Support Tickets', 'Team Activity', 'Task Management', 'Daily Reports', 'Team Members'])
+  for (const t of ['Add Lead', 'My Leads', 'Team Leads', 'Lead Follow-ups', 'Sales Performance', 'Customers', 'Support Tickets', 'Team Activity', 'Assign Task', 'Daily Reports', 'Performance Management', 'Team Members'])
     check(leadNav.toLowerCase().includes(t.toLowerCase()), `Team Lead: the sidebar has ${t}`, leadNav);
   for (const t of ['Department Leads', 'Lead Assignment', 'Sales Reports', 'Customer Issues', 'Team Attendance']) check(!(await has(page, t)), `Team Lead: no ${t}`);
   check(JSON.parse(await page.locator('[data-testid="unified-page-overview"] [data-stub="UnifiedOverview"]').getAttribute('data-props')).who === 'LEAD', 'the Overview is the Team Lead\'s');
@@ -152,8 +154,9 @@ try {
   await opens(page, 'Customers', 'SupportLeadCustomers');
   await opens(page, 'Support Tickets', 'SupportLeadTickets');
   await opens(page, 'Team Activity', 'TeamActivityPage');
-  await opens(page, 'Task Management', 'TeamLeadTasksView');
+  await opens(page, 'Assign Task', 'TeamLeadTasksView');
   await opens(page, 'Daily Reports', 'ReportsRoute');
+  await opens(page, 'Performance Management', 'PerformanceHub', p => p.mode === 'TEAM_LEAD');
   await opens(page, 'Team Members', 'TeamMemberManagement', p => p.departmentSlug === 'international');
   await page.evaluate(() => window.signOut());
   page = await newPage('/unified/dashboard/u1/sales/department-leads');
@@ -165,7 +168,7 @@ try {
   page = await newPage();
   await open(page, 'head', 'Reseller');
   const headNav = await page.locator('nav').first().innerText();
-  for (const t of ['Add Lead', 'My Leads', 'Department Leads', 'Lead Assignment', 'Sales Performance', 'Sales Reports', 'Customers', 'Support Tickets', 'Customer Issues', 'Team Activity', 'Task Management', 'Daily Reports', 'Team Members', 'Team Attendance'])
+  for (const t of ['Add Lead', 'My Leads', 'Department Leads', 'Lead Assignment', 'Sales Performance', 'Sales Reports', 'Customers', 'Support Tickets', 'Customer Issues', 'Team Activity', 'Task Management', 'Daily Reports', 'Performance Management', 'Team Members', 'Team Attendance'])
     check(headNav.toLowerCase().includes(t.toLowerCase()), `Department Head: the sidebar has ${t}`, headNav);
   check(!(await has(page, 'Lead Follow-ups')), 'Department Head: no Lead Follow-ups (a Team Lead / Team Member page)');
   check(JSON.parse(await page.locator('[data-testid="unified-page-overview"] [data-stub="UnifiedOverview"]').getAttribute('data-props')).who === 'HEAD', 'the Overview is the Department Head\'s');
@@ -179,11 +182,12 @@ try {
   await opens(page, 'Customer Issues', 'SupportDeskPage');
   await opens(page, 'Team Activity', 'TeamActivityPage');
   await click(page, 'Task Management');
-  await opens(page, 'Assign tasks', 'HeadAssign');
+  await opens(page, 'Assign Task', 'HeadAssign');
   await opens(page, 'Work updates', 'WorkUpdatesPanel');
   await opens(page, 'Task reports', 'HeadReports');
   await opens(page, 'Daily tasks', 'HeadDaily');
   await opens(page, 'Daily Reports', 'ReportsRoute');
+  await opens(page, 'Performance Management', 'PerformanceHub', p => p.mode === 'DEPARTMENT_HEAD');
   await opens(page, 'Team Members', 'TeamMemberManagement', p => p.departmentSlug === 'reseller');
   await opens(page, 'Team Attendance', 'HeadAttendancePage');
   // the browser's Back button returns to the previous workspace without leaving the dashboard
