@@ -3349,6 +3349,15 @@ export const aiStudioReportReviewSchema = z
   })
   .strict()
   .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write the remarks the employee should act on.', path: ['comment'] });
+// ---- AI Studio Performance Management (20270214000100): the Team Lead corrects a report waiting for their approval ----
+const aiReportPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
+export const aiStudioReportLeadEditSchema = z
+  .object({
+    workCompleted: z.string().trim().min(1, 'Describe the work completed today.').max(4000, 'Each part of the report can have at most 4000 characters.'),
+    workInProgress: aiReportPart, pendingWork: aiReportPart, blockers: aiReportPart, remarks: aiReportPart,
+    reason: z.string().trim().min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.').max(1000, 'The reason can have at most 1000 characters.')
+  })
+  .strict();
 
 export const aiStudioReportsQuerySchema = z
   .object({

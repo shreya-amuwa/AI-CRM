@@ -14,6 +14,8 @@ select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270210000100_unified_performance_hierarchy.sql
 -- 20270213000100 extends the Team-Lead-first rules to every department (applied again after the file above, as on the live database)
 \i supabase/migrations/20270213000100_performance_lead_primary.sql
+-- AI Studio reads its own work (20270214000100 replaces some of the functions above, so it is applied again after them)
+\i supabase/migrations/20270214000100_ai_studio_performance.sql
 
 \echo '   the migration'
 select test.check((select count(*) = 1 from pg_proc where proname = 'performance_record_review' and pronamespace = 'public'::regnamespace), 'one performance_record_review (the 4-argument version was replaced)');

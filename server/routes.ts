@@ -409,6 +409,7 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/ai-studio/reports/:id', handler: aiStudio.updateReport },
   { method: 'DELETE', path: '/ai-studio/reports/:id', handler: aiStudio.deleteDraft },
   { method: 'POST', path: '/ai-studio/reports/:id/review', handler: aiStudio.reviewReport, options: S },
+  { method: 'POST', path: '/ai-studio/reports/:id/lead-edit', handler: aiStudio.leadEditReport, options: S },
   // Work reports (Team Member -> Team Lead -> Department Head -> Operations Head); the fixed paths come before /work-reports/:id
   { method: 'GET', path: '/work-reports/context', handler: workReports.context },
   { method: 'GET', path: '/work-reports/mine', handler: workReports.mine },
