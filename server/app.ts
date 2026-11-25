@@ -17,7 +17,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ApiResponse } from '../shared/contracts.js';
 import { assertActive, authenticateRequest, type Actor } from './auth/authenticate.js';
 import { ConfigurationError, getEnv } from './config/env.js';
-import { healthCheck } from './health.js';
+import { databaseReadiness, healthCheck } from './health.js';
 import { AppError, fromDatabaseError } from './http/errors.js';
 import { parse } from './http/validate.js';
 import { biometricPunchSchema, loginFailureReportSchema } from '../shared/validation.js';
@@ -132,6 +132,12 @@ app.use('*', async (c, next) => {
 // Routes
 // ---------------------------------------------------------------------------
 app.get('/health', async c => c.json(ok(await healthCheck())));
+// for an uptime monitor: 503 when the database is down or slower than 3 s (docs/OUTAGES.md)
+app.get('/health/database', async c => {
+  const r = await databaseReadiness();
+  c.header('cache-control', 'no-store');
+  return c.json(r.status === 200 ? ok(r.body) : { success: false, data: r.body, error: { code: 'DATABASE_UNAVAILABLE', message: `The database is ${r.body.database}.` } }, r.status);
+});
 
 // Onboarding emails / WhatsApp: a change made in the Technical Consultant's (or
 // Accounts') work queues messages in the database; send them right away, within
@@ -591,7 +597,7 @@ const routeMatchers = [...candidateRoutes.map(r => new RegExp(`^${r.path.replace
 
 app.notFound(c => {
   const path = relativePath(c);
-  const known = path === '/health' || routeMatchers.some(rx => rx.test(path));
+  const known = path === '/health' || path === '/health/database' || routeMatchers.some(rx => rx.test(path));
   return fail(c, known ? new AppError('METHOD_NOT_ALLOWED') : new AppError('NOT_FOUND', 'Unknown API route.'));
 });
 
@@ -780,7 +786,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/health/database', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

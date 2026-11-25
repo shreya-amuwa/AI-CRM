@@ -1530,6 +1530,12 @@ check(normal.headers.get('ratelimit-limit') === '5000' && normal.headers.get('x-
 
 const health = await fetch(base + '/health').then(x => x.json()) as any;
 check(health.success && health.data.checks.database.startsWith('ok'), 'public health check reports database ok', health);
+{
+  const dbHealth = await fetch(base + '/health/database');
+  const dbBody = await dbHealth.json() as any;
+  check(dbHealth.status === 200 && dbBody.data?.database === 'ok' && typeof dbBody.data?.latencyMs === 'number' && dbHealth.headers.get('cache-control') === 'no-store',
+    'uptime check: /health/database answers 200 with the time the database took, without signing in', dbBody);
+}
 const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=approval-requests/' + orphanReq.id + '/approve', {
   method: 'POST', headers: { authorization: `Bearer ${tokens.get('sa')}`, 'content-type': 'application/json' }, body: '{}'
 });

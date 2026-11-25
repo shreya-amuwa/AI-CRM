@@ -11,7 +11,8 @@ import { attendanceApi } from '../lib/attendance';
 import { relabelRoles } from '../../shared/roleNames';
 import { categoryOf, type NotificationCategory } from '../lib/notifications/notificationCategory';
 import { applySoundPrefs, armAudioUnlock, onSoundPrefsChange, playNotificationSound } from '../lib/notifications/notificationSound';
-import { backoffMs, pickNotificationToChime } from '../lib/notifications/notificationSync';
+import { backoffMs, pickNotificationToChime, reconnectDelayMs } from '../lib/notifications/notificationSync';
+import { notifyNotificationsChanged } from '../lib/notifications/notificationsChanged';
 
 /**
  * Notifications are rows in Supabase, one per recipient. The server returns
@@ -238,6 +239,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             if (payload?.new?.entity_type === 'meeting' || payload?.new?.entity_type === 'meeting_summary') notifyMeetingsChanged();
             // a work update notification (requested, reminder, submitted): open Work Updates / Update Requests reload at once
             if (payload?.new?.entity_type === 'work_task') notifyWorkUpdatesChanged();
+            // other badges (the Notice Board) follow this person's own filtered channel instead of opening an unfiltered one
+            notifyNotificationsChanged();
             void refreshRef.current();
           }
         );
@@ -248,7 +251,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
           attempt = 0;
           setRealtimeStatus('live');
           // events may have been missed while the channel was down
-          if (dropped) void refreshRef.current();
+          if (dropped) setTimeout(() => { if (!stopped) { void refreshRef.current(); notifyNotificationsChanged(); } }, reconnectDelayMs());
           dropped = false;
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           dropped = true;

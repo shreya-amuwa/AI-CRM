@@ -63,7 +63,7 @@ const { setChatSoundEnabled, chatSoundEnabled } = await import('../../src/lib/ch
 setChatSoundEnabled(false);
 check(!chatSoundEnabled() && !m.soundEnabled('chat') && store.get('crm.chatSound') === 'off', 'the chat switch is the shared chat switch, under its old key');
 // --- which new notification chimes (src/lib/notifications/notificationSync.ts)
-const { pickNotificationToChime, backoffMs, soundCategoryOf } = await import('../../src/lib/notifications/notificationSync');
+const { pickNotificationToChime, backoffMs, soundCategoryOf, reconnectDelayMs } = await import('../../src/lib/notifications/notificationSync');
 const now = Date.parse('2027-01-11T05:00:00Z');
 const n = (id: string, type: string, minsAgo: number, extra: Record<string, unknown> = {}) =>
   ({ id, type, title: 't', body: '', priority: 'normal', entityType: null, entityId: null, actorId: null, data: {}, readAt: null,
@@ -78,4 +78,6 @@ const p = pickNotificationToChime([n('g', 'MEETING_INVITE', 1), n('a', 'ATTENDAN
 check(p?.id === 'a' && p.category === 'attendance', 'in a burst, one chime: the attendance reminder wins');
 check(pickNotificationToChime([n('t', 'TASK_ASSIGNED', 1)], seen, 'me', now)?.category === 'general', 'task, meeting and approval notifications use the general sound');
 check(backoffMs(1, () => 0.5) === 2000 && backoffMs(3, () => 0.5) === 8000 && backoffMs(20, () => 0.5) === 60000, 'retries wait 2 s, 4 s, 8 s ... at most 60 s');
+check(reconnectDelayMs(() => 0) === 500 && reconnectDelayMs(() => 0.999) <= 5000 && reconnectDelayMs(() => 0.5) > 500,
+  'after a reconnect the bell re-reads within 0.5-5 s, at a random moment (the office does not all re-read at once after a stall)');
 console.log(`=== NOTIFICATION SOUND CHECKS PASSED (${passed}) ===`);

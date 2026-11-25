@@ -11,6 +11,12 @@ export function backoffMs(attempt: number, random: () => number = Math.random): 
   return Math.round(base * (0.85 + random() * 0.3));
 }
 
+/** After a dropped live connection comes back: re-read at a random moment within 0.5-5 s, so every open tab does not hit a database
+ *  that has just recovered at the same instant. */
+export function reconnectDelayMs(random: () => number = Math.random): number {
+  return 500 + Math.floor(random() * 4500);
+}
+
 /** Which sound a notification type makes. Chat notifications have their own chime (the chat unread count), so they make none here. */
 export function soundCategoryOf(type: string): Exclude<SoundCategory, 'chat'> | null {
   if (type === 'ATTENDANCE_REMINDER') return 'attendance';
