@@ -40,5 +40,8 @@ export const aiStudioApi = {
   createReport: (r: AiStudioReportForm) => api.post<AiStudioReportDetail>('/ai-studio/reports', r),
   updateReport: (id: string, r: AiStudioReportForm) => api.patch<AiStudioReportDetail>(`/ai-studio/reports/${id}`, r),
   deleteDraft: (id: string) => api.delete<null>(`/ai-studio/reports/${id}`),
-  review: (id: string, decision: 'APPROVE' | 'RETURN', comment?: string) => api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/review`, { decision, comment })
+  review: (id: string, decision: 'APPROVE' | 'RETURN', comment?: string) => api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/review`, { decision, comment }),
+  /** The Team Lead corrects a report waiting for their approval; `reason` is shown to the employee (20270214000100). */
+  leadEdit: (id: string, e: { workCompleted: string; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) =>
+    api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/lead-edit`, e)
 };

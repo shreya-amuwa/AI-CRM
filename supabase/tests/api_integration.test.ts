@@ -12909,6 +12909,129 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- Performance Management in every department: Team Lead edits reports, updates evaluations, opens a member's work (migration 20270213000100) ---
+{
+  await db.query(`delete from public.departments where slug = 'plp-api'`);
+  const { rows: [dept] } = await db.query(`insert into public.departments (slug, name) values ('plp-api', 'PLP API Department') returning id`);
+  const { rows: [team] } = await db.query(`insert into public.teams (department_id, name, division) values ($1, 'Sales', 'SALES') returning id`, [dept.id]);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const head = await mkUser('plpHead', 'plp.head@example.com', 'PLP Head', { provisioned_role: 'DEPARTMENT_HEAD', provisioned_department_id: dept.id });
+  const lead = await mkUser('plpLead', 'plp.lead@example.com', 'PLP Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: team.id });
+  const mem = await mkUser('plpMem', 'plp.member@example.com', 'PLP Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: team.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
+                                            values ($1, $2, 'PLP API renewal list', $3, $4, current_date + 3) returning id`, [dept.id, team.id, lead, mem]);
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const period = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) };
+  const q = `?start=${period.start}&end=${period.end}`;
+  try {
+    let r = await api('plpMem', 'GET', `/performance-approval/overview${q}`);
+    check(r.status === 403, 'every department: a Team Member has no performance view (403)', r);
+    r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared the first draft of the renewal list', progress: 40, pendingWork: 'The rest of the list' });
+    check(r.status === 201 && r.json.data.status === 'PENDING', 'every department: the member submits a daily report', r);
+    const reportId = r.json.data.id;
+    const edit = { workCompleted: 'Prepared and checked the first draft of the renewal list', progress: 50, pendingWork: 'The rest of the list', reason: 'Progress checked against the sheet' };
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, reason: '' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR', 'every department: a Team Lead\'s edit needs a reason (422)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, progress: 60, pendingWork: undefined });
+    check(r.status === 422 && /still pending/.test(r.json.error?.message ?? ''), 'every department: the member\'s rules apply to the edit (pending work below 100%)', r);
+    r = await api('plpMem', 'POST', `/task-reports/${reportId}/edit`, edit);
+    check(r.status === 403, 'every department: the member cannot edit as reviewer (403)', r);
+    r = await api('plpHead', 'POST', `/task-reports/${reportId}/edit`, edit);
+    check(r.status === 403, 'every department: the Department Head does not edit a led member\'s report (403)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, edit);
+    check(r.status === 200 && r.json.data.progress === 50 && r.json.data.editedBy === 'PLP Lead' && r.json.data.status === 'PENDING' && r.json.data.canReviewerEdit === true,
+      'every department: the Team Lead edits the waiting report (still Pending)', r);
+    r = await api('plpLead', 'GET', `/task-reports/${reportId}`);
+    check(r.status === 200 && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.progress?.from === 40 && h.changes?.progress?.to === 50),
+      'every department: the report history shows the edit (progress 40 -> 50)', r.json.data?.history);
+    r = await api('plpLead', 'GET', `/performance-approval/people/${mem}/work${q}`);
+    check(r.status === 200 && r.json.data.tasks.some((t: any) => t.id === task.id && t.lastReport?.progress === 50 && t.pendingReports === 1),
+      'every department: the Team Lead opens the member\'s tasks with the latest report', r.json.data);
+    r = await api('plpMem', 'GET', `/performance-approval/people/${mem}/work${q}`);
+    check(r.status === 404, 'every department: the member cannot open their own work view (404)', r);
+    r = await api('plpLead', 'GET', `/performance-approval/people/${mem}/work?start=${period.end}&end=${period.start}`);
+    check(r.status === 422, 'every department: the work period is validated (422)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/review`, { decision: 'APPROVE' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED', 'every department: the Team Lead approves the edited report', r);
+    r = await api('plpLead', 'GET', `/performance-approval/overview${q}`);
+    const m = r.json.data?.members?.find((x: any) => x.id === mem);
+    check(r.status === 200 && m?.record?.ratingRequired === true && m.record.canReturn === false && r.json.data.leadDecidesMembers === true,
+      'every department: the Team Lead evaluates the member (rating required, never returned)', r.json.data);
+    r = await api('plpLead', 'POST', `/performance-approval/records/${m.record.id}/review`, { decision: 'APPROVE', rating: 4, remarks: 'Good week' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.canUpdate === true, 'every department: the Team Lead approves with a rating; it can be updated later', r);
+    r = await api('plpLead', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 9 });
+    check(r.status === 422, 'every department: an updated rating is 1 to 5 (422)', r);
+    r = await api('plpMem', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 5 });
+    check(r.status === 404, 'every department: the member cannot update (404)', r);
+    r = await api('plpHead', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 5 });
+    check(r.status === 403, 'every department: the Department Head does not replace the Team Lead as the member\'s evaluator (403)', r);
+    r = await api('plpLead', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 3, remarks: 'Adjusted after the client review' });
+    check(r.status === 200 && r.json.data.rating === 3 && r.json.data.status === 'APPROVED', 'every department: the Team Lead updates the rating', r);
+    r = await api('plpLead', 'GET', `/performance-approval/records/${m.record.id}/history`);
+    check(r.status === 200 && r.json.data.some((h: any) => h.action === 'UPDATED' && h.changes?.rating?.from === 4 && h.changes?.rating?.to === 3), 'every department: the update is in the approval history', r.json.data);
+    r = await api('plpHead', 'GET', `/performance-approval/overview${q}`);
+    const l = r.json.data?.leads?.find((x: any) => x.id === lead);
+    check(r.status === 200 && r.json.data.leadDecidesMembers === false && l?.members?.some((x: any) => x.id === mem && x.record?.rating === 3 && x.record.canUpdate === false),
+      'every department: the Department Head sees the Team Lead\'s updated evaluation, read only', r.json.data);
+    r = await api('plpHead', 'GET', `/performance-approval/people/${lead}/work${q}`);
+    check(r.status === 200 && r.json.data.role === 'TEAM_HEAD', 'every department: the Department Head opens a Team Lead\'s work', r);
+  } finally {
+    await db.query(`delete from public.task_daily_reports where task_id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[head, lead, mem]]);
+    await db.query(`delete from public.work_tasks where id = $1`, [task.id]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead, head]]);
+    await db.query(`delete from public.teams where id = $1`, [team.id]);
+    await db.query(`delete from public.departments where id = $1`, [dept.id]);
+  }
+}
+
+// --- AI Studio: Performance Management reads AI Studio's own work; the Team Lead corrects a waiting report (migration 20270214000100) ---
+{
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const { rows: [project] } = await db.query(`select id from public.ai_studio_projects where name = 'AI CRM'`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const lead = await mkUser('apiAiLead', 'api.ai.lead@example.com', 'API AI Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const mem = await mkUser('apiAiMem', 'api.ai.member@example.com', 'API AI Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.ai_studio_tasks (project_id, title, assigned_by, assignee_id, due_date) values ($1, 'API AI task', $2, $3, current_date + 2) returning id`, [project.id, lead, mem]);
+  const { rows: [rep] } = await db.query(`insert into public.ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, status, lead_id, submitted_at)
+                                          values ($1, 'API AI Member', 'MEMBER', $2, $3, current_date, 'Built the first screen', 'PENDING_TL_APPROVAL', $4, now()) returning id`, [mem, project.id, task.id, lead]);
+  // a month either side: the task is due in two days
+  const span = `start=${new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)}&end=${new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)}`;
+  try {
+    let r = await api('apiAiLead', 'GET', `/performance-approval/overview?${span}`);
+    check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.members.some((m: any) => m.id === mem && m.metrics.tasks.total === 1 && m.metrics.reports.pending === 1),
+      'AI Studio: the Team Lead\'s Performance Management reads AI Studio\'s tasks and reports', r.json.data);
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: '' });
+    check(r.status === 422, 'AI Studio: a Team Lead\'s correction needs a reason (422)', r);
+    r = await api('apiAiMem', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Changed by me', reason: 'I want to' });
+    check(r.status === 403, 'AI Studio: the member cannot use the Team Lead\'s correction (403)', r);
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: 'Added the menu you also built' });
+    check(r.status === 200 && r.json.data.workCompleted === 'Built the first screen and the menu' && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.workCompleted),
+      'AI Studio: the Team Lead corrects the waiting report; the history keeps the change', r);
+    r = await api('apiAiLead', 'GET', `/performance-approval/people/${mem}/work?${span}`);
+    check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.tasks.some((t: any) => t.id === task.id && t.project === 'AI CRM'), 'AI Studio: the member\'s AI Studio task in the drill-down', r.json.data);
+    r = await api('apiAiMem', 'GET', `/performance-approval/overview?${span}`);
+    check(r.status === 403, 'AI Studio: the member has no performance view (403)', r);
+  } finally {
+    await db.query(`delete from public.ai_studio_daily_reports where id = $1`, [rep.id]);
+    await db.query(`delete from public.ai_studio_tasks where id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[lead, mem]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead]]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

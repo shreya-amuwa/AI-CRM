@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CornerUpLeft, History } from 'lucide-react';
-import type { TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportStatus, TaskReportTaskOption } from '../../../shared/contracts';
-import { taskReportSubmitSchema } from '../../../shared/validation';
+import type { FieldChanges, TaskDailyReport, TaskDailyReportDetail, TaskDailyReportList, TaskReportStatus, TaskReportTaskOption } from '../../../shared/contracts';
+import { taskReportReviewerEditSchema, taskReportSubmitSchema } from '../../../shared/validation';
 import { ApiError } from '../../lib/api/client';
 import { taskReportsApi } from '../../lib/api/taskReports';
 import { officeToday } from '../../lib/officeTime';
@@ -148,6 +148,9 @@ const ReportCard: React.FC<{ r: TaskDailyReport; onReview?: (r: TaskDailyReport)
       {r.delayReason ? <div><dt className="font-semibold text-slate-500">Reason for delay</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.delayReason}</dd></div> : null}
       {r.remarks ? <div><dt className="font-semibold text-slate-500">Remarks</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.remarks}</dd></div> : null}
     </dl>
+    {r.editedAt ? (
+      <div className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900" data-testid="task-report-edited">Edited by {r.editedBy ?? 'the Team Lead'} on {timeLabel(r.editedAt)} before the decision (see the approval history for what changed)</div>
+    ) : null}
     {r.reviewedAt ? (
       <div className={`rounded-lg px-3 py-2 text-xs ${r.status === 'RETURNED' ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-900'}`}>
         {r.status === 'RETURNED' ? 'Returned' : 'Approved'} by {r.reviewedBy ?? 'the Team Lead'} on {timeLabel(r.reviewedAt)}{r.reviewRemarks ? <> · “{r.reviewRemarks}”</> : null}
@@ -172,8 +175,9 @@ const HistoryPanel: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
         <ol className="space-y-1.5 text-xs">
           {d.history.map((h, i) => (
             <li key={i} className="rounded-lg bg-slate-50 px-3 py-2">
-              <span className="font-semibold text-slate-800">{h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'APPROVED' ? 'Approved' : 'Returned for correction'}</span>
+              <span className="font-semibold text-slate-800">{h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'APPROVED' ? 'Approved' : h.action === 'EDITED' ? 'Edited by the Team Lead' : 'Returned for correction'}</span>
               {h.by ? ` by ${h.by}` : ''} · {timeLabel(h.at)} · revision {h.revision}{h.remarks ? <> · “{h.remarks}”</> : null}
+              {h.changes ? <ChangeList changes={h.changes} /> : null}
             </li>
           ))}
         </ol>
@@ -182,8 +186,78 @@ const HistoryPanel: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
   );
 };
 
+const FIELD_LABEL: Record<string, string> = { workCompleted: 'Work completed', progress: 'Progress (%)', pendingWork: 'Pending work', delayReason: 'Reason for delay', remarks: 'Remarks', rating: 'Rating' };
+/** What a reviewer changed: each field, before and after. */
+export const ChangeList: React.FC<{ changes: FieldChanges }> = ({ changes }) => (
+  <ul className="mt-1 space-y-0.5" data-testid="change-list">
+    {Object.entries(changes).map(([k, v]) => (
+      <li key={k} className="text-slate-600 break-words"><span className="font-semibold">{FIELD_LABEL[k] ?? k}:</span> <s className="text-slate-400">{v.from === null || v.from === '' ? '(empty)' : String(v.from)}</s> → {v.to === null || v.to === '' ? '(empty)' : String(v.to)}</li>
+    ))}
+  </ul>
+);
+
+// ------------------------------------------------------------------------------------------------ the Team Lead edits a waiting report
+interface EditDraft { workCompleted: string; progress: string; pendingWork: string; delayReason: string; remarks: string; reason: string }
+const ReviewerEditForm: React.FC<{ r: TaskDailyReport; onSaved: (r: TaskDailyReport) => void; onCancel: () => void }> = ({ r, onSaved, onCancel }) => {
+  const [d, setD] = useState<EditDraft>({ workCompleted: r.workCompleted, progress: String(r.progress), pendingWork: r.pendingWork ?? '', delayReason: r.delayReason ?? '', remarks: r.remarks ?? '', reason: '' });
+  const [errors, setErrors] = useState<Partial<Record<keyof EditDraft, string>>>({});
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState('');
+  const set = (k: keyof EditDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD(v => ({ ...v, [k]: e.target.value }));
+  const progress = d.progress === '' ? NaN : Number(d.progress);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setServerError('');
+    const body = { workCompleted: d.workCompleted.trim(), progress, pendingWork: d.pendingWork.trim() || undefined, delayReason: d.delayReason.trim() || undefined,
+      remarks: d.remarks.trim() || undefined, reason: d.reason.trim() };
+    // the same schema the server uses (the database checks again, with the task's deadline)
+    const parsed = taskReportReviewerEditSchema.safeParse(body);
+    const next: Partial<Record<keyof EditDraft, string>> = {};
+    if (!parsed.success) for (const i of parsed.error.issues) next[i.path[0] as keyof EditDraft] = i.message;
+    if (Number.isNaN(progress)) next.progress = 'Enter the progress, 0 to 100.';
+    setErrors(next);
+    if (Object.keys(next).length) return;
+    setBusy(true);
+    try { onSaved(await taskReportsApi.reviewerEdit(r.id, body)); } catch (err) { setServerError(errText(err)); } finally { setBusy(false); }
+  };
+  const id = (k: string) => `tre-${k}-${r.id}`;
+  return (
+    <form onSubmit={save} noValidate className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3" data-testid="task-report-edit">
+      <p className="text-xs text-slate-600">Correct the report before you decide it. The team member is told what you changed and why; the change is kept in the approval history.</p>
+      <Field label="Work completed" htmlFor={id('work')} required error={errors.workCompleted}>
+        <textarea id={id('work')} rows={3} className={inputCls} value={d.workCompleted} onChange={set('workCompleted')} disabled={busy} maxLength={4000} />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Progress (%)" htmlFor={id('progress')} required error={errors.progress}>
+          <input id={id('progress')} type="number" inputMode="numeric" min={0} max={100} className={inputCls} value={d.progress} onChange={set('progress')} disabled={busy} />
+        </Field>
+        <Field label="Pending work" htmlFor={id('pending')} required={!(progress >= 100)} error={errors.pendingWork}>
+          <input id={id('pending')} className={inputCls} value={d.pendingWork} onChange={set('pendingWork')} disabled={busy} maxLength={2000} />
+        </Field>
+      </div>
+      <Field label="Reason for delay" htmlFor={id('delay')} error={errors.delayReason}>
+        <textarea id={id('delay')} rows={2} className={inputCls} value={d.delayReason} onChange={set('delayReason')} disabled={busy} maxLength={2000} />
+      </Field>
+      <Field label="Remarks" htmlFor={id('remarks')} error={errors.remarks}>
+        <textarea id={id('remarks')} rows={2} className={inputCls} value={d.remarks} onChange={set('remarks')} disabled={busy} maxLength={2000} />
+      </Field>
+      <Field label="Why you changed it (the team member reads this)" htmlFor={id('reason')} required error={errors.reason}>
+        <input id={id('reason')} className={inputCls} value={d.reason} onChange={set('reason')} disabled={busy} maxLength={1000} />
+      </Field>
+      {serverError ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{serverError}</div> : null}
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+        <button type="button" className={btn.secondary} disabled={busy} onClick={onCancel}>Cancel editing</button>
+      </div>
+    </form>
+  );
+};
+
 // ------------------------------------------------------------------------------------------------ the review dialog (inline panel)
-const ReviewPanel: React.FC<{ r: TaskDailyReport; onDone: () => void; onCancel: () => void }> = ({ r, onDone, onCancel }) => {
+const ReviewPanel: React.FC<{ r: TaskDailyReport; onDone: () => void; onCancel: () => void; /** the report was edited (the list reloads, the panel stays open) */ onEdited?: () => void }> = ({ r: initial, onDone, onCancel, onEdited }) => {
+  const [r, setR] = useState(initial);
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [remarks, setRemarks] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -195,12 +269,21 @@ const ReviewPanel: React.FC<{ r: TaskDailyReport; onDone: () => void; onCancel: 
   return (
     <Card className="p-4 space-y-3 border-indigo-200">
       <div className="text-sm font-bold text-slate-900" data-testid="task-report-review">Review: {r.author} · {r.taskTitle} · {dateLabel(r.reportDate)}</div>
+      {saved ? <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Your changes are saved. Now approve the report or return it for correction.</p> : null}
+      {editing ? (
+        <ReviewerEditForm r={r} onCancel={() => setEditing(false)} onSaved={next => { setR(next); setEditing(false); setSaved(true); onEdited?.(); }} />
+      ) : r.canReviewerEdit ? (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          <span>Progress {r.progress}%{r.pendingWork ? ` · pending: ${r.pendingWork}` : ''}</span>
+          <button type="button" className={btn.secondary} onClick={() => { setEditing(true); setSaved(false); }} disabled={busy}>Edit report</button>
+        </div>
+      ) : null}
       <Field label="Remarks (required when you return the report)" htmlFor="tr-review-remarks" error={err || undefined}>
         <textarea id="tr-review-remarks" rows={2} className={inputCls} value={remarks} onChange={e => setRemarks(e.target.value)} disabled={busy} maxLength={2000} />
       </Field>
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={btn.green} disabled={busy} onClick={() => void decide('APPROVE')}>Approve</button>
-        <button type="button" className={btn.danger} disabled={busy} onClick={() => void decide('RETURN')}>Return for correction</button>
+        <button type="button" className={btn.green} disabled={busy || editing} onClick={() => void decide('APPROVE')}>Approve</button>
+        <button type="button" className={btn.danger} disabled={busy || editing} onClick={() => void decide('RETURN')}>Return for correction</button>
         <button type="button" className={btn.secondary} disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
     </Card>
@@ -208,10 +291,11 @@ const ReviewPanel: React.FC<{ r: TaskDailyReport; onDone: () => void; onCancel: 
 };
 
 // ------------------------------------------------------------------------------------------------ the list (mine, or the team's)
-const ReportList: React.FC<{ scope: 'MINE' | 'TEAM'; reloadKey: number; onChanged: () => void; onEdit?: (r: TaskDailyReport) => void }> = ({ scope, reloadKey, onChanged, onEdit }) => {
-  const [status, setStatus] = useState<'' | TaskReportStatus>(scope === 'TEAM' ? 'PENDING' : '');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+const ReportList: React.FC<{ scope: 'MINE' | 'TEAM'; reloadKey: number; onChanged: () => void; onEdit?: (r: TaskDailyReport) => void;
+  /** one team member's reports (the Performance Management drill-down), from the period shown there, every status */ memberId?: string; initialFrom?: string; initialTo?: string }> = ({ scope, reloadKey, onChanged, onEdit, memberId, initialFrom, initialTo }) => {
+  const [status, setStatus] = useState<'' | TaskReportStatus>(scope === 'TEAM' && !memberId ? 'PENDING' : '');
+  const [from, setFrom] = useState(initialFrom ?? '');
+  const [to, setTo] = useState(initialTo ?? '');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<TaskDailyReportList | null>(null);
   const [error, setError] = useState('');
@@ -221,8 +305,8 @@ const ReportList: React.FC<{ scope: 'MINE' | 'TEAM'; reloadKey: number; onChange
 
   const load = useCallback(() => {
     setError('');
-    taskReportsApi.list({ scope, status: status || undefined, from: from || undefined, to: to || undefined, page }).then(setData, e => setError(errText(e)));
-  }, [scope, status, from, to, page]);
+    taskReportsApi.list({ scope, status: status || undefined, from: from || undefined, to: to || undefined, memberId, page }).then(setData, e => setError(errText(e)));
+  }, [scope, status, from, to, page, memberId]);
   useEffect(load, [load, reloadKey]);
   useEffect(() => { setPage(1); }, [status, from, to]);
 
@@ -247,7 +331,7 @@ const ReportList: React.FC<{ scope: 'MINE' | 'TEAM'; reloadKey: number; onChange
         <label className="text-xs text-slate-500">From <input type="date" className={`${selectCls} ml-1`} value={from} onChange={e => setFrom(e.target.value)} /></label>
         <label className="text-xs text-slate-500">To <input type="date" className={`${selectCls} ml-1`} value={to} onChange={e => setTo(e.target.value)} /></label>
       </div>
-      {reviewing ? <ReviewPanel r={reviewing} onCancel={() => setReviewing(null)} onDone={() => { setReviewing(null); load(); onChanged(); }} /> : null}
+      {reviewing ? <ReviewPanel key={reviewing.id} r={reviewing} onCancel={() => setReviewing(null)} onDone={() => { setReviewing(null); load(); onChanged(); }} onEdited={() => { load(); onChanged(); }} /> : null}
       {history ? <HistoryPanel id={history} onClose={() => setHistory(null)} /> : null}
       {error ? <ErrorBanner message={error} onRetry={load} /> : !data ? <Spinner /> : data.items.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
@@ -266,6 +350,11 @@ const ReportList: React.FC<{ scope: 'MINE' | 'TEAM'; reloadKey: number; onChange
     </div>
   );
 };
+
+/** One team member's daily reports for the reviewer (Performance Management): review, edit and decide them in place. */
+export const MemberTaskReports: React.FC<{ memberId: string; from: string; to: string; onChanged: () => void }> = ({ memberId, from, to, onChanged }) => (
+  <ReportList scope="TEAM" reloadKey={0} onChanged={onChanged} memberId={memberId} initialFrom={from} initialTo={to} />
+);
 
 /**
  * Task daily reports. One component for every level; what it shows follows the person's place in the chain (the database refuses the rest):
@@ -299,7 +388,7 @@ export const TaskReports: React.FC<{ level: 'MEMBER' | 'TEAM_LEAD' | 'DEPARTMENT
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-500">
-        {level === 'TEAM_LEAD' ? 'Daily reports of your team members against their tasks. Approve a report or return it for correction.' : 'Every task daily report of your department and where it is in the approval.'}
+        {level === 'TEAM_LEAD' ? 'Daily reports of your team members against their tasks. Edit a report if something needs correcting, then approve it or return it for correction.' : 'Every task daily report of your department and where it is in the approval.'}
       </p>
       <ReportList scope="TEAM" reloadKey={reloadKey} onChanged={bump} />
     </div>
