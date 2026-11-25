@@ -78,7 +78,7 @@ select test.login('ai_e1');
 select test.check(jsonb_array_length(ai_studio_projects_list()) = 2, 'the unassigned member sees their projects');
 select test.check((ai_studio_tasks_list('mine') ->> 'total')::int = 1, 'and the task given to them');
 select test.check(ai_studio_report_context() ->> 'route' = 'DIRECT' and (ai_studio_report_context() ->> 'hasReviewer')::boolean and ai_studio_report_context() ->> 'reviewer' = 'Root', 'the form says the report goes straight to the Super Admin');
-insert into ai_t select 'e_r1', (ai_studio_report_save(null, test.proj('AI CRM'), null, current_date, 'Set up the repo', null, null, null, null, true) ->> 'id')::uuid;
+insert into ai_t select 'e_r1', (ai_studio_report_save(null, test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date, 'Set up the repo', null, null, null, null, true) ->> 'id')::uuid;
 select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' and lead_id is null from ai_studio_daily_reports where id = (select id from ai_t where name = 'e_r1')$q$)::boolean, 'a report without a Team Lead goes straight to the Super Admin');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history' -> 1 ->> 'comment') like 'No Team Lead is assigned%', 'and the history says why');
 select test.login('ai_e2');
@@ -89,7 +89,7 @@ select test.check(test.sq($q$select count(*) = 1 from notifications where recipi
 select test.check((ai_studio_reports_list('department', null, 'PENDING_DH_APPROVAL') ->> 'total')::int = 1, 'and sees it among the reports awaiting the final decision');
 select test.check((ai_studio_report_review((select id from ai_t where name = 'e_r1'), 'APPROVE', 'Thanks') ->> 'status') = 'APPROVED', 'the Super Admin approves it directly (no Team Lead stage)');
 select test.login('ai_e1');
-insert into ai_t select 'e_r2', (ai_studio_report_save(null, test.proj('AIQR'), null, current_date, 'Reviewed AIQR', null, null, null, null, true) ->> 'id')::uuid;
+insert into ai_t select 'e_r2', (ai_studio_report_save(null, test.proj('AIQR'), null, (now() at time zone 'Asia/Kolkata')::date, 'Reviewed AIQR', null, null, null, null, true) ->> 'id')::uuid;
 select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' from ai_studio_daily_reports where id = (select id from ai_t where name = 'e_r2')$q$)::boolean, 'a second report (left pending on purpose) is waiting for the Super Admin');
 
 -- a Team Lead is created later: the earlier members are NOT taken over
@@ -122,7 +122,7 @@ select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1'
 select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'status') = 'PENDING_DH_APPROVAL' and (ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'canReview')::boolean, 'a pending report still waits for the Super Admin');
 select test.login('ai_e1');
 select test.check(ai_studio_report_context() ->> 'route' = 'TEAM_LEAD' and ai_studio_report_context() ->> 'reviewer' = 'AI Early Lead', 'the form now says the report goes to the Team Lead first');
-insert into ai_t select 'e_r3', (ai_studio_report_save(null, test.proj('AI CRM'), null, current_date - 1, 'Added the CI', null, null, null, null, true) ->> 'id')::uuid;
+insert into ai_t select 'e_r3', (ai_studio_report_save(null, test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date - 1, 'Added the CI', null, null, null, null, true) ->> 'id')::uuid;
 select test.check(test.sq($q$select status = 'PENDING_TL_APPROVAL' and lead_id = test.id('ai_el1') from ai_studio_daily_reports where id = (select id from ai_t where name = 'e_r3')$q$)::boolean, 'a new report now follows Team Member -> Team Lead');
 select test.login('ai_el1');
 select test.check((ai_studio_reports_list('team') ->> 'total')::int = 1, 'it is in the Team Lead''s team reports');
@@ -240,18 +240,18 @@ select test.must_fail($$select ai_studio_people()$$, 'a Team Member cannot list 
 
 \echo '   tasks'
 select test.login('ai_dh');
-insert into ai_t select 'lead', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'Plan the CRM sprint', 'Break the work down', 'HIGH', (current_date + 10)) ->> 'id')::uuid;
+insert into ai_t select 'lead', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'Plan the CRM sprint', 'Break the work down', 'HIGH', ((now() at time zone 'Asia/Kolkata')::date + 10)) ->> 'id')::uuid;
 select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tl1') and type = 'AI_STUDIO_TASK_ASSIGNED' and entity_id = (select id from ai_t where name = 'lead')$q$)::boolean, 'the Team Lead is notified of a new task');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl2'), 'x', null, 'LOW', null)$$, 'a task cannot go to someone who is not on the project', 'not on');
-select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'x', null, 'LOW', current_date - 1)$$, 'a deadline in the past is refused', 'cannot be in the past');
+select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'x', null, 'LOW', (now() at time zone 'Asia/Kolkata')::date - 1)$$, 'a deadline in the past is refused', 'cannot be in the past');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'x', null, 'URGENTEST', null)$$, 'an unknown priority is refused', 'Unknown priority');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), '   ', null, 'LOW', null)$$, 'an empty title is refused', 'title');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_dh'), 'x', null, 'LOW', null)$$, 'a task cannot go to the Head', 'VALIDATION_ERROR');
 
 select test.login('ai_tl1');
-insert into ai_t select 'a1', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tm1a'), 'Build the login screen', 'With validation', 'MEDIUM', (current_date + 5)) ->> 'id')::uuid;
+insert into ai_t select 'a1', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tm1a'), 'Build the login screen', 'With validation', 'MEDIUM', ((now() at time zone 'Asia/Kolkata')::date + 5)) ->> 'id')::uuid;
 insert into ai_t select 'a2', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tm1a'), 'Write the API tests', null, 'LOW', null) ->> 'id')::uuid;
-insert into ai_t select 'b1', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tm1b'), 'Design the dashboard', null, 'LOW', (current_date + 3)) ->> 'id')::uuid;
+insert into ai_t select 'b1', (ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tm1b'), 'Design the dashboard', null, 'LOW', ((now() at time zone 'Asia/Kolkata')::date + 3)) ->> 'id')::uuid;
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tm2a'), 'x', null, 'LOW', null)$$, 'a Team Lead cannot give a task to another lead''s member', 'FORBIDDEN');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AI CRM'), test.id('ai_tl1'), 'x', null, 'LOW', null)$$, 'nor to themselves', 'FORBIDDEN');
 select test.must_fail($$select ai_studio_task_assign(test.proj('AIQR'), test.id('ai_tm1a'), 'x', null, 'LOW', null)$$, 'nor on a project the member is not on', 'not on');
@@ -259,7 +259,7 @@ select test.check(test.sq($q$select count(*) = 1 from notifications where recipi
 select test.check((ai_studio_tasks_list('mine') ->> 'total')::int = 1 and (ai_studio_tasks_list('team') ->> 'total')::int = 4, 'the Team Lead sees their own task and the three they gave');
 
 \echo '   a deadline change notifies the assignee'
-select ai_studio_task_edit((select id from ai_t where name = 'a1'), 'Build the login screen', 'With validation and tests', 'HIGH', (current_date + 8));
+select ai_studio_task_edit((select id from ai_t where name = 'a1'), 'Build the login screen', 'With validation and tests', 'HIGH', ((now() at time zone 'Asia/Kolkata')::date + 8));
 select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tm1a') and type = 'AI_STUDIO_TASK_DEADLINE'$q$)::boolean, 'the Team Member is told the deadline changed');
 select test.must_fail($$select ai_studio_task_edit((select id from ai_t where name = 'lead'), 'x', null, 'LOW', null)$$, 'a Team Lead cannot edit the task the Head gave them', 'NOT_FOUND');
 
@@ -300,20 +300,20 @@ select test.must_fail($$select ai_studio_tasks_list('mine')$$, 'another departme
 \echo '   daily reports: Team Member -> Team Lead -> Department Head'
 select test.login('ai_tm1a');
 select test.check(ai_studio_report_context() ->> 'reviewer' = 'AI Lead One' and (ai_studio_report_context() ->> 'hasReviewer')::boolean, 'the form tells the member who reviews the report');
-insert into ai_t select 'r1', (ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'a1'), (current_date), 'Login screen done', 'API tests', 'Docs', 'None', 'ok', false) ->> 'id')::uuid;
+insert into ai_t select 'r1', (ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'a1'), ((now() at time zone 'Asia/Kolkata')::date), 'Login screen done', 'API tests', 'Docs', 'None', 'ok', false) ->> 'id')::uuid;
 select test.check(test.sq($q$select status = 'DRAFT' from ai_studio_daily_reports where id = (select id from ai_t where name = 'r1')$q$)::boolean, 'a new report is a draft');
-select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'a1'), current_date, 'again', null, null, null, null, false)$$, 'a second report for the same project, task and day is refused', 'already have a report');
-select test.must_fail($$select ai_studio_report_save(null, test.proj('AIQR'), null, current_date, 'x', null, null, null, null, false)$$, 'a project the member is not on is refused', 'Choose one of your projects');
-select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'b1'), current_date, 'x', null, null, null, null, false)$$, 'a colleague''s task cannot be reported on', 'assigned to you');
-select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, current_date + 3, 'x', null, null, null, null, false)$$, 'a future date is refused', 'future');
-select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, current_date - 90, 'x', null, null, null, null, false)$$, 'a very old date is refused', '60 days');
-select test.must_fail($$select ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), current_date, '   ', null, null, null, null, true)$$, 'submitting needs the work completed', 'Describe the work');
+select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'a1'), (now() at time zone 'Asia/Kolkata')::date, 'again', null, null, null, null, false)$$, 'a second report for the same project, task and day is refused', 'already have a report');
+select test.must_fail($$select ai_studio_report_save(null, test.proj('AIQR'), null, (now() at time zone 'Asia/Kolkata')::date, 'x', null, null, null, null, false)$$, 'a project the member is not on is refused', 'Choose one of your projects');
+select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'b1'), (now() at time zone 'Asia/Kolkata')::date, 'x', null, null, null, null, false)$$, 'a colleague''s task cannot be reported on', 'assigned to you');
+select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date + 3, 'x', null, null, null, null, false)$$, 'a future date is refused', 'future');
+select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date - 90, 'x', null, null, null, null, false)$$, 'a very old date is refused', '60 days');
+select test.must_fail($$select ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), (now() at time zone 'Asia/Kolkata')::date, '   ', null, null, null, null, true)$$, 'submitting needs the work completed', 'Describe the work');
 select test.login('ai_tm1b');
 select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'r1'))$$, 'a colleague cannot read a draft', 'NOT_FOUND');
-select test.must_fail($$select ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), null, current_date, 'hijack', null, null, null, null, true)$$, 'nor change it', 'NOT_FOUND');
+select test.must_fail($$select ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date, 'hijack', null, null, null, null, true)$$, 'nor change it', 'NOT_FOUND');
 select test.login('ai_tm1a');
-select test.check((ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), current_date, 'Login screen done and merged', 'API tests', 'Docs', 'None', 'ok', true) ->> 'status') = 'PENDING_TL_APPROVAL', 'submitting sends it to the Team Lead');
-select test.must_fail($$select ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), null, current_date, 'edit after submit', null, null, null, null, false)$$, 'a submitted report cannot be changed', 'already submitted');
+select test.check((ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), (now() at time zone 'Asia/Kolkata')::date, 'Login screen done and merged', 'API tests', 'Docs', 'None', 'ok', true) ->> 'status') = 'PENDING_TL_APPROVAL', 'submitting sends it to the Team Lead');
+select test.must_fail($$select ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date, 'edit after submit', null, null, null, null, false)$$, 'a submitted report cannot be changed', 'already submitted');
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r1'), 'APPROVE', null)$$, 'a Team Member cannot approve (not even their own)', 'FORBIDDEN');
 select test.must_fail($$select ai_studio_report_delete_draft((select id from ai_t where name = 'r1'))$$, 'a submitted report cannot be deleted', 'NOT_FOUND');
 
@@ -340,7 +340,7 @@ select test.must_fail($$select ai_studio_report_review((select id from ai_t wher
 
 select test.login('ai_tm1a');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'r1')) ->> 'tlComment') = 'Add the test results' and (ai_studio_report_get((select id from ai_t where name = 'r1')) ->> 'canEdit')::boolean, 'the member sees the remarks and can edit');
-select test.check((ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), current_date, 'Login screen done, tests attached', 'API tests', 'Docs', 'None', 'ok', true) ->> 'revision')::int = 2, 'resubmitting starts a new round');
+select test.check((ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), (now() at time zone 'Asia/Kolkata')::date, 'Login screen done, tests attached', 'API tests', 'Docs', 'None', 'ok', true) ->> 'revision')::int = 2, 'resubmitting starts a new round');
 
 select test.login('ai_tl1');
 select test.check((ai_studio_report_review((select id from ai_t where name = 'r1'), 'APPROVE', 'Good work') ->> 'status') = 'PENDING_DH_APPROVAL', 'the Team Lead approves: the report moves to the Department Head');
@@ -353,11 +353,11 @@ select test.check((ai_studio_reports_list('department', null, 'PENDING_DH_APPROV
 select test.check((ai_studio_reports_list('department', test.proj('AIQR')) ->> 'total')::int = 0 and (ai_studio_reports_list('department', test.proj('AI CRM'), null, test.id('ai_tl1')) ->> 'total')::int = 1
                and (ai_studio_reports_list('department', null, null, test.id('ai_tl2')) ->> 'total')::int = 0 and (ai_studio_reports_list('department', null, null, null, test.id('ai_tm1a')) ->> 'total')::int = 1,
   'the Department Head can filter by project, Team Lead and Team Member');
-select test.check((ai_studio_reports_list('department', null, null, null, null, current_date + 1, null) ->> 'total')::int = 0, 'and by date');
+select test.check((ai_studio_reports_list('department', null, null, null, null, (now() at time zone 'Asia/Kolkata')::date + 1, null) ->> 'total')::int = 0, 'and by date');
 select test.check((ai_studio_report_review((select id from ai_t where name = 'r1'), 'RETURN', 'Please add the demo link') ->> 'status') = 'RETURNED_BY_DH', 'the Department Head can return it');
 select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tl1') and type = 'AI_STUDIO_REPORT_RETURNED' and body like '%demo link%'$q$)::boolean, 'the Team Lead is told as well');
 select test.login('ai_tm1a');
-select test.check((ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), current_date, 'Login screen done, tests and demo link', 'API tests', 'Docs', 'None', 'ok', true) ->> 'status') = 'PENDING_TL_APPROVAL', 'after a Head''s return the report goes through the Team Lead again');
+select test.check((ai_studio_report_save((select id from ai_t where name = 'r1'), test.proj('AI CRM'), (select id from ai_t where name = 'a1'), (now() at time zone 'Asia/Kolkata')::date, 'Login screen done, tests and demo link', 'API tests', 'Docs', 'None', 'ok', true) ->> 'status') = 'PENDING_TL_APPROVAL', 'after a Head''s return the report goes through the Team Lead again');
 select test.login('ai_tl1');
 select ai_studio_report_review((select id from ai_t where name = 'r1'), 'APPROVE', null);
 select test.login('ai_dh');
@@ -372,7 +372,7 @@ select test.check((ai_studio_report_get((select id from ai_t where name = 'r1'))
 
 \echo '   a Team Lead''s own report goes to the Department Head'
 select test.login('ai_tl1');
-insert into ai_t select 'r2', (ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'lead'), current_date, 'Sprint planned', null, 'Review', null, null, true) ->> 'id')::uuid;
+insert into ai_t select 'r2', (ai_studio_report_save(null, test.proj('AI CRM'), (select id from ai_t where name = 'lead'), (now() at time zone 'Asia/Kolkata')::date, 'Sprint planned', null, 'Review', null, null, true) ->> 'id')::uuid;
 select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' and lead_id is null from ai_studio_daily_reports where id = (select id from ai_t where name = 'r2')$q$)::boolean, 'a Team Lead''s report waits for the Department Head only');
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r2'), 'APPROVE', null)$$, 'a Team Lead cannot approve their own report', 'FORBIDDEN');
 select test.check((ai_studio_reports_list('mine') ->> 'total')::int = 1 and not ((ai_studio_reports_list('team') -> 'items') @> '[{"authorRole":"LEAD"}]'::jsonb), 'it is in My Daily Reports, not in the team list of members'' reports');
@@ -385,7 +385,7 @@ select test.must_fail($$select ai_studio_reports_list('mine')$$, 'the Head has n
 
 \echo '   drafts stay private; other departments see nothing'
 select test.login('ai_tm2a');
-insert into ai_t select 'r3', (ai_studio_report_save(null, test.proj('AIQR'), null, current_date, 'Drafting', null, null, null, null, false) ->> 'id')::uuid;
+insert into ai_t select 'r3', (ai_studio_report_save(null, test.proj('AIQR'), null, (now() at time zone 'Asia/Kolkata')::date, 'Drafting', null, null, null, null, false) ->> 'id')::uuid;
 select test.login('ai_dh');
 select test.check((ai_studio_reports_list('department') ->> 'total')::int = 2, 'a draft is not in the department list');
 select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'r3'))$$, 'the Head cannot open a draft', 'NOT_FOUND');
@@ -398,7 +398,7 @@ select test.login('dh_wab');
 select test.must_fail($$select ai_studio_reports_list('department')$$, 'another Department Head sees no AI Studio report', 'FORBIDDEN');
 select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'r1'))$$, 'nor opens one', 'FORBIDDEN');
 select test.login('tm_a');
-select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, current_date, 'x', null, null, null, null, false)$$, 'another department cannot write an AI Studio report', 'FORBIDDEN');
+select test.must_fail($$select ai_studio_report_save(null, test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date, 'x', null, null, null, null, false)$$, 'another department cannot write an AI Studio report', 'FORBIDDEN');
 
 \echo '   a Team Member added by the Super Admin to a team with two leads has no lead yet'
 reset role;
@@ -428,7 +428,7 @@ select test.login('ai_tl1');
 select test.must_fail($$select ai_studio_set_lead(test.id('ai_tm1a'), test.id('ai_tl1'))$$, 'a Team Lead cannot move people between leads', 'FORBIDDEN');
 \echo '   the Super Admin is the Department Head: the final approval (no Department Head account involved)'
 select test.login('ai_tm1b');
-insert into ai_t select 'r4', (ai_studio_report_save(null, test.proj('AI CRM'), null, current_date, 'Designed the dashboard', null, null, null, null, true) ->> 'id')::uuid;
+insert into ai_t select 'r4', (ai_studio_report_save(null, test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date, 'Designed the dashboard', null, null, null, null, true) ->> 'id')::uuid;
 select test.login('sa');
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r4'), 'APPROVE', null)$$, 'the Super Admin cannot decide before the Team Lead', 'not waiting for your decision');
 select test.login('ai_tl1');
@@ -442,7 +442,7 @@ select test.check((ai_studio_report_review((select id from ai_t where name = 'r4
 select test.check(test.sq($q$select count(*) = 1 from notifications where recipient_id = test.id('ai_tm1b') and type = 'AI_STUDIO_REPORT_RETURNED' and entity_id = (select id from ai_t where name = 'r4')$q$)::boolean
                and test.sq($q$select count(*) >= 1 from notifications where recipient_id = test.id('ai_tl1') and type = 'AI_STUDIO_REPORT_RETURNED' and body like '%screenshots%'$q$)::boolean, 'the Team Member and the Team Lead are told');
 select test.login('ai_tm1b');
-select ai_studio_report_save((select id from ai_t where name = 'r4'), test.proj('AI CRM'), null, current_date, 'Designed the dashboard, screenshots added', null, null, null, null, true);
+select ai_studio_report_save((select id from ai_t where name = 'r4'), test.proj('AI CRM'), null, (now() at time zone 'Asia/Kolkata')::date, 'Designed the dashboard, screenshots added', null, null, null, null, true);
 select test.login('ai_tl1');
 select ai_studio_report_review((select id from ai_t where name = 'r4'), 'APPROVE', null);
 select test.login('sa');
@@ -458,7 +458,7 @@ select test.login('dh_wab');
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r4'), 'RETURN', 'Not mine to decide')$$, 'another department''s head cannot decide it', 'FORBIDDEN');
 -- a Team Lead's own report goes to the Super Admin
 select test.login('ai_tl2');
-insert into ai_t select 'r5', (ai_studio_report_save(null, test.proj('AIQR'), null, current_date, 'Reviewed the AIQR designs', null, null, null, null, true) ->> 'id')::uuid;
+insert into ai_t select 'r5', (ai_studio_report_save(null, test.proj('AIQR'), null, (now() at time zone 'Asia/Kolkata')::date, 'Reviewed the AIQR designs', null, null, null, null, true) ->> 'id')::uuid;
 select test.check(test.sq($q$select status = 'PENDING_DH_APPROVAL' from ai_studio_daily_reports where id = (select id from ai_t where name = 'r5')$q$)::boolean, 'a Team Lead''s own report waits for the Super Admin');
 select test.login('sa');
 select test.check((ai_studio_report_review((select id from ai_t where name = 'r5'), 'APPROVE', null) ->> 'status') = 'APPROVED', 'and the Super Admin approves it');
@@ -481,7 +481,7 @@ select test.check(private.chat_may_message(test.id('sa'), test.id('ai_tl1')) and
 select test.check(private.chat_may_message(test.id('ai_tl1'), test.id('ai_dh')) and private.chat_may_message(test.id('ai_dh'), test.id('ai_tm1a')), 'the Team Lead and the Department Head can chat; the Head reaches the members');
 set role authenticated;
 select test.login('ai_tm1a');
-select test.check((submit_leave_request('FULL_DAY', current_date + 20, null, null, 'Family function') ->> 'status') is not null, 'an AI Studio member can apply for leave (the existing leave module)');
+select test.check((submit_leave_request('FULL_DAY', (now() at time zone 'Asia/Kolkata')::date + 20, null, null, 'Family function') ->> 'status') is not null, 'an AI Studio member can apply for leave (the existing leave module)');
 select test.login('ai_tl1');
 select test.check(jsonb_array_length(leave_requests_to_review() -> 'awaiting') >= 1, 'the leave request reaches their Team Lead first (existing approval chain)');
 select test.login('ai_tl2');

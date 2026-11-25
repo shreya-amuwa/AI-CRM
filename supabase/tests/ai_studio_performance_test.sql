@@ -33,11 +33,11 @@ grant all on aps to authenticated;
 -- a task the Team Lead gave the member, and the member's submitted daily report waiting for the Team Lead
 with ins as (
   insert into ai_studio_tasks (project_id, title, assigned_by, assignee_id, due_date, status, progress)
-  select (select id from ai_studio_projects where name = 'AI CRM'), 'APS build the login screen', test.id('aps_lead'), test.id('aps_mem'), current_date + 2, 'IN_PROGRESS', 40
+  select (select id from ai_studio_projects where name = 'AI CRM'), 'APS build the login screen', test.id('aps_lead'), test.id('aps_mem'), (now() at time zone 'Asia/Kolkata')::date + 2, 'IN_PROGRESS', 40
   returning id) insert into aps select 'T', id from ins;
 with ins as (
   insert into ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, pending_work, status, lead_id, lead_name, submitted_at)
-  select test.id('aps_mem'), 'APS mem', 'MEMBER', (select id from ai_studio_projects where name = 'AI CRM'), (select v from aps where k = 'T'), current_date,
+  select test.id('aps_mem'), 'APS mem', 'MEMBER', (select id from ai_studio_projects where name = 'AI CRM'), (select v from aps where k = 'T'), (now() at time zone 'Asia/Kolkata')::date,
          'Built the login form layout', 'Error messages', 'PENDING_TL_APPROVAL', test.id('aps_lead'), 'APS lead', now()
   returning id) insert into aps select 'R', id from ins;
 
@@ -46,7 +46,7 @@ set role authenticated;
 select test.login('aps_lead');
 create temp table aps_json (k text primary key, j jsonb);
 grant all on aps_json to authenticated;
-insert into aps_json select 'lead', performance_overview(current_date - 30, current_date + 30);
+insert into aps_json select 'lead', performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30);
 select test.check((select j ->> 'role' = 'TEAM_HEAD' and j ->> 'source' = 'AI_STUDIO' and (j ->> 'pendingReports')::int = 1 from aps_json where k = 'lead'),
   'the Team Lead''s overview reads AI Studio (one report waiting at their step)');
 select test.check((select (m #>> '{metrics,tasks,total}')::int = 1 and (m #>> '{metrics,progressPct}')::numeric = 40 and (m #>> '{metrics,reports,pending}')::int = 1
@@ -88,24 +88,24 @@ select test.check((select count(*) = 1 from audit_logs where action = 'AI_STUDIO
 set role authenticated;
 select test.login('aps_lead');
 select test.check((select (m #>> '{metrics,reports,approved}')::int = 1 and (m #>> '{metrics,reports,pending}')::int = 0 and (m #>> '{record,waitingReports}')::int = 0
-                     from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') m where m ->> 'id' = test.id('aps_mem')::text),
+                     from jsonb_array_elements(performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) -> 'members') m where m ->> 'id' = test.id('aps_mem')::text),
   'once the Team Lead approved it, the report counts as approved and nothing waits');
 select test.check((select r ->> 'status' = 'APPROVED' and (r ->> 'rating')::int = 4 from (select performance_record_review((select v from aps where k = 'PM'), 'APPROVE', 'Good progress', null, 4) r) x),
   'the Team Lead approves the member''s performance with a rating of 4');
 select test.check((select w ->> 'source' = 'AI_STUDIO' and exists (select 1 from jsonb_array_elements(w -> 'tasks') t where t ->> 'title' = 'APS build the login screen' and t ->> 'project' = 'AI CRM'
                                                                   and t #>> '{lastReport,status}' = 'APPROVED' and (t ->> 'reports')::int = 1)
-                     from (select performance_member_work(test.id('aps_mem'), current_date - 30, current_date + 30) w) x),
+                     from (select performance_member_work(test.id('aps_mem'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) w) x),
   'the drill-down shows the member''s AI Studio task with its project and the approved report');
 select test.login('aps_lead2');
-select test.must_fail(format($$select performance_member_work(%L, current_date - 30, current_date)$$, test.id('aps_mem')), 'another Team Lead cannot open it', 'not found');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date)$$, test.id('aps_mem')), 'another Team Lead cannot open it', 'not found');
 select test.login('aps_mem');
-select test.must_fail($$select performance_overview(current_date - 30, current_date + 30)$$, 'the AI Studio member has no performance view', 'for Team Leads and Department Heads');
-select test.must_fail(format($$select performance_member_work(%L, current_date - 30, current_date)$$, test.id('aps_mem')), 'nor their own work view', 'not found');
+select test.must_fail($$select performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30)$$, 'the AI Studio member has no performance view', 'for Team Leads and Department Heads');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date)$$, test.id('aps_mem')), 'nor their own work view', 'not found');
 
 \echo '   the Department Head: the department, the team, the Team Lead''s evaluation'
 select test.login('ai_dh');
 delete from aps_json;
-insert into aps_json select 'head', performance_overview(current_date - 30, current_date + 30);
+insert into aps_json select 'head', performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30);
 select test.check((select j ->> 'source' = 'AI_STUDIO' and (j #>> '{tasks,total}')::int >= 1 and (j #>> '{reports,submitted}')::int >= 1 and (j #>> '{reports,approved}')::int >= 1
                           and (j ->> 'leadDecidesMembers')::boolean = false from aps_json where k = 'head'),
   'the Department Head''s analytics count AI Studio''s tasks and reports');
@@ -119,8 +119,8 @@ select test.check((select r ->> 'status' = 'APPROVED' and (r ->> 'rating')::int 
 
 \echo '   every other department keeps the task-record figures'
 reset role;
-select test.check(private.perf2_member(test.id('tdr_m1'), current_date - 30, current_date + 30, current_date) = private.perf2_member_tasks(test.id('tdr_m1'), current_date - 30, current_date + 30, current_date)
-                  and private.perf2_member(test.id('aps_mem'), current_date - 30, current_date + 30, current_date) = private.perf2_member_ai(test.id('aps_mem'), current_date - 30, current_date + 30, current_date),
+select test.check(private.perf2_member(test.id('tdr_m1'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30, (now() at time zone 'Asia/Kolkata')::date) = private.perf2_member_tasks(test.id('tdr_m1'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30, (now() at time zone 'Asia/Kolkata')::date)
+                  and private.perf2_member(test.id('aps_mem'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30, (now() at time zone 'Asia/Kolkata')::date) = private.perf2_member_ai(test.id('aps_mem'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30, (now() at time zone 'Asia/Kolkata')::date),
   'perf2_member reads the task records outside AI Studio and AI Studio''s work inside it');
 
 \echo '   cleanup'

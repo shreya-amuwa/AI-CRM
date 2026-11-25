@@ -32,13 +32,13 @@ create temp table plp (k text primary key, v uuid);
 grant all on plp to authenticated;
 with ins as (
   insert into work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
-  select p.department_id, p.team_id, 'PLP prepare the renewal list', test.id('tdr_tl1'), p.id, current_date + 3 from profiles p where p.id = test.id('tdr_m1')
+  select p.department_id, p.team_id, 'PLP prepare the renewal list', test.id('tdr_tl1'), p.id, (now() at time zone 'Asia/Kolkata')::date + 3 from profiles p where p.id = test.id('tdr_m1')
   returning id) insert into plp select 'T', id from ins;
 
 \echo '   the Team Lead edits a waiting report'
 set role authenticated;
 select test.login('tdr_m1');
-insert into plp select 'R', (task_report_submit((select v from plp where k = 'T'), current_date, 'Prepared the first draft of the list', 40, 'The second half of the list') ->> 'id')::uuid;
+insert into plp select 'R', (task_report_submit((select v from plp where k = 'T'), (now() at time zone 'Asia/Kolkata')::date, 'Prepared the first draft of the list', 40, 'The second half of the list') ->> 'id')::uuid;
 select test.must_fail(format($$select task_report_reviewer_edit(%L, 'Prepared the whole list already', 100, null, null, null, 'I finished it')$$, (select v from plp where k = 'R')),
   'the member cannot edit their waiting report this way', 'Only the Team Lead');
 select test.login('tdr_tl2');
@@ -93,7 +93,7 @@ select test.check((select count(*) = 2 from plp where k in ('PM', 'PL') and v is
 update performance_records set rating = 4, review_remarks = 'Reviewed with the member' where id = (select v from plp where k = 'PM');
 set role authenticated;
 select test.login('tdr_tl1');
-select test.check((select (x #>> '{record,canUpdate}')::boolean from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') x where x ->> 'id' = test.id('tdr_m1')::text),
+select test.check((select (x #>> '{record,canUpdate}')::boolean from jsonb_array_elements(performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) -> 'members') x where x ->> 'id' = test.id('tdr_m1')::text),
   'the Team Lead may update their member''s approved evaluation');
 select test.must_fail(format($$select performance_record_update_evaluation(%L, 7, null)$$, (select v from plp where k = 'PM')), 'the rating is 1 to 5', 'rating is from 1 to 5');
 select test.must_fail(format($$select performance_record_update_evaluation(%L, null, 'no rating')$$, (select v from plp where k = 'PM')), 'and required', 'rating is from 1 to 5');
@@ -113,7 +113,7 @@ select test.login('tdr_m1');
 select test.must_fail(format($$select performance_record_update_evaluation(%L, 5, null)$$, (select v from plp where k = 'PM')), 'the member cannot (nor read it)', 'not found');
 select test.login('tdr_dha');
 select test.check((select (x #>> '{record,canUpdate}')::boolean = false and (x #>> '{record,rating}')::int = 3
-                     from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'leads') l, jsonb_array_elements(l -> 'members') x where x ->> 'id' = test.id('tdr_m1')::text),
+                     from jsonb_array_elements(performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) -> 'leads') l, jsonb_array_elements(l -> 'members') x where x ->> 'id' = test.id('tdr_m1')::text),
   'the Department Head sees the Team Lead''s updated rating of the member, read only');
 select test.must_fail(format($$select performance_record_update_evaluation(%L, 5, null)$$, (select v from plp where k = 'PM')),
   'and does not replace the Team Lead as the member''s evaluator', 'Only the Team Lead');
@@ -123,7 +123,7 @@ select test.login('tdr_dhb');
 select test.must_fail(format($$select performance_record_update_evaluation(%L, 1, null)$$, (select v from plp where k = 'PL')), 'another department''s head cannot', 'not found');
 select test.login('tdr_tl1');
 -- a period nobody decided yet: the record is Pending
-insert into plp select 'PP', (x #>> '{record,id}')::uuid from jsonb_array_elements(performance_overview(current_date - 6, current_date) -> 'members') x where x ->> 'id' = test.id('tdr_m1')::text;
+insert into plp select 'PP', (x #>> '{record,id}')::uuid from jsonb_array_elements(performance_overview((now() at time zone 'Asia/Kolkata')::date - 6, (now() at time zone 'Asia/Kolkata')::date) -> 'members') x where x ->> 'id' = test.id('tdr_m1')::text;
 select test.must_fail(format($$select performance_record_update_evaluation(%L, 4, null)$$, (select v from plp where k = 'PP')), 'a pending evaluation is reviewed, not updated', 'Only an approved');
 reset role;
 select test.check((select count(*) >= 1 from notifications where recipient_id = test.id('tdr_tl1') and type = 'REPORT_PERFORMANCE_UPDATED' and entity_id = (select v from plp where k = 'PL'))
@@ -137,21 +137,21 @@ set role authenticated;
 select test.login('tdr_tl1');
 select test.check((select (w ->> 'name') is not null
                           and jsonb_array_length(w -> 'tasks') = (select count(*) from work_tasks t where t.assignee_id = test.id('tdr_m1')
-                                                                   and coalesce(t.due_date, (t.created_at at time zone 'Asia/Kolkata')::date) between current_date - 30 and current_date + 30)
+                                                                   and coalesce(t.due_date, (t.created_at at time zone 'Asia/Kolkata')::date) between (now() at time zone 'Asia/Kolkata')::date - 30 and (now() at time zone 'Asia/Kolkata')::date + 30)
                           and exists (select 1 from jsonb_array_elements(w -> 'tasks') t where t ->> 'title' = 'PLP prepare the renewal list' and t #>> '{lastReport,status}' = 'APPROVED'
                                         and (t #>> '{lastReport,progress}')::int = 55 and (t ->> 'reports')::int = 1)
-                     from (select performance_member_work(test.id('tdr_m1'), current_date - 30, current_date + 30) w) x),
+                     from (select performance_member_work(test.id('tdr_m1'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) w) x),
   'the Team Lead opens a member''s tasks with the latest report on each');
-select test.must_fail(format($$select performance_member_work(%L, current_date, current_date - 1)$$, test.id('tdr_m1')), 'a period must be valid', 'period');
-select test.must_fail(format($$select performance_member_work(%L, current_date - 30, current_date)$$, test.id('tdr_m2')), 'not another Team Lead''s member', 'not found');
-select test.must_fail(format($$select performance_member_work(%L, current_date - 30, current_date)$$, test.id('tdr_tl1')), 'nor their own work here', 'not found');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date, (now() at time zone 'Asia/Kolkata')::date - 1)$$, test.id('tdr_m1')), 'a period must be valid', 'period');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date)$$, test.id('tdr_m2')), 'not another Team Lead''s member', 'not found');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date)$$, test.id('tdr_tl1')), 'nor their own work here', 'not found');
 select test.login('tdr_dha');
-select test.check(jsonb_array_length(performance_member_work(test.id('tdr_m1'), current_date - 30, current_date + 30) -> 'tasks') >= 1
-                  and (performance_member_work(test.id('tdr_tl1'), current_date - 30, current_date + 30) ->> 'role') = 'TEAM_HEAD', 'the Department Head opens a member''s and a Team Lead''s work');
+select test.check(jsonb_array_length(performance_member_work(test.id('tdr_m1'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) -> 'tasks') >= 1
+                  and (performance_member_work(test.id('tdr_tl1'), (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) ->> 'role') = 'TEAM_HEAD', 'the Department Head opens a member''s and a Team Lead''s work');
 select test.login('tdr_m1');
-select test.must_fail(format($$select performance_member_work(%L, current_date - 30, current_date)$$, test.id('tdr_m1')), 'a member does not open their own (no performance view)', 'not found');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date)$$, test.id('tdr_m1')), 'a member does not open their own (no performance view)', 'not found');
 select test.login('tdr_dhb');
-select test.must_fail(format($$select performance_member_work(%L, current_date - 30, current_date)$$, test.id('tdr_m1')), 'another department''s head cannot', 'not found');
+select test.must_fail(format($$select performance_member_work(%L, (now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date)$$, test.id('tdr_m1')), 'another department''s head cannot', 'not found');
 
 \echo '   an ordinary department: a member without a Team Lead is decided by the Department Head'
 reset role;
@@ -162,11 +162,11 @@ update profiles set manager_id = null where id = test.id('tdr_mx');
 select test.check(private.direct_lead_of(test.id('tdr_mx')) is null and not private.dept_is_unified(test.dept('tdr-a')), 'a member of an ordinary department without a Team Lead');
 with ins as (
   insert into work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
-  select p.department_id, p.team_id, 'PLP unled checklist', test.id('tdr_dha'), p.id, current_date + 2 from profiles p where p.id = test.id('tdr_mx')
+  select p.department_id, p.team_id, 'PLP unled checklist', test.id('tdr_dha'), p.id, (now() at time zone 'Asia/Kolkata')::date + 2 from profiles p where p.id = test.id('tdr_mx')
   returning id) insert into plp select 'TX', id from ins;
 set role authenticated;
 select test.login('tdr_mx');
-insert into plp select 'RX', (task_report_submit((select v from plp where k = 'TX'), current_date, 'Checked the first ten items', 30, 'Twenty items left') ->> 'id')::uuid;
+insert into plp select 'RX', (task_report_submit((select v from plp where k = 'TX'), (now() at time zone 'Asia/Kolkata')::date, 'Checked the first ten items', 30, 'Twenty items left') ->> 'id')::uuid;
 select test.login('tdr_dha');
 select test.check((task_report_reviewer_edit((select v from plp where k = 'RX'), 'Checked the first ten items carefully', 30, 'Twenty items left', null, null, 'Clarified the wording') ->> 'editedBy') is not null
                   and (task_report_review((select v from plp where k = 'RX'), 'APPROVE', null) ->> 'status') = 'APPROVED',
