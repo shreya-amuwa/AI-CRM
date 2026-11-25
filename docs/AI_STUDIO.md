@@ -150,3 +150,9 @@ Every project can have a **deadline**, and the people who work on it see a **clo
 * Offboarding an AI Studio employee does not reassign their open AI Studio tasks automatically; the Head changes them with *Edit task* / re-assigns in Project Management.
 * Report attachments are not supported (reports are text); task attachments are links, as in the work reports of other departments.
 * Live push (Realtime) is not used (no timers either): a page reads again after the person's own action, and a page opened from a notification reads fresh. Someone else's change shows after the next action or reload.
+
+## A shorter daily report
+
+The daily report form asks three things: **Work Completed Today** (required), **Pending Work** and **Challenges / Blockers**. *Work In Progress* (the same as pending
+work) and *Remarks or Additional Updates* were removed from the form. Nothing changed in the database or the API (the two parts were already optional): an older report
+that has text in them still shows it, in the report and in the form when it is edited, so nothing written earlier is lost.

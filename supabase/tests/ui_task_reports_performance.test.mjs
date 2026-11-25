@@ -222,6 +222,45 @@ try {
   check(headSent && headSent.decision === 'APPROVE' && headSent.rating === 5, 'strict: the Department Head approves the Team Lead with a rating of 5', headSent);
   await page.evaluate(() => window.reset());
 
+  // ===== the Super Admin's Performance Management: any department, chosen from a list; read only
+  await page.evaluate(() => window.reset());
+  await mount(page, 'perf-sa');
+  await page.getByTestId('leads-table').waitFor();
+  const firstReq = await page.evaluate(() => window.__calls.filter(c => c.path === '/performance-approval/overview').pop()?.query);
+  check(firstReq?.departmentId === 'dddddddd-0000-4000-8000-000000000001' && (await page.getByTestId('performance-approvals').innerText()).includes('Amuwa International Department: Team Leads and teams'),
+    'Super Admin: Performance Management opens a department (International first) with its Team Leads and teams', firstReq);
+  check(await page.getByRole('button', { name: 'Review' }).count() === 0 && (await page.getByTestId('performance-approvals').innerText()).includes('read only: the Team Leads and the Department Head decide'),
+    'Super Admin: read only (no Review button, and the page says who decides)');
+  await page.getByTestId('sa-performance-department').selectOption('dddddddd-0000-4000-8000-000000000002');
+  await page.waitForTimeout(300);
+  const secondReq = await page.evaluate(() => window.__calls.filter(c => c.path === '/performance-approval/overview').pop()?.query);
+  check(secondReq?.departmentId === 'dddddddd-0000-4000-8000-000000000002' && (await page.getByTestId('performance-approvals').innerText()).includes('Amuwa Reseller Department: Team Leads and teams'),
+    'Super Admin: choosing another department loads that department', secondReq);
+  await page.getByTestId('lead-row').getByRole('button', { name: 'Open' }).click();
+  await page.waitForTimeout(150);
+  check((await page.getByTestId('people-table').innerText()).includes('Mohan Member'), 'Super Admin: opening a Team Lead shows their members and approval status');
+
+  // ===== AI Studio daily report: only Work Completed Today, Pending Work and Challenges / Blockers
+  await page.evaluate(() => window.reset());
+  await mount(page, 'ai-report');
+  await page.locator('form[aria-label="Daily report"]').waitFor();
+  const formText = await page.locator('form[aria-label="Daily report"]').innerText();
+  check(/Work Completed Today/.test(formText) && /Pending Work/.test(formText) && /Challenges \/ Blockers/.test(formText), 'AI Studio report: Work Completed Today, Pending Work and Challenges / Blockers are asked');
+  check(!/Work In Progress/.test(formText) && !/Remarks or Additional Updates/.test(formText) && await page.locator('textarea').count() === 3, 'AI Studio report: no Work In Progress and no Remarks (three boxes only)', formText);
+  await page.fill('#ai-rp-workCompleted', 'Built the login screen');
+  await page.fill('#ai-rp-pendingWork', 'Error messages');
+  await page.getByRole('button', { name: 'Submit Daily Report' }).click();
+  await page.waitForTimeout(300);
+  const sentAi = await page.evaluate(() => window.aiReports().pop());
+  check(sentAi && sentAi.workCompleted === 'Built the login screen' && sentAi.pendingWork === 'Error messages' && sentAi.submit === true && !sentAi.workInProgress && !sentAi.remarks,
+    'AI Studio report: it is submitted with the three parts', sentAi);
+  // an older report that has "Work In Progress" keeps showing it (and keeps it when edited)
+  await mount(page, 'ai-report-old');
+  await page.locator('form[aria-label="Daily report"]').waitFor();
+  check(await page.locator('#ai-rp-workInProgress').inputValue() === 'Old progress notes' && await page.locator('#ai-rp-remarks').count() === 0,
+    'AI Studio report: an older report shows its Work In Progress text (Remarks stays hidden when empty)');
+  await page.evaluate(() => window.reset());
+
   // phone width: the page itself does not scroll sideways (wide tables scroll inside their own box)
   await page.close();
   const phone = await newPage({ width: 375, height: 800 });

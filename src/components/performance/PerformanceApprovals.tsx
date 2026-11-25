@@ -304,7 +304,9 @@ const DepartmentView: React.FC<{ d: DepartmentPerformanceOverview; onChanged: ()
       <KpiCard label="Records to approve" value={d.pendingRecords} tone={d.pendingRecords ? 'amber' : 'neutral'} testId="pf-dept-pending" description="Team Lead performance records pending" />
     </div>
     <Card label="Teams and Team Leads">
-      <CardHead title={`${d.department.name}: Team Leads and teams`} hint={d.leadDecidesMembers
+      <CardHead title={`${d.department.name}: Team Leads and teams`} hint={d.role === 'SUPER_ADMIN'
+        ? 'Compare the teams. Open a Team Lead to read their figures, each approval and every member (read only: the Team Leads and the Department Head decide).'
+        : d.leadDecidesMembers
         ? 'Compare the teams. Open a Team Lead to read their figures, approve (with a rating) or return their performance, and see each member with the Team Lead\'s decision (read only: the Team Lead evaluates members).'
         : 'Compare the teams. Open a Team Lead to read their figures, approve or return their performance and see every member.'} />
       {d.leads.length === 0 ? <p className="px-5 pb-5 text-sm text-slate-500">No active Team Lead has people or tasks in this department yet.</p> : (
@@ -337,7 +339,7 @@ const DepartmentView: React.FC<{ d: DepartmentPerformanceOverview; onChanged: ()
  *   Department Head: every Team Lead and team of the department, compared, with approval of each Team Lead's performance.
  * The figures come from the task records and the approved daily reports of the chosen period; nothing is typed in.
  */
-export const PerformanceApprovals: React.FC<{ departmentId?: string; title?: string; subtitle?: string }> = ({ departmentId, title = 'Performance', subtitle }) => {
+export const PerformanceApprovals: React.FC<{ departmentId?: string; title?: string; subtitle?: string; /** another filter next to the period (the Super Admin's department) */ filter?: React.ReactNode }> = ({ departmentId, title = 'Performance', subtitle, filter }) => {
   const [period, setPeriod] = useState<PeriodChoice>(defaultPeriod);
   const [data, setData] = useState<PerformanceOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -359,6 +361,7 @@ export const PerformanceApprovals: React.FC<{ departmentId?: string; title?: str
       <PageTitle title={title} subtitle={subtitle ?? 'Calculated from real task records and approved daily reports. Approval: Team Member → Team Lead → Department Head.'} />
       <Card label="Reporting period" className="p-5">
         <div className="flex flex-wrap items-end gap-4">
+          {filter}
           <div>
             <div className="text-xs font-semibold text-slate-500 mb-1.5">Period</div>
             <Tabs label="Performance period" value={period.kind} onChange={k => setPeriod(p => ({ ...p, kind: k }))} options={[{ id: 'WEEK', label: 'Weekly' }, { id: 'MONTH', label: 'Monthly' }, { id: 'CUSTOM', label: 'Custom range' }]} />

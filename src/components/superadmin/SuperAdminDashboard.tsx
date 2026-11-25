@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { Activity, AtSign, BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
+import { Activity, AtSign, BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, LineChart, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -23,12 +23,13 @@ import { CrocodialTeamPanel } from '../crocodial/CrocodialTeamPanel';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
+const SuperAdminPerformance = lazy(() => import('./performance/SuperAdminPerformance'));
 const NotificationHealth = lazy(() => import('../notifications/NotificationHealth'));
 const EmailManagement = lazy(() => import('../email/EmailManagement'));
 const WalletAdmin = lazy(() => import('../wallet/WalletAdmin'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email'] as const;
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email'] as const;
 type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
@@ -38,6 +39,7 @@ type Page = (typeof SUPER_ADMIN_PAGES)[number];
  *   Business Reports    the existing company business report
  *   Team Members        Team Member Management in full screen: Add Team Member, Team Members (the directory), Access Control
  *   Sales Incentives    create, edit, stop and delete the incentive rules sales staff earn from (20270121000100)
+ *   Performance Mgmt.   each department's Team Leads and members, figures and approvals (read only)
  *   Security & Audit    who did what, and what was refused (read-only)
  * Opening a department still uses the existing department panels; their "home" button brings the Super Admin back here.
  */
@@ -67,6 +69,8 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'incentives', label: 'Sales Incentives', icon: SlidersHorizontal },
           // wallet credits (bonus, adjustment, refund) and the wallet report (20270207000100); the Super Admin has no wallet of their own
           { id: 'wallet-admin', label: 'Wallet', icon: Wallet },
+          // each department's Team Leads and members, their figures and approvals (read only: the Team Leads and the Department Heads decide)
+          { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'report-performance', label: 'Reports & Performance', icon: FileBarChart },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
@@ -115,7 +119,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Managing Director', role: 'Managing Director' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'team' || page === 'notification-health' || page === 'email'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'performance' || page === 'team' || page === 'notification-health' || page === 'email'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -148,6 +152,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'wallet-admin' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><WalletAdmin /></Suspense>}
       {page === 'top-performers' && <TopPerformersPage mode="COMPANY" />}
       {page === 'report-performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><ReportPerformance /></Suspense>}
+      {page === 'performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><SuperAdminPerformance /></Suspense>}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
