@@ -164,6 +164,19 @@ try {
   check((await stub(page)) === 'UnifiedOverview', 'a Team Lead who types the address of Department Leads gets the Overview');
   await page.evaluate(() => window.signOut());
 
+  // ======================================================================== Performance Management is in sight on a laptop screen (1366 x 768)
+  for (const who of ['lead', 'head']) {
+    const lp = await newPage('/', { width: 1366, height: 768 });
+    await open(lp, who, 'International');
+    const box = await item(lp, 'Performance Management').first().boundingBox();
+    check(box && box.y >= 0 && box.y + box.height <= 768, `${who}: Performance Management is visible without scrolling the sidebar on a 1366 x 768 screen`, box);
+    const order = (await lp.locator('nav').first().innerText()).toLowerCase();
+    check(order.indexOf('overview') < order.indexOf('performance management') && order.indexOf('performance management') < order.indexOf('add lead'),
+      `${who}: it comes right under the Overview, before the Sales pages`);
+    await lp.evaluate(() => window.signOut());
+    await lp.close();
+  }
+
   // ======================================================================== Department Head
   page = await newPage();
   await open(page, 'head', 'Reseller');
