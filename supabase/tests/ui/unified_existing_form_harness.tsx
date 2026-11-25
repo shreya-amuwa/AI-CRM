@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { StaffManagementPanel } from '../../../src/components/common/StaffManagementPanel';
 import { organizationApi } from '../../../src/lib/api/endpoints';
+import './withAppFeedback';
 
 /** The Super Admin's Add Team Member form for a department chosen at the top, like the department hub. `load()` reads the department list through the real organizationApi. */
 const Harness: React.FC = () => {

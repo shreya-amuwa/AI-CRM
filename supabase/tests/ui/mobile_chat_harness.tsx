@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useFillViewport } from '../../../src/lib/chat/useFillViewport';
+import './withAppFeedback';
 
 const Harness: React.FC<{ messages: number }> = ({ messages }) => {
   const [loaded, setLoaded] = useState(false);

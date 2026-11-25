@@ -43,6 +43,7 @@ w.mount = (page: string, props: any = {}) => {
 
 // the real Department Head dashboard (navigation and routing of the new pages); the signed-in person is window.__profile
 import { DepartmentHeadDashboard } from '../../../src/components/tasks/DepartmentHeadDashboard';
+import './withAppFeedback';
 w.mountDashboard = () => root().render(<DepartmentHeadDashboard />);
 // the Team Lead's lead form, exactly as the Team Lead's dashboard shows it (no owner choice)
 w.mountTlForm = () => root().render(<div className="p-4 max-w-6xl"><AddLeadView onCancel={() => undefined} onSaved={() => undefined} /></div>);

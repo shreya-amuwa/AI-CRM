@@ -18,6 +18,7 @@ import {
   fetchFromAnyWebhookUrl,
   WebhookFetchResult
 } from '../../../services/webhookFetcher';
+import { confirmAction } from '../../feedback/AppFeedback';
 
 interface WabastoreWebhookLiveBarProps {
   onLeadIngested?: () => void;
@@ -208,8 +209,12 @@ export const WabastoreWebhookLiveBar: React.FC<WabastoreWebhookLiveBarProps> = (
 
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Clear all displayed leads from this view? Real incoming webhooks will continue to appear live.')) {
+                onClick={async () => {
+                  if (await confirmAction({
+                    title: 'Clear the leads shown here?',
+                    description: 'They are only removed from this view. Real incoming webhooks keep appearing live.',
+                    confirmLabel: 'Clear view', cancelLabel: 'Keep them'
+                  })) {
                     clearLeadsForDepartment('wabastore');
                     if (onLeadIngested) onLeadIngested();
                   }

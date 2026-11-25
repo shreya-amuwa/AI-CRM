@@ -8,6 +8,7 @@
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import pg from 'pg';
+import { answerAppDialogs } from '../ui/appDialogs.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -318,7 +319,8 @@ await expect((await rawStatus(ba.id, 'POST', '/field-visits', { leadId: (await q
 
 // withdraw the assignment
 await sh.locator('tbody tr', { hasText: 'Rahul Lead One' }).first().getByTestId('assign-visit').click();
-sh.once('dialog', d => d.accept());
+// Withdraw asks in the CRM's own dialog (not the browser's confirm)
+await answerAppDialogs(sh);
 await sh.getByRole('button', { name: 'Withdraw assignment' }).click();
 await sh.getByText(/assignment of Rahul Lead One was withdrawn/).waitFor({ timeout: 15000 }).catch(() => fail('Withdraw: no confirmation'));
 await b1.reload();

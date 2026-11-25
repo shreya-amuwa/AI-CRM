@@ -5,6 +5,7 @@ import { EmployeeRequestsPanel } from '../../../src/components/employees/Employe
 import { DepartmentEmployeeDirectoryPanel } from '../../../src/components/employees/DepartmentEmployeeDirectory';
 import { OperationsDashboard } from '../../../src/components/operations/OperationsDashboard';
 import { OperationsHeadsAdminPanel } from '../../../src/components/employees/OperationsHeadsAdmin';
+import './withAppFeedback';
 
 const departments = [
   { id: 'alpha', dbId: 'd-alpha', name: 'Alpha' }, { id: 'beta', dbId: 'd-beta', name: 'Beta' }, { id: 'gamma', dbId: 'd-gamma', name: 'Gamma' }

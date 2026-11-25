@@ -18,6 +18,10 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Added
 
+* **In-app feedback instead of browser pop-ups** (docs/APP_FEEDBACK_SYSTEM.md): toasts, confirmation dialogs (with a destructive style,
+  a safe default button, an optional typed confirmation and in-dialog retry) and input dialogs for reasons. All 58 uses of the browser's
+  `alert()`, `confirm()` and `prompt()` in 40 files are replaced; a unit test (`no_native_dialogs`) fails if one comes back.
+
 - **Team attendance for the CEO and Department Heads** (Task 01, #290):
   - **Screen:** Attendance → Team, plus a summary card on their dashboards. Each employee gets one status from: Shift Not Started,
     Present, Late, Not Punched In, Absent, Approved Leave, Half Day, On Break, Shift Completed, Weekly Off, Holiday.

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Home } from 'lucide-react';
 import { DashboardShell } from '../../../src/components/layout/shell';
 import { openFromNotification } from '../../../src/components/issues/issueEvents';
+import './withAppFeedback';
 
 /**
  * The real dashboard shell (its menu adds Attendance, Meetings and the Notice Board to every dashboard) with the CRM API answered in the page

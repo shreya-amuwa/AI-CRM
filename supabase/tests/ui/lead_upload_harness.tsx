@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { LeadsView } from '../../../src/components/team-member/pipeline/LeadsView';
 import { LeadsPage } from '../../../src/components/telecaller/LeadsPage';
+import './withAppFeedback';
 
 /**
  * The real Lead sections (the shared Pipeline Leads list and the Telecaller Leads page) with the CRM API answered in the page, so the browser test

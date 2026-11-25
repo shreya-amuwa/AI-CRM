@@ -6,6 +6,7 @@ import {
   type Leaver, type PayoutDetail, type PayoutMethod, type PayoutRequest, type PayoutStatus
 } from '../../../lib/payouts';
 import { PageTitle } from '../../layout/shell';
+import { confirmAction } from '../../feedback/AppFeedback';
 
 /**
  * Accounts > Finance > Payout requests (20270123000100): sales staff's incentive withdrawals. Accounts sends the money from the company's
@@ -61,7 +62,12 @@ const PayForm: React.FC<{ amount: number; label: string; onPay: (reference: stri
   const net = Math.round((amount - t) * 100) / 100;
   const sendRazorpay = async () => {
     if (!razorpay || saving) return;
-    if (!window.confirm(`Send ${rupees(net)} to ${razorpay.destination} through Razorpay now?`)) return;
+    if (!(await confirmAction({
+      title: `Send ${rupees(net)} through Razorpay now?`,
+      description: 'The money is sent at once and cannot be called back from the CRM.',
+      details: [`To: ${razorpay.destination}`, `Amount: ${rupees(net)}`],
+      confirmLabel: `Send ${rupees(net)}`, cancelLabel: 'Not now'
+    }))) return;
     setSaving(true); setError(null);
     try { await razorpay.onSend(t); } catch (err) { setError(msg(err)); } finally { setSaving(false); }
   };

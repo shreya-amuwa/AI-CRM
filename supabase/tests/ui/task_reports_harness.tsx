@@ -5,6 +5,7 @@ import { PerformanceApprovals } from '../../../src/components/performance/Perfor
 import { ReportForm } from '../../../src/components/ai-studio/AiStudioReports';
 import { SuperAdminPerformance } from '../../../src/components/superadmin/performance/SuperAdminPerformance';
 import { DepartmentContext } from '../../../src/context/DepartmentContext';
+import './withAppFeedback';
 
 /**
  * The real task daily report screens and the real performance approval page, for each role. The CRM API is a small stateful fake in the page that

@@ -2,6 +2,7 @@
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { OfferLetterWorkspace } from '../../../src/components/hr/offers/OfferLetterWorkspace';
+import './withAppFeedback';
 
 const EMPLOYEES = [
   { id: 'HR-1', profileId: null, name: 'Ritika Offer', designation: 'Executive', status: 'Full-Time' },

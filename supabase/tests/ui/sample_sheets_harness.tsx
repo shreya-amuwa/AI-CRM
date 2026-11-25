@@ -6,6 +6,7 @@ import { writeXlsx } from '../../../src/lib/xlsxWriter';
 import { readXlsx } from '../../../src/lib/xlsxReader';
 import { parseContactSheet } from '../../../src/lib/telecallerSheet';
 import { contactSampleRows } from '../../../src/lib/sampleSheetDownload';
+import './withAppFeedback';
 
 const w = window as any;
 // Department Head: Telecaller Sheets (Excel only)

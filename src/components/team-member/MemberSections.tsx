@@ -17,6 +17,7 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
+import { showDetails } from '../feedback/AppFeedback';
 
 /** The member pages that are not the lead pipeline: one implementation, used by the Team Member dashboard and by the unified Business Associate dashboard. */
 export type MemberSection = 'home' | 'work-tasks' | 'tasks' | 'customers' | 'calendar' | 'invoices' | 'settings' | 'delivery' | 'notifications';
@@ -249,7 +250,10 @@ export const MemberSections: React.FC<Props> = ({ section, currentUserId, userNa
                 setActionModalType('message');
               }}
               onViewDetails={(task) => {
-                alert(`Follow-up Details:\n${task.leadName} (${task.company})\nTime: ${task.dateTimeStr}\nNotes: ${task.notes}`);
+                void showDetails({
+                  title: `Follow-up: ${task.leadName}`,
+                  details: [`Company: ${task.company || '—'}`, `Time: ${task.dateTimeStr}`, `Notes: ${task.notes || '—'}`]
+                });
               }}
               onToggleComplete={(taskId) => {
                 void run(() => teamMemberStore.toggleFollowUpStatus(taskId), 'Follow-up status updated');

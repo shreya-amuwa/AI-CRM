@@ -7,6 +7,7 @@ import { PageTitle } from '../layout/shell';
 import { InterviewDialog, InterviewResultDialog } from './Dialogs';
 import type { RecruiterGo } from './RecruiterDashboard';
 import { Empty, MODE_LABEL, RESULT_LABEL, ROUND_LABEL, fmtDateTime, useLoad } from './ui';
+import { confirmAction } from '../feedback/AppFeedback';
 
 type Tab = 'upcoming' | 'past';
 
@@ -56,7 +57,7 @@ export const Interviews: React.FC<{ ctx: RecruiterContext; go: RecruiterGo; onCh
                 {!i.confirmedAt && <button type="button" className={btn.secondary} disabled={busy === i.id} onClick={() => void simple(i, 'CONFIRM')}>Confirm</button>}
                 <button type="button" className={btn.secondary} onClick={() => setReschedule(i)}>Reschedule</button>
                 <button type="button" className={btn.primary} onClick={() => setResult(i)}>Complete</button>
-                <button type="button" className={btn.danger} disabled={busy === i.id} onClick={() => { if (window.confirm('Cancel this interview?')) void simple(i, 'CANCEL'); }}>Cancel</button>
+                <button type="button" className={btn.danger} disabled={busy === i.id} onClick={async () => { if (await confirmAction({ title: 'Cancel this interview?', description: 'The interview is cancelled for the candidate and the interviewers.', confirmLabel: 'Cancel interview', cancelLabel: 'Keep interview', variant: 'destructive' })) void simple(i, 'CANCEL'); }}>Cancel</button>
               </div>
             )}
           </Card></li>

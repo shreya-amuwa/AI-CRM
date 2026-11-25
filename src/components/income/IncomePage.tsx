@@ -6,6 +6,7 @@ import { EVENT_LABEL, ROLE_LABEL, incomeApi, rupees, units, type Earning, type I
 import { STATUS_LABEL, STATUS_TONE, methodLine, payoutsApi, type PayoutRequest } from '../../lib/payouts';
 import { WithdrawDialog } from './WithdrawDialog';
 import { PageTitle } from '../layout/shell';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * "My Income": the signed-in person's own incentive earnings (income_summary / income_earnings, 20270119000100). Shown in the side panel of
@@ -87,7 +88,7 @@ export const IncomePage: React.FC<{ title?: string }> = ({ title = 'My Income' }
     : available < 500 && available >= 0 ? 'You can withdraw once at least ₹500 is available.'
     : null;
   const cancel = async (id: string) => {
-    if (!window.confirm('Cancel this withdrawal?')) return;
+    if (!(await confirmAction({ title: 'Cancel this withdrawal request?', description: 'The amount goes back to your available balance.', confirmLabel: 'Cancel withdrawal', cancelLabel: 'Keep request', variant: 'destructive' }))) return;
     try { await payoutsApi.cancel(id); setNotice('Withdrawal cancelled.'); void load(); } catch (err) { setError(err instanceof Error ? err.message : 'It could not be cancelled.'); }
   };
   const slip = (id: string) => { payoutsApi.downloadSlip(id).catch(err => setError(err instanceof Error ? err.message : 'The slip could not be downloaded.')); };

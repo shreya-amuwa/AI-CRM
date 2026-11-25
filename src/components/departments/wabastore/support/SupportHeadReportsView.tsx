@@ -3,6 +3,7 @@ import {
   FileText, Download, Calendar, Filter, FileSpreadsheet,
   Printer, CheckCircle2, Sparkles, BarChart3, Search
 } from 'lucide-react';
+import { toast } from '../../../feedback/AppFeedback';
 
 export const SupportHeadReportsView: React.FC = () => {
   const [dateRange, setDateRange] = useState('This Month');
@@ -22,7 +23,7 @@ export const SupportHeadReportsView: React.FC = () => {
   ];
 
   const handleExport = (type: 'csv' | 'excel' | 'pdf') => {
-    alert(`Generating and downloading Support Operations ${type.toUpperCase()} Report for ${dateRange}...`);
+    toast.info(`The ${type.toUpperCase()} download of this report is not available yet.`);
   };
 
   return (

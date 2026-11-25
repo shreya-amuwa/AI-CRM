@@ -7,6 +7,7 @@ import { btn, Card, ErrorBanner, selectCls, Spinner } from '../team-member/pipel
 import { notifyReportsChanged } from './reportEvents';
 import { ReportRow } from './ReportRow';
 import { dateLabel, timeLabel } from './reportUi';
+import { confirmAction } from '../feedback/AppFeedback';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
@@ -35,7 +36,7 @@ export const MyReports: React.FC<{
   useEffect(load, [load, reloadKey]);
 
   const remove = async (id: string) => {
-    if (!window.confirm('Delete this draft? This cannot be undone.')) return;
+    if (!(await confirmAction({ title: 'Delete this report draft?', description: 'The draft is removed. This cannot be undone.', confirmLabel: 'Delete draft', cancelLabel: 'Keep draft', variant: 'destructive' }))) return;
     setBusyId(id);
     try { await workReportsApi.deleteDraft(id); notifyReportsChanged(); load(); } catch (e) { setError(errText(e)); } finally { setBusyId(null); }
   };

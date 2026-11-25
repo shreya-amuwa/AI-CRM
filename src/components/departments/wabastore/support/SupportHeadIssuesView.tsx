@@ -3,6 +3,7 @@ import {
   AlertCircle, ShieldAlert, CheckCircle2, Clock, Wrench, Bug,
   ChevronRight, ArrowUpRight, Search, Filter, Sparkles, Building2
 } from 'lucide-react';
+import { toast } from '../../../feedback/AppFeedback';
 
 interface IssueCategory {
   id: string;
@@ -197,7 +198,7 @@ export const SupportHeadIssuesView: React.FC = () => {
             <div className="pt-2 flex justify-end gap-2">
               <button
                 onClick={() => {
-                  alert(`Paging engineering tier-3 deployment on ${selectedIssue.id}`);
+                  toast.info(`Paging engineering is not connected yet: contact the engineering lead about ${selectedIssue.id} directly.`);
                   setSelectedIssue(null);
                 }}
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold"

@@ -5,6 +5,7 @@ import {
   type GivenRow, type IncentiveEvent, type IncentiveOptions, type IncentiveScope, type IncentiveSetupData, type RuleInput, type SetupRule
 } from '../../lib/income';
 import { PageTitle } from '../layout/shell';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * Incentive setup (20270119000100, 20270121000100; docs/SALES_INCENTIVES.md).
@@ -179,10 +180,12 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
   const rules = data.rules.filter(r => showEnded || current(r));
   const saved = (text: string) => { setEditing(null); setNote({ tone: 'ok', text }); reload(); };
   const act = async (r: SetupRule, kind: 'end' | 'delete') => {
-    const question = kind === 'end'
-      ? `Stop "${r.name}" now? Nothing more is earned from it; past earnings stay.`
-      : r.earnedCount ? `"${r.name}" has earnings, so it will be stopped instead of deleted (earned money is never erased). Continue?` : `Delete "${r.name}"? Nobody has earned from it yet.`;
-    if (!window.confirm(question)) return;
+    const ok = await confirmAction(kind === 'end'
+      ? { title: `Stop "${r.name}" now?`, description: 'Nothing more is earned from it. Past earnings stay.', confirmLabel: 'Stop rule', cancelLabel: 'Keep running', variant: 'destructive' }
+      : r.earnedCount
+        ? { title: `Stop "${r.name}" instead of deleting it?`, description: 'It has earnings, so it is stopped rather than deleted: earned money is never erased.', confirmLabel: 'Stop rule', cancelLabel: 'Keep running', variant: 'destructive' }
+        : { title: `Delete "${r.name}"?`, description: 'Nobody has earned from it yet.', confirmLabel: 'Delete rule', cancelLabel: 'Keep rule', variant: 'destructive' });
+    if (!ok) return;
     setBusy(r.id); setNote(null);
     try {
       if (kind === 'end') { await incomeApi.endRule(r.id); setNote({ tone: 'ok', text: `"${r.name}" stopped.` }); }

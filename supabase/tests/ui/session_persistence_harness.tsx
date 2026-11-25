@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { useRememberedPage } from '../../../src/hooks/useRememberedPage';
 import { useRememberedOverlay } from '../../../src/hooks/useRememberedOverlay';
 import { forgetRememberedPages } from '../../../src/lib/rememberedPage';
+import './withAppFeedback';
 
 // a dashboard with a menu, the way every dashboard uses the hook; Attendance / Meeting Request / Bugs are overlays on top of it, as in the
 // real shell (choosing one of the dashboard's own pages hands the content area back)

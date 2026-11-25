@@ -24,6 +24,7 @@ import {
   when,
 } from '../../candidate/parts';
 import type { z } from 'zod';
+import { confirmAction } from '../feedback/AppFeedback';
 const root = '/hr/recruitment/careers';
 function validated<T>(schema: z.ZodType<T>, body: unknown): T {
   const p = schema.safeParse(body);
@@ -141,11 +142,13 @@ export const CareerJoining: React.FC<{
             <button
               className={button}
               disabled={busy}
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  window.confirm(
-                    'Approve and release these exact offer terms to the candidate?',
-                  )
+                  await confirmAction({
+                    title: 'Release this offer to the candidate?',
+                    description: 'The candidate will see these exact offer terms and can accept them.',
+                    confirmLabel: 'Approve & release',
+                  })
                 )
                   void run(() =>
                     api.post(`${root}/offers`, {
@@ -164,8 +167,12 @@ export const CareerJoining: React.FC<{
             <button
               className={`${secondary} ml-2`}
               disabled={busy}
-              onClick={() => {
-                if (window.confirm('Withdraw this offer?'))
+              onClick={async () => {
+                if (await confirmAction({
+                  title: 'Withdraw this offer?',
+                  description: 'The candidate can no longer accept it. A new offer can be drafted later.',
+                  confirmLabel: 'Withdraw offer', cancelLabel: 'Keep offer', variant: 'destructive',
+                }))
                   void run(() =>
                     api.post(`${root}/offers`, {
                       application_id: a.id,
@@ -387,11 +394,13 @@ export const CareerJoining: React.FC<{
           <button
             className={button}
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
               if (
-                window.confirm(
-                  'Approve final placement? This does not activate a staff login.',
-                )
+                await confirmAction({
+                  title: 'Approve final placement?',
+                  description: 'The candidate is marked as placed. This does not activate a staff login.',
+                  confirmLabel: 'Approve placement',
+                })
               )
                 void run(() =>
                   api.post(`${root}/training`, {

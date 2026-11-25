@@ -6,6 +6,7 @@ import { recruiterApi } from '../../lib/api/recruiter';
 import { btn, Card, ErrorBanner, Spinner, inputCls } from '../team-member/pipeline/shared';
 import { CallDialog, CorrectionDialog, DecisionDialog, HoldDialog, InterviewDialog, InterviewResultDialog, InviteDialog } from './Dialogs';
 import { CALL_OUTCOME_LABEL, CATEGORY_LABEL, Empty, MODE_LABEL, RESULT_LABEL, ROUND_LABEL, STAGE_LABEL, STEP_LABEL, StagePill, fmtDate, fmtDateTime, useLoad } from './ui';
+import { confirmAction } from '../feedback/AppFeedback';
 
 type Tab = 'details' | 'resume' | 'history' | 'calls' | 'assessment' | 'interviews' | 'notes';
 const TABS: { id: Tab; label: string }[] = [
@@ -167,7 +168,7 @@ export const CandidateProfile: React.FC<{ id: string; ctx: RecruiterContext; onB
                     {!i.confirmedAt && <button type="button" className={btn.secondary} disabled={busy} onClick={() => void act(() => recruiterApi.saveInterview(id, { action: 'CONFIRM', id: i.id, version: i.version }))}>Confirm</button>}
                     <button type="button" className={btn.secondary} onClick={() => { setReschedule(i); setDialog('interview'); }}>Reschedule</button>
                     <button type="button" className={btn.secondary} onClick={() => setResultFor(i)}>Complete</button>
-                    <button type="button" className={btn.danger} disabled={busy} onClick={() => { if (window.confirm('Cancel this interview?')) void act(() => recruiterApi.saveInterview(id, { action: 'CANCEL', id: i.id, version: i.version })); }}>Cancel</button>
+                    <button type="button" className={btn.danger} disabled={busy} onClick={async () => { if (await confirmAction({ title: 'Cancel this interview?', description: 'The interview is cancelled for the candidate and the interviewers.', confirmLabel: 'Cancel interview', cancelLabel: 'Keep interview', variant: 'destructive' })) void act(() => recruiterApi.saveInterview(id, { action: 'CANCEL', id: i.id, version: i.version })); }}>Cancel</button>
                   </div>
                 )}
               </li>))}</ul>}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { AccessControlTab } from '../../../src/components/scope/AccessControlTab';
+import './withAppFeedback';
 
 const Harness: React.FC = () => {
   const [saves, setSaves] = React.useState(0);

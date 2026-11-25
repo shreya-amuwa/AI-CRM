@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorBoundary } from '../../../src/components/common/ErrorBoundary';
 import { installChunkReload } from '../../../src/lib/chunkReload';
+import './withAppFeedback';
 
 installChunkReload();
 const w = window as any;

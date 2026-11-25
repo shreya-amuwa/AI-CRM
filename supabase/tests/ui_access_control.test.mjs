@@ -110,10 +110,14 @@ const open = async (vp) => {
   check(!(await page.isChecked('[data-testid="cell-wabastar-support"]')) && await page.isChecked('[data-testid="cell-wabatalk-support"]'), 'Cancel puts the saved state back');
   // an unsaved change guards switching employee
   await page.check('[data-testid="cell-wabastar-support"]');
-  let dialogs = 0;
-  page.once('dialog', d => { dialogs++; d.dismiss(); });
+  // asked in the CRM's own dialog (not the browser's confirm); declining keeps the employee and the changes
   await page.selectOption('[data-testid="access-employee"]', 'h2');
-  check(dialogs === 1 && (await page.inputValue('[data-testid="access-employee"]')) === 'h1', 'switching employee with unsaved changes asks first, and stays when declined');
+  const ask = page.getByRole('alertdialog', { name: 'Switch employee without saving?' });
+  await ask.waitFor();
+  await ask.getByRole('button', { name: 'Stay and save' }).click();
+  await ask.waitFor({ state: 'detached' });
+  check((await page.inputValue('[data-testid="access-employee"]')) === 'h1' && await page.isChecked('[data-testid="cell-wabastar-support"]'),
+    'switching employee with unsaved changes asks first, and stays (with the changes) when declined');
   // a refused save shows the reason and keeps the changes
   await page.check('[data-testid="cell-wabastore-support"]');
   await page.evaluate(() => { window.__failNext = true; });

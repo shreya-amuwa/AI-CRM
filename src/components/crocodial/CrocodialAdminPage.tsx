@@ -5,6 +5,7 @@ import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, Cro
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi, usersApi } from '../../lib/api/endpoints';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
+import { confirmAction, promptInput } from '../feedback/AppFeedback';
 
 /**
  * Super Admin > Crocodial Integration. The read-only connector to Crocodial (a calling CRM), switched on step by step:
@@ -202,7 +203,11 @@ const CountFrom: React.FC<{ mapping: CrocodialMapping; disabled: boolean; onSet:
     <span className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600" data-testid="croc-count-from">
       <span>Counting activity from <b>{mapping.effectiveFrom ? new Date(mapping.effectiveFrom).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '—'}</b>.</span>
       <button type="button" className="font-semibold text-indigo-700 hover:underline disabled:opacity-50" disabled={disabled}
-        onClick={() => { if (window.confirm(`Count all of Crocodial user “${mapping.externalName}”'s stored activity (from their first record) for ${mapping.profileName}? Only do this if nobody else used this Crocodial login.`)) onSet(null); }}>
+        onClick={async () => { if (await confirmAction({
+          title: `Count all past activity for ${mapping.profileName}?`,
+          description: `All stored activity of Crocodial user “${mapping.externalName}” (from their first record) is counted as ${mapping.profileName}'s. Only do this if nobody else used this Crocodial login.`,
+          confirmLabel: 'Count all past activity'
+        })) onSet(null); }}>
         Count all past activity
       </button>
       <span aria-hidden>·</span>
@@ -210,7 +215,7 @@ const CountFrom: React.FC<{ mapping: CrocodialMapping; disabled: boolean; onSet:
         <input type="date" className="border border-slate-200 rounded-md px-1.5 py-0.5 text-xs" value={day} max={today} onChange={e => setDay(e.target.value)} aria-label={`Count ${mapping.profileName}'s activity from`} />
       </label>
       <button type="button" className="font-semibold text-indigo-700 hover:underline disabled:opacity-50" disabled={disabled || !day}
-        onClick={() => { if (window.confirm(`Count ${mapping.profileName}'s Crocodial activity from ${day}?`)) onSet(day); }}>
+        onClick={async () => { if (await confirmAction({ title: `Count ${mapping.profileName}'s activity from ${day}?`, description: 'Crocodial activity from the start of that day is counted as theirs.', confirmLabel: 'Use this date' })) onSet(day); }}>
         Use this date
       </button>
     </span>
@@ -270,7 +275,7 @@ export const CrocodialAdminPage: React.FC = () => {
               <span className="flex items-center gap-2">
                 <Pill tone={r.allowed ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}>{r.allowed ? 'Allowed' : 'Paused'}</Pill>
                 <button type="button" className={r.allowed ? btn.danger : btn.secondary} disabled={busy !== null}
-                  onClick={() => { if (!r.allowed || window.confirm(`Pause Crocodial for ${r.departmentName} Sales? Its link is switched off and nobody's data is shown.`)) void run(`ro-${r.departmentId}`, () => crocodialApi.setRollout({ departmentId: r.departmentId, division: 'SALES', allowed: !r.allowed })); }}>
+                  onClick={async () => { if (!r.allowed || await confirmAction({ title: `Pause Crocodial for ${r.departmentName} Sales?`, description: "Its link is switched off and nobody's Crocodial data is shown or synced. Nothing is deleted; you can allow it again.", confirmLabel: 'Pause Crocodial', cancelLabel: 'Keep running', variant: 'destructive' })) void run(`ro-${r.departmentId}`, () => crocodialApi.setRollout({ departmentId: r.departmentId, division: 'SALES', allowed: !r.allowed })); }}>
                   {r.allowed ? 'Pause' : 'Allow again'}
                 </button>
               </span>
@@ -349,9 +354,9 @@ export const CrocodialAdminPage: React.FC = () => {
                     </span>
                     <span className="flex gap-2">
                       {m.status === 'PENDING' ? <button type="button" className={btn.green} disabled={busy !== null}
-                        onClick={() => { if (window.confirm(`Approve: ${m.profileName} is Crocodial user “${m.externalName}” (id ${m.externalEmployeeId})?`)) void run(`a-${m.id}`, () => crocodialApi.approveMapping(m.id), `${m.profileName} approved.`); }}>Approve</button> : null}
+                        onClick={async () => { if (await confirmAction({ title: `Approve this Crocodial mapping?`, description: `${m.profileName}'s Crocodial activity will come from this Crocodial user. Confirm in Crocodial that it really is them.`, details: [`CRM employee: ${m.profileName}`, `Crocodial user: ${m.externalName} (id ${m.externalEmployeeId})`], confirmLabel: 'Approve mapping' })) void run(`a-${m.id}`, () => crocodialApi.approveMapping(m.id), `${m.profileName} approved.`); }}>Approve</button> : null}
                       <button type="button" className={btn.danger} disabled={busy !== null}
-                        onClick={() => { const reason = window.prompt(`End ${m.profileName}'s mapping? Activity before now stays theirs. Reason (optional):`); if (reason !== null) void run(`r-${m.id}`, () => crocodialApi.revokeMapping(m.id, reason), 'Mapping ended.'); }}>
+                        onClick={async () => { const reason = await promptInput({ title: m.status === 'PENDING' ? `Withdraw ${m.profileName}'s proposed mapping?` : `End ${m.profileName}'s Crocodial mapping?`, description: 'Activity before now stays theirs. Nothing new is counted for them after this.', label: 'Reason', multiline: true, maxLength: 500, confirmLabel: m.status === 'PENDING' ? 'Withdraw mapping' : 'End mapping', cancelLabel: 'Keep mapping', variant: 'destructive' }); if (reason !== null) void run(`r-${m.id}`, () => crocodialApi.revokeMapping(m.id, reason), 'Mapping ended.'); }}>
                         {m.status === 'PENDING' ? 'Withdraw' : 'Revoke'}
                       </button>
                     </span>

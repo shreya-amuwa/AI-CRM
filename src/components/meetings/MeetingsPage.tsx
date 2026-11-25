@@ -16,6 +16,7 @@ import { AvailabilityPill, MyAvailabilityPanel, useCeoPresence, usePresenceOf } 
 import { CeoArrivalBanner, CeoArrivalChip, CeoNotArrivedPopup, useCeoOffice } from './CeoArrival';
 import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
 import { relabelRoles } from '../../../shared/roleNames';
+import { confirmAction, promptInput } from '../feedback/AppFeedback';
 
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
@@ -566,16 +567,21 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
                 </>}
                 {m.canManage && ['REQUESTED', 'PROPOSED', 'SCHEDULED'].includes(m.status) && <>
                   <button type="button" disabled={busy} className={btnGhost} onClick={() => openWhen('reschedule')}><Clock3 className="w-4 h-4" /> Reschedule</button>
-                  <button type="button" disabled={busy} className={`${btnGhost} text-rose-700`} onClick={() => {
-                    const reason = window.prompt(m.kind === 'CEO_MEETING' ? 'Why is it cancelled? (required, the employee will see it)' : 'Why is it cancelled? (optional, shared with everyone invited)');
+                  <button type="button" disabled={busy} className={`${btnGhost} text-rose-700`} onClick={async () => {
+                    const reason = await promptInput({
+                      title: `Cancel "${m.title}"?`,
+                      description: m.kind === 'CEO_MEETING' ? 'The employee who asked for this meeting will see the reason.' : 'Everyone invited is told, with the reason if you give one.',
+                      label: 'Reason for cancelling', required: m.kind === 'CEO_MEETING', multiline: true, maxLength: 500,
+                      confirmLabel: 'Cancel meeting', cancelLabel: 'Keep meeting', variant: 'destructive'
+                    });
                     if (reason === null) return;
                     if (m.kind === 'CEO_MEETING' && reason.trim().length < 3) { setError('Give the reason for cancelling. The employee will see it.'); return; }
                     run(() => meetingsApi.cancel(m.id, reason || undefined, m.version), 'Meeting cancelled. Everyone is told.');
                   }}><Trash2 className="w-4 h-4" /> Cancel</button>
                 </>}
                 {m.canWithdraw && (
-                  <button type="button" disabled={busy} className={`${btnGhost} text-rose-700`} onClick={() => {
-                    if (window.confirm('Withdraw this request?')) run(() => meetingsApi.cancel(m.id, undefined, m.version), 'Request withdrawn.');
+                  <button type="button" disabled={busy} className={`${btnGhost} text-rose-700`} onClick={async () => {
+                    if (await confirmAction({ title: 'Withdraw this meeting request?', description: `"${m.title}" is withdrawn and the host is told.`, confirmLabel: 'Withdraw request', cancelLabel: 'Keep request', variant: 'destructive' })) run(() => meetingsApi.cancel(m.id, undefined, m.version), 'Request withdrawn.');
                   }}><Trash2 className="w-4 h-4" /> Withdraw request</button>
                 )}
                 {m.canRequestChange && (
@@ -848,7 +854,11 @@ const SettingsTab: React.FC<{ google: GoogleCalendarStatus | null; onGoogleChang
     }
   };
   const disconnect = async () => {
-    if (!window.confirm('Disconnect Google Calendar? New meetings will no longer be added to it. Meetings already there stay.')) return;
+    if (!(await confirmAction({
+      title: 'Disconnect Google Calendar?',
+      description: 'New meetings will no longer be added to it. Meetings already in your calendar stay there.',
+      confirmLabel: 'Disconnect', cancelLabel: 'Stay connected', variant: 'destructive'
+    }))) return;
     setBusy(true);
     try {
       onGoogleChange(await meetingsApi.googleDisconnect());

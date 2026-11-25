@@ -3,6 +3,7 @@ import { CalendarCheck2, CalendarDays, Check, Clock3, Loader2, MapPin, Phone, Vi
 import type { PublicBookingPage, PublicBookingResult, PublicBookingView } from '../../../shared/contracts';
 import { publicBookingApi } from '../../lib/api/meetings';
 import { AmuwaLogo } from '../common/AmuwaLogo';
+import { promptInput } from '../feedback/AppFeedback';
 
 /**
  * The public booking pages (no login):
@@ -245,8 +246,12 @@ const ManagePage: React.FC<{ token: string }> = ({ token }) => {
             </div>
           )}
           {['REQUESTED', 'PROPOSED', 'SCHEDULED'].includes(b.status) && (
-            <button type="button" disabled={busy} className={btnGhost} onClick={() => {
-              const reason = window.prompt('Cancel this booking? You may give a reason (optional):');
+            <button type="button" disabled={busy} className={btnGhost} onClick={async () => {
+              const reason = await promptInput({
+                title: 'Cancel this booking?', description: 'The host is told that you cancelled.',
+                label: 'Reason', placeholder: 'For example: the time no longer suits me', multiline: true, maxLength: 500,
+                confirmLabel: 'Cancel booking', cancelLabel: 'Keep booking', variant: 'destructive'
+              });
               if (reason !== null) act(() => publicBookingApi.cancel(token, reason || undefined), 'Your booking is cancelled.');
             }}>Cancel this booking</button>
           )}

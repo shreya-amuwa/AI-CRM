@@ -4,6 +4,7 @@ import { AddLeadView } from '../../../src/components/team-member/pipeline/LeadFo
 import { VisitTrackingPanel } from '../../../src/components/field-visit/VisitTrackingPanel';
 import { ActiveFieldVisits } from '../../../src/components/field-visit/ActiveFieldVisits';
 import type { LeadVisit } from '../../../shared/contracts';
+import './withAppFeedback';
 
 /**
  * The real Field Visit screens with the CRM API answered in the page (fetch is replaced; every request is recorded in window.__calls),

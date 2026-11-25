@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { TraineeProgress } from '../../../types/training';
 import { INITIAL_TRAINEES } from '../../../data/trainingInitialData';
+import { toast } from '../../feedback/AppFeedback';
 
 interface AmuwaTrainingPanelProps {
   onConvertTraineeToEmployee?: (employeeId: string) => void;
@@ -69,7 +70,7 @@ export const AmuwaTrainingPanel: React.FC<AmuwaTrainingPanelProps> = ({ onConver
     const updated = { ...t, status: 'Converted' as const };
     setTrainees(prev => prev.map(item => item.id === t.id ? updated : item));
     setSelectedTrainee(updated);
-    alert(`Success: ${t.traineeName} has completed 3-Day Training & is now confirmed as a Full-Time Employee synced with HR Roster!`);
+    toast.success(`${t.traineeName} completed the 3-day training and is now a full-time employee on the HR roster.`);
   };
 
   // Save Trainer Evaluation & Feedback
@@ -85,7 +86,7 @@ export const AmuwaTrainingPanel: React.FC<AmuwaTrainingPanelProps> = ({ onConver
 
     setTrainees(prev => prev.map(t => t.id === updated.id ? updated : t));
     setSelectedTrainee(updated);
-    alert(`Evaluation saved for ${updated.traineeName}!`);
+    toast.success(`Evaluation saved for ${updated.traineeName}.`);
   };
 
   // Enroll New Candidate Submit (3-Day Duration)
@@ -576,7 +577,7 @@ export const AmuwaTrainingPanel: React.FC<AmuwaTrainingPanelProps> = ({ onConver
                   type="button"
                   onClick={() => {
                     setShowEditFormModal(false);
-                    alert('Google Form Quiz link updated successfully!');
+                    toast.success('Google Form quiz link updated.');
                   }}
                   className="w-1/2 py-2 rounded-xl bg-purple-600 text-white font-mono font-bold text-xs shadow-sm"
                 >
