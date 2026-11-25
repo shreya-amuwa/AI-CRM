@@ -67,6 +67,7 @@ export const StaffSetPassword: React.FC = () => {
           </>
         )}
         {state === 'ready' && (
+          <>
           <form onSubmit={submit} noValidate className="space-y-4" aria-label="Set your password">
             <div>
               <h1 className="text-2xl font-bold text-slate-900">{reset ? 'Choose a new password' : 'Welcome! Set your password'}</h1>
@@ -94,6 +95,10 @@ export const StaffSetPassword: React.FC = () => {
             </label>
             <button type="submit" disabled={busy} className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60">{busy ? 'Saving...' : 'Save password and continue'}</button>
           </form>
+          <button type="button" onClick={() => setState('expired')} data-testid="link-expired" className="text-xs font-semibold text-blue-700 underline">
+            Link expired? Send me a new one
+          </button>
+          </>
         )}
         {state === 'done' && (
           <>

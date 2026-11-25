@@ -130,8 +130,8 @@ export class CustomerImportService {
 
   /**
    * The team (the relationship manager, Accounts) sends the "Set your password" e-mail again, e.g. the client did not set a password
-   * within the link's 24 hours. The database checks who may and the limits (one every 2 minutes and 5 a day per customer, 30 a day per
-   * sender: 20270212000100) and records the send before the link is made.
+   * within the link's 24 hours. The database checks who may and the limits first (one every 2 minutes and 5 a day per customer, 100 a
+   * day per sender: 20270212000100), and records the send once the e-mail was accepted.
    */
   async sendPasswordEmail(actor: Actor, id: string, origin?: string): Promise<{ email: string; sent: boolean; detail?: string }> {
     const customerId = parse(uuidSchema, id);
@@ -139,6 +139,8 @@ export class CustomerImportService {
     const t = unwrap(await this.db.rpc('client_password_link_begin', { p_customer: customerId })) as { email: string; name: string; businessName: string };
     const link = await this.authAdmin.passwordLink(t.email, setPasswordUrl(origin));
     const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({ name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'WELCOME' }), customerId);
+    // only a link that went out counts towards the limits (a test-mode or failed e-mail uses nothing up)
+    if (r.sent) unwrap(await this.db.rpc('client_password_link_sent', { p_customer: customerId }));
     // a password link was made for a client's login: who asked, for which customer (the address and the link are not recorded)
     const info = requestInfo.getStore();
     await recordSecurityEvent({

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Send } from 'lucide-react';
-import { api } from '../../lib/api/client';
+import { ApiError, api } from '../../lib/api/client';
 
 /**
  * "Client login" on the customer's page (the relationship manager, their Team Lead and Accounts; 20270212000100): whether the client has
@@ -16,13 +16,17 @@ const when = (iso?: string | null) => iso ? new Date(iso).toLocaleString('en-IN'
 export const ClientLoginCard: React.FC<{ customerId: string }> = ({ customerId }) => {
   const [status, setStatus] = useState<Status | null>(null);
   const [hidden, setHidden] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(() => {
-    api.get<Status>(`/customers/${customerId}/client-login`).then(setStatus, () => setHidden(true));
+    api.get<Status>(`/customers/${customerId}/client-login`).then(
+      st => { setStatus(st); setLoadError(false); },
+      // not this person's customer to manage: no card; anything else (network, server): say so and offer a retry
+      e => { if (e instanceof ApiError && (e.status === 404 || e.status === 403)) setHidden(true); else setLoadError(true); });
   }, [customerId]);
-  useEffect(() => { setStatus(null); setHidden(false); setNote(null); load(); }, [load]);
+  useEffect(() => { setStatus(null); setHidden(false); setLoadError(false); setNote(null); load(); }, [load]);
 
   if (hidden) return null; // not this person's customer to manage
   const send = async () => {
@@ -41,7 +45,9 @@ export const ClientLoginCard: React.FC<{ customerId: string }> = ({ customerId }
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" data-testid="client-login-card">
       <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><KeyRound className="w-4 h-4 text-slate-500" aria-hidden="true" /> Client login</h2>
-      {!status ? <p role="status" className="text-xs text-slate-500">Loading…</p>
+      {!status && loadError ? (
+        <p role="alert" className="text-xs text-rose-700">Could not load the client login. <button type="button" className="underline font-semibold" onClick={load}>Try again</button></p>
+      ) : !status ? <p role="status" className="text-xs text-slate-500">Loading…</p>
         : !status.hasLogin ? <p className="text-xs text-slate-600">No client login yet. Accounts creates it once the payment is verified.</p>
         : (
           <>
@@ -50,7 +56,7 @@ export const ClientLoginCard: React.FC<{ customerId: string }> = ({ customerId }
               <div><dt className="text-slate-400">Password</dt>
                 <dd className={`font-semibold mt-0.5 ${status.passwordSet ? 'text-emerald-700' : 'text-amber-700'}`} data-testid="client-password-state">
                   {status.passwordSet ? `Set${status.passwordSetAt ? ` (${when(status.passwordSetAt)})` : ''}` : 'Not set yet'}</dd></div>
-              <div><dt className="text-slate-400">Last link</dt>
+              <div><dt className="text-slate-400">Last link from the team</dt>
                 <dd className="font-semibold text-slate-800 mt-0.5">{status.lastLinkSentAt ? when(status.lastLinkSentAt) : 'None in the last 24 hours'}</dd></div>
               <div><dt className="text-slate-400">Works until</dt>
                 <dd className={`font-semibold mt-0.5 ${expired ? 'text-rose-700' : 'text-slate-800'}`}>{status.linkExpiresAt ? `${when(status.linkExpiresAt)}${expired ? ' (expired)' : ''}` : '-'}</dd></div>

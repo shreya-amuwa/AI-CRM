@@ -233,6 +233,11 @@ ts.close();
   check(crmTurnstileConfig({ ...base, TURNSTILE_CRM_MODE: 'log', TURNSTILE_CRM_HOSTNAMES: 'a.example, b.example' } as any).hostnames.join() === 'a.example,b.example' &&
     crmTurnstileConfig({ ...base, TURNSTILE_CRM_MODE: 'log' } as any).mode === 'log', 'log mode, and other addresses when set');
   check(crmTurnstileConfig({ TURNSTILE_CRM_MODE: 'enforce' } as any).mode === 'off', 'without the secret key it stays off');
+  check(crmTurnstileConfig({ TURNSTILE_CRM_MODE: 'enforce', TURNSTILE_CRM_SECRET_KEY: 'crm-secret' } as any).secret === 'crm-secret'
+    && crmTurnstileConfig({ ...base, TURNSTILE_CRM_MODE: 'enforce', TURNSTILE_CRM_SECRET_KEY: 'crm-secret' } as any).secret === 'crm-secret', 'a CRM-only widget uses its own secret key');
+  check(crmTurnstileConfig({ TURNSTILE_SECRET_KEY: 's', TURNSTILE_CRM_MODE: 'enforce' } as any).hostnames.join() === 'crm.amuwacorporation.com'
+    && crmTurnstileConfig({ ...base, APP_URL: 'https://crm.example.test:8443/', TURNSTILE_CRM_MODE: 'enforce' } as any).hostnames.join() === 'crm.example.test',
+    'without APP_URL the production host name; never a port; never "any site"');
 }
 console.log(`\n${passed} ABUSE PROTECTION CHECKS PASSED`);
 process.exit(0);

@@ -33,18 +33,19 @@ export const botCheckSiteKey = (): string => (import.meta.env?.VITE_TURNSTILE_SI
 
 export function useBotCheck(action: 'reset') {
   const siteKey = botCheckSiteKey();
-  const box = useRef<HTMLDivElement | null>(null);
+  // a callback ref: the check appears whenever its box is on screen (e.g. a form opened later), and is removed with it
+  const [box, setBox] = useState<HTMLDivElement | null>(null);
   const widget = useRef<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!siteKey || !box.current) return;
+    if (!siteKey || !box) return;
     let gone = false;
     void loadTurnstile().then(t => {
-      if (gone || !box.current) return;
+      if (gone) return;
       if (!t) { setFailed(true); return; }
-      widget.current = t.render(box.current, {
+      widget.current = t.render(box, {
         sitekey: siteKey, action,
         callback: (v: string) => { setToken(v); setFailed(false); },
         'expired-callback': () => setToken(null),
@@ -55,8 +56,9 @@ export function useBotCheck(action: 'reset') {
       gone = true;
       if (widget.current && window.turnstile) window.turnstile.remove(widget.current);
       widget.current = null;
+      setToken(null);
     };
-  }, [siteKey, action]);
+  }, [siteKey, action, box]);
 
   /** After a request: a token works once. */
   const renew = useCallback(() => {
@@ -66,14 +68,15 @@ export function useBotCheck(action: 'reset') {
 
   const required = !!siteKey;
   return {
-    /** Ready to send: no robot check configured, or it was passed. */
-    ready: !required || !!token,
+    /** Ready to send: no robot check configured, it was passed, or it could not load (the server then decides: it allows a request whose
+     *  check could not be made unless TURNSTILE_CRM_MODE=enforce, and the limits always apply). */
+    ready: !required || !!token || failed,
     headers: (token ? { 'x-turnstile-token': token } : {}) as Record<string, string>,
     renew,
     element: required ? (
       <div className="space-y-1" data-testid="bot-check">
-        <div ref={box} />
-        {failed && <p role="alert" className="text-xs text-rose-700">The robot check could not load. Check your connection and refresh the page.</p>}
+        <div ref={setBox} />
+        {failed && <p role="status" className="text-xs text-slate-500">The robot check could not load (an ad blocker or the connection). You can still send the request.</p>}
       </div>
     ) : null
   };

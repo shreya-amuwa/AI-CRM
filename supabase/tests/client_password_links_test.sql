@@ -26,6 +26,9 @@ select test.check((select s ->> 'hasLogin' = 'true' and s ->> 'passwordSet' = 'f
   'the card: a login, no password chosen yet, no link sent, a link can be sent');
 select test.check((select client_password_link_begin((select id from cpl where k = 'ravi')) ->> 'email' = 'ravi.client@example.com'),
   'the relationship manager can send the client a new set-password link');
+select test.check((select (client_login_status((select id from cpl where k = 'ravi')) ->> 'canSend')::boolean),
+  'a link whose e-mail was not sent (mail down, test mode) uses nothing up');
+select client_password_link_sent((select id from cpl where k = 'ravi'));
 select test.check((select s ->> 'lastLinkSentAt' is not null and (s ->> 'linkExpiresAt')::timestamptz between now() + interval '23 hours 59 minutes' and now() + interval '24 hours 1 minute'
                        and not (s ->> 'canSend')::boolean and (s ->> 'nextSendAt')::timestamptz > now() and (s ->> 'sendsToday')::int = 1
                      from (select client_login_status((select id from cpl where k = 'ravi')) s) x),
@@ -47,6 +50,7 @@ select test.check((select (s ->> 'sendsToday')::int = 5 and not (s ->> 'canSend'
 select test.login('sup_b');
 select test.must_fail($$select client_login_status((select id from cpl where k = 'ravi'))$$, 'another team member does not even see the login', 'NOT_FOUND');
 select test.must_fail($$select client_password_link_begin((select id from cpl where k = 'ravi'))$$, 'nor send a link', 'NOT_FOUND');
+select test.must_fail($$select client_password_link_sent((select id from cpl where k = 'ravi'))$$, 'nor record one', 'NOT_FOUND');
 select test.login('ravi_client');
 select test.must_fail($$select client_password_link_begin((select id from cpl where k = 'ravi'))$$, 'the client cannot use the team''s button', 'NOT_FOUND');
 reset role;
@@ -67,5 +71,13 @@ set role authenticated;
 select test.login('sup_plain');
 select test.check((select s ->> 'passwordSet' = 'true' from (select client_login_status((select id from cpl where k = 'ravi')) s) x),
   'a client who signed in before this was recorded counts as having a password');
+reset role;
+update customer_client_accounts set must_change_password = true where customer_id = (select id from cpl where k = 'ravi');
+set role authenticated;
+select test.login('sup_plain');
+select test.check((select s ->> 'passwordSet' = 'false' from (select client_login_status((select id from cpl where k = 'ravi')) s) x),
+  'signing in with a temporary password still to change is not "password set"');
+reset role;
+update customer_client_accounts set must_change_password = false where customer_id = (select id from cpl where k = 'ravi');
 reset role;
 delete from client_password_link_sends where customer_id = (select id from cpl where k = 'ravi');

@@ -1,8 +1,8 @@
 /**
- * Every e-mail with a set-password or reset link says how long it works: 24 hours (AUTH_LINK_HOURS; the Auth "Email OTP expiry" setting
- * must match: docs/PASSWORD_LINKS.md), and how to get a new one. No more "for a limited time" / "expires soon".
+ * Every e-mail with a set-password or reset link says how long it works: 24 hours (the Auth "Email OTP expiry" setting must be 86400 s:
+ * docs/PASSWORD_LINKS.md), and how to get a new one. No more "for a limited time" / "expires soon".
  */
-import { linkLifetimeHours, linkLifetimeText } from '../../server/security/linkLifetime.js';
+import { LINK_LIFETIME_HOURS, linkLifetimeText } from '../../server/security/linkLifetime.js';
 import { renderWelcomeEmail } from '../../server/automations/welcomeTemplates.js';
 import { renderClientPasswordEmail, renderSubscriptionActivatedEmail } from '../../server/automations/templates.js';
 import { renderStaffResetEmail } from '../../server/services/StaffPasswordService.js';
@@ -13,9 +13,7 @@ function check(ok: unknown, label: string, extra?: unknown) {
   if (!ok) { console.error(`FAILED: ${label}`, extra === undefined ? '' : JSON.stringify(extra)); process.exit(1); }
   passed++; console.log(`ok - ${label}`);
 }
-check(linkLifetimeHours({}) === 24 && linkLifetimeText({}) === 'The link works once and for 24 hours.', 'the default is 24 hours');
-check(linkLifetimeHours({ AUTH_LINK_HOURS: '12' }) === 12 && linkLifetimeHours({ AUTH_LINK_HOURS: '0' }) === 24 && linkLifetimeHours({ AUTH_LINK_HOURS: '99' }) === 24,
-  'AUTH_LINK_HOURS changes it (1-24; anything else keeps 24, the most the Auth setting allows)');
+check(LINK_LIFETIME_HOURS === 24 && linkLifetimeText() === 'The link works once and for 24 hours.', 'links work for 24 hours');
 
 const says = (label: string, body: string) => {
   check(body.includes('24 hours') && !/limited time|expires soon/i.test(body), `${label} says the link works for 24 hours`, body.slice(0, 400));

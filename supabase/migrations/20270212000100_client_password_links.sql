@@ -3,12 +3,14 @@
 --
 -- The client's relationship manager (anyone who may work on the support customer) and Accounts can send the client a new set-password
 -- link from the customer's page, e.g. when the client did not set a password within the link's 24 hours. Until now this had no limit.
--- * At most one link every 2 minutes and 5 a day per customer, and 30 a day per sender (CONFLICT otherwise). Every link is audited
---   (who, which customer; never the address's link).
--- * client_login_status: the "Client login" card: whether there is a login, whether the client chose a password (or signed in before
---   that was recorded), when the last link was sent and until when it works (24 hours), how many today, when the next can be sent.
+-- * At most one link every 2 minutes and 5 a day per customer, and 100 a day per sender (CONFLICT otherwise). A link counts once its
+--   e-mail was accepted (client_password_link_sent), so a failed or test send uses nothing up. Every link is audited (who, which
+--   customer; never the link).
+-- * client_login_status: the "Client login" card: whether there is a login, whether the client chose a password (or signed in, without a
+--   temporary password, before that was recorded), when the team last sent a link and until when it works (24 hours), how many today,
+--   when the next can be sent.
 -- Who may: unchanged from client_login_invite_target. Safe to run twice; pasteable in the SQL editor.
--- Rollback: drop the two functions and the table; the server then falls back to nothing (the route needs client_password_link_begin).
+-- Rollback: drop the three functions and the table (the "send password link" route then fails until this is re-applied).
 -- =============================================================================
 
 create table if not exists public.client_password_link_sends (
@@ -25,7 +27,7 @@ revoke all on public.client_password_link_sends from public, anon, authenticated
 -- the limits, in one place
 create or replace function private.client_link_limits()
 returns jsonb language sql immutable set search_path = '' as $$
-  select jsonb_build_object('cooldownMinutes', 2, 'perCustomerDay', 5, 'perSenderDay', 30, 'linkHours', 24)
+  select jsonb_build_object('cooldownMinutes', 2, 'perCustomerDay', 5, 'perSenderDay', 100, 'linkHours', 24)
 $$;
 revoke all on function private.client_link_limits() from public, anon, authenticated;
 
@@ -48,7 +50,9 @@ begin
   end if;
   select max(s.sent_at), count(*) filter (where s.sent_at > now() - interval '24 hours') into v_last, v_today
     from public.client_password_link_sends s where s.customer_id = p_customer and s.sent_at > now() - interval '24 hours';
-  v_set := coalesce(a.password_changed_at, (select u.last_sign_in_at from auth.users u where u.id = a.auth_user_id));
+  -- a sign-in counts only without a temporary password still to change (signing in with a temporary one is not "set")
+  v_set := coalesce(a.password_changed_at,
+                    case when not coalesce(a.must_change_password, false) then (select u.last_sign_in_at from auth.users u where u.id = a.auth_user_id) end);
   v_next := case
     when v_today >= (v_lim ->> 'perCustomerDay')::int then
       (select min(s.sent_at) from public.client_password_link_sends s where s.customer_id = p_customer and s.sent_at > now() - interval '24 hours') + interval '24 hours'
@@ -66,7 +70,7 @@ end $$;
 revoke all on function public.client_login_status(uuid) from public, anon;
 grant execute on function public.client_login_status(uuid) to authenticated;
 
--- before the server makes and mails the link: checks who and the limits, records the send, and returns where to send it
+-- before the server makes and mails the link: checks who and the limits, and returns where to send it
 create or replace function public.client_password_link_begin(p_customer uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -98,10 +102,28 @@ begin
        >= (v_lim ->> 'perSenderDay')::int then
     raise exception 'CONFLICT: You have sent % client links in the last 24 hours, the most allowed.', v_lim ->> 'perSenderDay' using errcode = 'P0001';
   end if;
-  insert into public.client_password_link_sends (customer_id, sent_by) values (p_customer, v_me);
   select * into c from public.customers where id = p_customer;
-  perform private.write_audit('CLIENT_PASSWORD_LINK_REQUESTED', 'customer', p_customer, c.department_id, c.team_id, jsonb_build_object('by', v_me));
   return jsonb_build_object('email', a.email, 'name', c.name, 'businessName', coalesce(nullif(btrim(c.company), ''), c.name));
 end $$;
 revoke all on function public.client_password_link_begin(uuid) from public, anon;
 grant execute on function public.client_password_link_begin(uuid) to authenticated;
+
+-- after the e-mail was accepted: the send counts towards the limits and is audited
+create or replace function public.client_password_link_sent(p_customer uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare
+  c public.customers;
+  v_me uuid := auth.uid();
+begin
+  if p_customer is null or v_me is null or not (private.may_update_support_customer(p_customer) or private.may_manage_client_account(p_customer)) then
+    raise exception 'NOT_FOUND: Customer not found.' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from public.customer_client_accounts where customer_id = p_customer) then
+    raise exception 'CONFLICT: This customer has no client login yet.' using errcode = 'P0001';
+  end if;
+  insert into public.client_password_link_sends (customer_id, sent_by) values (p_customer, v_me);
+  select * into c from public.customers where id = p_customer;
+  perform private.write_audit('CLIENT_PASSWORD_LINK_REQUESTED', 'customer', p_customer, c.department_id, c.team_id, jsonb_build_object('by', v_me));
+end $$;
+revoke all on function public.client_password_link_sent(uuid) from public, anon;
+grant execute on function public.client_password_link_sent(uuid) to authenticated;
