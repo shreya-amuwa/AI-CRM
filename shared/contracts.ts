@@ -7261,3 +7261,125 @@ export interface OfferTemplateList { canManage: boolean; templates: OfferTemplat
 export interface OfferTemplateHistory extends OfferTemplate { versions: OfferTemplateVersion[] }
 /** The bundled letterheads (from the supplied samples), for the template editor. */
 export interface OfferLetterheadOption { key: string; label: string }
+
+// ---- Task daily reports and performance approval (migration 20270209000100) ----
+export type TaskReportStatus = 'PENDING' | 'APPROVED' | 'RETURNED';
+
+/** One daily report of a Team Member against one assigned task. */
+export interface TaskDailyReport {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskStatus: string;
+  taskPriority: string;
+  taskDueDate: string | null;
+  authorId: string;
+  author: string;
+  designation: string | null;
+  departmentId: string;
+  teamId: string | null;
+  reviewerId: string | null;
+  reportDate: string;
+  workCompleted: string;
+  progress: number;
+  pendingWork: string | null;
+  delayReason: string | null;
+  remarks: string | null;
+  status: TaskReportStatus;
+  revision: number;
+  submittedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+  /** The signed-in person is the reviewer and the report waits for a decision. */
+  canReview: boolean;
+  /** The signed-in person wrote it and it was returned for correction. */
+  canEdit: boolean;
+}
+export interface TaskDailyReportDetail extends TaskDailyReport {
+  history: { action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED'; by: string | null; at: string; from: string | null; to: string; remarks: string | null; revision: number }[];
+}
+export interface TaskDailyReportList {
+  counts: { pending: number; approved: number; returned: number; total: number };
+  total: number;
+  items: TaskDailyReport[];
+}
+/** A task the Team Member may report on. */
+export interface TaskReportTaskOption {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  progress: number;
+  description: string | null;
+  assignedAt: string;
+  lastReportDate: string | null;
+  reportedToday: boolean;
+}
+
+export interface PerformancePart { key: string; label: string; weight: number; value: number | null }
+export interface MemberPerformanceMetrics {
+  tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number };
+  completionPct: number | null;
+  onTimePct: number | null;
+  progressPct: number | null;
+  reports: { submitted: number; approved: number; returned: number; pending: number; approvalPct: number | null; expectedDays: number; approvedDays: number; consistencyPct: number | null };
+  parts: PerformancePart[];
+  score: number | null;
+}
+export interface LeadPerformanceMetrics {
+  own: { total: number; completed: number; overdue: number; completionPct: number | null };
+  team: { members: number; total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; completionPct: number | null; onTimePct: number | null; progressPct: number | null };
+  reports: { submitted: number; approved: number; returned: number; pending: number; waitingOverOneDay: number; reviewedPct: number | null; avgReviewHours: number | null };
+  management: { tasksAssignedToTeam: number; tasksReceived: number; handedDown: number; handledOrDelegated: number; delegationPct: number | null };
+  parts: PerformancePart[];
+  score: number | null;
+}
+export interface PerformanceRecordState {
+  id: string;
+  status: TaskReportStatus;
+  version: number;
+  /** The score that was stored (for an approved record: the score that was approved). */
+  score: number | null;
+  generatedAt: string;
+  refreshedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+  canDecide: boolean;
+  canResubmit: boolean;
+}
+export interface PerformancePerson<M = MemberPerformanceMetrics | LeadPerformanceMetrics> {
+  id: string;
+  name: string;
+  designation: string | null;
+  role: 'TEAM_MEMBER' | 'TEAM_HEAD';
+  teamId: string | null;
+  team: string | null;
+  metrics: M;
+  liveScore: number | null;
+  record: PerformanceRecordState | null;
+}
+export type PerformanceMember = PerformancePerson<MemberPerformanceMetrics>;
+export type PerformanceLead = PerformancePerson<LeadPerformanceMetrics> & { members: PerformanceMember[] };
+interface PerformanceOverviewBase { periodStart: string; periodEnd: string; today: string }
+export interface MemberPerformanceOverview extends PerformanceOverviewBase { role: 'TEAM_MEMBER'; me: PerformanceMember }
+export interface LeadPerformanceOverview extends PerformanceOverviewBase {
+  role: 'TEAM_HEAD';
+  me: PerformancePerson<LeadPerformanceMetrics>;
+  members: PerformanceMember[];
+  pendingReports: number;
+  pendingRecords: number;
+}
+export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
+  role: 'DEPARTMENT_HEAD' | 'SUPER_ADMIN';
+  department: { id: string; name: string };
+  tasks: { total: number; completed: number; pending: number; overdue: number; completionPct: number | null };
+  reports: { submitted: number; approved: number; returned: number; pending: number; approvedPct: number | null };
+  leads: PerformanceLead[];
+  unassignedMembers: PerformanceMember[];
+  pendingRecords: number;
+}
+export type PerformanceOverview = MemberPerformanceOverview | LeadPerformanceOverview | DepartmentPerformanceOverview;
+export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null }

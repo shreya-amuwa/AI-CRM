@@ -17,6 +17,7 @@ import { OPEN_REPORTS_EVENT, notifyReportsChanged, takePendingReport, useReports
 import { ReviewInbox } from './ReviewInbox';
 import { TeamCollectiveBox } from './TeamLeadReports';
 import { Tabs } from './reportUi';
+import { TaskReports } from './TaskReports';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
@@ -99,20 +100,22 @@ const ReportsWorkspace: React.FC = () => {
   const kind: ReportKind | null = ctx.level === 'MEMBER' ? 'MEMBER' : ctx.level === 'TEAM_LEAD' ? 'TEAM_LEAD' : ctx.level === 'DEPARTMENT_HEAD' ? 'DEPARTMENT_HEAD' : null;
   const reportsTo = ctx.reportsTo.map(r => r.name);
   const tabs =
-    ctx.level === 'MEMBER' ? [{ id: 'submit', label: 'Submit Daily Report' }, { id: 'mine', label: 'My Reports', badge: ctx.needsRevision }]
-    : ctx.level === 'TEAM_LEAD' ? [{ id: 'team', label: 'Team Member Reports', badge: ctx.pendingReview }, { id: 'own', label: 'My Daily Report', badge: ctx.needsRevision }, { id: 'overview', label: 'Team Reporting Overview' }]
+    ctx.level === 'MEMBER' ? [{ id: 'submit', label: 'Submit Daily Report' }, { id: 'mine', label: 'My Reports', badge: ctx.needsRevision }, { id: 'taskReports', label: 'Task Reports' }]
+    : ctx.level === 'TEAM_LEAD' ? [{ id: 'team', label: 'Team Member Reports', badge: ctx.pendingReview }, { id: 'own', label: 'My Daily Report', badge: ctx.needsRevision }, { id: 'overview', label: 'Team Reporting Overview' }, { id: 'taskReports', label: 'Task Reports' }]
     : ctx.level === 'DEPARTMENT_HEAD' ? [{ id: 'team', label: 'Team Reports' }, { id: 'approvals', label: 'Pending Approvals', badge: ctx.pendingReview }, { id: 'own', label: 'My Daily Report', badge: ctx.needsRevision },
-        { id: 'summary', label: 'Daily Department Summary' }, { id: 'weekly', label: 'Weekly Department Report', badge: ctx.weeklyPending }]
+        { id: 'summary', label: 'Daily Department Summary' }, { id: 'weekly', label: 'Weekly Department Report', badge: ctx.weeklyPending }, { id: 'taskReports', label: 'Task Reports' }]
     : [{ id: 'departments', label: 'Department Reports' }, { id: 'weeklyApprovals', label: 'Weekly Approvals', badge: ctx.level === 'OPERATIONS_HEAD' ? ctx.weeklyPending : 0 }, { id: 'overview', label: 'Reporting Overview' }];
 
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-6xl mx-auto" data-testid="reports-workspace">
       <header>
-        <h1 className="text-xl font-bold text-slate-900">Reports</h1>
+        <h1 className="text-xl font-bold text-slate-900">Daily Reports</h1>
         <p className="text-sm text-slate-500">{SUBTITLE[ctx.level]}</p>
       </header>
       <Tabs tabs={tabs} value={tab} onChange={t => { setTab(t); setBanner(''); }} />
       {banner ? <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{banner}</div> : null}
+
+      {tab === 'taskReports' && (ctx.level === 'MEMBER' || ctx.level === 'TEAM_LEAD' || ctx.level === 'DEPARTMENT_HEAD') ? <TaskReports level={ctx.level} /> : null}
 
       {tab === formTab && kind ? (
         <div className="space-y-4">

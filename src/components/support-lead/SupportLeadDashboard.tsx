@@ -31,7 +31,7 @@ import { PipelineWorkspace } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
-import { PerformanceManagement } from '../performance/PerformanceManagement';
+import { PerformanceHub } from '../performance/PerformanceHub';
 
 /** The team's leads: a team lead sees every lead of their team's members (the database decides), without the inbound enquiries strip. */
 const SupportTeamLeads: React.FC = () => {
@@ -54,7 +54,7 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
   { id: 'client-documents', label: 'Client documents', icon: FolderCheck },
   { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
-  { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
+  { id: 'tasks', label: 'Assign Task', icon: ClipboardList },
   { id: 'performance', label: 'Performance Management', icon: LineChart },
   { id: 'work-reports', label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
   { id: 'tickets', label: 'Tickets', icon: Headset },
@@ -177,7 +177,7 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'client-documents' && <ClientDocumentsReview />}
       {page === 'client-calendar' && <ClientActivityManager />}
       {page === 'tasks' && <TeamLeadTasksView />}
-      {page === 'performance' && <PerformanceManagement mode="TEAM_LEAD" />}
+      {page === 'performance' && <PerformanceHub mode="TEAM_LEAD" />}
       {page === 'tickets' && <LeadTickets />}
       {page === 'invoices' && <LeadInvoices />}
       {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}
