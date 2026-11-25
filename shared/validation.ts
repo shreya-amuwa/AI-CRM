@@ -3878,3 +3878,41 @@ export const hrRoleOfferFieldsSchema = z.object({
   values: z.record(z.string().regex(OFFER_FIELD_KEY), z.string().max(2000)).refine(v => Object.keys(v).length <= 40, 'Too many values.')
 }).strict();
 export const offerTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);
+
+// ---- Task daily reports and performance approval ----
+export const taskReportSubmitSchema = z
+  .object({
+    taskId: uuidSchema,
+    reportDate: isoDate.optional(),
+    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    pendingWork: trimmed(2000).optional(),
+    delayReason: trimmed(2000).optional(),
+    remarks: trimmed(2000).optional()
+  })
+  .strict()
+  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+export const taskReportReviewSchema = z
+  .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional() })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
+export const taskReportListQuerySchema = z
+  .object({
+    scope: z.enum(['MINE', 'TEAM']).default('MINE'),
+    status: z.enum(['PENDING', 'APPROVED', 'RETURNED']).optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    memberId: uuidSchema.optional(),
+    taskId: uuidSchema.optional(),
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50)
+  })
+  .strict();
+export const performanceOverviewQuerySchema = z
+  .object({ start: isoDate, end: isoDate, departmentId: uuidSchema.optional() })
+  .strict()
+  .refine(v => v.end >= v.start, { message: 'The end date cannot be before the start date.', path: ['end'] });
+export const performanceRecordReviewSchema = z
+  .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional(), version: z.number().int().min(1).optional() })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });

@@ -15,7 +15,7 @@ import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
-import { PerformanceManagement } from '../performance/PerformanceManagement';
+import { PerformanceHub } from '../performance/PerformanceHub';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
 import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { TeamCustomers } from './TeamCustomers';
@@ -91,7 +91,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         label: 'Team',
         items: [
           { id: 'customers', label: 'Team Customers', icon: Users },
-          { id: 'assigned-tasks', label: 'Assigned Tasks', icon: ClipboardList },
+          { id: 'assigned-tasks', label: 'Assign Task', icon: ClipboardList },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
           { ...REPORTS_NAV, badge: reportsBadge },
           { id: 'field-visits', label: 'Field Visits', icon: Navigation }
@@ -140,7 +140,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       )}
       {nav === 'customers' && <TeamCustomers />}
       {nav === 'assigned-tasks' && <TeamLeadTasksView />}
-      {nav === 'performance' && <PerformanceManagement mode="TEAM_LEAD" />}
+      {nav === 'performance' && <PerformanceHub mode="TEAM_LEAD" />}
       {nav === 'field-visits' && (
         <div className="space-y-8">
           {/* visits of the lead's own Team Members, live (Field Visit pages); the earlier trip tracker stays below */}

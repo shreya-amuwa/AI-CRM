@@ -122,7 +122,7 @@ const sh = await login('sales.head@amuwa.com', { width: 1440, height: 900 }, 'as
 await sh.waitForURL(/\/sales-head\/dashboard\//, { timeout: 15000 }).catch(() => fail('the Sales head did not land on /sales-head/dashboard/…: ' + sh.url()));
 ok('the Sales Department Head opens the Sales Department Head dashboard');
 let labels = await menuLabels(sh);
-const expectedTop = ['Attendance', 'Overview', 'Leads', 'Sheet Upload', 'My Leads', 'Field Visits', 'Daily Tasks', 'Performance Management', 'Top Performers & Rankings', 'Department Income', 'Sales Reports', 'Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Raise an Issue', 'Chat', 'Notification Center'];
+const expectedTop = ['Attendance', 'Overview', 'Leads', 'Sheet Upload', 'My Leads', 'Field Visits', 'Assign Task', 'Daily Tasks', 'Performance Management', 'Top Performers & Rankings', 'Department Income', 'Sales Reports', 'Daily Reports', 'Telecaller Sheets', 'Service Prices', 'Client Notices', 'Team Members & Access', 'Raise an Issue', 'Chat', 'Notification Center'];
 await expect(JSON.stringify(labels.filter(l => expectedTop.includes(l))) === JSON.stringify(expectedTop) && labels.length === expectedTop.length, 'the menu is in the agreed order', labels);
 await sh.locator('aside nav button').filter({ hasText: /^\s*Leads\s*$/ }).first().click();
 labels = await menuLabels(sh);

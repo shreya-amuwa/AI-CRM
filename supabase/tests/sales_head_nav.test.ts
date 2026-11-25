@@ -27,13 +27,13 @@ const ids = (o: Partial<SalesHeadNavOptions>) => {
 };
 
 // the entries of the old flat menu (before the sections)
-const OLD_TOP = ['overview', 'leads', 'sheet-upload', 'my-leads-group', 'field-visits-group', 'tasks', 'work-updates', 'performance', 'telecaller-group', 'business-associate-group', 'top-performers',
+const OLD_TOP = ['overview', 'leads', 'sheet-upload', 'my-leads-group', 'field-visits-group', 'assign-task', 'tasks', 'work-updates', 'performance', 'telecaller-group', 'business-associate-group', 'top-performers',
   'income', 'my-income', 'incentive-setup', 'reports', 'work-reports', 'telecaller-sheets', 'service-prices', 'lead-whatsapp', 'notices', 'team', 'raise-issue', 'chat', 'notifications'];
 const sorted = (a: string[]) => [...a].sort();
 
 let m = ids({});
 check(JSON.stringify(m.labels) === JSON.stringify([undefined, 'Leads', 'My Sales', 'Work', 'Income & Reports', 'Customers', 'Team', 'Communication']), 'the Department Head\'s menu reads in sections: Overview on top, then Leads, My Sales, Work, Income & Reports, Customers, Team, Communication', m.labels);
-check(JSON.stringify(sorted(m.top)) === JSON.stringify(sorted(OLD_TOP)), 'no entry of the old flat menu is lost, and none is added', m.top);
+check(JSON.stringify(sorted(m.top)) === JSON.stringify(sorted(OLD_TOP)), 'no entry of the old flat menu is lost, and the only one added is Assign Task', m.top);
 check(new Set(m.all).size === m.all.length, 'no entry is listed twice (parents and their pages)');
 check(m.groups.every(g => g.items.length > 0), 'no section is empty');
 check(m.groups[0].items.map(i => i.id).join() === 'overview', 'Overview is alone on top (the shell adds Attendance and Meetings above it)');
