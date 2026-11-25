@@ -261,6 +261,25 @@ try {
     'AI Studio report: an older report shows its Work In Progress text (Remarks stays hidden when empty)');
   await page.evaluate(() => window.reset());
 
+  // ===== AI Design Studio daily report: the same three parts
+  await mount(page, 'ads-report');
+  await page.locator('form[aria-label="Daily report"]').waitFor();
+  const adsText = await page.locator('form[aria-label="Daily report"]').innerText();
+  check(/Work completed today/.test(adsText) && /Pending work/.test(adsText) && /Challenges or blockers/.test(adsText) && !/Work in progress/.test(adsText) && !/\bRemarks\b/.test(adsText)
+    && await page.locator('textarea').count() === 3, 'Design Studio report: Work completed today, Pending work and Challenges or blockers only (no Work in progress, no Remarks)', adsText);
+  await page.fill('#rep-done', 'Designed the festival poster');
+  await page.fill('#rep-pending', 'Two more sizes');
+  await page.getByRole('button', { name: 'Submit report' }).click();
+  await page.waitForTimeout(300);
+  const sentAds = await page.evaluate(() => window.aiReports().filter(r => r.ads).pop());
+  check(sentAds && sentAds.workCompleted === 'Designed the festival poster' && sentAds.pendingWork === 'Two more sizes' && !sentAds.workInProgress && !sentAds.remarks,
+    'Design Studio report: it is submitted with the three parts', sentAds);
+  await mount(page, 'ads-report-old');
+  await page.locator('form[aria-label="Edit and send the report again"]').waitFor();
+  check(await page.locator('#rep-remarks').inputValue() === 'Old remark kept' && await page.locator('#rep-wip').count() === 0,
+    'Design Studio report: an older report shows its Remarks text (Work in progress stays hidden when empty)');
+  await page.evaluate(() => window.reset());
+
   // phone width: the page itself does not scroll sideways (wide tables scroll inside their own box)
   await page.close();
   const phone = await newPage({ width: 375, height: 800 });

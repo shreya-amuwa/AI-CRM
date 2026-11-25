@@ -86,3 +86,9 @@ Department `generates_revenue` is `false`, so it does not appear in Accounts' in
 
 Run `20270110000100_ai_design_studio.sql` in the Supabase SQL editor. Before it runs, the department does not exist and nothing else changes; after it,
 create the Department Head with *Add Team Member* (Department: AI Design Studio, Role: Department Head), then Team Members and Team Leads.
+
+## A shorter daily report
+
+The daily report form asks **Work completed today** (required), **Pending work** and **Challenges or blockers**, plus the date, client, assignment and attachment links.
+*Work in progress* (the same as pending work) and *Remarks* were removed from the form, as in AI Studio. Nothing changed in the database or the API (both parts were already
+optional): an older report that has text in them still shows it, in the report and in the form when it is sent again, so nothing written earlier is lost.
