@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Headset, LayoutDashboard, LineChart, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/shell';
@@ -10,7 +10,6 @@ import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
-import { MyPerformance } from '../performance/PerformanceHub';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { navigateTo } from '../../utils/router';
 import { useWorkTasks } from '../../lib/workTasks';
@@ -30,7 +29,7 @@ import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | 'work-reports' | 'my-performance' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | 'work-reports' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
@@ -41,7 +40,7 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'my-clients', label: 'My Clients', icon: UserCheck },
   { id: 'tasks', label: 'My Assigned Tasks', icon: ClipboardList },
   { id: 'work-reports', label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
-  { id: 'my-performance', label: 'My Performance', icon: LineChart },
+  // no My Performance: performance is the Team Lead's and the Department Head's (20270213000100); an old /my-performance address opens the dashboard
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
   { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
   // Support also pitches services (referrals and other channels): the same lead pipeline Sales uses, limited to their own records
@@ -120,7 +119,7 @@ export const SupportMemberDashboard: React.FC = () => {
     NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n.id === 'work-reports' ? { ...n, badge: reportsBadge } : n)),
     [
       { ids: ['customers'] },
-      { label: 'Work', ids: ['tasks', 'work-reports', 'my-performance', 'tickets', 'delivery', 'invoices'] },
+      { label: 'Work', ids: ['tasks', 'work-reports', 'tickets', 'delivery', 'invoices'] },
       { label: 'Customers', ids: ['my-clients', 'add-customer', 'import', 'client-documents', 'client-calendar'] },
       { label: 'My Leads', ids: ['leads', 'potential', 'onboarding', 'part-payments'] },
       { label: 'Team', ids: ['raise-issue', 'chat', 'notifications'] }
@@ -194,8 +193,6 @@ export const SupportMemberDashboard: React.FC = () => {
         <IssuesRoute />
       ) : page === 'work-reports' ? (
         <ReportsRoute />
-      ) : page === 'my-performance' ? (
-        <MyPerformance />
       ) : page === 'notifications' ? (
         <NotificationsPage />
       ) : (

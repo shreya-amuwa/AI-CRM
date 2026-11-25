@@ -7295,9 +7295,16 @@ export interface TaskDailyReport {
   canReview: boolean;
   /** The signed-in person wrote it and it was returned for correction. */
   canEdit: boolean;
+  /** 20270213000100 (optional: absent on an older database). The Team Lead who last edited it before deciding, and when. */
+  editedBy?: string | null;
+  editedAt?: string | null;
+  /** The signed-in person is the reviewer and may edit the waiting report before deciding it. */
+  canReviewerEdit?: boolean;
 }
+/** A changed field of a report or an evaluation: the value before and after. */
+export type FieldChanges = Record<string, { from: string | number | null; to: string | number | null }>;
 export interface TaskDailyReportDetail extends TaskDailyReport {
-  history: { action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED'; by: string | null; at: string; from: string | null; to: string; remarks: string | null; revision: number }[];
+  history: { action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED' | 'EDITED'; by: string | null; at: string; from: string | null; to: string; remarks: string | null; revision: number; changes?: FieldChanges | null }[];
 }
 export interface TaskDailyReportList {
   counts: { pending: number; approved: number; returned: number; total: number };
@@ -7357,6 +7364,8 @@ export interface PerformanceRecordState {
   ratingRequired?: boolean;
   /** The member's daily reports in the period still waiting for review (International / Reseller cannot approve until they are decided). */
   waitingReports?: number;
+  /** 20270213000100: the reviewer may update the rating and remarks of this approved evaluation. */
+  canUpdate?: boolean;
 }
 export interface PerformancePerson<M = MemberPerformanceMetrics | LeadPerformanceMetrics> {
   id: string;
@@ -7394,7 +7403,26 @@ export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
   leadDecidesMembers?: boolean;
 }
 export type PerformanceOverview = MemberPerformanceOverview | LeadPerformanceOverview | DepartmentPerformanceOverview;
-export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null; rating?: number | null }
+export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED' | 'UPDATED' | 'REOPENED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null; rating?: number | null; changes?: FieldChanges | null }
+
+// ---- Performance Management, every department: one person's work for the reviewer (20270213000100) ----
+export interface PerformanceWorkTask {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  progress: number;
+  assignedAt: string;
+  completedAt: string | null;
+  overdue: boolean;
+  /** Completed by the deadline (null: not completed, or no deadline). */
+  onTime: boolean | null;
+  reports: number;
+  pendingReports: number;
+  lastReport: { id: string; reportDate: string; progress: number; status: TaskReportStatus } | null;
+}
+export interface PerformanceWork { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; periodStart: string; periodEnd: string; tasks: PerformanceWorkTask[] }
 
 // ---- International / Reseller: performance evaluation history of one person (20270210000100) ----
 export interface PerformanceSubjectRecord {
