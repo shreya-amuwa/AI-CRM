@@ -56,7 +56,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
   - **Phones:** a compact bottom sheet (at most about 55% of the screen) with "View full notice".
   - **Larger screens:** a centred dialog.
   - **Behaviour:** focus kept inside, the page locked behind it, and it never opens over another dialog.
-- **Punch Out** (fix PR after #294):
+- **Punch Out** (#296):
   - Punching out before the shift end no longer shows a warning or asks for a reason. The confirmation is enough.
   - The company switch `early_punch_out_reason_required` is now off by default.
 - **The Managing Director's dashboard** shows the "Turn on notifications" banner, worded for meeting updates (#292).
@@ -82,7 +82,7 @@ Run in the Supabase SQL editor, in this order, **before** the matching code is d
 | `20270205000200_team_attendance_corrections.sql` | #290 |
 | `20270208000100_meeting_push.sql` | #292 |
 | `20270208000200_meeting_oversight_notifications.sql` | #292 |
-| `20270209000100_punch_out_no_reason.sql` | punch-out / error-flash fix |
+| `20270209000100_punch_out_no_reason.sql` | #296 |
 
 Also on `main`, from other work merged in the same period, so they go out with the same deployment:
 

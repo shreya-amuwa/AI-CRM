@@ -26,8 +26,8 @@ One task, one branch, one pull request (`AGENTS.md`). Each one is small enough t
 | 01 + 02: Team attendance, safe punch, corrections | #290 | Completed (merged) |
 | 05: Meeting notifications, push, Managing Director awareness | #292 | Completed (merged) |
 | 03 + 04: Notice popup redesign, mobile audit and fixes | #294 | Completed (merged) |
-| Owner feedback: Punch Out without a reason; the "Something went wrong" flash | fix PR | In Review |
-| 07 + 08: Release documentation | this PR | In Review |
+| Owner feedback: Punch Out without a reason; the "Something went wrong" flash | #296 | In Review |
+| 07 + 08: Release documentation | #295 | In Review |
 
 "Completed" means implemented, tested by the automated suites, merged, and documented. **Testing on real devices by the owner is still
 open for every task** (`TESTING_CHECKLIST.md`).
@@ -81,3 +81,4 @@ See `DEPLOYMENT_AND_ROLLBACK.md` for the commands.
 | Candidate Portal mobile audit | Not in this repository | Audit in the careers repository |
 | Shifts and holidays | No shift model (one company day per person) and no holiday calendar | A shift / holiday feature if the business needs overnight shifts |
 | `ui_hr_awards` browser test is occasionally flaky (a strict-mode race in the test itself) | Not part of these tasks | A small test fix in the HR awards area |
+| The CEO availability API test failed between about 05:20 and 06:20 UTC (a booking clash with fixed 06:00 UTC slots) | Found while testing | Fixed in #296 |
