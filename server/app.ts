@@ -58,7 +58,7 @@ import { requestInfo } from './http/context.js';
 import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
 import { reportServerError } from './monitoring.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
-import { currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
+import { crmTurnstileConfig, currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
 import { candidateGuardSchema } from '../shared/validation.js';
 import { crocodialSyncQuietly } from './crocodial/sync.js';
 
@@ -473,6 +473,8 @@ app.post('/candidate-auth/guard', async c => {
 
 // "Forgot password?" on the staff sign-in page (no login). Same answer whatever the e-mail; at most a few a quarter hour per caller and per address.
 app.post('/auth/forgot-password', async c => {
+  // "confirm you are not a robot" when TURNSTILE_CRM_MODE is on (docs/PASSWORD_LINKS.md)
+  await botCheck(c, 'reset', 'crm');
   const body = await readJson(c);
   const typed = typeof (body as { email?: unknown })?.email === 'string' ? String((body as { email: string }).email).trim().toLowerCase().slice(0, 254) : '';
   // counted in the database: one shared count across every server instance (each request may land on a different one)
@@ -506,6 +508,7 @@ app.post('/attendance/push-resubscribe', async c => {
 
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
 app.post('/client-auth/forgot-password', async c => {
+  await botCheck(c, 'reset', 'crm');
   const body = await readJson(c);
   const typed = emailKey((body as { email?: unknown } | undefined)?.email);
   await enforce([
@@ -733,9 +736,10 @@ function auditIp(c: Context): string | null {
  * Cloudflare Turnstile (security/abuse.ts): the token comes in the x-turnstile-token header. Refused only in TURNSTILE_MODE=enforce; every
  * failed check is recorded in the Security & Audit log (at most one per address and action a minute).
  */
-async function botCheck(c: Context, action: TurnstileAction): Promise<void> {
+async function botCheck(c: Context, action: TurnstileAction, surface: 'candidate' | 'crm' = 'candidate'): Promise<void> {
   const ip = clientIp(c);
-  const outcome = await verifyTurnstile(c.req.header('x-turnstile-token'), action, ip === 'unknown' ? null : ip);
+  const outcome = await verifyTurnstile(c.req.header('x-turnstile-token'), action, ip === 'unknown' ? null : ip,
+    surface === 'crm' ? crmTurnstileConfig() : undefined);
   if (outcome.result !== 'ok' && outcome.result !== 'off') {
     const audit = auditIp(c);
     await recordSecurityEvent({
@@ -745,8 +749,8 @@ async function botCheck(c: Context, action: TurnstileAction): Promise<void> {
       outcome: outcome.allowed ? 'FAILURE' : 'DENIED',
       requestId: c.get('requestId'),
       ip: audit ?? undefined,
-      dedupeKey: `botcheck:${ip}:${action}:${Math.floor(Date.now() / 60_000)}`,
-      metadata: { surface: 'candidate', check: action, result: outcome.result, refused: !outcome.allowed }
+      dedupeKey: `botcheck:${surface}:${ip}:${action}:${Math.floor(Date.now() / 60_000)}`,
+      metadata: { surface, check: action, result: outcome.result, refused: !outcome.allowed }
     });
   }
   if (!outcome.allowed) throw turnstileRefused();

@@ -7,6 +7,7 @@ import { enforce } from '../http/rateLimit.js';
 import { AppError } from '../http/errors.js';
 import { limitOf } from '../security/abuse.js';
 import type { RenderedEmail } from './templates.js';
+import { linkLifetimeText } from '../security/linkLifetime.js';
 
 /**
  * Supabase "Send Email" auth hook: Supabase does not send its sign-up / password-reset / invite e-mails itself, it POSTs them here and
@@ -129,7 +130,7 @@ function copyFor(type: string, audience: AuthAudience): Copy | null {
       return {
         subject: audience === 'CANDIDATE' ? 'Reset your password – Amuwa Careers' : 'Reset your password – Amuwa CRM',
         heading: 'Reset your password',
-        intro: `We received a request to reset the password of your account on ${place}. Use the button below to choose a new one. The link works once and for a limited time.`,
+        intro: `We received a request to reset the password of your account on ${place}. Use the button below to choose a new one. ${linkLifetimeText()}`,
         button: 'Choose a new password',
         outro: 'If you did not ask for this, ignore this email: your password stays as it is.'
       };
@@ -145,7 +146,7 @@ function copyFor(type: string, audience: AuthAudience): Copy | null {
       return {
         subject: audience === 'CANDIDATE' ? 'Your sign-in link – Amuwa Careers' : 'Your sign-in link – Amuwa CRM',
         heading: 'Sign in',
-        intro: `Use the button below to sign in to ${place}. The link works once and for a limited time.`,
+        intro: `Use the button below to sign in to ${place}. ${linkLifetimeText()}`,
         button: 'Sign in',
         outro: 'If you did not ask for this, you can ignore this email.'
       };

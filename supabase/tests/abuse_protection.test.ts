@@ -5,7 +5,7 @@
  */
 import { createServer } from 'node:http';
 import {
-  ABUSE_LIMITS, isDisposableEmail, limitOf, signPortalForward, turnstileConfig, useEdgeLimiter, verifiedPortalClient, verifyTurnstile, type TurnstileFetch
+  ABUSE_LIMITS, crmTurnstileConfig, isDisposableEmail, limitOf, signPortalForward, turnstileConfig, useEdgeLimiter, verifiedPortalClient, verifyTurnstile, type TurnstileFetch
 } from '../../server/security/abuse.js';
 
 let passed = 0;
@@ -224,5 +224,15 @@ const json = async (r: Response) => (await r.json()) as any;
 }
 
 ts.close();
+{
+  // the CRM's own forms ("Forgot password", "Send me a new link"): their own switch, off until the owner adds the site key
+  const base = { TURNSTILE_SECRET_KEY: 'ts-secret', TURNSTILE_MODE: 'enforce', TURNSTILE_ALLOWED_HOSTNAMES: 'careers.amuwa.com', APP_URL: 'https://crm.amuwacorporation.com' };
+  check(crmTurnstileConfig(base as any).mode === 'off', 'CRM forms: off by default even while the candidate portal enforces (the CRM pages send no token until set up)');
+  const on = crmTurnstileConfig({ ...base, TURNSTILE_CRM_MODE: 'enforce' } as any);
+  check(on.mode === 'enforce' && on.hostnames.join() === 'crm.amuwacorporation.com', 'CRM forms switched on: tokens only from the CRM\'s own address', on.hostnames);
+  check(crmTurnstileConfig({ ...base, TURNSTILE_CRM_MODE: 'log', TURNSTILE_CRM_HOSTNAMES: 'a.example, b.example' } as any).hostnames.join() === 'a.example,b.example' &&
+    crmTurnstileConfig({ ...base, TURNSTILE_CRM_MODE: 'log' } as any).mode === 'log', 'log mode, and other addresses when set');
+  check(crmTurnstileConfig({ TURNSTILE_CRM_MODE: 'enforce' } as any).mode === 'off', 'without the secret key it stays off');
+}
 console.log(`\n${passed} ABUSE PROTECTION CHECKS PASSED`);
 process.exit(0);

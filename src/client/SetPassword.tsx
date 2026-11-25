@@ -5,6 +5,7 @@ import { ApiError } from '../lib/api/client';
 import { clientApi } from './api';
 import { Button, Field, LoadingBlock } from './ui';
 import { dashboardPath } from './shell';
+import { NewLinkRequest } from '../components/auth/NewLinkRequest';
 
 /**
  * /client/set-password: opened from the "Set your password" e-mail (new login or "Forgot password?").
@@ -52,7 +53,7 @@ export const SetPassword: React.FC<{ forced?: boolean; onChanged?: () => void }>
     } catch (e) {
       setBusy(false);
       const message = e instanceof Error ? e.message : '';
-      setError(e instanceof ApiError && e.status === 401 ? 'The link has expired. Ask for a new one with "Forgot password?" on the sign-in page.' : message || 'The password could not be saved. Please try again.');
+      setError(e instanceof ApiError && e.status === 401 ? 'The link has expired. Refresh the page to ask for a new one.' : message || 'The password could not be saved. Please try again.');
       return;
     }
     setBusy(false);
@@ -70,8 +71,9 @@ export const SetPassword: React.FC<{ forced?: boolean; onChanged?: () => void }>
           {state === 'expired' && (
             <>
               <h2 style={{ fontSize: 26 }}>This link has expired</h2>
-              <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>A set-password link works once and only for a short time. Ask for a new one with "Forgot password?" on the sign-in page.</span></div>
-              <Button onClick={() => window.location.assign('/client/login')}>Go to sign in</Button>
+              <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>A set-password link works once and for 24 hours. Enter your login e-mail below and we will send you a new one, or ask your Relationship Manager.</span></div>
+              <NewLinkRequest endpoint="/client-auth/forgot-password" />
+              <button type="button" className="cd-link" style={{ alignSelf: 'center' }} onClick={() => window.location.assign('/client/login')}>Go to sign in</button>
             </>
           )}
           {state === 'ready' && (

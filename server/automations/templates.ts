@@ -1,5 +1,6 @@
 import { COMPANY } from './config.js';
 import type { ClientStage } from './rules.js';
+import { linkLifetimeText } from '../security/linkLifetime.js';
 
 /**
  * The onboarding emails, ported word for word from the Google Apps Script
@@ -331,7 +332,7 @@ export function renderSubscriptionActivatedEmail(d: SubscriptionActivatedMailDat
   ${d.setPasswordLink
     ? `<p>To sign in securely, first choose your own password:</p>
   <p><a href="${esc(d.setPasswordLink)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Set your password</a></p>
-  <p>The link works once and expires soon. If it has expired, use "Forgot password?" on the sign-in page${d.loginEmail ? ` (your login e-mail is ${esc(d.loginEmail)})` : ''}.</p>`
+  <p>${linkLifetimeText()} If it has expired, open it anyway and choose "Send me a new link", or use "Forgot password?" on the sign-in page${d.loginEmail ? ` (your login e-mail is ${esc(d.loginEmail)})` : ''}.</p>`
     : `<p>Sign in to your client dashboard${d.loginEmail ? ` with <b>${esc(d.loginEmail)}</b>` : ''}: <a href="${esc(d.loginUrl)}">${esc(d.loginUrl)}</a>. If you have forgotten your password, use "Forgot password?" on the sign-in page.</p>`}
   <p>You can follow your subscription, remaining days and message usage under <b>My Subscription</b> in your dashboard. We will remind you before it expires.</p>
   <p>We never ask for your password by e-mail or message.</p>
@@ -396,7 +397,7 @@ export function renderClientPasswordEmail(d: ClientPasswordMailData): RenderedEm
       : `<p>We received a request to set a new password for your Amuwa client dashboard.</p>`}
   <p><b>Your login e-mail:</b> ${esc(d.loginEmail)}</p>
   <p><a href="${esc(d.link)}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Set your password</a></p>
-  <p>Choose your own password on that page; after that you sign in with your login e-mail and that password. The link works once and expires soon. If it has expired, use "Forgot password?" on the sign-in page.</p>
+  <p>Choose your own password on that page; after that you sign in with your login e-mail and that password. ${linkLifetimeText()} If it has expired, open it anyway and choose "Send me a new link", use "Forgot password?" on the sign-in page, or ask your Relationship Manager to send a new one.</p>
   ${welcome || onboarding ? '' : '<p>If you did not ask for this, you can ignore this e-mail - your password stays the same.</p>'}
   ${teamContact()}
   ${signature('Support Team')}`);

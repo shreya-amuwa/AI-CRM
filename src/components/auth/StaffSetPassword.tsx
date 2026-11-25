@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Eye, EyeOff, Lock } from 'lucide-react';
 import { ApiError, apiRequest } from '../../lib/api/client';
 import { getSupabase } from '../../services/supabaseClient';
+import { NewLinkRequest } from './NewLinkRequest';
 
 /**
  * /set-password: opened from the welcome e-mail a new employee receives. The link carries a one-time token (/set-password?token_hash=...&type=recovery).
@@ -37,7 +38,7 @@ export const StaffSetPassword: React.FC = () => {
       await apiRequest<{ changed: true }>('POST', '/me/password', { body: { password } });
     } catch (err) {
       setBusy(false);
-      setError(err instanceof ApiError && err.status === 401 ? (reset ? 'This link has expired. Use "Forgot password?" on the sign-in page to get a new one.' : 'This link has expired. Ask HR to send you a new welcome e-mail.') : err instanceof Error ? err.message : 'The password could not be saved. Please try again.');
+      setError(err instanceof ApiError && err.status === 401 ? 'This link has expired. Refresh the page to ask for a new one.' : err instanceof Error ? err.message : 'The password could not be saved. Please try again.');
       return;
     }
     setBusy(false);
@@ -58,10 +59,11 @@ export const StaffSetPassword: React.FC = () => {
             <div role="alert" className="flex gap-2 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-800">
               <AlertTriangle className="w-5 h-5 shrink-0" aria-hidden="true" />
               <span>{reset
-                ? 'A reset link works once and only for a limited time. Use "Forgot password?" on the sign-in page to get a new one.'
-                : 'A set-password link works once and only for a limited time. Ask HR to send you a new welcome e-mail. If you already chose your password, sign in instead.'}</span>
+                ? 'A reset link works once and for 24 hours. Enter your e-mail address below and we will send you a new one.'
+                : 'A set-password link works once and for 24 hours. Enter your work e-mail address below and we will send you a new one (or ask HR). If you already chose your password, sign in instead.'}</span>
             </div>
-            <a href="/" className="inline-flex rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">Go to sign in</a>
+            <NewLinkRequest endpoint="/auth/forgot-password" />
+            <a href="/" className="inline-flex text-sm font-bold text-blue-700 underline">Go to sign in</a>
           </>
         )}
         {state === 'ready' && (
