@@ -139,3 +139,11 @@ validation), `unified_dashboard.test.ts` / `ui_unified_dashboard.test.mjs` (no p
 
 Rollout: run the migration in the Supabase SQL editor. Before it is run, the new screens still work (the new fields are optional) and the member's sidebar no longer offers performance;
 the database rules above apply once it is run.
+
+## The Managing Director (Super Admin): Performance Management
+
+The Super Admin's dashboard has **Performance Management** in the *Company* section (`SuperAdminPerformance`). A **Department** list chooses the department (remembered on the device;
+International / Reseller first by default), and the page is the Department Head's view of that department: the department figures, every Team Lead and team, every member and each
+approval status, for a weekly, monthly or custom period. It reads `GET /performance-approval/overview?departmentId=...` (`performance_overview(start, end, department)`, which already
+allowed the Super Admin), so no migration is needed. It is **read only**: the Team Lead decides the members, the Department Head decides the Team Leads, and the database refuses the
+Super Admin's decisions.

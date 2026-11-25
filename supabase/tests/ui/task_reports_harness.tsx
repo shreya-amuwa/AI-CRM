@@ -2,6 +2,9 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { TaskReports } from '../../../src/components/reports/TaskReports';
 import { PerformanceApprovals } from '../../../src/components/performance/PerformanceApprovals';
+import { ReportForm } from '../../../src/components/ai-studio/AiStudioReports';
+import { SuperAdminPerformance } from '../../../src/components/superadmin/performance/SuperAdminPerformance';
+import { DepartmentContext } from '../../../src/context/DepartmentContext';
 
 /**
  * The real task daily report screens and the real performance approval page, for each role. The CRM API is a small stateful fake in the page that
@@ -17,7 +20,10 @@ const tasks = [
 ];
 let reports: any[] = [];
 const history: Record<string, any[]> = {};
-let role: 'MEMBER' | 'TEAM_HEAD' | 'DEPARTMENT_HEAD' = 'MEMBER';
+let role: 'MEMBER' | 'TEAM_HEAD' | 'DEPARTMENT_HEAD' | 'SUPER_ADMIN' = 'MEMBER';
+// the Super Admin's departments (the department picker of their Performance Management)
+const SA_DEPTS: Record<string, string> = { 'dddddddd-0000-4000-8000-000000000001': 'Amuwa International Department', 'dddddddd-0000-4000-8000-000000000002': 'Amuwa Reseller Department' };
+let aiReports: any[] = [];
 const rec = (status: string, extra: any = {}) => ({ id: 'rec1', status, version: 1, score: 61.5, generatedAt: TODAY, refreshedAt: TODAY, reviewedBy: null, reviewedAt: null, reviewRemarks: null, canDecide: false, canResubmit: false, ...extra });
 const parts = (a: number | null) => [
   { key: 'completion', label: 'Task completion', weight: 35, value: a }, { key: 'progress', label: 'Progress (approved reports)', weight: 15, value: 40 },
@@ -35,8 +41,13 @@ const strictFlags = (r: any, subject: 'member' | 'lead') => (strict ? { ...r, ra
 let memberRec = rec('PENDING', { canDecide: true });
 let leadRec = rec('PENDING', { id: 'rec2' });
 const person = (id: string, name: string, role2: 'TEAM_MEMBER' | 'TEAM_HEAD', metrics: any, record: any) => ({ id, name, designation: null, role: role2, teamId: 'tm', team: 'Team', metrics, liveScore: metrics.score, record });
-const overview = () => {
+const overview = (departmentId?: string) => {
   const base = { periodStart: TODAY, periodEnd: TODAY, today: TODAY };
+  // the Super Admin reads the department asked for and decides nothing
+  if (role === 'SUPER_ADMIN') return { role, ...base, department: { id: departmentId, name: SA_DEPTS[departmentId ?? ''] ?? 'Unknown' }, tasks: { total: 9, completed: 4, pending: 3, overdue: 2, completionPct: 44.4 },
+    reports: { submitted: 7, approved: 4, returned: 1, pending: 2, approvedPct: 57.1 },
+    leads: [{ ...person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, { ...leadRec, canDecide: false }), members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), { ...memberRec, canDecide: false })] }],
+    unassignedMembers: [], pendingRecords: 1 };
   if (role === 'MEMBER') return { role: 'TEAM_MEMBER', ...base, me: person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), { ...memberRec, canDecide: false, canResubmit: memberRec.status === 'RETURNED' }) };
   if (role === 'TEAM_HEAD') return { role, ...base, me: person('l1', 'Leena Lead', 'TEAM_HEAD', leadMetrics, { ...leadRec, canDecide: false, canResubmit: leadRec.status === 'RETURNED' }),
     members: [person('m1', 'Mohan Member', 'TEAM_MEMBER', memberMetrics(61.5), strictFlags(memberRec, 'member'))], pendingReports: 1, pendingRecords: 1, ...(strict ? { leadDecidesMembers: true } : {}) };
@@ -87,7 +98,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
   m = p.match(/^\/task-reports\/([^/]+)$/);
   if (m) return ok({ ...asReport(reports.find(x => x.id === m![1])!), history: history[m[1]] });
-  if (p === '/performance-approval/overview') return ok(overview());
+  if (p === '/performance-approval/overview') return ok(overview(url.searchParams.get('departmentId') ?? undefined));
+  // AI Studio daily report form
+  if (p === '/ai-studio/reports/context') return ok({ role: 'MEMBER', today: TODAY, reviewer: 'Pari Gupta', hasReviewer: true, route: 'TEAM_LEAD', projects: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'CRM Revamp' }], tasks: [] });
+  if (p.startsWith('/ai-studio/reports') && (method === 'POST' || method === 'PATCH')) { aiReports.push(body); return ok({ id: 'ai1', ...body, status: body.submit ? 'SUBMITTED' : 'DRAFT' }); }
   m = p.match(/^\/performance-approval\/records\/([^/]+)\/review$/);
   if (m) {
     const target = m[1] === 'rec1' ? 'member' : 'lead';
@@ -111,15 +125,24 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 };
 
 let root: ReturnType<typeof createRoot> | null = null;
-w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-member' | 'perf-lead' | 'perf-head') => {
-  role = what.endsWith('member') ? 'MEMBER' : what.endsWith('lead') ? 'TEAM_HEAD' : 'DEPARTMENT_HEAD';
+const OLD_AI_REPORT = { id: 'ai0', reportDate: TODAY, projectId: 'aaaaaaaa-0000-4000-8000-000000000001', taskId: null, workCompleted: 'Old work', workInProgress: 'Old progress notes', pendingWork: 'Old pending',
+  blockers: null, remarks: null, status: 'RETURNED_BY_TL', tlComment: 'Add detail', dhComment: null } as any;
+w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-member' | 'perf-lead' | 'perf-head' | 'perf-sa' | 'ai-report' | 'ai-report-old') => {
+  role = what === 'perf-sa' ? 'SUPER_ADMIN' : what.endsWith('member') ? 'MEMBER' : what.endsWith('lead') ? 'TEAM_HEAD' : 'DEPARTMENT_HEAD';
   root?.unmount();
   document.body.innerHTML = '<div id="root"></div>';
   root = createRoot(document.getElementById('root')!);
+  if (what === 'ai-report' || what === 'ai-report-old') { root.render(<ReportForm existing={what === 'ai-report-old' ? OLD_AI_REPORT : undefined} onDone={() => { w.__aiDone = true; }} />); return; }
+  if (what === 'perf-sa') {
+    const departments = Object.entries(SA_DEPTS).map(([dbId, name], i) => ({ id: i ? 'reseller' : 'international', dbId, name, description: '', iconName: 'Building2', accentColor: 'blue', totalLeads: 0, activeSessions: 0, maxSessions: 2, locked: false, createdAt: TODAY }));
+    root.render(<DepartmentContext.Provider value={{ departments, allDepartments: [], loading: false, getDepartment: () => undefined, addDepartment: async () => ({ ok: false }), deleteDepartment: async () => ({ ok: false }), refreshDepartments: async () => undefined } as any}><SuperAdminPerformance /></DepartmentContext.Provider>);
+    return;
+  }
   root.render(what.startsWith('reports')
     ? <TaskReports level={role === 'MEMBER' ? 'MEMBER' : role === 'TEAM_HEAD' ? 'TEAM_LEAD' : 'DEPARTMENT_HEAD'} />
     : <PerformanceApprovals title={role === 'MEMBER' ? 'My Performance' : 'Performance Management'} />);
 };
-w.reset = () => { reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = false; waiting = 0; };
+w.aiReports = () => aiReports;
+w.reset = () => { aiReports = []; try { localStorage.clear(); } catch { /* ignore */ } reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = false; waiting = 0; };
 /** International / Reseller rules on (and how many of the member's reports are still waiting). */
 w.setStrict = (on: boolean, waitingReports = 0) => { strict = on; waiting = waitingReports; };

@@ -10,13 +10,17 @@ import { Card, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../task
 import { notifyAiStudioChanged, peekPendingAiStudio, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
 import { ReportStatusBadge, TableWrap, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
 
-const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean }[] = [
+// The daily report asks three things: what was completed, what is pending, and any challenge. "Work In Progress" (the same as pending work) and "Remarks" were
+// dropped from the form to keep it short; they are shown (and kept when the report is edited) only on an older report that already has them.
+const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean; legacy?: boolean }[] = [
   { key: 'workCompleted', label: 'Work Completed Today', required: true },
-  { key: 'workInProgress', label: 'Work In Progress' },
   { key: 'pendingWork', label: 'Pending Work' },
   { key: 'blockers', label: 'Challenges / Blockers' },
-  { key: 'remarks', label: 'Remarks or Additional Updates' }
+  { key: 'workInProgress', label: 'Work In Progress', legacy: true },
+  { key: 'remarks', label: 'Remarks or Additional Updates', legacy: true }
 ];
+/** The parts to show: the three of the form, and an older report's extra parts only when they have text. */
+const shownParts = (values: Partial<Record<(typeof PARTS)[number]['key'], string | null>>) => PARTS.filter(p => !p.legacy || (values[p.key] ?? '').trim() !== '');
 
 /**
  * The daily report form (Team Member and Team Lead): the date, the project, the task, and what was done. "Save draft" keeps it private; "Submit Daily Report" sends it
@@ -78,7 +82,7 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
             </select>
           </Field>
         </div>
-        {PARTS.map(p => (
+        {shownParts(existing ?? {}).map(p => (
           <Field key={p.key} label={p.label} htmlFor={`ai-rp-${p.key}`} required={p.required}>
             <textarea id={`ai-rp-${p.key}`} className={textareaCls} rows={p.key === 'workCompleted' ? 4 : 3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
           </Field>
@@ -141,7 +145,7 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
             <span className="text-slate-500">Submitted {dateTimeText(r.submittedAt)}{r.revision > 1 ? ` · version ${r.revision}` : ''}</span>
             {r.leadName && r.authorRole === 'MEMBER' && <span className="text-slate-500">Team Lead: {r.leadName}</span>}
           </div>
-          {PARTS.map(p => (
+          {shownParts(r).map(p => (
             <div key={p.key}>
               <div className="text-xs font-semibold text-slate-500 mb-1">{p.label}</div>
               <p className="text-sm text-slate-800 whitespace-pre-wrap">{r[p.key] || <span className="text-slate-400">-</span>}</p>
