@@ -220,5 +220,23 @@ select test.check((select punch_out_at is null from attendance_records, tad wher
                   and (test.tacorr('ta_m2')).status = 'REJECTED' and (test.tacorr('ta_m2')).decision_note = 'Not what the gate log shows',
   'rejected (by the Managing Director, with a reason): the record is unchanged');
 
+\echo '   20270210000100: Punch Out before the shift end needs no reason'
+\i supabase/migrations/20270210000100_punch_out_no_reason.sql
+\i supabase/migrations/20270210000100_punch_out_no_reason.sql
+select test.check((select not early_punch_out_reason_required from attendance_settings where id), 'the company rule is off');
+insert into attendance_reminder_prefs (profile_id, enabled, punch_in, lunch, punch_out) values (test.id('ta_mb'), true, '06:00', '11:00', '23:30')
+on conflict (profile_id) do update set punch_out = excluded.punch_out;
+set role authenticated;
+select test.login('ta_mb');
+select attendance_punch_in('CAPTURED', 18.52, 73.85, 25, '00000000-0000-4000-8000-0000000000e1');
+select test.check((attendance_punch_out_preview() ->> 'early')::boolean and not (attendance_punch_out_preview() ->> 'reasonRequired')::boolean,
+  'before the shift end: still early, but no reason required');
+select attendance_punch_out('CAPTURED', 18.52, 73.85, 25, '00000000-0000-4000-8000-0000000000e2');
+select attendance_punch_out_confirmed('CAPTURED', 18.52, 73.85, 25, '00000000-0000-4000-8000-0000000000e2', null);
+reset role;
+select test.check((select count(*) = 1 from attendance_events where profile_id = test.id('ta_mb') and attendance_date = private.office_today() and kind = 'PUNCH_OUT'
+                     and note is null),
+  'the confirmed Punch Out is recorded without a reason (and its retry through either function is not a second punch)');
+
 delete from attendance_reminder_prefs where profile_id in (select id from test.users where name like 'ta\_%');
 update attendance_settings set late_grace_minutes = 0, reminders_paused_on = null where id;

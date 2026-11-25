@@ -70,12 +70,11 @@ const clock12 = (hhmm: string | null) => {
 /** "Start your workday?" / "End your workday?": nothing is recorded until Confirm, and success is shown only after the server's answer. */
 const PunchConfirm: React.FC<{
   confirm: { kind: 'in' } | { kind: 'out'; preview: PunchOutPreview | null }; name: string | null; day: AttendanceDayData | null; offsetMs: number;
-  busy: boolean; error: string | null; reason: string; onReason: (v: string) => void; onCancel: () => void; onConfirm: () => void;
-}> = ({ confirm, name, day, offsetMs, busy, error, reason, onReason, onCancel, onConfirm }) => {
+  busy: boolean; error: string | null; onCancel: () => void; onConfirm: () => void;
+}> = ({ confirm, name, day, offsetMs, busy, error, onCancel, onConfirm }) => {
   const now = new Date(Date.now() + offsetMs);
   const out = confirm.kind === 'out';
   const p = out ? confirm.preview : null;
-  const needReason = !!p?.reasonRequired;
   const row = 'flex items-baseline justify-between gap-3 py-1.5 border-b border-slate-100 last:border-0';
   return (
     <BottomSheet
@@ -93,7 +92,7 @@ const PunchConfirm: React.FC<{
           {out ? 'Continue Working' : 'Cancel'}
         </button>
         <button type="button" data-testid={out ? 'confirm-punch-out' : 'confirm-punch-in'} onClick={onConfirm}
-          disabled={busy || (needReason && reason.trim().length < 3)}
+          disabled={busy}
           className={`${btnBase} text-white ${out ? 'bg-slate-900 hover:bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
           {out ? <LogOut className="w-4 h-4" aria-hidden="true" /> : <LogIn className="w-4 h-4" aria-hidden="true" />}
           {busy ? 'Recording…' : out ? 'Confirm Punch Out' : 'Confirm Punch In'}
@@ -112,17 +111,6 @@ const PunchConfirm: React.FC<{
           {p?.shiftEnd ? <div className={row}><dt className="text-slate-500">Scheduled shift end</dt><dd className="font-medium text-slate-900">{clock12(p.shiftEnd)}</dd></div> : null}
         </> : null}
       </dl>
-      {out && p?.early ? (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900" role="note">
-          <p className="font-semibold">You are punching out before your scheduled shift end time.</p>
-          {needReason ? (
-            <label className="mt-2 block text-xs font-semibold text-amber-900">Reason for leaving early (required)
-              <textarea rows={2} maxLength={480} value={reason} onChange={e => onReason(e.target.value)} data-testid="early-reason"
-                className="mt-1 w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400" />
-            </label>
-          ) : null}
-        </div>
-      ) : null}
       {error ? <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm font-medium text-rose-700" data-testid="punch-dialog-error">{error}</p> : null}
     </BottomSheet>
   );
@@ -136,7 +124,6 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
   const [day, setDay] = useState<AttendanceDayData | null>(null);
   // the confirmation before a punch (Task 02): one request id per dialog, so pressing Confirm twice or retrying is the same punch
   const [confirm, setConfirm] = useState<null | { kind: 'in'; request: string } | { kind: 'out'; request: string; preview: PunchOutPreview | null }>(null);
-  const [reason, setReason] = useState('');
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [askCorrection, setAskCorrection] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0);
@@ -154,7 +141,6 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
   const lunchMinutes = useLunchMinutes(day, offsetMs);
 
   const openPunch = (kind: 'in' | 'out') => {
-    setReason('');
     setDialogError(null);
     const request = newPunchRequestId();
     if (kind === 'in') { setConfirm({ kind: 'in', request }); return; }
@@ -162,7 +148,7 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
     // the figures (worked, break, net, shift end) come from the server's clock; without them the dialog still confirms
     attendanceApi.punchOutPreview().then(p => setConfirm(c => (c && c.kind === 'out' && c.request === request ? { ...c, preview: p } : c)), () => { /* figures unavailable */ });
   };
-  const punch = async (kind: 'in' | 'out', request: string, earlyReason: string | null) => {
+  const punch = async (kind: 'in' | 'out', request: string) => {
     setBusy(kind);
     setNotice(null);
     setDialogError(null);
@@ -172,7 +158,8 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
       const loc = await captureLocation({ maxM: max });
       if (loc.status !== 'CAPTURED') { setDialogError(locationHelp(loc.status)); return; }
       if (loc.accuracy != null && loc.accuracy > max) { setDialogError(locationHelp('CAPTURED', loc.accuracy, max)); return; }
-      const d = kind === 'in' ? await attendanceApi.punchIn(loc, request) : await attendanceApi.punchOutConfirmed(loc, earlyReason, request);
+      // Punch Out before the shift end needs no reason: the confirmation is enough (the same request id is never a second punch)
+      const d = kind === 'in' ? await attendanceApi.punchIn(loc, request) : await attendanceApi.punchOut(loc, request);
       accept(d);
       // only now, with the server's answer: success
       setConfirm(null);
@@ -181,7 +168,7 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
       // the punch's answer is already today's day; the place-name lookup refreshes the rest afterwards
       attendanceApi.resolvePlaces().then(load, () => { /* the nearest address comes later */ });
     } catch (e) {
-      // the dialog stays open with the reason; pressing Confirm again sends the same request (never a second punch)
+      // the dialog stays open; pressing Confirm again sends the same request (never a second punch)
       setDialogError(e instanceof Error ? e.message : 'Could not record the punch. Check your connection and try again.');
     } finally {
       setBusy('');
@@ -247,8 +234,8 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
       {askCorrection && day ? <CorrectionRequestForm date={day.date} kind="RESUME_DAY" onClose={() => setAskCorrection(false)} onSent={() => { setAskCorrection(false); setNotice({ ok: true, text: 'Correction requested. You are told when it is decided.' }); }} /> : null}
       {confirm ? (
         <PunchConfirm confirm={confirm} name={profile?.fullName ?? null} day={day} offsetMs={offsetMs} busy={busy === confirm.kind} error={dialogError}
-          reason={reason} onReason={setReason} onCancel={() => { if (!busy) setConfirm(null); }}
-          onConfirm={() => void punch(confirm.kind, confirm.request, confirm.kind === 'out' && reason.trim() ? reason.trim() : null)} />
+          onCancel={() => { if (!busy) setConfirm(null); }}
+          onConfirm={() => void punch(confirm.kind, confirm.request)} />
       ) : null}
       {compact ? null : <section className={card} aria-label="Last two weeks">
         <h3 className="text-sm font-extrabold text-slate-900 mb-2">Last two weeks</h3>
