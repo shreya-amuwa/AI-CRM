@@ -217,7 +217,9 @@ set role authenticated;
 select test.login('tm_b');
 select test.check((select (x ->> 'incentives')::numeric >= 5000 and (x ->> 'bonuses')::numeric >= 2000 and (x ->> 'withdrawn')::numeric >= 1000 from jsonb_array_elements(wallet_monthly(3)) x limit 1), 'this month: incentives, bonuses and withdrawals');
 select test.check(jsonb_array_length(wallet_monthly(12)) = 12 and jsonb_array_length(wallet_monthly(1)) = 1, 'the months asked for');
-select test.check((wallet_transactions(p_from => current_date + 1) ->> 'total')::integer = 0 and (wallet_transactions(p_from => current_date - 1, p_to => current_date + 1) ->> 'total')::integer >= 5, 'the date filter');
+-- the filter compares India dates (Asia/Kolkata), so "today" here is the India date: current_date is UTC and is a day behind from 18:30 UTC
+select test.check((wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date + 1) ->> 'total')::integer = 0
+                  and (wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date - 1, p_to => (now() at time zone 'Asia/Kolkata')::date + 1) ->> 'total')::integer >= 5, 'the date filter');
 select test.check(jsonb_array_length(wallet_transactions(p_limit => 2) -> 'items') = 2 and (wallet_transactions(p_limit => 2, p_offset => 2) ->> 'total') = (wallet_transactions(p_limit => 2) ->> 'total'), 'paging');
 select test.must_fail($$select wallet_transactions(p_type => 'MAGIC')$$, 'an unknown type is refused', 'Unknown transaction type');
 select test.must_fail($$select wallet_transactions(p_from => current_date, p_to => current_date - 3)$$, 'an end before the start is refused', 'before');
