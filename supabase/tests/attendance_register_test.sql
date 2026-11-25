@@ -169,10 +169,10 @@ select test.check((select count(*) >= 1 from audit_logs where action = 'ATTENDAN
 set role authenticated;
 select test.login('wkr_tmp');
 select test.must_fail($$select hr_attendance_register(private.office_today(), null, null, null)$$, 'a Team Member cannot read the register', 'FORBIDDEN');
-select test.must_fail($$insert into attendance_events (profile_id, attendance_date, kind, location_status) values (test.id('wkr_tms'), current_date, 'PUNCH_OUT', 'DENIED')$$,
+select test.must_fail($$insert into attendance_events (profile_id, attendance_date, kind, location_status) values (test.id('wkr_tms'), (now() at time zone 'Asia/Kolkata')::date, 'PUNCH_OUT', 'DENIED')$$,
   'an employee cannot write anyone''s attendance directly', 'permission denied');
 select test.must_fail($$update attendance_records set punch_out_at = now() where profile_id = test.id('wkr_tms')$$, 'nor change another person''s day', 'permission denied');
-select test.must_fail($$select private.crm_sessions_json(test.id('wkr_tms'), current_date)$$, 'nor read another person''s sessions', 'permission denied');
+select test.must_fail($$select private.crm_sessions_json(test.id('wkr_tms'), (now() at time zone 'Asia/Kolkata')::date)$$, 'nor read another person''s sessions', 'permission denied');
 select test.login('wkr_dhp');
 select test.must_fail($$select hr_attendance_register(private.office_today(), null, null, null)$$, 'a Department Head cannot read the register', 'FORBIDDEN');
 select test.login('wkr_ohp');
@@ -196,7 +196,7 @@ select test.check((select d ->> 'status' = 'ON_LUNCH' from (select attendance_lu
 select test.check((select d ->> 'status' = 'RESUMED_WORK' from (select attendance_lunch('END') d) x), 'resumes work');
 select test.check((select d ->> 'status' = 'PUNCHED_OUT' and (d -> 'punchOut' ->> 'latitude')::numeric = 18.5402
                      from (select attendance_punch_out('CAPTURED', 18.5402, 73.8301, 14, gen_random_uuid()) d) x), 'and punches out with a fresh location');
-select test.check((select jsonb_array_length(d) >= 1 from (select my_attendance(current_date - 7, current_date) d) x), 'and sees their own days');
+select test.check((select jsonb_array_length(d) >= 1 from (select my_attendance((now() at time zone 'Asia/Kolkata')::date - 7, (now() at time zone 'Asia/Kolkata')::date) d) x), 'and sees their own days');
 select test.login('hr_head');
 select test.check((select x ->> 'status' = 'PUNCHED_OUT' and (x -> 'punchIn' ->> 'accuracy')::int = 18 and (x -> 'punchOut' ->> 'accuracy')::int = 14
                      from jsonb_array_elements(hr_attendance_register(private.office_today(), null, test.id('wkr_ohp'), null) -> 'rows') x),
