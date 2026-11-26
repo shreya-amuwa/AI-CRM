@@ -7500,7 +7500,7 @@ export interface PerformanceSubjectRecord {
 export interface PerformanceSubjectHistory { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; records: PerformanceSubjectRecord[] }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100)
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100)
 // ---------------------------------------------------------------------------------------------------------------------------------
 export interface SheetSyncRun { at: string; rows: number; added: number; updated: number; saved: number; rejected: number; duplicates: number; outcome: 'OK' | 'PARTIAL' | 'FAILED' | 'EMPTY' }
 export interface SheetSyncConnection {

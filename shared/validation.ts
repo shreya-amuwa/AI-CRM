@@ -3979,7 +3979,7 @@ export const performanceRecordReviewSchema = z
   .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100): what the Apps Script sends.
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100): what the Apps Script sends.
 // "header" = the sheet's first rows (up to 6, the headings are among them); "rows" = the rows that changed, each with its sheet row number.
 // Every cell is a string, a number or empty (the script sends dates as yyyy-mm-dd). The import's own limits apply after parsing.
 // ---------------------------------------------------------------------------------------------------------------------------------

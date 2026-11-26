@@ -13074,7 +13074,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
-// --- Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100) ---
+// --- Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100) ---
 {
   let q: any = await api('a', 'GET', '/customers/sheet-sync');
   check(q.status === 403, 'sheet sync: a Sales member cannot connect a customer sheet', q);

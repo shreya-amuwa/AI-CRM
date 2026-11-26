@@ -10,7 +10,7 @@ import { unwrap } from '../repositories/base.js';
 import { CustomerImportService } from './CustomerImportService.js';
 
 /**
- * Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100).
+ * Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100).
  *
  * A person who may import customers connects their team's Google Sheet: the CRM makes a secret key (shown once, inside the Apps Script),
  * keeps only its SHA-256 hash, and "CRM Sync > Sync now" in the sheet sends the rows that changed. The sheet is read with the SAME parser as
