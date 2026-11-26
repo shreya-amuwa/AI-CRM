@@ -50,6 +50,7 @@ import { UserService } from './UserService.js';
 import { EmployeeApprovalService } from './EmployeeApprovalService.js';
 import { EmployeeApprovalRepository } from '../repositories/EmployeeApprovalRepository.js';
 import { CustomerImportService } from './CustomerImportService.js';
+import { SheetSyncService } from './SheetSyncService.js';
 import { ChatService } from './ChatService.js';
 import { TicketAttachmentService } from './TicketAttachmentService.js';
 import { EmployeeCaseService } from './EmployeeCaseService.js';
@@ -134,6 +135,7 @@ export function createServices(db: SupabaseClient) {
     addons: new AddonInvoiceService(new AddonInvoiceRepository(db)),
     generatedInvoices: new GeneratedInvoiceService(new GeneratedInvoiceRepository(db), new StorageRepository()),
     customerImport: new CustomerImportService(db),
+    sheetSync: new SheetSyncService(db),
     chat: new ChatService(new ChatRepository(db), new StorageRepository()),
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     meetings: new MeetingService(new MeetingRepository(db)),

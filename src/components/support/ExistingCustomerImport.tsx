@@ -6,6 +6,7 @@ import { IMPORT_SHEETS, ONE_SHEET_BLOCKS, SHEET_LABEL, parseExistingCustomers, t
 import { readXlsx } from '../../lib/xlsxReader';
 import { useAuth } from '../../context/AuthContext';
 import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
+import { SheetSyncPanel } from './SheetSyncPanel';
 
 /**
  * Import existing customers from the Excel template: their services and plans, WhatsApp / AI Calling / RCS usage,
@@ -136,6 +137,8 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
       </Card>
 
       {error && <ErrorBanner message={error} />}
+
+      {step.kind === 'idle' && <SheetSyncPanel />}
 
       {(step.kind === 'checked' || step.kind === 'saving') && checked && <Preview step={checked} saving={step.kind === 'saving'} onSave={save} onReset={reset} />}
       {step.kind === 'saved' && <Saved result={step.result} onReset={reset} onDone={onDone} />}
