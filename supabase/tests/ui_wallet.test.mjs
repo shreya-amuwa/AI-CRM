@@ -25,6 +25,7 @@ const built = await build({
 });
 const bundle = built.outputFiles[0].text;
 const srv = createServer((req, res) => {
+  if (req.url === '/api/v1/wallet/pin/forgot') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ success: true, data: { sent: true } })); }
   if (req.url.startsWith('/api/v1/')) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ success: false, error: { code: 'NOT_FOUND', message: 'no fake' } })); }
   if (req.url === '/app.js') { res.writeHead(200, { 'Content-Type': 'application/javascript' }); return res.end(bundle); }
   if (req.url === '/app.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css); }
@@ -172,6 +173,79 @@ try {
     check(/unavailable/.test(await text(page, '[role="alert"]')), `${label}: a failure is shown, not a blank page`);
     await page.evaluate(() => { window.__state.fail = false; });
     check(errors.length === 0, `${label}: no script errors`, errors);
+    await ctx.close();
+  }
+
+  // ---- the Wallet PIN (20270220000100): set on first open, entered afterwards, wrong tries, forgot, change, lock
+  for (const [label, viewport] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 800 }]]) {
+    const ctx = await browser.newContext({ viewport, timezoneId: 'Asia/Kolkata' });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    await page.goto(base);
+    await page.evaluate(() => { Object.assign(window.__state.pin, { hasPin: false, unlocked: false }); window.mountWallet(); });
+    await page.getByRole('heading', { name: 'Set your Wallet PIN' }).waitFor();
+    check((await page.getByTestId('wallet-card').count()) === 0 && (await calls(page, 'wallet_summary')).length === 0, `${label} PIN: first open asks for a PIN and loads nothing of the wallet`);
+    await page.getByLabel('New PIN').fill('482913');
+    await page.getByLabel('Confirm PIN').fill('482914');
+    check(/do not match/.test(await text(page, '[data-testid="wallet-pin-card"]')) && await page.getByRole('button', { name: /Set PIN/ }).isDisabled(), `${label} PIN: a mismatch is shown and Set PIN waits`);
+    await page.getByLabel('New PIN').fill('111111');
+    await page.getByLabel('Confirm PIN').fill('111111');
+    await page.getByRole('button', { name: /Set PIN/ }).click();
+    await page.getByText(/harder to guess/).waitFor();
+    check(true, `${label} PIN: an easy PIN is refused with the database's reason`);
+    await page.getByLabel('New PIN').fill('482913');
+    await page.getByLabel('Confirm PIN').fill('482913');
+    await page.getByRole('button', { name: /Set PIN/ }).click();
+    await page.getByTestId('wallet-card').waitFor();
+    check(/Wallet unlocked/.test(await page.innerText('body')), `${label} PIN: after setting it the wallet opens`);
+    // the next sign-in: the PIN is asked for
+    await page.evaluate(() => { window.__state.pin.unlocked = false; window.mountWallet(); });
+    await page.getByRole('heading', { name: 'Enter your Wallet PIN' }).waitFor();
+    check((await page.getByTestId('wallet-card').count()) === 0, `${label} PIN: a set PIN must be entered before anything is shown`);
+    await page.getByLabel('PIN', { exact: true }).fill('000000');
+    await page.getByRole('button', { name: 'Unlock wallet' }).click();
+    await page.getByText(/Wrong PIN\. 4 tries left/).waitFor();
+    check(true, `${label} PIN: a wrong PIN says how many tries are left`);
+    for (let i = 0; i < 4; i++) {
+      await page.getByLabel('PIN', { exact: true }).fill('000000');
+      await page.getByRole('button', { name: 'Unlock wallet' }).click();
+      await page.waitForFunction(n => window.__calls.filter(c => c.fn === 'wallet_pin_unlock').length >= n, i + 2);
+    }
+    await page.getByText(/Too many wrong PINs/).first().waitFor();
+    check(true, `${label} PIN: five wrong PINs lock the wallet and say until when`);
+    // forgot: the code from the e-mail and a new PIN
+    await page.getByRole('button', { name: 'Forgot PIN?' }).click();
+    await page.getByRole('button', { name: 'E-mail me a code' }).click();
+    await page.getByText(/Code sent/).waitFor();
+    await page.getByLabel('Code from the e-mail').fill('abcd2345');
+    await page.getByLabel('New PIN (6 digits)').fill('846201');
+    await page.getByLabel('New PIN again').fill('846201');
+    await page.getByRole('button', { name: 'Set new PIN' }).click();
+    await page.getByTestId('wallet-card').waitFor();
+    check(await page.evaluate(() => window.__state.pin.pin) === '846201', `${label} PIN: Forgot PIN: the e-mailed code and a new PIN open the wallet`);
+    // change and lock
+    await page.getByRole('button', { name: 'Change PIN' }).click();
+    await page.getByLabel('Current PIN').fill('846201');
+    await page.getByLabel('New PIN (6 digits)').fill('739164');
+    await page.getByLabel('New PIN again').fill('739164');
+    await page.getByTestId('wallet-pin-change').getByRole('button', { name: 'Change PIN' }).click();
+    await page.getByText('Your Wallet PIN was changed.').waitFor();
+    check(await page.evaluate(() => window.__state.pin.pin) === '739164', `${label} PIN: Change PIN with the current PIN`);
+    await page.getByRole('button', { name: 'Lock wallet' }).click();
+    await page.getByRole('heading', { name: 'Enter your Wallet PIN' }).waitFor();
+    check((await page.getByTestId('wallet-card').count()) === 0, `${label} PIN: Lock wallet hides it again`);
+    // the unlock runs out while the wallet is open: back to the PIN screen
+    await page.getByLabel('PIN', { exact: true }).fill('739164');
+    await page.getByRole('button', { name: 'Unlock wallet' }).click();
+    await page.getByTestId('wallet-card').waitFor();
+    await page.evaluate(() => { window.__state.pin.unlocked = false; });
+    await page.getByRole('button', { name: 'Refresh the wallet' }).click();
+    await page.getByRole('heading', { name: 'Enter your Wallet PIN' }).waitFor();
+    check(/locked/.test(await text(page, '[data-testid="wallet-pin-card"]')), `${label} PIN: when the database says locked, the PIN screen comes back`);
+    if (label === 'phone') check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone PIN: no sideways scrolling');
+    check(errors.length === 0, `${label} PIN: no script errors`, errors);
+    await page.evaluate(() => Object.assign(window.__state.pin, { hasPin: true, pin: '482913', unlocked: true, fails: 0, lockedUntil: null }));
     await ctx.close();
   }
 

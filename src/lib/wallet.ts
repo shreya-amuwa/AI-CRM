@@ -1,4 +1,5 @@
 import { getSupabase } from '../services/supabaseClient';
+import { api } from './api/client';
 import { rupees } from './income';
 import type { PayoutRequest } from './payouts';
 
@@ -78,9 +79,29 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   const db = getSupabase();
   if (!db) throw new Error('The CRM is not connected to its database.');
   const { data, error } = await db.rpc(fn, args);
-  if (error) throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
+  if (error) {
+    // the database refuses the wallet until the PIN was entered in this sign-in (20270220000100): the PIN screen takes over
+    if (/^WALLET_LOCKED:/.test(error.message) && typeof window !== 'undefined') window.dispatchEvent(new Event(WALLET_LOCKED_EVENT));
+    throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
+  }
   return data as T;
 }
+
+/** Sent when a wallet read is refused because the Wallet PIN was not entered (or the unlock ran out). */
+export const WALLET_LOCKED_EVENT = 'wallet:locked';
+export interface WalletPinStatus { hasPin: boolean; unlocked: boolean; unlockExpiresAt: string | null; lockedUntil: string | null; triesLeft: number }
+export interface WalletPinAnswer { unlocked?: boolean; triesLeft?: number; lockedUntil?: string | null; changed?: boolean; reset?: boolean }
+/** Wallet PIN: one per person, entered once per sign-in; checked and hashed only by the database. */
+export const walletPinApi = {
+  status: () => rpc<WalletPinStatus>('wallet_pin_status'),
+  set: (pin: string, confirm: string) => rpc<WalletPinAnswer>('wallet_pin_set', { p_pin: pin, p_confirm: confirm }),
+  unlock: (pin: string) => rpc<WalletPinAnswer>('wallet_pin_unlock', { p_pin: pin }),
+  change: (oldPin: string, pin: string, confirm: string) => rpc<WalletPinAnswer>('wallet_pin_change', { p_old: oldPin, p_new: pin, p_confirm: confirm }),
+  lock: () => rpc<void>('wallet_pin_lock'),
+  /** E-mails a one-time code (the API asks the database; the code never comes to the browser). */
+  forgot: () => api.post<{ sent: boolean; detail?: string }>('/wallet/pin/forgot'),
+  reset: (code: string, pin: string, confirm: string) => rpc<WalletPinAnswer>('wallet_pin_reset_finish', { p_code: code, p_pin: pin, p_confirm: confirm })
+};
 
 export const walletApi = {
   summary: () => rpc<WalletSummary>('wallet_summary'),

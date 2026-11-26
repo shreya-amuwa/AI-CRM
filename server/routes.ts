@@ -917,6 +917,7 @@ export const routes: RouteDef[] = [
   // RazorpayX (20270125000100): Accounts sends a withdrawal through Razorpay, or asks Razorpay about one still being sent
   { method: 'GET', path: '/payouts/razorpay/status', handler: payouts.razorpayStatus },
   { method: 'POST', path: '/payouts/:id/razorpay', handler: payouts.payViaRazorpay, options: S },
+  { method: 'POST', path: '/wallet/pin/forgot', handler: payouts.walletPinForgot, options: S },
   { method: 'POST', path: '/payouts/:id/razorpay/check', handler: payouts.checkRazorpay },
   // Documents on an employee's HR profile, stored in R2 (HR staff upload / delete; the employee may read their own - the database checks)
   { method: 'GET', path: '/hr/employee-files', handler: hrFiles.list },

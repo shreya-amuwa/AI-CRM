@@ -13188,6 +13188,31 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(s.status === 200 && s.json.data.hasLogin === true && s.json.data.email === 'nologin.client@example.com', 'support create login: the card now shows the login', s);
 }
 
+// ---- Wallet PIN: "Forgot PIN" e-mails a one-time code (20270220000100) ----
+{
+  const smId = (await api('sm', 'GET', '/me')).json.data.id as string;
+  await db.query(`delete from public.wallet_pin_resets where profile_id = $1`, [smId]);
+  await db.query(`delete from public.wallet_pins where profile_id = $1`, [smId]);
+  let w: any = await api('sm', 'POST', '/wallet/pin/forgot');
+  check(w.status === 409 && /not set a Wallet PIN/i.test(w.json?.error?.message ?? JSON.stringify(w.json)), 'wallet pin: no code before a PIN is set', w);
+  await db.query(`insert into public.wallet_pins (profile_id, pin_hash) values ($1, extensions.crypt('482913', extensions.gen_salt('bf', 6)))`, [smId]);
+  const before = outbox.filter(o => o.path === '/emails').length;
+  w = await api('sm', 'POST', '/wallet/pin/forgot');
+  check(w.status === 200 && typeof w.json.data.sent === 'boolean' && !JSON.stringify(w.json).match(/"code"/), 'wallet pin: forgot answers sent / not sent and never returns the code', w);
+  const row = (await db.query(`select code_hash, expires_at > now() + interval '29 minutes' as fresh from public.wallet_pin_resets where profile_id = $1`, [smId])).rows[0];
+  check(!!row && row.code_hash.startsWith('$2') && row.fresh, 'wallet pin: a hashed code valid for 30 minutes is stored', row);
+  const mail = outbox.filter(o => o.path === '/emails').slice(before).find(o => /Wallet PIN reset code/.test(o.body?.subject ?? ''));
+  check(w.json.data.sent ? !!mail && /\b[A-HJ-NP-Z2-9]{8}\b/.test(mail.body.text) && !(mail.body.cc?.length) : !mail, 'wallet pin: the code goes only by e-mail (no CC)', { sent: w.json.data.sent, mail: !!mail });
+  w = await api('sm', 'POST', '/wallet/pin/forgot');
+  check(w.status === 409, 'wallet pin: a second code within a minute is refused', w);
+  w = await api('sa', 'POST', '/wallet/pin/forgot');
+  check(w.status === 409, 'wallet pin: the Managing Director has no wallet PIN', w);
+  w = await api(null, 'POST', '/wallet/pin/forgot');
+  check(w.status === 401, 'wallet pin: not signed in', w);
+  await db.query(`delete from public.wallet_pin_resets where profile_id = $1`, [smId]);
+  await db.query(`delete from public.wallet_pins where profile_id = $1`, [smId]);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
