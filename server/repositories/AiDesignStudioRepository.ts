@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AdsAssignment, AdsAssignmentDetail, AdsClient, AdsContext, AdsIssue, AdsIssueDetail, AdsNotice, AdsOverview, AdsPerson, AdsReport, AdsReportDetail
+  AdsAssignmentDeleteResult, AdsAssignment, AdsAssignmentDetail, AdsClient, AdsContext, AdsIssue, AdsIssueDetail, AdsNotice, AdsOverview, AdsPerson, AdsReport, AdsReportDetail
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -41,6 +41,8 @@ export class AiDesignStudioRepository {
   assignmentReassign(id: string, assigneeId: string, note?: string | null) {
     return this.rpc<AdsAssignment>('ads_assignment_reassign', { p_id: id, p_assignee: assigneeId, p_note: note ?? null });
   }
+
+  assignmentDelete(id: string) { return this.rpc<AdsAssignmentDeleteResult>('ads_assignment_delete', { p_id: id }); }
 
   reportSubmit(p: Record<string, unknown>) { return this.rpc<AdsReport>('ads_report_submit', { p }); }
   reports(q: { view: string; status?: string; from?: string; to?: string; clientId?: string; authorId?: string; leadId?: string }) {

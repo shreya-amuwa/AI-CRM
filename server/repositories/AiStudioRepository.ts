@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
+  AiStudioTaskDeleteResult, AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
   AiStudioTaskDetail, AiStudioTaskPage
 } from '../../shared/contracts.js';
 import { AppError } from '../http/errors.js';
@@ -82,6 +82,7 @@ export class AiStudioRepository {
   editTask(id: string, i: { title: string; description?: string | null; priority: string; dueDate?: string | null }) {
     return this.rpc<AiStudioTask>('ai_studio_task_edit', { p_task: id, p_title: i.title, p_description: i.description ?? null, p_priority: i.priority, p_due: i.dueDate ?? null });
   }
+  deleteTask(id: string) { return this.rpc<AiStudioTaskDeleteResult>('ai_studio_task_delete', { p_task: id }); }
   updateTask(id: string, i: { status: string; progress: number; note?: string | null; attachments?: string[] }) {
     return this.rpc<AiStudioTask>('ai_studio_task_update', { p_task: id, p_status: i.status, p_progress: i.progress, p_note: i.note ?? null, p_links: i.attachments ?? null });
   }

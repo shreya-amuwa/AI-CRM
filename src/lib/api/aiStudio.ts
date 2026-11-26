@@ -1,4 +1,5 @@
 import type {
+  AiStudioTaskDeleteResult,
   AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
   AiStudioTaskDetail, AiStudioTaskPage
 } from '../../../shared/contracts';
@@ -45,6 +46,8 @@ export const aiStudioApi = {
   task: (id: string) => api.get<AiStudioTaskDetail>(`/ai-studio/tasks/${id}`),
   assignTask: (t: AiStudioTaskForm) => api.post<AiStudioTask>('/ai-studio/tasks', t),
   editTask: (id: string, t: { title: string; description?: string; priority: string; dueDate?: string }) => api.patch<AiStudioTask>(`/ai-studio/tasks/${id}`, t),
+  /** The Team Lead who gave it or the Department Head (the database decides). */
+  deleteTask: (id: string) => api.delete<AiStudioTaskDeleteResult>(`/ai-studio/tasks/${id}`),
   updateTask: (id: string, u: { status: 'IN_PROGRESS' | 'ON_HOLD' | 'COMPLETED'; progress: number; note?: string; attachments?: string[] }) => api.post<AiStudioTask>(`/ai-studio/tasks/${id}/update`, u),
   reportContext: () => api.get<AiStudioReportContext>('/ai-studio/reports/context'),
   reports: (f: AiStudioReportsFilter) => api.get<AiStudioReportPage>('/ai-studio/reports', { ...f }),

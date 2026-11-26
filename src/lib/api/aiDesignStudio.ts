@@ -1,5 +1,5 @@
 import type {
-  AdsAssignment, AdsAssignmentDetail, AdsClient, AdsContext, AdsIssue, AdsIssueDetail, AdsNotice, AdsOverview, AdsPerson, AdsReport, AdsReportDetail
+  AdsAssignment, AdsAssignmentDeleteResult, AdsAssignmentDetail, AdsClient, AdsContext, AdsIssue, AdsIssueDetail, AdsNotice, AdsOverview, AdsPerson, AdsReport, AdsReportDetail
 } from '../../../shared/contracts';
 import type {
   AdsAssignmentCreateInput, AdsClientCreateInput, AdsClientUpdateInput, AdsIssueCreateInput, AdsNoticeCreateInput, AdsReportInput
@@ -27,6 +27,8 @@ export const aiDesignStudioApi = {
   updateAssignment: (id: string, body: { dueDate?: string | null; priority?: string; instructions?: string | null }) => api.patch<AdsAssignment>(`/ai-design-studio/assignments/${id}`, body),
   assignmentStatus: (id: string, body: { status: string; progress?: number; note?: string | null }) => api.post<AdsAssignment>(`/ai-design-studio/assignments/${id}/status`, body),
   reassign: (id: string, assigneeId: string, note?: string) => api.post<AdsAssignment>(`/ai-design-studio/assignments/${id}/reassign`, { assigneeId, note }),
+  /** The Team Lead who gave the work or the Department Head (the database decides). */
+  deleteAssignment: (id: string) => api.delete<AdsAssignmentDeleteResult>(`/ai-design-studio/assignments/${id}`),
 
   reports: (q: { view?: 'mine' | 'team' | 'all'; status?: string; from?: string; to?: string; clientId?: string; authorId?: string; leadId?: string } = {}) =>
     api.get<AdsReport[]>('/ai-design-studio/reports', { ...q }),
