@@ -38,7 +38,7 @@ type Page = (typeof SUPER_ADMIN_PAGES)[number];
  *   Departments         the department cards: open a department's own panel, lock / unlock, add one (unchanged functions)
  *   Business Reports    the existing company business report
  *   Team Members        Team Member Management in full screen: Add Team Member, Team Members (the directory), Access Control
- *   Sales Incentives    create, edit, stop and delete the incentive rules sales staff earn from (20270121000100)
+ *   Incentive           create, edit, stop and delete the incentive rules Sales and Support staff earn from (20270121000100, 20270222000100)
  *   Performance Mgmt.   each department's Team Leads and members, figures and approvals (read only)
  *   Security & Audit    who did what, and what was refused (read-only)
  * Opening a department still uses the existing department panels; their "home" button brings the Super Admin back here.
@@ -66,7 +66,7 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'departments', label: 'Departments', icon: Building2 },
           { id: 'team', label: 'Team Members', icon: Users },
           { id: 'income', label: 'Department Income', icon: Building2 },
-          { id: 'incentives', label: 'Sales Incentives', icon: SlidersHorizontal },
+          { id: 'incentives', label: 'Incentive', icon: SlidersHorizontal },
           // wallet credits (bonus, adjustment, refund) and the wallet report (20270207000100); the Super Admin has no wallet of their own
           { id: 'wallet-admin', label: 'Wallet', icon: Wallet },
           // each department's Team Leads and members, their figures and approvals (read only: the Team Leads and the Department Heads decide)

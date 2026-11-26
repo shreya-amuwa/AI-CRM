@@ -98,18 +98,38 @@ try {
 
   // 3. Super Admin: create the ₹500 rule... the form refuses without a product (server message), then creates, edits, stops, deletes
   ({ ctx, page } = await open('mountSetup', 'sa'));
-  await page.getByRole('button', { name: 'New rule' }).click();
-  const form = page.getByRole('form', { name: 'New rule' });
+  check(await page.getByRole('heading', { name: 'Incentive Management' }).isVisible(), 'the Super Admin\'s page is called Incentive Management');
+  await page.getByRole('button', { name: 'Create Incentive' }).click();
+  const form = page.getByRole('form', { name: 'Create Incentive' });
   await form.getByLabel('Name', { exact: true }).fill('Website 500');
   await form.getByLabel('Product').selectOption('WEB');
   await form.getByLabel('Amount per unit for the CEO (₹)').fill('500');
   await form.getByLabel('CEO', { exact: true }).selectOption({ label: 'Omkar Ops' });
   await form.getByLabel('Target units (optional, a goal only)').fill('100');
-  await form.getByRole('button', { name: 'Create rule' }).click();
+  await form.getByRole('button', { name: 'Create Incentive' }).click();
   await page.getByText('Rule created.').waitFor();
   const created = (await calls(page, 'incentive_rule_create'))[0].p;
   check(created.amount === 500 && created.serviceCode === 'WEB' && created.scopeType === 'OPERATIONS_HEAD' && created.targetUnits === 100, 'the Super Admin creates the ₹500 rule for the Operations Head', JSON.stringify(created));
   check(await page.getByTestId('rule-row').filter({ hasText: 'Website 500' }).count() === 1, 'the new rule is listed');
+
+  // a Support incentive (20270222000100): a percentage of each payment, with a monthly business minimum, for a Support department
+  await page.getByRole('button', { name: 'Create Incentive' }).first().click();
+  const sform = page.getByRole('form', { name: 'Create Incentive' });
+  await sform.getByLabel('Name', { exact: true }).fill('Support renewals');
+  await sform.getByLabel('For', { exact: true }).selectOption('SUPPORT_BUSINESS');
+  check(!(await sform.getByLabel('Product').count()) && JSON.stringify(await sform.getByLabel('Who it is for').locator('option').allInnerTexts()) === JSON.stringify(['A department', 'A team', 'One person']),
+    'a Support incentive has no product and goes to a Support department, team or person');
+  await sform.getByLabel('Incentive type').selectOption('PERCENT');
+  await sform.getByLabel('Percentage of each payment (%)').fill('10');
+  await sform.getByLabel('Choose', { exact: true }).selectOption({ label: 'Support' });
+  await sform.getByLabel('Monthly business minimum (₹, optional)').fill('50000');
+  await sform.getByRole('button', { name: 'Create Incentive' }).click();
+  await page.getByText('Rule created.').waitFor();
+  const sup = (await calls(page, 'incentive_rule_create')).at(-1).p;
+  check(sup.eventType === 'SUPPORT_BUSINESS' && sup.amountType === 'PERCENT' && sup.amount === 10 && sup.minMonthlyBusiness === 50000 && sup.scopeType === 'DEPARTMENT' && sup.scopeValue === 'dep-2' && sup.serviceCode === null,
+    'the Super Admin creates a Support incentive: 10% of each payment from ₹50,000 business a month', JSON.stringify(sup));
+  const srow = page.getByTestId('rule-row').filter({ hasText: 'Support renewals' });
+  check(/Support business · 10% of each payment/.test(await srow.innerText()) && /From ₹50,000 business a month/.test(await srow.innerText()), 'the list says how a Support incentive pays', await srow.innerText());
 
   // edit the name only: in place
   await page.getByRole('button', { name: 'Edit Website 500' }).click();
@@ -187,7 +207,7 @@ try {
   await row.getByText('Saved.').waitFor();
   check((await row.getByTestId('kept').innerText()) === '₹30', 'after saving 120 the Team Lead keeps ₹30');
   check(!(await page.getByRole('region', { name: 'Telecaller and Business Associate split' }).count()), 'a Team Lead does not set the split');
-  check(!(await page.getByRole('button', { name: 'New rule' }).count()), 'a Team Lead cannot create rules');
+  check(!(await page.getByRole('button', { name: 'Create Incentive' }).count()), 'a Team Lead cannot create rules');
   await ctx.close();
 
   // 5. Department Head: the split

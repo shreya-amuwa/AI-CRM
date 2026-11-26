@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pencil, Plus, Square, Trash2 } from 'lucide-react';
 import {
   EVENT_LABEL, LEVELS, SCOPE_LABEL, SUB_ROLES, incomeApi, rupees,
-  type GivenRow, type IncentiveEvent, type IncentiveOptions, type IncentiveScope, type IncentiveSetupData, type RuleInput, type SetupRule
+  type AmountType, type GivenRow, type IncentiveEvent, type IncentiveOptions, type IncentiveScope, type IncentiveSetupData, type RuleInput, type SetupRule
 } from '../../lib/income';
 import { PageTitle } from '../layout/shell';
 import { confirmAction } from '../feedback/AppFeedback';
@@ -53,17 +53,27 @@ export function scopeText(r: Pick<SetupRule, 'scopeType' | 'scopeValue'>, o: Inc
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Super Admin: the rule form (create and edit)
 // ---------------------------------------------------------------------------------------------------------------------------------
-interface FormState { name: string; eventType: IncentiveEvent; serviceCode: string; amount: string; targetUnits: string; scopeType: IncentiveScope; scopeValue: string; monthlyCap: string }
-const blank: FormState = { name: '', eventType: 'SALE_PAID', serviceCode: '', amount: '', targetUnits: '', scopeType: 'OPERATIONS_HEAD', scopeValue: '', monthlyCap: '' };
+interface FormState {
+  name: string; eventType: IncentiveEvent; serviceCode: string; amount: string; targetUnits: string; scopeType: IncentiveScope; scopeValue: string; monthlyCap: string;
+  /** Support business only (20270222000100): a fixed amount or a percentage of each payment, and the business the month must reach first */
+  amountType: AmountType; minMonthlyBusiness: string;
+}
+const blank: FormState = { name: '', eventType: 'SALE_PAID', serviceCode: '', amount: '', targetUnits: '', scopeType: 'OPERATIONS_HEAD', scopeValue: '', monthlyCap: '', amountType: 'FIXED', minMonthlyBusiness: '' };
+/** How a rule pays, in a few words: "₹500 per unit", "₹200 each", "10% of each payment" */
+export const amountText = (r: Pick<SetupRule, 'eventType' | 'amount' | 'amountType'>) =>
+  r.amountType === 'PERCENT' ? `${r.amount}% of each payment` : `${rupees(r.amount)}${r.eventType === 'SALE_PAID' ? ' per unit' : r.eventType === 'SUPPORT_BUSINESS' ? ' per payment' : ' each'}`;
 const fromRule = (r: SetupRule): FormState => ({
   name: r.name, eventType: r.eventType, serviceCode: r.serviceCode ?? '', amount: String(r.amount), targetUnits: r.targetUnits == null ? '' : String(r.targetUnits),
-  scopeType: r.scopeType, scopeValue: r.scopeValue ?? '', monthlyCap: r.monthlyCap == null ? '' : String(r.monthlyCap)
+  scopeType: r.scopeType, scopeValue: r.scopeValue ?? '', monthlyCap: r.monthlyCap == null ? '' : String(r.monthlyCap),
+  amountType: r.amountType ?? 'FIXED', minMonthlyBusiness: r.minMonthlyBusiness == null ? '' : String(r.minMonthlyBusiness)
 });
 const toInput = (f: FormState): RuleInput => ({
   name: f.name.trim(), eventType: f.eventType, serviceCode: f.eventType === 'SALE_PAID' ? f.serviceCode || null : null, amount: Number(f.amount),
   targetUnits: f.eventType === 'SALE_PAID' && f.targetUnits ? Number(f.targetUnits) : null,
   scopeType: f.eventType === 'SALE_PAID' ? 'OPERATIONS_HEAD' : f.scopeType, scopeValue: f.scopeValue || null,
-  monthlyCap: f.eventType !== 'SALE_PAID' && f.monthlyCap ? Number(f.monthlyCap) : null
+  monthlyCap: f.eventType !== 'SALE_PAID' && f.monthlyCap ? Number(f.monthlyCap) : null,
+  amountType: f.eventType === 'SUPPORT_BUSINESS' ? f.amountType : 'FIXED',
+  minMonthlyBusiness: f.eventType === 'SUPPORT_BUSINESS' && f.minMonthlyBusiness ? Number(f.minMonthlyBusiness) : null
 });
 
 const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel: () => void; onSaved: (note: string) => void }> = ({ rule, options, onCancel, onSaved }) => {
@@ -72,6 +82,8 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF(x => ({ ...x, [k]: v }));
   const sale = f.eventType === 'SALE_PAID';
+  const support = f.eventType === 'SUPPORT_BUSINESS';
+  const amountLabel = sale ? 'Amount per unit for the CEO (₹)' : support ? (f.amountType === 'PERCENT' ? 'Percentage of each payment (%)' : 'Amount per payment (₹)') : 'Amount per event (₹)';
   const scopeChoices: { value: string; label: string }[] = useMemo(() => {
     switch (sale ? 'OPERATIONS_HEAD' : f.scopeType) {
       case 'OPERATIONS_HEAD': return options.operationsHeads.map(p => ({ value: p.id, label: p.name }));
@@ -90,7 +102,8 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
   const sameSale = !!rule && sale && (f.serviceCode || null) === rule.serviceCode && (f.scopeValue || null) === rule.scopeValue;
   // what changes "from now on" (the old version ends, a new one starts): shown before saving
   const replaces = !!rule && (Number(f.amount) !== rule.amount || (sale && (f.serviceCode || null) !== rule.serviceCode)
-    || (!sale && f.scopeType !== rule.scopeType) || (f.scopeValue || null) !== rule.scopeValue);
+    || (!sale && f.scopeType !== rule.scopeType) || (f.scopeValue || null) !== rule.scopeValue
+    || (support && (f.amountType !== (rule.amountType ?? 'FIXED') || (f.minMonthlyBusiness ? Number(f.minMonthlyBusiness) : null) !== (rule.minMonthlyBusiness ?? null))));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,7 +113,8 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
       if (rule) {
         const next = toInput(f);
         const changes: Partial<RuleInput> = sale ? { name: next.name, targetUnits: next.targetUnits } : { name: next.name, monthlyCap: next.monthlyCap };
-        if (replaces) Object.assign(changes, { amount: next.amount, serviceCode: next.serviceCode, scopeType: next.scopeType, scopeValue: next.scopeValue });
+        if (replaces) Object.assign(changes, { amount: next.amount, serviceCode: next.serviceCode, scopeType: next.scopeType, scopeValue: next.scopeValue },
+          support ? { amountType: next.amountType, minMonthlyBusiness: next.minMonthlyBusiness } : {});
         await incomeApi.updateRule(rule.id, changes);
         onSaved(replaces ? 'Saved. The new amount applies from now on; earnings already recorded keep the amount they were earned at.' : 'Saved.');
       } else {
@@ -113,13 +127,13 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
   };
 
   return (
-    <form onSubmit={submit} aria-label={rule ? 'Edit rule' : 'New rule'} className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+    <form onSubmit={submit} aria-label={rule ? 'Edit rule' : 'Create Incentive'} className="space-y-3 rounded-xl border border-blue-100 bg-blue-50/40 p-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <label className="text-sm font-medium text-slate-700">Name
           <input className={input} aria-label="Name" value={f.name} maxLength={120} onChange={e => set('name', e.target.value)} required />
         </label>
         <label className="text-sm font-medium text-slate-700">For
-          <select className={input} aria-label="For" value={f.eventType} disabled={!!rule} onChange={e => { set('eventType', e.target.value as IncentiveEvent); set('scopeValue', ''); set('scopeType', e.target.value === 'SALE_PAID' ? 'OPERATIONS_HEAD' : 'LEVEL'); }}>
+          <select className={input} aria-label="For" value={f.eventType} disabled={!!rule} onChange={e => { set('eventType', e.target.value as IncentiveEvent); set('scopeValue', ''); set('amountType', 'FIXED'); set('minMonthlyBusiness', ''); set('scopeType', e.target.value === 'SALE_PAID' ? 'OPERATIONS_HEAD' : e.target.value === 'SUPPORT_BUSINESS' ? 'DEPARTMENT' : 'LEVEL'); }}>
             {(Object.keys(EVENT_LABEL) as IncentiveEvent[]).map(k => <option key={k} value={k}>{EVENT_LABEL[k]}</option>)}
           </select>
         </label>
@@ -131,13 +145,21 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
             </select>
           </label>
         )}
-        <label className="text-sm font-medium text-slate-700">{sale ? 'Amount per unit for the CEO (₹)' : 'Amount per event (₹)'}
-          <input className={input} aria-label={sale ? 'Amount per unit for the CEO (₹)' : 'Amount per event (₹)'} type="number" inputMode="decimal" min="0.01" step="0.01" value={f.amount} onChange={e => set('amount', e.target.value)} required />
+        {support && (
+          <label className="text-sm font-medium text-slate-700">Incentive type
+            <select className={input} aria-label="Incentive type" value={f.amountType} onChange={e => set('amountType', e.target.value as AmountType)}>
+              <option value="FIXED">Fixed amount per payment</option>
+              <option value="PERCENT">Percentage of each payment</option>
+            </select>
+          </label>
+        )}
+        <label className="text-sm font-medium text-slate-700">{amountLabel}
+          <input className={input} aria-label={amountLabel} type="number" inputMode="decimal" min="0.01" step="0.01" value={f.amount} onChange={e => set('amount', e.target.value)} required />
         </label>
         {!sale && (
           <label className="text-sm font-medium text-slate-700">Who it is for
             <select className={input} aria-label="Who it is for" value={f.scopeType} onChange={e => { set('scopeType', e.target.value as IncentiveScope); set('scopeValue', ''); }}>
-              {(['LEVEL', 'SUB_ROLE', 'DEPARTMENT', 'TEAM', 'PERSON'] as IncentiveScope[]).map(k => <option key={k} value={k}>{SCOPE_LABEL[k]}</option>)}
+              {((support ? ['DEPARTMENT', 'TEAM', 'PERSON'] : ['LEVEL', 'SUB_ROLE', 'DEPARTMENT', 'TEAM', 'PERSON']) as IncentiveScope[]).map(k => <option key={k} value={k}>{SCOPE_LABEL[k]}</option>)}
             </select>
           </label>
         )}
@@ -156,6 +178,12 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
             <input className={input} aria-label="Monthly cap per person (₹, optional)" type="number" inputMode="decimal" min="0.01" step="0.01" value={f.monthlyCap} onChange={e => set('monthlyCap', e.target.value)} />
           </label>
         )}
+        {support && (
+          <label className="text-sm font-medium text-slate-700">Monthly business minimum (₹, optional)
+            <input className={input} aria-label="Monthly business minimum (₹, optional)" type="number" inputMode="decimal" min="0.01" step="0.01" value={f.minMonthlyBusiness} onChange={e => set('minMonthlyBusiness', e.target.value)} />
+            <span className="mt-1 block text-[11px] font-normal text-slate-500">Nothing is earned until the verified business of the customers this person looks after reaches this amount in the month.</span>
+          </label>
+        )}
       </div>
       {replaces && <p className="text-xs text-amber-800" data-testid="replace-note">
         This change applies from now on: the current version stops and a new one starts{sameSale ? ', keeping the amounts already passed down' : ''}. Earnings already recorded stay as they were.
@@ -164,7 +192,7 @@ const RuleForm: React.FC<{ rule?: SetupRule; options: IncentiveOptions; onCancel
       {error && <Alert tone="error">{error}</Alert>}
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" className={btn.secondary} onClick={onCancel} disabled={saving}>Cancel</button>
-        <button type="submit" className={btn.primary} disabled={saving}>{saving ? 'Saving…' : rule ? 'Save' : 'Create rule'}</button>
+        <button type="submit" className={btn.primary} disabled={saving}>{saving ? 'Saving…' : rule ? 'Save' : 'Create Incentive'}</button>
       </div>
     </form>
   );
@@ -204,10 +232,10 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
   return (
     <Panel
       title="Incentive rules"
-      hint="Sales rules go to an CEO, who passes amounts down. Demo and field visit rewards go straight to the people you choose."
+      hint="Sales rules go to a CEO, who passes amounts down. Demo, field visit and Support business rewards go straight to the people you choose."
       right={<div className="flex flex-wrap gap-2">
         <label className="flex items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={showEnded} onChange={e => setShowEnded(e.target.checked)} /> Show stopped rules</label>
-        <button type="button" className={btn.primary} onClick={() => setEditing('new')}><Plus className="w-4 h-4" aria-hidden="true" /> New rule</button>
+        <button type="button" className={btn.primary} onClick={() => setEditing('new')}><Plus className="w-4 h-4" aria-hidden="true" /> Create Incentive</button>
       </div>}
     >
       <div className="space-y-3">
@@ -225,10 +253,10 @@ const AdminRules: React.FC<{ data: IncentiveSetupData; reload: () => void }> = (
                       {current(r) && !r.active && <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Starts {r.activeFrom}</span>}
                     </p>
                     <p className="text-xs text-slate-600">
-                      {EVENT_LABEL[r.eventType]}{r.serviceName ? ` · ${r.serviceName}` : ''} · <strong>{rupees(r.amount)}</strong>{r.eventType === 'SALE_PAID' ? ' per unit' : ' each'} · {scopeText(r, options)}
+                      {EVENT_LABEL[r.eventType]}{r.serviceName ? ` · ${r.serviceName}` : ''} · <strong>{amountText(r)}</strong> · {scopeText(r, options)}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {r.targetUnits ? `Target ${r.targetUnits} units · ` : ''}{r.monthlyCap ? `Cap ${rupees(r.monthlyCap)} a month · ` : ''}From {r.activeFrom}{r.earnedCount ? ` · earned ${r.earnedCount} times` : ''}
+                      {r.targetUnits ? `Target ${r.targetUnits} units · ` : ''}{r.monthlyCap ? `Cap ${rupees(r.monthlyCap)} a month · ` : ''}{r.minMonthlyBusiness ? `From ${rupees(r.minMonthlyBusiness)} business a month · ` : ''}From {r.activeFrom}{r.earnedCount ? ` · earned ${r.earnedCount} times` : ''}
                     </p>
                   </div>
                   {current(r) && (
@@ -356,8 +384,8 @@ export const IncentiveSetup: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <PageTitle title="Incentive setup" subtitle={data?.isAdmin
-        ? 'Create, change and stop the incentives sales staff earn. A change to an amount applies from now on.'
+      <PageTitle title={data?.isAdmin ? 'Incentive Management' : 'Incentive setup'} subtitle={data?.isAdmin
+        ? 'Create, change and stop the incentives Sales and Support staff earn. Every incentive is credited to the person\'s Wallet. A change to an amount applies from now on.'
         : 'What each person below you earns per unit sold. You keep the difference.'} />
       {error && <Alert tone="error">{error}</Alert>}
       {!data && !error && <p className="text-sm text-slate-500">Loading…</p>}

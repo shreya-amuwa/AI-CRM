@@ -6,9 +6,9 @@ group: Income
 roles: [Super Admin, Operations Head, Department Head, Team Lead]
 audience: internal
 status: verified
-sources: [src/components/income/IncentiveSetup.tsx, src/components/business-associate/DemoSchedulePage.tsx, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
+sources: [src/components/income/IncentiveSetup.tsx, supabase/migrations/20270222000100_support_incentives.sql, src/components/business-associate/DemoSchedulePage.tsx, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
 related: [sales/my-income, sales/business-associate-workspace]
-updated: 2026-11-21
+updated: 2026-11-26
 ---
 
 Incentives are set in two steps. The Super Admin decides what each product pays and gives it to an Operations Head. Each level then decides what the people directly below it get, and keeps the difference. Demo and field visit rewards are fixed amounts the Super Admin gives straight to the people chosen.
@@ -24,21 +24,22 @@ Payment verified | Accounts | everyone in the chain earns their share
 ## Before you start
 
 :::prereq
-- **Super Admin**: open **Sales Incentives** under **Company**.
+- **Super Admin**: open **Incentive** under **Company** (the page is called **Incentive Management**).
 - **Sales Operations Head** and **Sales Department Head**: open **Incentive setup** in the sidebar.
 - **Sales Team Lead**: open **Incentive setup** under **Income**.
 :::
 
 ## Steps for the Super Admin
 
-1. Click **New rule**.
-2. Enter a **Name** and choose what it is **For**: **Sale paid**, **Demo completed** or **Field visit completed**.
+1. Click **+ Create Incentive**.
+2. Enter a **Name** and choose what it is **For**: **Sale paid**, **Demo completed**, **Field visit completed** or **Support business**.
 3. For a sale, choose the **Product**, the **Amount per unit for the Operations Head (₹)**, the **Operations Head** and, if you want, **Target units (optional, a goal only)**.
 4. For a demo or a field visit, enter the **Amount per event (₹)**, choose **Who it is for** (everyone at a level, a sales role, a department, a team or one person) and, if you want, a **Monthly cap per person (₹, optional)**.
-5. Click **Create rule**.
-6. To change a rule, click **Edit**, change it and click **Save**.
-7. To stop a rule, click **Stop**. To remove it, click **Delete**.
-8. Under **When incentives start**, set **Days in the company** and click **Save**.
+5. For **Support business**, choose the **Incentive type** (**Fixed amount per payment** or **Percentage of each payment**), the amount or percentage, **Who it is for** (a Support department, a Support team or one person) and, if you want, a **Monthly cap per person (₹, optional)** and a **Monthly business minimum (₹, optional)**. Each payment Accounts verifies on a customer that person looks after earns it, once the month's business reaches the minimum. It is credited to their Wallet at once.
+6. Click **Create Incentive**.
+7. To change a rule, click **Edit**, change it and click **Save**.
+8. To stop a rule, click **Stop**. To remove it, click **Delete**.
+9. Under **When incentives start**, set **Days in the company** and click **Save**.
 
 ## Steps for heads and Team Leads
 
