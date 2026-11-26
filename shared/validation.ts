@@ -3970,3 +3970,8 @@ export const sheetSyncSchema = z
   })
   .strict();
 export type SheetSyncInput = z.infer<typeof sheetSyncSchema>;
+/** POST /search: the query travels in the body (not the address), so it is not written to access logs. */
+export const globalSearchSchema = z
+  .object({ q: z.string().max(200), limit: z.number().int().min(1).max(20).optional() })
+  .strict();
+export const searchRecordParamsSchema = z.object({ type: z.enum(['employee', 'customer', 'lead', 'ticket', 'department']), id: uuidSchema }).strict();

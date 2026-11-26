@@ -90,22 +90,22 @@ select test.check(test.att_events('wkr_tmp', 'PUNCH_OUT') = 2
 set role authenticated;
 select test.login('wkr_tmp');
 select test.must_fail($$select count(*) from attendance_events$$, 'nobody reads the tables directly', 'permission denied');
-select test.must_fail($$select hr_attendance_punches(current_date - 1, current_date, null, null)$$, 'a Team Member cannot read others'' punches', 'FORBIDDEN');
-select test.check((select jsonb_array_length(d) = 1 from (select my_attendance(current_date - 7, current_date) d) x), 'an employee reads their own days');
+select test.must_fail($$select hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, null, null)$$, 'a Team Member cannot read others'' punches', 'FORBIDDEN');
+select test.check((select jsonb_array_length(d) = 1 from (select my_attendance((now() at time zone 'Asia/Kolkata')::date - 7, (now() at time zone 'Asia/Kolkata')::date) d) x), 'an employee reads their own days');
 select test.login('wkr_dhp');
-select test.must_fail($$select hr_attendance_punches(current_date - 1, current_date, null, null)$$, 'a Department Head cannot read staff punches', 'FORBIDDEN');
-select test.must_fail($$select attendance_lunch_overview(current_date - 1, current_date)$$, 'nor staff lunch', 'FORBIDDEN');
+select test.must_fail($$select hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, null, null)$$, 'a Department Head cannot read staff punches', 'FORBIDDEN');
+select test.must_fail($$select attendance_lunch_overview((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date)$$, 'nor staff lunch', 'FORBIDDEN');
 select test.login('wkr_ohp');
-select test.must_fail($$select hr_attendance_punches(current_date - 1, current_date, null, null)$$, 'an Operations Head cannot read punch times or locations', 'FORBIDDEN');
+select test.must_fail($$select hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, null, null)$$, 'an Operations Head cannot read punch times or locations', 'FORBIDDEN');
 select test.check((select bool_or(x ->> 'name' = 'WKR tmp' and (x ->> 'exceededMinutes')::int = 1 and (x ->> 'flagged')::boolean) and not bool_or(x ->> 'name' = 'WKR tms')
                           and not bool_or(x ? 'punchIn') and not bool_or(x ? 'latitude')
-                     from jsonb_array_elements(attendance_lunch_overview(current_date - 1, current_date) -> 'rows') x),
+                     from jsonb_array_elements(attendance_lunch_overview((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date) -> 'rows') x),
   'the Support Operations Head sees Support lunch durations and flags only (no Sales person, no punch, no location)');
 select test.login('hr_head');
 select test.check((select bool_or(x ->> 'name' = 'WKR tmp' and (x -> 'punchIn' ->> 'latitude')::numeric = 18.52 and jsonb_array_length(x -> 'punchOutHistory') = 2
                                   and (x -> 'punchOut' ->> 'locationStatus') = 'UNAVAILABLE' and (x ->> 'lunchExceededMinutes')::int >= 1)
                           and bool_or(x ->> 'name' = 'WKR tms' and (x ->> 'locationUnavailable')::boolean)
-                     from jsonb_array_elements(hr_attendance_punches(current_date - 1, current_date, test.dept('wkr-a'), null) -> 'rows') x),
+                     from jsonb_array_elements(hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, test.dept('wkr-a'), null) -> 'rows') x),
   'HR sees punches with locations, the Punch Out history, location unavailable, lunch over the allowance');
 reset role;
 select test.check((select count(*) >= 1 from audit_logs where action = 'ATTENDANCE_LOCATIONS_VIEWED' and actor_id = test.id('hr_head')), 'reading locations is audited');

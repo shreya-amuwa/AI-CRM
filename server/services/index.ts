@@ -19,6 +19,8 @@ import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { MeetingService } from './MeetingService.js';
 import { LeadWhatsAppService } from './LeadWhatsAppService.js';
 import { CrocodialService } from './CrocodialService.js';
+import { SearchService } from './SearchService.js';
+import { SearchRepository } from '../repositories/SearchRepository.js';
 import { CrocodialRepository } from '../repositories/CrocodialRepository.js';
 import { LeadWhatsAppRepository } from '../repositories/LeadWhatsAppRepository.js';
 import { MeetingRepository } from '../repositories/MeetingRepository.js';
@@ -119,6 +121,7 @@ export function createServices(db: SupabaseClient) {
     salesHead: new SalesHeadService(new SalesHeadRepository(db), new StorageRepository()),
     ba: new BusinessAssociateService(new BusinessAssociateRepository(db), new StorageRepository()),
     customers: new CustomerService(new CustomerRepository(db)),
+    search: new SearchService(new SearchRepository(db)),
     approvals: new ApprovalService(new ApprovalRepository(db)),
     notifications: new NotificationService(new NotificationRepository(db)),
     emailAdmin: new EmailAdminService(new EmailAdminRepository(db)),

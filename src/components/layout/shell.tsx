@@ -13,6 +13,8 @@ import { useOpenBugsRequest } from '../bugs/bugEvents';
 import { noticeRequested, useOpenNoticeRequest } from '../notices/noticeEvents';
 import { useNoticeUnread } from '../notices/useNoticeUnread';
 import { useOpenWalletRequest } from '../wallet/walletEvents';
+import { GlobalSearchTrigger, useSearchPages } from '../search/GlobalSearch';
+import type { SearchPage } from '../../lib/search/searchEngine';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -327,6 +329,8 @@ export const TopBar: React.FC<{
     <MenuButton />
     {left && <div className="flex-1 min-w-0 flex items-center">{left}</div>}
     <div className={`${left ? '' : 'ml-auto'} flex items-center gap-1 sm:gap-2 shrink-0`}>
+      {/* global search (Ctrl / Cmd + K): the same palette from the keyboard, this field, or the phone's search icon */}
+      <GlobalSearchTrigger />
       {actions}
       {user && <UserChip name={user.name} role={user.role} />}
       {onSignOut && <SignOutButton onClick={onSignOut} />}
@@ -445,6 +449,11 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
     ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]
     : [{ items: shared }, ...groups];
+  // global search finds this dashboard's own pages (only what this person's menu has) and opens them through select()
+  const searchPages: SearchPage[] = navGroups.flatMap(g => g.items.flatMap(it => it.children?.length
+    ? it.children.map(c => ({ navId: c.id, label: c.label, group: g.label, parent: it.label }))
+    : [{ navId: it.id, label: it.label, group: g.label }]));
+  useSearchPages(searchPages, id => { select(id); closeMenu(); });
   const toggleGroup = (label: string) => setClosedGroups(prev => {
     const next = new Set(prev);
     if (next.has(label)) next.delete(label); else next.add(label);

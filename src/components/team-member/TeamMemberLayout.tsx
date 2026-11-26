@@ -41,6 +41,7 @@ const WalletPage = React.lazy(() => import('../wallet/WalletPage'));
 const WALLET_NAV = '__wallet';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { useOpenMeetingRequest } from '../meetings/meetingEvents';
+import { useSearchPages } from '../search/GlobalSearch';
 
 export const TEAM_MEMBER_NAVS = ['__attendance', '__meetings', '__notices', '__wallet', 'home', 'leads', 'potential', 'onboarding', 'part-payments', 'customers', 'tasks', 'work-tasks', 'my-clients', 'calendar', 'invoices', 'delivery', 'settings', 'chat', 'raise-issue', 'work-reports', 'notifications', 'income'] as const;
 export type TeamMemberNav = (typeof TEAM_MEMBER_NAVS)[number];
@@ -97,6 +98,11 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   ];
   // the menu reads in sections, like the Department Head's: the label is shown above the first entry of each
   const SECTION_LABEL: Partial<Record<TeamMemberNav, string>> = { leads: 'Sales', 'work-tasks': 'Work', settings: 'Team' };
+  // global search finds these pages (and the pipeline steps under My Leads) and opens them with the same handler as the menu
+  useSearchPages([
+    ...navItems.map(i => ({ navId: i.id as string, label: i.label })),
+    ...PIPELINE_CHILDREN.map(c => ({ navId: c.id as string, label: c.label, parent: 'My Leads' }))
+  ], id => handleNavClick(id as TeamMemberNav));
 
   // a tapped reminder opens the CRM on /?open=attendance
   const [currentNav, setCurrentNav] = useState<TeamMemberNav>(() => meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV as TeamMemberNav : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
