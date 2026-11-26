@@ -7,6 +7,8 @@ import { errorMessage } from '../../lib/api/client';
 import { PageTitle } from '../layout/shell';
 import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipeline/shared';
 import { Card, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../tasks/head/headParts';
+import { CrossTeamBadge } from './AssigneePicker';
+import { DailyReportForm, hoursText } from './DailyReportForm';
 import { notifyAiStudioChanged, peekPendingAiStudio, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
 import { ReportStatusBadge, TableWrap, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
 
@@ -21,6 +23,14 @@ const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blocke
 ];
 /** The parts to show: the three of the form, and an older report's extra parts only when they have text. */
 const shownParts = (values: Partial<Record<(typeof PARTS)[number]['key'], string | null>>) => PARTS.filter(p => !p.legacy || (values[p.key] ?? '').trim() !== '');
+// a day's report with several tasks (20270218000100) keeps its day-level parts in the same columns, under these names
+const DAY_PARTS: typeof PARTS = [
+  { key: 'workCompleted', label: 'Overall daily summary', required: true },
+  { key: 'remarks', label: 'Additional work performed' },
+  { key: 'blockers', label: 'Blockers and challenges' },
+  { key: 'pendingWork', label: "Tomorrow's planned work" }
+];
+const partsOf = (r: AiStudioReportDetail) => (r.consolidated ? DAY_PARTS.filter(p => p.required || (r[p.key] ?? '').trim() !== '') : shownParts(r));
 
 /**
  * The daily report form (Team Member and Team Lead): the date, the project, the task, and what was done. "Save draft" keeps it private; "Submit Daily Report" sends it
@@ -127,7 +137,7 @@ const LeadEditForm: React.FC<{ r: AiStudioReportDetail; onSaved: () => void; onC
   return (
     <form onSubmit={save} noValidate className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 space-y-3" aria-label="Edit this report" data-testid="ai-report-lead-edit">
       <p className="text-xs text-slate-600">Correct the report before you approve it. The employee is told what you changed and why; the change stays in the approval history.</p>
-      {shownParts(r).map(p => (
+      {partsOf(r).map(p => (
         <Field key={p.key} label={p.label} htmlFor={`ai-le-${p.key}`} required={p.required}>
           <textarea id={`ai-le-${p.key}`} className={textareaCls} rows={p.key === 'workCompleted' ? 4 : 2} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} disabled={busy} />
         </Field>
@@ -168,12 +178,14 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
   if (editing && r) {
     return (
       <Dialog title="Edit report" onClose={() => setEditing(false)} wide persistent>
-        <ReportForm existing={r} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onChanged?.(); reload(); }} />
+        {r.consolidated
+          ? <DailyReportForm date={r.reportDate} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onChanged?.(); reload(); }} />
+          : <ReportForm existing={r} onCancel={() => setEditing(false)} onDone={() => { setEditing(false); onChanged?.(); reload(); }} />}
       </Dialog>
     );
   }
   return (
-    <Dialog title={r ? `Daily report · ${dateText(r.reportDate)}` : 'Daily report'} description={r ? `${r.authorName} · ${r.projectName}${r.taskTitle ? ` · ${r.taskTitle}` : ''}` : undefined} onClose={onClose} wide>
+    <Dialog title={r ? `Daily report · ${dateText(r.reportDate)}` : 'Daily report'} description={r ? `${r.authorName} · ${r.consolidated ? `${r.taskCount ?? r.entries?.length ?? 0} tasks${r.totalMinutes ? ` · ${hoursText(r.totalMinutes)}` : ''}` : r.projectName}${r.taskTitle ? ` · ${r.taskTitle}` : ''}` : undefined} onClose={onClose} wide>
       {error && <ErrorBanner message={error} onRetry={reload} />}
       {!r && !error && <Spinner label="Loading the report…" />}
       {r && (
@@ -183,7 +195,23 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
             <span className="text-slate-500">Submitted {dateTimeText(r.submittedAt)}{r.revision > 1 ? ` · version ${r.revision}` : ''}</span>
             {r.leadName && r.authorRole === 'MEMBER' && <span className="text-slate-500">Team Lead: {r.leadName}</span>}
           </div>
-          {shownParts(r).map(p => (
+          {r.consolidated && r.entries?.length ? (
+            <div className="space-y-2" data-testid="report-entries">
+              <h3 className="text-sm font-extrabold text-slate-900">Tasks ({r.entries.length}){r.totalMinutes ? <span className="font-normal text-slate-500"> · {hoursText(r.totalMinutes)} reported</span> : null}</h3>
+              {r.entries.map((e, i) => (
+                <div key={e.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-900">Task {i + 1} · {e.taskTitle}{e.assignmentType === 'CROSS_TEAM' ? <CrossTeamBadge /> : null}</div>
+                  <div className="text-xs text-slate-500">{[e.projectName, e.assignedByName ? `assigned by ${e.assignedByName}` : null,
+                    e.previousProgress != null && e.reportedProgress != null ? `${e.previousProgress}% → ${e.reportedProgress}%` : null,
+                    e.minutesSpent != null ? hoursText(e.minutesSpent) : null].filter(Boolean).join(' · ')}</div>
+                  {e.workCompleted && <p className="mt-1 text-slate-700 whitespace-pre-wrap">{e.workCompleted}</p>}
+                  {e.blockers && <p className="mt-1 text-amber-800 whitespace-pre-wrap"><span className="font-semibold">Blockers:</span> {e.blockers}</p>}
+                  {e.nextAction && <p className="mt-1 text-slate-600 whitespace-pre-wrap"><span className="font-semibold">Next action:</span> {e.nextAction}</p>}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {partsOf(r).map(p => (
             <div key={p.key}>
               <div className="text-xs font-semibold text-slate-500 mb-1">{p.label}</div>
               <p className="text-sm text-slate-800 whitespace-pre-wrap">{r[p.key] || <span className="text-slate-400">-</span>}</p>
@@ -308,7 +336,7 @@ export const ReportList: React.FC<{
                 // the whole row opens the report; the buttons stay for the keyboard
                 <tr key={r.id} onClick={() => setOpenId(r.id)} data-testid="ai-report-row" className="hover:bg-slate-50 cursor-pointer">
                   {view !== 'mine' && <td className={tdCls}><button type="button" onClick={e => { e.stopPropagation(); setOpenId(r.id); }} className="font-bold text-slate-900 hover:text-blue-700 text-left">{r.authorName}</button><div className="text-xs text-slate-500">{r.authorRole === 'LEAD' ? 'Team Lead' : r.leadName ? `Team: ${r.leadName}` : 'Team Member'}</div></td>}
-                  <td className={tdCls}>{r.projectName}{r.taskTitle && <div className="text-xs text-slate-500">{r.taskTitle}</div>}</td>
+                  <td className={tdCls}>{r.projectName}{r.taskTitle && <div className="text-xs text-slate-500">{r.taskTitle}</div>}{r.consolidated ? <div className="text-xs text-slate-500">{r.taskCount ?? 0} task{r.taskCount === 1 ? '' : 's'}{r.totalMinutes ? ` · ${hoursText(r.totalMinutes)}` : ''}</div> : null}</td>
                   <td className={tdCls}>{dateText(r.reportDate)}</td>
                   <td className={tdCls}>{dateTimeText(r.submittedAt)}</td>
                   <td className={tdCls}><ReportStatusBadge status={r.status} /></td>
@@ -347,9 +375,10 @@ export const DailyReportsPage: React.FC<{ role: 'LEAD' | 'MEMBER' }> = ({ role }
         subtitle={role === 'LEAD' ? 'Write your own daily report, and review the reports of your Team Members.' : 'Write your daily report and follow it through your Team Lead and the Department Head.'}
       />
       <Tabs<ReportTab> label="Daily report views" value={tab} options={tabs} onChange={t => { setTab(t); setComposing(false); }} />
-      {tab === 'submit' && <ReportForm key={version} onDone={() => { setVersion(v => v + 1); setTab('mine'); }} />}
+      {/* 20270218000100: one report for the day with every task worked on; older single-task reports still open (and are corrected) in their own form */}
+      {tab === 'submit' && <DailyReportForm key={version} onDone={() => { setVersion(v => v + 1); setTab('mine'); }} />}
       {tab === 'mine' && (composing
-        ? <ReportForm onDone={() => setComposing(false)} onCancel={() => setComposing(false)} />
+        ? <DailyReportForm onDone={() => setComposing(false)} onCancel={() => setComposing(false)} />
         : <ReportList key={version} view="mine" projects={list} onNew={() => (role === 'MEMBER' ? setTab('submit') : setComposing(true))} />)}
       {tab === 'team' && <ReportList view="team" projects={list} waitingStatus="PENDING_TL_APPROVAL" />}
     </div>

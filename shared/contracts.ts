@@ -6299,6 +6299,8 @@ export interface AiStudioProject {
   leads: { id: string; name: string }[];
   memberCount: number;
   tasks: AiStudioTaskCounts;
+  /** 20270218000100: the caller is not on the project but has a task in it (a cross-team task). */
+  viaTask?: boolean;
 }
 /** The clock (migration 20270119000100): a running project with a deadline. The server's own time comes with the list so every browser counts to the same moment. */
 export interface AiStudioDeadlineItem {
@@ -6351,9 +6353,65 @@ export interface AiStudioTask {
   completionNote: string | null;
   attachments: string[];
   overdue: boolean;
+  /** 20270218000100 (optional: absent on an older database). STANDARD (the employee's own team) or CROSS_TEAM (another team's Team Lead gave it). */
+  assignmentType?: AiStudioAssignmentType;
+  /** The project-owning team: the Team Lead who gave it ("<name>'s team"). */
+  ownerTeam?: string | null;
+  /** The employee's team now, and when the task was given. */
+  assigneeTeam?: string | null;
+  assigneeTeamAtAssignment?: string | null;
 }
-export interface AiStudioTaskHistoryEntry { id: string; kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED'; status: AiStudioTaskStatus; progress: number; note: string | null; authorName: string | null; createdAt: string }
-export interface AiStudioTaskDetail extends AiStudioTask { canUpdate: boolean; canEdit: boolean; history: AiStudioTaskHistoryEntry[] }
+export type AiStudioAssignmentType = 'STANDARD' | 'CROSS_TEAM';
+export interface AiStudioTaskHistoryEntry {
+  id: string;
+  /** REPORT: a daily report named this task; BLOCKER: a blocker was reported in one (20270218000100). */
+  kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED' | 'REPORT' | 'BLOCKER';
+  status: AiStudioTaskStatus;
+  progress: number;
+  note: string | null;
+  authorName: string | null;
+  createdAt: string;
+  /** The values before / after (an edit: field -> {from, to}; a report: progressFrom / progressTo / minutes). */
+  details?: Record<string, unknown> | null;
+  reportId?: string | null;
+}
+/** A daily report entry about one task, as the task shows it (whoever reads the task reads these; never the rest of the report). */
+export interface AiStudioTaskReportEntry {
+  id: string;
+  reportId: string;
+  reportDate: string;
+  reportStatus: AiStudioReportStatus;
+  authorName: string;
+  previousProgress: number | null;
+  reportedProgress: number | null;
+  minutesSpent: number | null;
+  workCompleted: string | null;
+  blockers: string | null;
+  nextAction: string | null;
+  legacy: boolean;
+}
+export interface AiStudioTaskDetail extends AiStudioTask { canUpdate: boolean; canEdit: boolean; history: AiStudioTaskHistoryEntry[]; reportEntries?: AiStudioTaskReportEntry[] }
+/** Somebody a task of a project can go to (GET /ai-studio/projects/:id/assignees): grouped by team, with their open workload as counts only. */
+export interface AiStudioAssignee {
+  id: string;
+  fullName: string;
+  avatarUrl: string | null;
+  designation: string | null;
+  role: 'TEAM_HEAD' | 'TEAM_MEMBER';
+  primaryLeadId: string | null;
+  primaryLeadName: string | null;
+  team: string;
+  myTeam: boolean;
+  onProject: boolean;
+  /** Worked out by the server from the reporting lines; the browser never sends it. */
+  assignmentType: AiStudioAssignmentType;
+  eligible: boolean;
+  reason: string | null;
+  workload: { active: number; highPriority: number; dueToday: number; overdue: number; crossTeam: number };
+  onLeaveToday: boolean;
+  punchedInToday: boolean;
+}
+export interface AiStudioAssignees { projectId: string; projectName: string; managesProject: boolean; canAssignCrossTeam: boolean; people: AiStudioAssignee[] }
 export interface AiStudioTaskPage { items: AiStudioTask[]; total: number; page: number; pageSize: number }
 
 export interface AiStudioReportSummary {
@@ -6373,6 +6431,59 @@ export interface AiStudioReportSummary {
   submittedAt: string | null;
   approvedAt: string | null;
   updatedAt: string;
+  /** 20270218000100: one report for the day with one entry per task (projectId is then null and projectName lists the projects). */
+  consolidated?: boolean;
+  totalMinutes?: number | null;
+  taskCount?: number;
+}
+/** One task of a consolidated daily report. */
+export interface AiStudioReportEntry {
+  id: string;
+  taskId: string | null;
+  taskTitle: string;
+  projectId: string | null;
+  projectName: string | null;
+  assignmentType: AiStudioAssignmentType;
+  assignedByName: string | null;
+  taskStatus: AiStudioTaskStatus | null;
+  currentStatus: AiStudioTaskStatus | null;
+  previousProgress: number | null;
+  reportedProgress: number | null;
+  minutesSpent: number | null;
+  workCompleted: string | null;
+  blockers: string | null;
+  nextAction: string | null;
+  legacy: boolean;
+  progressSynced: boolean;
+}
+/** A task the person may report on for a date (GET /ai-studio/daily-reports/context). */
+export interface AiStudioReportableTask {
+  id: string;
+  title: string;
+  projectId: string;
+  projectName: string;
+  status: AiStudioTaskStatus;
+  progress: number;
+  priority: AiStudioPriority;
+  dueDate: string | null;
+  assignmentType: AiStudioAssignmentType;
+  assignedByName: string | null;
+  ownerTeam: string | null;
+  completedAt: string | null;
+}
+export interface AiStudioDailyContext {
+  date: string;
+  today: string;
+  role: 'LEAD' | 'MEMBER';
+  me: { name: string; department: string | null; team: string };
+  reviewer: string;
+  route: 'TEAM_LEAD' | 'DIRECT';
+  /** Net working minutes from attendance for the date (null: no punch recorded). Used only to warn. */
+  workedMinutes: number | null;
+  /** The day's report when one was started. */
+  report: AiStudioReportDetail | null;
+  legacyReports: number;
+  tasks: AiStudioReportableTask[];
 }
 export interface AiStudioReportHistoryEntry {
   id: string;
@@ -6406,6 +6517,8 @@ export interface AiStudioReportDetail extends AiStudioReportSummary {
   canLeadEdit?: boolean;
   reviewStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   history: AiStudioReportHistoryEntry[];
+  /** 20270218000100: the report's tasks (a single-task report written earlier has one, from its own text). */
+  entries?: AiStudioReportEntry[];
 }
 export interface AiStudioReportPage { items: AiStudioReportSummary[]; total: number; page: number; pageSize: number; counts: Partial<Record<AiStudioReportStatus, number>> }
 export interface AiStudioReportContext {
@@ -7331,7 +7444,9 @@ export interface TaskReportTaskOption {
 
 export interface PerformancePart { key: string; label: string; weight: number; value: number | null }
 export interface MemberPerformanceMetrics {
-  tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number };
+  tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; crossTeam?: number };
+  /** AI Studio (20270218000100): projects contributed to, cross-team tasks, minutes reported in daily reports, blockers reported. */
+  contribution?: { projects: number; crossTeamTasks: number; reportedMinutes: number; blockers: number };
   completionPct: number | null;
   onTimePct: number | null;
   progressPct: number | null;
@@ -7343,7 +7458,7 @@ export interface LeadPerformanceMetrics {
   own: { total: number; completed: number; overdue: number; completionPct: number | null };
   team: { members: number; total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; completionPct: number | null; onTimePct: number | null; progressPct: number | null };
   reports: { submitted: number; approved: number; returned: number; pending: number; waitingOverOneDay: number; reviewedPct: number | null; avgReviewHours: number | null };
-  management: { tasksAssignedToTeam: number; tasksReceived: number; handedDown: number; handledOrDelegated: number; delegationPct: number | null };
+  management: { tasksAssignedToTeam: number; tasksReceived: number; handedDown: number; handledOrDelegated: number; delegationPct: number | null; crossTeamGiven?: number };
   parts: PerformancePart[];
   score: number | null;
 }
@@ -7474,7 +7589,7 @@ export interface SheetSyncResult {
   logins: { row?: number; email: string; created: boolean; mail: 'SENT' | 'NOT_SENT'; detail?: string }[];
 }
 /** Global search (Ctrl / Cmd + K): the kinds of records the database may return (public.global_search). */
-export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice'] as const;
+export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice', 'ai_studio_task', 'ai_studio_project', 'ai_studio_report'] as const;
 export type SearchRecordType = (typeof SEARCH_RECORD_TYPES)[number];
 export interface SearchRecord {
   type: SearchRecordType;

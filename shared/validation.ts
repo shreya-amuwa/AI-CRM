@@ -3318,8 +3318,10 @@ export const aiStudioTasksQuerySchema = z
   .object({
     scope: z.enum(['mine', 'ongoing', 'team']).default('mine'),
     projectId: uuidSchema.optional(),
-    status: z.enum([...AI_STUDIO_TASK_STATUSES, 'OPEN']).optional(),
+    status: z.enum([...AI_STUDIO_TASK_STATUSES, 'OPEN', 'OVERDUE']).optional(),
     assigneeId: uuidSchema.optional(),
+    // 20270218000100: my team's tasks or cross-team ones
+    kind: z.enum(['STANDARD', 'CROSS_TEAM']).optional(),
     page: z.coerce.number().int().min(1).max(5000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
   })
@@ -3349,6 +3351,50 @@ export const aiStudioReportReviewSchema = z
   })
   .strict()
   .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write the remarks the employee should act on.', path: ['comment'] });
+// ---- AI Studio cross-team tasks and multi-task daily reports (20270218000100) ----
+const aiText = (max: number, msg: string) => z.preprocess(v => (v === '' ? null : v), z.string().trim().max(max, msg).nullable().optional());
+/** One task of the day's report: what was done, the time it took (minutes), its progress (0 to 99 for an open task; completing is its own step). */
+export const aiStudioReportEntrySchema = z
+  .object({
+    taskId: uuidSchema,
+    workCompleted: aiText(4000, 'Each part can have at most 4000 characters.'),
+    minutesSpent: z.number().int().min(1, 'The time spent is at least 1 minute.').max(1440, 'The time spent is at most 24 hours.').nullable().optional(),
+    reportedProgress: z.number().int().min(0, 'Progress is 0 to 99.').max(99, 'Progress here is 0 to 99%. Complete the task from the task itself.').nullable().optional(),
+    blockers: aiText(4000, 'Each part can have at most 4000 characters.'),
+    nextAction: aiText(4000, 'Each part can have at most 4000 characters.')
+  })
+  .strict();
+/** The day's report. Submitting needs the summary and, for every task, the work done, the time and the progress; a draft needs none of it. */
+export const aiStudioDailyReportSchema = z
+  .object({
+    id: uuidSchema.nullable().optional(),
+    reportDate: isoDate,
+    summary: aiText(4000, 'Each part of the report can have at most 4000 characters.'),
+    additionalWork: aiText(4000, 'Each part of the report can have at most 4000 characters.'),
+    blockers: aiText(4000, 'Each part of the report can have at most 4000 characters.'),
+    tomorrowPlan: aiText(4000, 'Each part of the report can have at most 4000 characters.'),
+    entries: z.array(aiStudioReportEntrySchema).max(25, 'A daily report can name at most 25 tasks.'),
+    submit: z.boolean().default(false)
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    const seen = new Set<string>();
+    v.entries.forEach((e, i) => {
+      if (seen.has(e.taskId)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['entries', i, 'taskId'], message: `Task ${i + 1}: this task is already in the report once.` });
+      seen.add(e.taskId);
+    });
+    const total = v.entries.reduce((s, e) => s + (e.minutesSpent ?? 0), 0);
+    if (total > 1440) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['entries'], message: 'The time spent adds up to more than 24 hours.' });
+    if (!v.submit) return;
+    if (v.entries.length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['entries'], message: 'Choose at least one task you worked on.' });
+    if ((v.summary ?? '').length < 3) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary'], message: 'Write the overall summary of the day before you submit.' });
+    v.entries.forEach((e, i) => {
+      if ((e.workCompleted ?? '').length < 3) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['entries', i, 'workCompleted'], message: `Task ${i + 1}: describe the work done on it today.` });
+      if (e.minutesSpent == null) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['entries', i, 'minutesSpent'], message: `Task ${i + 1}: enter the time spent on it.` });
+    });
+  });
+export const aiStudioDailyContextQuerySchema = z.object({ date: isoDate.optional() }).strict();
+
 // ---- AI Studio Performance Management (20270214000100): the Team Lead corrects a report waiting for their approval ----
 const aiReportPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
 export const aiStudioReportLeadEditSchema = z

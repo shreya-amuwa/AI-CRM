@@ -408,6 +408,10 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/ai-studio/tasks/:id', handler: aiStudio.editTask },
   { method: 'POST', path: '/ai-studio/tasks/:id/update', handler: aiStudio.updateTask },
   { method: 'GET', path: '/ai-studio/reports/context', handler: aiStudio.reportContext },
+  // 20270218000100: cross-team assignment and the multi-task daily report (fixed paths before /ai-studio/reports/:id)
+  { method: 'GET', path: '/ai-studio/projects/:id/assignees', handler: aiStudio.assignees },
+  { method: 'GET', path: '/ai-studio/daily-reports/context', handler: aiStudio.dailyContext },
+  { method: 'POST', path: '/ai-studio/daily-reports', handler: aiStudio.saveDailyReport, options: S },
   { method: 'GET', path: '/ai-studio/reports', handler: aiStudio.reports },
   { method: 'POST', path: '/ai-studio/reports', handler: aiStudio.createReport },
   { method: 'GET', path: '/ai-studio/reports/:id', handler: aiStudio.report },

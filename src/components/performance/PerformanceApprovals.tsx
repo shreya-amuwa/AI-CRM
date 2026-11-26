@@ -208,7 +208,7 @@ const LeadDetail: React.FC<{ m: LeadPerformanceMetrics }> = ({ m }) => (
     <KpiCard label="Team task completion" value={m.team.completionPct === null ? null : `${m.team.completionPct}%`} tone="blue" testId="pf-team-completion" description={`${m.team.completed} of ${m.team.total} team tasks · ${m.team.overdue} overdue`} />
     <KpiCard label="Team on-time" value={m.team.onTimePct === null ? null : `${m.team.onTimePct}%`} tone="green" testId="pf-team-ontime" description={m.team.onTimePct === null ? 'No completed task with a deadline' : `${m.team.onTime} on time · ${m.team.late} late`} />
     <KpiCard label="Reports reviewed" value={m.reports.reviewedPct === null ? null : `${m.reports.reviewedPct}%`} tone="blue" testId="pf-reviewed" description={`${m.reports.approved} approved · ${m.reports.returned} returned · ${m.reports.pending} waiting`} />
-    <KpiCard label="Tasks given to the team" value={m.management.tasksAssignedToTeam} testId="pf-assigned" description={m.management.delegationPct === null ? 'No task received to hand down' : `${m.management.handledOrDelegated} of ${m.management.tasksReceived} received tasks handled or handed down`} />
+    <KpiCard label="Tasks given to the team" value={m.management.tasksAssignedToTeam} testId="pf-assigned" description={`${m.management.delegationPct === null ? 'No task received to hand down' : `${m.management.handledOrDelegated} of ${m.management.tasksReceived} received tasks handled or handed down`}${m.management.crossTeamGiven ? ` · ${m.management.crossTeamGiven} to other teams` : ''}`} />
     <KpiCard label="Your score" value={m.score === null ? null : `${m.score}`} tone="green" testId="pf-lead-score" description={m.score === null ? 'Insufficient data' : 'out of 100, from team progress and management'} />
   </div>
 );
@@ -298,6 +298,13 @@ const PeopleTable: React.FC<{ people: PerformanceMember[]; onChanged: () => void
               {open === p.id ? (
                 <tr className="border-b border-slate-100 bg-slate-50/40"><td colSpan={10} className="px-5 py-4 space-y-3">
                   <ScoreParts parts={p.metrics.parts} score={p.metrics.score} />
+                  {p.metrics.contribution ? (
+                    // AI Studio (20270218000100): the work this person did across projects and teams (credited to them once)
+                    <p className="text-xs text-slate-600" data-testid="contribution">
+                      Projects contributed to: <b>{p.metrics.contribution.projects}</b> · Cross-team tasks: <b>{p.metrics.contribution.crossTeamTasks}</b> ·
+                      Reported time: <b>{Math.floor(p.metrics.contribution.reportedMinutes / 60)} h {p.metrics.contribution.reportedMinutes % 60} min</b> · Blockers reported: <b>{p.metrics.contribution.blockers}</b>
+                    </p>
+                  ) : null}
                   <RecordNote record={p.record} />
                   <RecordActions person={p} onChanged={onChanged} autoReview showEvaluations />
                   <PersonWork id={p.id} name={p.name} start={start} end={end} reports onChanged={onChanged} />

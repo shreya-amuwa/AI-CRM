@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  Building2, CalendarDays, ChevronLeft, ChevronRight, Clock3, CornerDownLeft, LayoutGrid, LifeBuoy, Megaphone, Network, Search, Target, User, X
+  Building2, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Clock3, CornerDownLeft, FileText, FolderKanban, LayoutGrid, LifeBuoy, Megaphone, Network, Search, Target, User, X
 } from 'lucide-react';
 import type { SearchRecordCard, SearchRecordType, SearchResponse } from '../../../shared/contracts';
 import { api, ApiError } from '../../lib/api/client';
 import { userMessage } from '../../lib/feedback/errors';
 import { addRecent, clearRecent, isMac, rankPages, readRecent, removeRecent, type RecentItem, type SearchPage } from '../../lib/search/searchEngine';
+import { openAiStudio } from '../ai-studio/aiStudioEvents';
 import { openMeeting } from '../meetings/meetingEvents';
 import { openNotice } from '../notices/noticeEvents';
 import { RECORD_PARAM, recordFromUrl } from './GlobalSearch';
@@ -26,7 +27,11 @@ export const KIND: Record<Kind, { label: string; one: string; icon: React.Elemen
   meeting: { label: 'Meetings', one: 'Meeting', icon: CalendarDays },
   ticket: { label: 'Support tickets', one: 'Ticket', icon: LifeBuoy },
   department: { label: 'Departments', one: 'Department', icon: Network },
-  notice: { label: 'Notices', one: 'Notice', icon: Megaphone }
+  notice: { label: 'Notices', one: 'Notice', icon: Megaphone },
+  // AI Studio (20270218000100): opened on the AI Studio pages, which check access again
+  ai_studio_task: { label: 'AI Studio tasks', one: 'Task', icon: ClipboardList },
+  ai_studio_project: { label: 'AI Studio projects', one: 'Project', icon: FolderKanban },
+  ai_studio_report: { label: 'AI Studio daily reports', one: 'Daily report', icon: FileText }
 };
 const PANEL_TYPES = new Set<Kind>(['employee', 'customer', 'lead', 'ticket', 'department']);
 const OPEN_RECORD_EVENT = 'crm:open-record';
@@ -36,6 +41,9 @@ const DEBOUNCE_MS = 250;
 export function openSearchRecord(type: Kind, id: string) {
   if (type === 'meeting') { openMeeting(id); return; }
   if (type === 'notice') { openNotice(id); return; }
+  if (type === 'ai_studio_task') { openAiStudio({ kind: 'task', id }); return; }
+  if (type === 'ai_studio_report') { openAiStudio({ kind: 'report', id }); return; }
+  if (type === 'ai_studio_project') { openAiStudio({ kind: 'project', id }); return; }
   if (!PANEL_TYPES.has(type)) return;
   const url = new URL(window.location.href);
   url.searchParams.set('open', RECORD_PARAM);

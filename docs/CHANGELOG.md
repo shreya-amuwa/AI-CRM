@@ -18,6 +18,16 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Added
 
+* **AI Studio: cross-team tasks and multi-task daily reports** (docs/AI_STUDIO_CROSS_TEAM.md). A Team Lead on a project can give a task of that project
+  to a member of another AI Studio team, from a grouped, searchable list with each person's workload and a heavy-load warning; the server decides the
+  assignment type and keeps the project-owning team and the employee's team; nobody's team, Team Lead or project membership changes. Only the Team Lead who
+  gave a cross-team task (or the Department Head) changes it; the employee's Team Lead sees it and is notified. Employees report on several tasks from
+  several projects in one daily report per day (one entry per task: work, time, progress, blockers, next action), with the hours compared with attendance;
+  progress is written to each task's history only upwards and never completes a task; the assigning Team Lead reads only the entries about their task.
+  Task filters (my team / cross-team / overdue), task details (ownership, report entries), notifications, performance contribution figures and Ctrl+K
+  search for AI Studio tasks, projects and reports. Older single-task reports keep working and gain one entry each. Migration
+  `20270218000100_ai_studio_cross_team_multi_task.sql`.
+
 * **Global search (Ctrl / Cmd + K)** (docs/GLOBAL_SEARCH_ARCHITECTURE.md, docs/COMMAND_PALETTE_GUIDE.md): a command palette on every staff
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,
   departments and notices the person may already open. The database's row-level rules decide (security invoker). Results open the exact

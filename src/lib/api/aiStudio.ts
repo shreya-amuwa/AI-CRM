@@ -1,5 +1,6 @@
 import type {
-  AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
+  AiStudioTaskDetail, AiStudioTaskPage
 } from '../../../shared/contracts';
 import { api } from './client';
 
@@ -16,7 +17,18 @@ export interface AiStudioReportForm {
   submit: boolean;
 }
 export interface AiStudioReportsFilter { view: 'mine' | 'team' | 'department'; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page?: number; pageSize?: number }
-export interface AiStudioTasksFilter { scope: 'mine' | 'ongoing' | 'team'; projectId?: string; status?: string; assigneeId?: string; page?: number; pageSize?: number }
+export interface AiStudioTasksFilter { scope: 'mine' | 'ongoing' | 'team'; projectId?: string; status?: string; assigneeId?: string; kind?: 'STANDARD' | 'CROSS_TEAM'; page?: number; pageSize?: number }
+/** The day's report (20270218000100): one per person and day, one entry per task. */
+export interface AiStudioDailyReportForm {
+  id?: string | null;
+  reportDate: string;
+  summary?: string | null;
+  additionalWork?: string | null;
+  blockers?: string | null;
+  tomorrowPlan?: string | null;
+  entries: { taskId: string; workCompleted?: string | null; minutesSpent?: number | null; reportedProgress?: number | null; blockers?: string | null; nextAction?: string | null }[];
+  submit: boolean;
+}
 
 /** AI Studio: every call is checked again by the database for who is asking. */
 export const aiStudioApi = {
@@ -41,6 +53,10 @@ export const aiStudioApi = {
   updateReport: (id: string, r: AiStudioReportForm) => api.patch<AiStudioReportDetail>(`/ai-studio/reports/${id}`, r),
   deleteDraft: (id: string) => api.delete<null>(`/ai-studio/reports/${id}`),
   review: (id: string, decision: 'APPROVE' | 'RETURN', comment?: string) => api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/review`, { decision, comment }),
+  /** Who a task of this project can go to, grouped by team with their workload (cross-team for a Team Lead on the project). */
+  assignees: (projectId: string) => api.get<AiStudioAssignees>(`/ai-studio/projects/${projectId}/assignees`),
+  dailyContext: (date?: string) => api.get<AiStudioDailyContext>('/ai-studio/daily-reports/context', date ? { date } : {}),
+  saveDailyReport: (r: AiStudioDailyReportForm) => api.post<AiStudioReportDetail>('/ai-studio/daily-reports', r),
   /** The Team Lead corrects a report waiting for their approval; `reason` is shown to the employee (20270214000100). */
   leadEdit: (id: string, e: { workCompleted: string; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) =>
     api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/lead-edit`, e)

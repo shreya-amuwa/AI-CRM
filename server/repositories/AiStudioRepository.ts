@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
+  AiStudioTaskDetail, AiStudioTaskPage
 } from '../../shared/contracts.js';
 import { AppError } from '../http/errors.js';
 import { unwrap } from './base.js';
@@ -56,9 +57,19 @@ export class AiStudioRepository {
     await this.rpc<unknown>('assign_direct_lead', { p_member: memberId, p_lead: leadId });
   }
 
-  tasks(q: { scope: string; projectId?: string; status?: string; assigneeId?: string; page: number; pageSize: number }) {
-    return this.rpc<AiStudioTaskPage>('ai_studio_tasks_list', {
-      p_scope: q.scope, p_project: q.projectId ?? null, p_status: q.status ?? null, p_assignee: q.assigneeId ?? null, p_page: q.page, p_page_size: q.pageSize
+  tasks(q: { scope: string; projectId?: string; status?: string; assigneeId?: string; kind?: string; page: number; pageSize: number }) {
+    // the my team / cross-team filter is ai_studio_tasks_page (20270218000100); without it the earlier list, so it also works on an older database
+    const args = { p_scope: q.scope, p_project: q.projectId ?? null, p_status: q.status ?? null, p_assignee: q.assigneeId ?? null, p_page: q.page, p_page_size: q.pageSize };
+    return q.kind ? this.rpc<AiStudioTaskPage>('ai_studio_tasks_page', { ...args, p_kind: q.kind }) : this.rpc<AiStudioTaskPage>('ai_studio_tasks_list', args);
+  }
+  /** Who a task of this project can go to, grouped by team, with their workload (20270218000100). */
+  assignees(projectId: string) { return this.rpc<AiStudioAssignees>('ai_studio_assignees', { p_project: projectId }); }
+  dailyContext(date?: string) { return this.rpc<AiStudioDailyContext>('ai_studio_daily_context', { p_date: date ?? null }); }
+  saveDailyReport(i: { id?: string | null; reportDate: string; summary?: string | null; additionalWork?: string | null; blockers?: string | null; tomorrowPlan?: string | null;
+    entries: { taskId: string; workCompleted?: string | null; minutesSpent?: number | null; reportedProgress?: number | null; blockers?: string | null; nextAction?: string | null }[]; submit: boolean }) {
+    return this.rpc<AiStudioReportDetail>('ai_studio_daily_report_save', {
+      p_id: i.id ?? null, p_date: i.reportDate, p_summary: i.summary ?? null, p_additional: i.additionalWork ?? null, p_blockers: i.blockers ?? null,
+      p_tomorrow: i.tomorrowPlan ?? null, p_entries: i.entries, p_submit: i.submit
     });
   }
   task(id: string) { return this.rpc<AiStudioTaskDetail>('ai_studio_task_get', { p_task: id }); }
