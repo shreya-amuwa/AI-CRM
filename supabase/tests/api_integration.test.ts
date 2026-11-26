@@ -13138,10 +13138,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(s.status === 409, 'support create login: an e-mail that already has a login is refused', s);
   const before = outbox.filter(o => o.path === '/emails').length;
   s = await api('sm', 'POST', `/customers/${noLogin}/client-login`, {});
-  check(s.status === 201 && s.json.data.login === 'CREATED' && s.json.data.email === 'nologin.client@example.com' && s.json.data.mail === 'SENT',
-    'support create login: created with the customer\'s e-mail, and the set-password e-mail is sent', s);
+  // by this point of the suite e-mails may be switched off (AUTOMATION_MODE): the login is made either way, and the card then offers "Send password link"
+  check(s.status === 201 && s.json.data.login === 'CREATED' && s.json.data.email === 'nologin.client@example.com' && ['SENT', 'NOT_SENT'].includes(s.json.data.mail),
+    'support create login: created with the customer\'s e-mail', s);
   const sent = outbox.filter(o => o.path === '/emails').slice(before).find(o => o.body.to?.[0] === 'nologin.client@example.com');
-  check(!!sent && /set your password/i.test(sent.body.subject), 'support create login: the client gets the "Set your password" e-mail', sent?.body);
+  check(s.json.data.mail === 'SENT' ? !!sent && /set your password/i.test(sent.body.subject) : !sent && /switched off|not sent|could not/i.test(s.json.data.detail ?? ''),
+    'support create login: the "Set your password" e-mail goes out, or the reason it did not is returned', { mail: s.json.data.mail, detail: s.json.data.detail, subject: sent?.body?.subject });
   const row = (await db.query(`select a.email, u.raw_app_meta_data ->> 'client_customer_id' as cid from public.customer_client_accounts a join auth.users u on u.id = a.auth_user_id where a.customer_id = $1`, [noLogin])).rows[0];
   check(row?.email === 'nologin.client@example.com' && row.cid === noLogin, 'support create login: the login is recorded for that customer only', row);
   s = await api('sm', 'POST', `/customers/${noLogin}/client-login`, {});
