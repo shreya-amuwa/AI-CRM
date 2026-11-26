@@ -1,16 +1,16 @@
 -- =============================================================================
--- AI Studio cross-team task assignment and multi-task daily reports (migration 20270219000100).
+-- AI Studio cross-team task assignment (migration 20270221000100).
 -- Two teams: Team Lead A (xt_lead_a) with Employee A (xt_mem_a) on "XT Web"; Team Lead B (xt_lead_b) with Employee C (xt_mem_c) on "XT Sales".
--- Team Lead B gives Employee A a task of XT Sales (cross-team); Employee A reports on three tasks of three projects in one daily report.
+-- Team Lead B gives Employee A a task of XT Sales (cross-team); who sees it, who changes it, the lists, performance and search.
 -- Own people and projects; removed at the end.
 -- =============================================================================
 \set ON_ERROR_STOP 1
 \set QUIET 1
-\echo '--- 194. AI Studio: cross-team tasks and multi-task daily reports'
+\echo '--- 194. AI Studio: cross-team task assignment'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql
-\i supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql
+\i supabase/migrations/20270221000100_ai_studio_cross_team.sql
+\i supabase/migrations/20270221000100_ai_studio_cross_team.sql
 
 delete from ai_studio_daily_reports where author_id in (select id from test.users where name like 'xt\_%');
 delete from ai_studio_tasks where title like 'XT %';
@@ -133,120 +133,18 @@ select test.check((select details -> 'priority' ->> 'from' = 'URGENT' and detail
                   and (select count(*) = 1 from notifications where recipient_id = test.id('xt_mem_a') and type = 'AI_STUDIO_TASK_PRIORITY'),
   'the change is in the history with the old and new values; the employee and their own Team Lead are told');
 
-\echo '   07-12 the multi-task daily report'
--- Employee A completes the web task earlier in the day, then reports three tasks of three projects
-set role authenticated;
-select test.login('xt_mem_a');
-select ai_studio_task_update((select v from xt where k = 'T_WEB'), 'COMPLETED', 100, 'Fixed the mobile layout and the navigation');
-select test.check((select count(*) = 3 and bool_or(t ->> 'status' = 'COMPLETED') and bool_or(t ->> 'assignmentType' = 'CROSS_TEAM')
-                     from jsonb_array_elements(ai_studio_daily_context(current_date) -> 'tasks') t where t ->> 'title' like 'XT %'),
-  'the form offers the three tasks: the one completed today, the cross-team one and the other');
-reset role;
-insert into attendance_records (profile_id, attendance_date, punch_in_at, punch_out_at)
-values (test.id('xt_mem_a'), current_date - 1, (current_date - 1 + time '10:00') at time zone 'Asia/Kolkata', (current_date - 1 + time '16:00') at time zone 'Asia/Kolkata')
-on conflict (profile_id, attendance_date) do update set punch_in_at = excluded.punch_in_at, punch_out_at = excluded.punch_out_at;
-set role authenticated;
-select test.login('xt_mem_a');
-select test.check((ai_studio_daily_context(current_date - 1) ->> 'workedMinutes')::int = 360, 'yesterday''s attendance: 6 hours of net working time (for the warning)');
-create temp table xt_entries as select jsonb_build_array(
-  jsonb_build_object('taskId', (select v from xt where k = 'T_X'), 'workCompleted', 'Stopped follow-ups after a positive reply', 'minutesSpent', 180, 'reportedProgress', 80, 'blockers', 'Integration testing is pending', 'nextAction', 'Test with live leads'),
-  jsonb_build_object('taskId', (select v from xt where k = 'T_WEB'), 'workCompleted', 'Fixed the mobile layout and navigation', 'minutesSpent', 150),
-  jsonb_build_object('taskId', (select v from xt where k = 'T_INT'), 'workCompleted', 'Tested the API responses', 'minutesSpent', 90, 'reportedProgress', 50)) as j;
-grant select on xt_entries to authenticated;
-select test.must_fail($$select ai_studio_daily_report_save(null, current_date, 'A full day', null, null, null, (select j || jsonb_build_array(j -> 0) from xt_entries), true)$$,
-  '09 the same task twice is refused', 'already in the report once');
-select test.must_fail($$select ai_studio_daily_report_save(null, current_date, 'A full day', null, null, null,
-  (select jsonb_set(j, '{2,reportedProgress}', '100') from xt_entries), true)$$, 'an open task is not completed from the report (0 to 99%)', 'Complete the task from the task itself');
-select test.must_fail($$select ai_studio_daily_report_save(null, current_date, 'A full day', null, null, null, (select j #- '{2,minutesSpent}' from xt_entries), true)$$,
-  'every task needs its time spent', 'Task 3');
-select test.must_fail($$select ai_studio_daily_report_save(null, current_date, 'A full day', null, null, null,
-  (select jsonb_set(jsonb_set(j, '{0,minutesSpent}', '1000'), '{1,minutesSpent}', '600') from xt_entries), true)$$, 'the hours cannot add up to more than 24', 'more than 24 hours');
-select test.must_fail(format($$select ai_studio_daily_report_save(null, current_date, 'A full day', null, null, null, jsonb_build_array(jsonb_build_object('taskId', %L, 'workCompleted', 'Not mine', 'minutesSpent', 10, 'reportedProgress', 10)), true)$$,
-  (select v from xt where k = 'T_C')), 'a task of somebody else is refused', 'not one of your tasks');
-reset role;
-select test.check(not exists (select 1 from ai_studio_daily_reports where author_id = test.id('xt_mem_a')), 'nothing was written by the refused attempts (all or nothing)');
-set role authenticated;
-select test.login('xt_mem_a');
--- a draft, then the same call again (a second click), then the submission
-insert into xt select 'R', (ai_studio_daily_report_save(null, current_date, 'A full day', 'Helped onboard a colleague', null, 'Live lead testing', (select j from xt_entries), false) ->> 'id')::uuid;
-select test.check((ai_studio_daily_report_save(null, current_date, 'A full day', 'Helped onboard a colleague', null, 'Live lead testing', (select j from xt_entries), false) ->> 'id')::uuid = (select v from xt where k = 'R'),
-  '10 saving again finds the same report (one per day)');
-select test.check((select (j ->> 'status') = 'PENDING_TL_APPROVAL' and (j ->> 'totalMinutes')::int = 420 and jsonb_array_length(j -> 'entries') = 3
-                     from (select ai_studio_daily_report_save((select v from xt where k = 'R'), current_date, 'A full day', 'Helped onboard a colleague', null, 'Live lead testing', (select j from xt_entries), true) j) x),
-  '07 one report with three task entries, 7 hours in all, sent to Team Lead A');
-select test.must_fail($$select ai_studio_daily_report_save(null, current_date, 'Again', null, null, null, (select j from xt_entries), true)$$, '10 submitting again is refused (no duplicate)', 'already submitted');
-reset role;
-select test.check((select count(*) = 1 from ai_studio_daily_reports where author_id = test.id('xt_mem_a') and report_date = current_date)
-                  and (select count(*) = 3 from ai_studio_report_entries where report_id = (select v from xt where k = 'R')), 'one report row, three entries');
-select test.check((select progress = 80 and status = 'IN_PROGRESS' from ai_studio_tasks where id = (select v from xt where k = 'T_X'))
-                  and (select progress = 50 from ai_studio_tasks where id = (select v from xt where k = 'T_INT'))
-                  and (select status = 'COMPLETED' and progress = 100 and completion_note = 'Fixed the mobile layout and the navigation' from ai_studio_tasks where id = (select v from xt where k = 'T_WEB')),
-  '11 progress follows the report (80%, 50%); the completed task keeps its completion details');
-select test.check((select count(*) = 3 from ai_studio_task_updates where report_id = (select v from xt where k = 'R') and kind = 'REPORT')
-                  and (select count(*) = 1 from ai_studio_task_updates where report_id = (select v from xt where k = 'R') and kind = 'BLOCKER' and task_id = (select v from xt where k = 'T_X'))
-                  and (select details ->> 'progressFrom' = '0' and details ->> 'progressTo' = '80' from ai_studio_task_updates where report_id = (select v from xt where k = 'R') and task_id = (select v from xt where k = 'T_X') and kind = 'REPORT'),
-  'each task''s history records the linked report (0 -> 80%) and the blocker');
-select test.check((select count(*) = 1 from notifications where recipient_id = test.id('xt_lead_b') and type = 'AI_STUDIO_TASK_BLOCKER')
-                  and (select count(*) = 1 from notifications where recipient_id = test.id('xt_lead_a') and type = 'AI_STUDIO_TASK_BLOCKER'),
-  'the blocker is told to Team Lead B (who gave it) and Team Lead A (the employee''s own)');
-
-\echo '   12-13 who reads the report'
-set role authenticated;
-select test.login('xt_lead_b');
-select test.must_fail(format($$select ai_studio_report_get(%L)$$, (select v from xt where k = 'R')), '12 Team Lead B cannot open Employee A''s whole report', 'not found');
-select test.check((select jsonb_array_length(j -> 'reportEntries') = 1 and j #>> '{reportEntries,0,workCompleted}' = 'Stopped follow-ups after a positive reply'
-                          and (j #>> '{reportEntries,0,minutesSpent}')::int = 180
-                     from (select ai_studio_task_get((select v from xt where k = 'T_X')) j) x),
-  '12 but reads, in their task, the entry about it (work, time, blockers)');
-select test.login('xt_lead_a');
-select test.check((select jsonb_array_length(j -> 'entries') = 3 and (j ->> 'canReview')::boolean from (select ai_studio_report_get((select v from xt where k = 'R')) j) x),
-  'Team Lead A reads and reviews the whole report, cross-team work included');
-select test.check((ai_studio_report_review((select v from xt where k = 'R'), 'APPROVE', 'Good day') ->> 'status') = 'PENDING_DH_APPROVAL', 'and approves it (on to the Department Head)');
-select test.login('ai_dh');
-select test.check((select jsonb_array_length(j -> 'entries') = 3 from (select ai_studio_report_get((select v from xt where k = 'R')) j) x), 'the Department Head reads the whole report');
-select test.check(exists (select 1 from jsonb_array_elements(ai_studio_reports_list('department', (select v from xt where k = 'sales')) -> 'items') i where (i ->> 'id')::uuid = (select v from xt where k = 'R')),
-  'a project filter finds the multi-task report through its entries');
-select test.login('xt_lead_c');
-select test.must_fail(format($$select ai_studio_report_get(%L)$$, (select v from xt where k = 'R')), 'an unrelated Team Lead reads nothing', 'not found');
-
-\echo '   stale reports never lower newer progress'
-select test.login('xt_mem_a');
-select ai_studio_task_update((select v from xt where k = 'T_INT'), 'IN_PROGRESS', 90, 'Finished the validation fixes');
-reset role;
--- yesterday's report, written later, says 60% (the task existed yesterday)
-update ai_studio_tasks set created_at = now() - interval '3 days' where id = (select v from xt where k = 'T_INT');
-set role authenticated;
-select test.login('xt_mem_a');
-select ai_studio_daily_report_save(null, current_date - 1, 'Yesterday', null, null, null,
-  jsonb_build_array(jsonb_build_object('taskId', (select v from xt where k = 'T_INT'), 'workCompleted', 'Wrote the first API tests', 'minutesSpent', 120, 'reportedProgress', 60)), true);
-reset role;
-select test.check((select progress = 90 from ai_studio_tasks where id = (select v from xt where k = 'T_INT')), 'a later-written report of 60% leaves the task at its newer 90%');
-
-\echo '   13 older single-task reports'
-reset role;
-with ins as (
-  insert into ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, status, submitted_at)
-  values (test.id('xt_mem_a'), 'XT Mem A', 'MEMBER', (select v from xt where k = 'web'), (select v from xt where k = 'T_WEB'), current_date - 2, 'Old single-task report', 'APPROVED', now())
-  returning id) insert into xt select 'OLD', id from ins;
-\i supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql
-select test.check((select count(*) = 1 and bool_and(legacy and work_completed = 'Old single-task report') from ai_studio_report_entries where report_id = (select v from xt where k = 'OLD'))
-                  and (select project_id = (select v from xt where k = 'web') and not consolidated from ai_studio_daily_reports where id = (select v from xt where k = 'OLD')),
-  'an older single-task report keeps its project and gains one entry from its own text (the migration runs again safely)');
-set role authenticated;
-select test.login('xt_mem_a');
-select test.must_fail(format($$select ai_studio_report_save(%L, %L, null, current_date, 'x', null, null, null, null, false)$$, (select v from xt where k = 'R'), (select v from xt where k = 'web')),
-  'the single-task save never touches a multi-task report', 'CONFLICT');
 
 \echo '   14 performance: credited once, to the person who did the work'
 select test.login('xt_lead_a');
 select test.check((select (m #>> '{metrics,tasks,total}')::int = 3 and (m #>> '{metrics,tasks,crossTeam}')::int = 1 and (m #>> '{metrics,contribution,projects}')::int = 3
-                          and (m #>> '{metrics,contribution,reportedMinutes}')::int = 540 and (m #>> '{metrics,contribution,blockers}')::int = 1
+                          and (m #>> '{metrics,contribution,blockers}')::int = 0 and not (m #> '{metrics,contribution}' ? 'reportedMinutes')
                      from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') m where m ->> 'id' = test.id('xt_mem_a')::text),
-  'Employee A: 3 tasks (1 cross-team) in 3 projects, 9 hours reported, 1 blocker - under their own Team Lead');
+  'Employee A: 3 tasks (1 cross-team) in 3 projects, no reports with blockers - under their own Team Lead');
 select test.login('xt_lead_b');
 select test.check((select (j #>> '{me,metrics,management,crossTeamGiven}')::int = 1 and not exists (select 1 from jsonb_array_elements(j -> 'members') m where m ->> 'id' = test.id('xt_mem_a')::text)
                      from (select performance_overview(current_date - 30, current_date + 30) j) x),
   'Team Lead B: one cross-team task given; Employee A is not counted in Team Lead B''s team');
+
 
 \echo '   18 global search'
 select test.login('xt_mem_a');
@@ -256,8 +154,13 @@ select test.login('xt_lead_c');
 select test.check(not exists (select 1 from jsonb_array_elements(global_search('campaign follow') -> 'groups') g, jsonb_array_elements(g -> 'items') i
                                where (i ->> 'id')::uuid = (select v from xt where k = 'T_X')), 'an unrelated Team Lead does not');
 select test.login('xt_lead_b');
-select test.check(not exists (select 1 from jsonb_array_elements(global_search('XT Mem') -> 'groups') g, jsonb_array_elements(g -> 'items') i
-                               where g ->> 'type' = 'ai_studio_report'), 'Team Lead B finds none of Employee A''s daily reports');
+
+\echo '   the task details keep the Delete rule (20270220000100)'
+select test.login('xt_lead_b');
+select test.check((ai_studio_task_get((select v from xt where k = 'T_X')) ->> 'canDelete')::boolean and (ai_studio_task_get((select v from xt where k = 'T_X')) ? 'reportCount'),
+  'Team Lead B (who gave the cross-team task) may delete it; the details still say so');
+select test.login('xt_lead_a');
+select test.check(not (ai_studio_task_get((select v from xt where k = 'T_X')) ->> 'canDelete')::boolean, 'Team Lead A (the employee''s own) may not delete it');
 
 \echo '   cleanup'
 reset role;
@@ -269,4 +172,4 @@ delete from ai_studio_projects where name like 'XT %';
 delete from performance_records where subject_id in (select id from test.users where name like 'xt\_%');
 delete from auth.users where email like 'xt.%@example.com';
 delete from test.users where name like 'xt\_%';
-\echo '=== AI STUDIO CROSS-TEAM AND MULTI-TASK REPORT TESTS PASSED ==='
+\echo '=== AI STUDIO CROSS-TEAM ASSIGNMENT TESTS PASSED ==='

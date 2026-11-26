@@ -1069,6 +1069,9 @@ export const aiStudioController = {
   reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler,
   leadEditReport: (async ctx => ok(await svc(ctx).aiStudio.leadEditReport(ctx.params.id, ctx.req.body))) as Handler,
   assignees: (async ctx => ok(await svc(ctx).aiStudio.assignees(ctx.params.id))) as Handler,
-  dailyContext: (async ctx => ok(await svc(ctx).aiStudio.dailyContext(ctx.req.query))) as Handler,
-  saveDailyReport: (async ctx => ok(await svc(ctx).aiStudio.saveDailyReport(ctx.req.body))) as Handler
+  dailyReportOptions: (async ctx => ok(await svc(ctx).aiStudio.dailyReportOptions(ctx.req.query))) as Handler,
+  dailyReportPreview: (async ctx => ok(await svc(ctx).aiStudio.dailyReportPreview(ctx.req.body))) as Handler,
+  createDailyReport: (async ctx => ok(await svc(ctx).aiStudio.createDailyReport(ctx.req.body), 201)) as Handler,
+  updateDailyReport: (async ctx => ok(await svc(ctx).aiStudio.updateDailyReport(ctx.params.id, ctx.req.body))) as Handler,
+  taskReports: (async ctx => ok(await svc(ctx).aiStudio.taskReports(ctx.params.id))) as Handler
 };

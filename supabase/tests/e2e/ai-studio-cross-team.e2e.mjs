@@ -1,8 +1,8 @@
-// AI Studio cross-team tasks and the multi-task daily report in real browsers (migration 20270219000100), signed in through the login page.
+// AI Studio cross-team task assignment in real browsers (migration 20270221000100), signed in through the login page.
 //   Team A (Web Development): Team Lead A, Employee A.   Team B (Sales Automation): Team Lead B, Employee C.
 //   Team Lead B gives Employee A a Sales Automation task from the grouped, searchable picker (with Employee A's workload and the warning);
-//   Employee A sees it (Cross-team label, filter, task details), reports on three tasks of three projects in ONE daily report on a phone;
-//   Team Lead B sees only the entry about their task; Team Lead A reviews the whole report; global search finds the task; nobody gets more.
+//   Employee A sees it (Cross-team label, filter, task details); Team Lead B may change and delete it, Team Lead A (Arun's own) sees it but may not;
+//   global search finds the task; nobody gets more. The daily report is main's (20270219000100_ai_studio_consolidated_reports) and is not tested here.
 // Against the local stack (Postgres + PostgREST + gateway + the web app). Passwords are made up at run time; nothing is stored.
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -40,9 +40,9 @@ await mk('leadA', sa.id, { email: 'lead.a@amuwa.com', fullName: 'Asha Web Lead',
 await mk('leadB', sa.id, { email: 'lead.b@amuwa.com', fullName: 'Bharat Sales Lead', role: 'TEAM_HEAD', teamId: team.id, aiStudioProjectIds: [salesAuto] });
 await mk('memA', P.leadA.id, { email: 'emp.a@amuwa.com', fullName: 'Arun Developer', role: 'TEAM_MEMBER', teamId: team.id, aiStudioProjectIds: [webDev, internal] });
 await mk('memC', P.leadB.id, { email: 'emp.c@amuwa.com', fullName: 'Chitra Automation', role: 'TEAM_MEMBER', teamId: team.id, aiStudioProjectIds: [salesAuto] });
-// Employee A's own team work: four open tasks, two high priority (so the picker warns), two of them reported on below
-const t1 = await api(P.leadA.id, 'POST', '/ai-studio/tasks', { projectId: webDev, assigneeId: P.memA.id, title: 'Website mobile responsiveness', priority: 'HIGH', dueDate: plus(2) });
-const t2 = await api(P.leadA.id, 'POST', '/ai-studio/tasks', { projectId: internal, assigneeId: P.memA.id, title: 'API testing', priority: 'HIGH', dueDate: plus(4) });
+// Employee A's own team work: four open tasks, two high priority (so the picker warns)
+await api(P.leadA.id, 'POST', '/ai-studio/tasks', { projectId: webDev, assigneeId: P.memA.id, title: 'Website mobile responsiveness', priority: 'HIGH', dueDate: plus(2) });
+await api(P.leadA.id, 'POST', '/ai-studio/tasks', { projectId: internal, assigneeId: P.memA.id, title: 'API testing', priority: 'HIGH', dueDate: plus(4) });
 await api(P.leadA.id, 'POST', '/ai-studio/tasks', { projectId: webDev, assigneeId: P.memA.id, title: 'Landing page copy', priority: 'MEDIUM', dueDate: plus(6) });
 await api(P.leadA.id, 'POST', '/ai-studio/tasks', { projectId: internal, assigneeId: P.memA.id, title: 'Attendance workflow fix', priority: 'LOW' });
 
@@ -141,77 +141,29 @@ await ea.keyboard.press('Escape');
 expect(/You have a task here; you are not on this project/.test(proj) || true, 'the Sales Automation card says Arun has a task there only');
 await ea.context().close();
 
-// ============================ Employee A reports on three tasks of three projects in one report (phone)
-const eaPhone = await login(P.memA.email, PHONE);
-await nav(eaPhone, 'Daily Report');
-await wait(eaPhone, '[data-testid="daily-report-form"]', 'phone: the daily report form opens');
-const addTask = async title => {
-  await eaPhone.getByLabel('Search your tasks').click();
-  await eaPhone.getByLabel('Search your tasks').fill(title.split(' ')[0]);
-  await eaPhone.getByTestId('task-option').filter({ hasText: title }).first().click();
-};
-await addTask('Campaign follow-up logic');
-await addTask('Website mobile responsiveness');
-await addTask('API testing');
-await eaPhone.getByLabel('Search your tasks').click();
-await eaPhone.getByLabel('Search your tasks').fill('Campaign');
-expect(await eaPhone.getByTestId('task-option').filter({ hasText: 'Campaign follow-up logic' }).first().isDisabled(), 'phone: a task already in the report cannot be added again');
-await eaPhone.getByRole('button', { name: 'Close the list' }).click();
-expect((await eaPhone.getByTestId('report-entry').count()) === 3, 'phone: one section per chosen task');
-const fillEntry = async (taskId, hours, minutes, progress, work, blockers) => {
-  if (progress != null) await eaPhone.fill(`#ai-dr-p-${taskId}`, String(progress));
-  await eaPhone.fill(`#ai-dr-h-${taskId}`, String(hours));
-  if (minutes) await eaPhone.fill(`#ai-dr-m-${taskId}`, String(minutes));
-  await eaPhone.fill(`#ai-dr-w-${taskId}`, work);
-  if (blockers) await eaPhone.fill(`#ai-dr-b-${taskId}`, blockers);
-};
-await fillEntry(cross.id, 3, 0, 80, 'Stopped follow-ups after a positive reply', 'Pending integration testing');
-await fillEntry(t1.id, 2, 30, 90, 'Fixed the mobile layout and the navigation');
-await fillEntry(t2.id, 1, 30, 50, 'Tested the API responses', 'Backend permission configuration needs review');
-await eaPhone.fill('#ai-dr-summary', 'Worked on three tasks across Sales Automation, Web Development and Internal CRM');
-await eaPhone.fill('#ai-dr-tomorrow', 'Integration testing with live leads');
-expect((await eaPhone.getByTestId('report-total-hours').innerText()).trim() === '7 h', 'phone: the summary adds the time: 3 h + 2 h 30 + 1 h 30 = 7 h');
-expect(await noSideScroll(eaPhone), 'phone: the report form does not scroll sideways');
-await eaPhone.screenshot({ path: `${OUT}/after-daily-report-phone.png`, fullPage: true });
-// a first click and a second one at once: one report
-await Promise.all([eaPhone.getByRole('button', { name: 'Submit daily report' }).click(), eaPhone.getByRole('button', { name: /Submit daily report|Submitting/ }).click().catch(() => undefined)]);
-await eaPhone.waitForTimeout(1500);
-const reports = await q(`select id, status, total_minutes, consolidated from ai_studio_daily_reports where author_id = $1`, [P.memA.id]);
-expect(reports.length === 1 && reports[0].status === 'PENDING_TL_APPROVAL' && reports[0].total_minutes === 420 && reports[0].consolidated, 'one report (even after two clicks): 7 h, sent to Team Lead A', reports);
-const ent = await q(`select task_title, minutes_spent, reported_progress, previous_progress from ai_studio_report_entries where report_id = $1 order by position`, [reports[0].id]);
-expect(ent.length === 3 && ent[0].task_title === 'Campaign follow-up logic' && ent[0].reported_progress === 80, 'three task entries in that report', ent);
-const [tx] = await q(`select progress, status from ai_studio_tasks where id = $1`, [cross.id]);
-expect(tx.progress === 80 && tx.status === 'IN_PROGRESS', 'the cross-team task\'s progress followed the report (80%, still in progress, not completed)', tx);
-await eaPhone.context().close();
-
-// ============================ Team Lead B: only the entry about their task
+// ============================ who may change it: Team Lead B (who gave it) yes, Team Lead A (Arun's own) no
 const lb2 = await login(P.leadB.email);
-const rep = await call(P.leadB.id, 'GET', `/ai-studio/reports/${reports[0].id}`);
-expect(rep.status === 404, 'Team Lead B cannot open Arun\'s whole report (direct API request: 404)');
 await nav(lb2, 'Projects');
 await lb2.getByRole('tab', { name: 'Team Tasks' }).click().catch(() => undefined);
-await lb2.waitForTimeout(800);
+await wait(lb2, '[data-testid="ai-task-row"]', 'Team Lead B sees the task they gave under Team Tasks');
 await lb2.getByTestId('ai-task-row').filter({ hasText: 'Campaign follow-up logic' }).first().click();
-await wait(lb2, '[data-testid="task-report-entries"]', 'Team Lead B sees the daily report entry in the task');
-const entText = await lb2.getByTestId('task-report-entries').innerText();
-expect(/Stopped follow-ups/.test(entText) && /3 h 0 min/.test(entText) && /Pending integration testing/.test(entText) && !/mobile layout/.test(entText),
-  'only the entry about the Sales Automation task (work, 3 h, blocker) - nothing of Arun\'s other work', entText);
-await lb2.screenshot({ path: `${OUT}/after-assigning-lead-task-entries.png`, fullPage: false });
+await waitText(lb2, /Edit task \/ deadline/, 'Team Lead B may change the cross-team task');
+expect((await lb2.getByTestId('ai-task-delete').count()) === 1, 'Team Lead B may delete it too (20270220000100)');
 await lb2.context().close();
-
-// ============================ Team Lead A: the whole report, cross-team work included
 const la = await login(P.leadA.email);
-await nav(la, 'Daily Report');
-await la.getByRole('tab', { name: 'Team Member Reports' }).click();
-await la.waitForTimeout(800);
-await la.getByRole('button', { name: 'Open' }).first().click();
-await wait(la, '[data-testid="report-entries"]', 'Team Lead A opens the report with its tasks');
-const full = await la.getByTestId('report-entries').innerText();
-expect(/Campaign follow-up logic/.test(full) && /Website mobile responsiveness/.test(full) && /API testing/.test(full) && /Cross-team/.test(full), 'Team Lead A sees all three tasks, the cross-team one labelled', full);
-await la.screenshot({ path: `${OUT}/after-primary-lead-report.png`, fullPage: false });
-await la.getByRole('button', { name: 'Approve and send to the Department Head' }).click();
-await la.waitForTimeout(800);
-expect((await q(`select status from ai_studio_daily_reports where id = $1`, [reports[0].id]))[0].status === 'PENDING_DH_APPROVAL', 'Team Lead A approves it (the existing two-step approval)');
+await nav(la, 'Projects');
+await la.getByRole('tab', { name: 'Team Tasks' }).click().catch(() => undefined);
+await wait(la, '[data-testid="ai-task-row"]', 'Team Lead A sees Arun\'s workload under Team Tasks');
+const laRow = await la.getByTestId('ai-task-row').filter({ hasText: 'Campaign follow-up logic' }).first().innerText();
+expect(/Cross-team/.test(laRow), 'the cross-team task is in Team Lead A\'s list, labelled', laRow);
+await la.getByTestId('ai-task-row').filter({ hasText: 'Campaign follow-up logic' }).first().click();
+await wait(la, '[data-testid="task-ownership"]', 'Team Lead A opens it');
+await la.waitForTimeout(500);
+expect(!(await la.evaluate(() => document.body.innerText)).includes('Edit task / deadline') && (await la.getByTestId('ai-task-delete').count()) === 0,
+  'Team Lead A (Arun\'s own) may neither change nor delete it');
+const laEdit = await call(P.leadA.id, 'PATCH', `/ai-studio/tasks/${cross.id}`, { title: 'Changed by Lead A', priority: 'LOW' });
+expect(laEdit.status === 403, 'nor through a direct API request (403)', laEdit);
+await la.screenshot({ path: `${OUT}/after-own-lead-cross-team-view.png`, fullPage: false });
 await la.context().close();
 
 // ============================ global search
@@ -227,6 +179,6 @@ const other = await call(P.memC.id, 'POST', '/search', { q: 'campaign follow' })
 expect(!JSON.stringify(other).includes(cross.id), 'Chitra (another member) does not find Arun\'s task');
 
 expect(!errors.some(e => e.startsWith('pageerror')), 'no page errors', errors);
-console.log(`=== AI STUDIO CROSS-TEAM E2E PASSED (${step}) ===`);
+console.log(`=== AI STUDIO CROSS-TEAM ASSIGNMENT E2E PASSED (${step}) ===`);
 await browser.close();
 await db.end();

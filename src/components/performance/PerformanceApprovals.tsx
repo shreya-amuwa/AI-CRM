@@ -299,10 +299,10 @@ const PeopleTable: React.FC<{ people: PerformanceMember[]; onChanged: () => void
                 <tr className="border-b border-slate-100 bg-slate-50/40"><td colSpan={10} className="px-5 py-4 space-y-3">
                   <ScoreParts parts={p.metrics.parts} score={p.metrics.score} />
                   {p.metrics.contribution ? (
-                    // AI Studio (20270219000100): the work this person did across projects and teams (credited to them once)
+                    // AI Studio (20270221000100): the work this person did across projects and teams (credited to them once)
                     <p className="text-xs text-slate-600" data-testid="contribution">
                       Projects contributed to: <b>{p.metrics.contribution.projects}</b> · Cross-team tasks: <b>{p.metrics.contribution.crossTeamTasks}</b> ·
-                      Reported time: <b>{Math.floor(p.metrics.contribution.reportedMinutes / 60)} h {p.metrics.contribution.reportedMinutes % 60} min</b> · Blockers reported: <b>{p.metrics.contribution.blockers}</b>
+                      Daily reports with blockers: <b>{p.metrics.contribution.blockers}</b>
                     </p>
                   ) : null}
                   <RecordNote record={p.record} />

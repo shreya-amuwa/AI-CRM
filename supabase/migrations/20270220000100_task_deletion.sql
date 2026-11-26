@@ -16,11 +16,11 @@
 --
 -- A delete removes the task and the work that hangs off it (its sub-tasks / passed-on parts, their updates and update requests, the Task module's
 -- per-task daily reports) through the existing "on delete cascade" keys, so nothing is left orphaned. Records that only point at the task
--- ("on delete set null": AI Studio daily report entries, which keep the task title; AI Design Studio reports and issues; field visits) stay, without the
+-- ("on delete set null": older one-task AI Studio daily reports, AI Design Studio reports and issues, field visits) stay, without the
 -- link. The task's own notifications are removed (they would open a task that no longer exists), the assignees are told, and the audit log keeps a
 -- snapshot of what was deleted. A second click finds nothing and gets NOT_FOUND.
 --
--- Safe to run twice. Needs 20270219000100 (AI Studio cross-team columns).
+-- Safe to run twice. Needs 20270219000100_ai_studio_consolidated_reports.sql (ai_studio_report_tasks).
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ returns text language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.ai_studio_delete_problem(public.ai_studio_tasks) from public, anon, authenticated;
 
--- 20270219000100's task details + canDelete and what a delete would take with it
+-- 20270105000100's task details + canDelete
 create or replace function public.ai_studio_task_get(p_task uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -174,17 +174,13 @@ begin
   if t.id is null or not private.ai_studio_can_see_task(t) then raise exception 'NOT_FOUND: Task not found.' using errcode = 'P0001'; end if;
   return private.ai_studio_task_row(t) || jsonb_build_object(
     'canUpdate', t.assignee_id = auth.uid() and t.status <> 'COMPLETED',
-    'canEdit', private.ai_studio_can_edit_task(t),
+    'canEdit', t.status <> 'COMPLETED' and private.ai_studio_role() in ('ADMIN', 'HEAD', 'LEAD') and t.assignee_id <> auth.uid(),
     'canDelete', private.ai_studio_delete_problem(t) is null,
+    -- what a delete would take with it: the task's place in the daily reports that picked it (the confirmation says so)
+    'reportCount', (select count(distinct x.report_id) from public.ai_studio_report_tasks x where x.task_id = t.id),
     'history', coalesce((select jsonb_agg(jsonb_build_object('id', u.id, 'kind', u.kind, 'status', u.status, 'progress', u.progress, 'note', u.note,
-                                                               'authorName', u.author_name, 'createdAt', u.created_at, 'details', u.details, 'reportId', u.report_id) order by u.seq desc)
-                           from public.ai_studio_task_updates u where u.task_id = t.id), '[]'::jsonb),
-    'reportEntries', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'reportId', r.id, 'reportDate', r.report_date, 'reportStatus', r.status,
-                                 'authorName', r.author_name, 'previousProgress', e.previous_progress, 'reportedProgress', e.reported_progress,
-                                 'minutesSpent', e.minutes_spent, 'workCompleted', e.work_completed, 'blockers', e.blockers, 'nextAction', e.next_action,
-                                 'legacy', e.legacy) order by r.report_date desc, e.created_at desc)
-                               from public.ai_studio_report_entries e join public.ai_studio_daily_reports r on r.id = e.report_id
-                              where e.task_id = t.id and r.status <> 'DRAFT'), '[]'::jsonb));
+                                                               'authorName', u.author_name, 'createdAt', u.created_at) order by u.seq desc)
+                           from public.ai_studio_task_updates u where u.task_id = t.id), '[]'::jsonb));
 end $$;
 revoke all on function public.ai_studio_task_get(uuid) from public, anon;
 grant execute on function public.ai_studio_task_get(uuid) to authenticated;
@@ -198,7 +194,8 @@ declare
   t public.ai_studio_tasks;
   v_problem text;
   v_updates integer;
-  v_entries integer;
+  v_reports integer;
+  v_lead uuid;
 begin
   if v_role is null or v_role not in ('LEAD', 'HEAD') then
     raise exception 'FORBIDDEN: Only a Team Lead, a Department Head or an Operations Head can delete tasks.' using errcode = '42501';
@@ -211,17 +208,18 @@ begin
   if v_problem is not null then raise exception '%', v_problem using errcode = '42501'; end if;
 
   select count(*) into v_updates from public.ai_studio_task_updates where task_id = t.id;
-  select count(*) into v_entries from public.ai_studio_report_entries where task_id = t.id;
+  -- the consolidated daily reports that picked this task (20270219000100_ai_studio_consolidated_reports)
+  select count(distinct report_id) into v_reports from public.ai_studio_report_tasks where task_id = t.id;
   select full_name into v_by from public.profiles where id = v_me;
 
   perform private.write_audit('AI_STUDIO_TASK_DELETED', 'ai_studio_task', t.id, private.ai_studio_department(), null, jsonb_build_object(
     'task', jsonb_build_object('title', t.title, 'description', t.description, 'projectId', t.project_id, 'priority', t.priority, 'status', t.status,
-                               'progress', t.progress, 'dueDate', t.due_date, 'assigneeId', t.assignee_id, 'assignedBy', t.assigned_by,
-                               'assignmentType', t.assignment_type, 'createdAt', t.created_at),
-    'updates', v_updates, 'reportEntries', v_entries));
+                               'progress', t.progress, 'dueDate', t.due_date, 'assigneeId', t.assignee_id, 'assignedBy', t.assigned_by, 'createdAt', t.created_at),
+    'updates', v_updates, 'reports', coalesce(v_reports, 0)));
 
   delete from public.notifications where entity_type = 'ai_studio_task' and entity_id = t.id;
-  -- the history steps go with it (cascade); daily report entries keep their own copy of the task title and lose only the link (set null)
+  -- its history goes with it (cascade), and so does its part in any daily report (the report keeps its own remarks); an older one-task report keeps
+  -- its text and loses only the link (set null)
   delete from public.ai_studio_tasks where id = t.id;
 
   perform private.notify(t.assignee_id, 'AI_STUDIO_TASK_DELETED', format('Task deleted: %s', t.title), format('%s deleted this task.', v_by), null, null,
@@ -230,12 +228,13 @@ begin
     perform private.notify(t.assigned_by, 'AI_STUDIO_TASK_DELETED', format('Task deleted: %s', t.title), format('%s deleted this task.', v_by), null, null,
                            jsonb_build_object('taskId', t.id));
   end if;
-  -- a cross-team task was in another Team Lead's workload plan
-  if t.assignment_type = 'CROSS_TEAM' and private.direct_lead_of(t.assignee_id) is distinct from t.assigned_by then
-    perform private.notify(private.direct_lead_of(t.assignee_id), 'AI_STUDIO_TASK_DELETED', format('Cross-team task deleted: %s', t.title),
-                           format('%s deleted this task.', v_by), null, null, jsonb_build_object('taskId', t.id));
+  -- a task given by another Team Lead was in the employee's own Team Lead's workload plan
+  v_lead := private.direct_lead_of(t.assignee_id);
+  if v_lead is not null and v_lead is distinct from t.assigned_by then
+    perform private.notify(v_lead, 'AI_STUDIO_TASK_DELETED', format('Task deleted: %s', t.title), format('%s deleted this task.', v_by), null, null,
+                           jsonb_build_object('taskId', t.id));
   end if;
-  return jsonb_build_object('deleted', true, 'taskId', t.id, 'title', t.title, 'updates', v_updates, 'reportEntries', v_entries);
+  return jsonb_build_object('deleted', true, 'taskId', t.id, 'title', t.title, 'updates', v_updates, 'reports', coalesce(v_reports, 0));
 end $$;
 revoke all on function public.ai_studio_task_delete(uuid) from public, anon;
 grant execute on function public.ai_studio_task_delete(uuid) to authenticated;

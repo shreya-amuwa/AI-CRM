@@ -151,15 +151,19 @@ Every project can have a **deadline**, and the people who work on it see a **clo
 * Report attachments are not supported (reports are text); task attachments are links, as in the work reports of other departments.
 * Live push (Realtime) is not used (no timers either): a page reads again after the person's own action, and a page opened from a notification reads fresh. Someone else's change shows after the next action or reload.
 
+## One daily report built from the tasks (migration 20270219000100)
+
+New daily reports are one per person and day and are built from the work already recorded on the tasks. See
+**docs/AI_STUDIO_DAILY_REPORTS.md**. Older one-project / one-task reports (below) stay as they are and still open.
+
 ## A shorter daily report
 
 The daily report form asks three things: **Work Completed Today** (required), **Pending Work** and **Challenges / Blockers**. *Work In Progress* (the same as pending
 work) and *Remarks or Additional Updates* were removed from the form. Nothing changed in the database or the API (the two parts were already optional): an older report
 that has text in them still shows it, in the report and in the form when it is edited, so nothing written earlier is lost.
 
-## Cross-team tasks and multi-task daily reports (migration 20270219000100)
+## Cross-team task assignment (migration 20270221000100)
 
-A Team Lead on a project can give its tasks to members of other AI Studio teams (a task-level permission: nobody changes team), and a daily report now holds
-every task worked on that day, from any project, with time and progress per task. The rules, the permission matrix, the data, the notifications and the
-rollout are in [AI_STUDIO_CROSS_TEAM.md](AI_STUDIO_CROSS_TEAM.md).
-
+A Team Lead on a project can give its tasks to members of other AI Studio teams (a task-level permission: nobody changes team). Only the Team Lead who gave
+a cross-team task, or the Department Head, changes it; the employee's own Team Lead sees it for workload. The rules, the permission matrix, the data, the
+notifications and the rollout are in [AI_STUDIO_CROSS_TEAM.md](AI_STUDIO_CROSS_TEAM.md).

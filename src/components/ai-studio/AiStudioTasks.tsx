@@ -19,6 +19,7 @@ import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipel
 import { Card, ghostBtn, fieldCls, primaryBtn, textareaCls } from '../tasks/head/headParts';
 import { AssigneePicker, CrossTeamBadge, WorkloadSummary } from './AssigneePicker';
 import { notifyAiStudioChanged, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
+import { TaskReportsPanel } from './TaskReportsPanel';
 import { PRIORITY_LABELS, PriorityBadge, ProgressBar, TASK_STATUS_LABELS, TableWrap, TaskStatusBadge, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
 
 const linkLines = (text: string) => text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -38,7 +39,7 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
     if (!task?.canDelete) return;
     const done = await confirmTaskDeletion({
       title: task.title, assigneeName: task.assigneeName, status: TASK_STATUS_LABELS[task.status] ?? task.status, dueDate: task.dueDate ? dateText(task.dueDate) : null,
-      alsoRemoved: [countLine(task.history.length, 'history entry', 'history entries')],
+      alsoRemoved: [countLine(task.history.length, 'history entry', 'history entries'), countLine(task.reportCount, 'daily report entry', 'daily report entries')],
       run: () => aiStudioApi.deleteTask(task.id)
     });
     if (!done) return;
@@ -93,31 +94,13 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
           )}
           {mode === 'update' && <UpdateForm task={task} onCancel={() => setMode('view')} onDone={changed} />}
           {mode === 'edit' && <EditForm task={task} onCancel={() => setMode('view')} onDone={changed} />}
-          {task.reportEntries && task.reportEntries.length > 0 ? (
-            <div data-testid="task-report-entries">
-              <h3 className="text-sm font-extrabold text-slate-900 mb-2">Daily report entries</h3>
-              <ol className="space-y-2">
-                {task.reportEntries.map(e => (
-                  <li key={e.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                      <span className="font-semibold text-slate-800">{dateText(e.reportDate)} · {e.authorName}</span>
-                      <span>{e.minutesSpent != null ? `${Math.floor(e.minutesSpent / 60)} h ${e.minutesSpent % 60} min · ` : ''}{e.previousProgress != null && e.reportedProgress != null ? `${e.previousProgress}% → ${e.reportedProgress}%` : ''}</span>
-                    </div>
-                    {e.workCompleted && <p className="mt-1 text-slate-700 whitespace-pre-wrap">{e.workCompleted}</p>}
-                    {e.blockers && <p className="mt-1 text-amber-800 whitespace-pre-wrap"><span className="font-semibold">Blockers:</span> {e.blockers}</p>}
-                    {e.nextAction && <p className="mt-1 text-slate-600 whitespace-pre-wrap"><span className="font-semibold">Next:</span> {e.nextAction}</p>}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          ) : null}
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 mb-2">History</h3>
             <ol className="space-y-2">
               {task.history.map(h => (
                 <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
                   <div className="font-semibold text-slate-800">
-                    {h.kind === 'ASSIGNED' ? 'Assigned' : h.kind === 'EDITED' ? 'Task changed' : h.kind === 'REPORT' ? `Daily report linked · ${h.progress}%` : h.kind === 'BLOCKER' ? 'Blocker reported' : `${TASK_STATUS_LABELS[h.status]} · ${h.progress}%`}
+                    {h.kind === 'ASSIGNED' ? 'Assigned' : h.kind === 'EDITED' ? 'Task changed' : `${TASK_STATUS_LABELS[h.status]} · ${h.progress}%`}
                     <span className="font-normal text-slate-500"> · {h.authorName ?? 'Someone'} · {dateTimeText(h.createdAt)}</span>
                   </div>
                   {h.note && <p className="text-slate-600 whitespace-pre-wrap">{h.note}</p>}
@@ -125,6 +108,7 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
               ))}
             </ol>
           </div>
+          <TaskReportsPanel taskId={task.id} />
           <div className="flex justify-end"><button type="button" className={ghostBtn} onClick={onClose}>Close</button></div>
         </div>
       )}
@@ -227,7 +211,7 @@ const EditForm: React.FC<{ task: AiStudioTaskDetail; onCancel: () => void; onDon
 export const AssignTaskDialog: React.FC<{ role: AiStudioRole; projects: AiStudioProject[]; people: AiStudioPerson[]; onClose: () => void; onDone: () => void }> = ({ role, projects, people, onClose, onDone }) => {
   const usable = projects.filter(p => p.status === 'ACTIVE' && (role !== 'LEAD' || p.mine));
   const [projectId, setProjectId] = useState(usable[0]?.id ?? '');
-  // 20270219000100: the people the database offers for this project (cross-team for a Team Lead on it), with their workload; an older database
+  // 20270221000100: the people the database offers for this project (cross-team for a Team Lead on it), with their workload; an older database
   // without it falls back to the earlier list (the project's people; a Team Lead's own Team Members)
   const offered = useLoad<AiStudioAssignees | null>(() => (projectId ? aiStudioApi.assignees(projectId).then(d => (d && Array.isArray(d.people) ? d : null), () => null) : Promise.resolve(null)), [projectId]);
   const fallback = useMemo(() => assignablePeople(people, projectId, role), [people, projectId, role]);

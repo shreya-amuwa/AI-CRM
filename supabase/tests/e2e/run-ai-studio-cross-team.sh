@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Browser test of AI Studio cross-team task assignment and the multi-task daily report (Team Lead B gives Team A's employee a task; the employee
-# reports on three tasks in one report on a phone; who reads what), signed in through the login page, against a throw-away local stack:
+# Browser test of AI Studio cross-team task assignment (Team Lead B gives Team A's employee a task from the picker; the employee's labels, filter and
+# details; who may change it), signed in through the login page, against a throw-away local stack:
 # Postgres database + PostgREST + the local gateway (auth, storage and a Realtime stand-in) + the web app. Screenshots go to the directory you pass.
 #
 # Requires: superuser access via PGHOST/PGPORT/PGUSER, POSTGREST_BIN (a PostgREST v12 binary), npm install done, and a

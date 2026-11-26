@@ -1,29 +1,23 @@
 -- =============================================================================
--- AI Studio: cross-team task assignment and multi-task daily reports (docs/AI_STUDIO_CROSS_TEAM.md).
--- Run after 20270218000100_support_client_login.sql. Safe to run twice; no temp tables; nothing is deleted; existing reports and tasks keep their meaning.
+-- AI Studio: cross-team task assignment (docs/AI_STUDIO_CROSS_TEAM.md). Safe to run twice; no temp tables; nothing is deleted.
+-- Run after 20270220000100_task_deletion.sql (its task details are kept here) and 20270219000100_ai_studio_consolidated_reports.sql (the daily report,
+-- which this file does not change).
 --
--- What was there (the audit): a Team Lead could give tasks to their OWN Team Members only, and only on a project the member was on
--- (ai_studio_task_assign); a Team Lead could edit every task they could see (ai_studio_task_get / _edit), which would let an employee's own Team Lead
--- change another team's task once tasks cross teams; a daily report was one project and at most one task (ai_studio_daily_reports, one row per person,
--- date, project and task). A "team" in AI Studio is a Team Lead and the people who report to them (private.direct_lead_of); a project's Team Leads are
--- its Team Lead members (ai_studio_project_members), so "a Team Lead who manages a project" = a Team Lead on that project.
+-- What was there: a Team Lead could give tasks to their OWN Team Members only, and only on a project the member was on (ai_studio_task_assign); a Team
+-- Lead could edit every task they could see, which would let an employee's own Team Lead change another team's task once tasks cross teams. A "team" in
+-- AI Studio is a Team Lead and the people who report to them (private.direct_lead_of); a project's Team Leads are its Team Lead members.
 --
---  1. Cross-team assignment, a task-level permission (no team, Team Lead, department, designation or project membership changes):
---     a Team Lead on a project gives a task of THAT project to a Team Member of another AI Studio team. The server works out the assignment type from the
---     reporting lines (the browser sends none) and keeps, on the task, the project-owning team (the assigning Team Lead), the employee's Team Lead and team
---     at that moment. The employee sees the task (and its project) because the task is theirs; nothing else of the project opens to them.
---     Who changes a cross-team task: the assigning Team Lead, the Department Head, the Managing Director (Super Admin) - never the employee's own Team
---     Lead, who sees it (workload) but does not own it. Same-team tasks keep their rules.
---  2. One daily report per person and day with one entry per task (ai_studio_report_entries): work, time spent, progress, blockers, next action. The same
---     two-step approval (Team Lead, then Department Head). On submission each entry's progress is written to its task through the task's own history
---     (kind REPORT), only ever upwards (a stale report never lowers newer progress) and never to 100% (completing a task stays its own step). Older
---     single-task reports stay as they were; each one that names a task also gets one entry (backfilled, flagged legacy) so the task histories include it.
---  3. Who reads what: the employee's own Team Lead and the Department Head read the whole report; the Team Lead who gave a cross-team task reads only the
---     entries about that task (in the task), never the rest of the report.
---  4. Notifications (the existing bell / push / e-mail rules): a cross-team task to the employee and to their Team Lead; deadline and priority changes; a
---     blocker in a daily report entry; completion (as before).
---  5. Performance figures (20270214000100) gain cross-team tasks, projects contributed to, reported minutes and blockers; tasks are still counted once.
---  6. Global search finds the AI Studio tasks, projects and daily reports the person may already open.
+--  1. Cross-team assignment, a task-level permission (no team, Team Lead, department, designation or project membership changes): a Team Lead on a
+--     project gives a task of THAT project to a Team Member of another AI Studio team. The server works out the assignment type from the reporting lines
+--     (the browser sends none) and keeps, on the task, the project-owning team (the assigning Team Lead), the employee's Team Lead and team at that
+--     moment. The employee sees the task (and its project) because the task is theirs; nothing else of the project opens to them.
+--  2. Who changes a cross-team task: the assigning Team Lead, the Department Head, the Managing Director - never the employee's own Team Lead, who sees
+--     it (workload) but does not own it. Same-team tasks keep their rules. The people picker shows each person's open workload (counts only).
+--  3. Notifications: a cross-team task to the employee and to their Team Lead; deadline and priority changes.
+--  4. Task lists filter by my team / cross-team and overdue; performance figures gain cross-team tasks, projects contributed to and reports with blockers.
+--  5. Global search finds the AI Studio tasks, projects and daily reports the person may already open.
+-- The daily report is 20270219000100_ai_studio_consolidated_reports.sql (one report per day built from the tasks); it already shows a cross-team
+-- task's part to the Team Lead who gave it.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -40,68 +34,8 @@ do $$ begin
 end $$;
 create index if not exists ai_studio_tasks_cross_team_idx on public.ai_studio_tasks (assigned_by, status) where assignment_type = 'CROSS_TEAM';
 
--- task history: a daily report linked to the task, a blocker reported in one; the values before / after
-alter table public.ai_studio_task_updates drop constraint if exists ai_studio_task_updates_kind_check;
-alter table public.ai_studio_task_updates add constraint ai_studio_task_updates_kind_check check (kind in ('ASSIGNED', 'PROGRESS', 'EDITED', 'REPORT', 'BLOCKER'));
+-- the values before / after of an edit (field -> {from, to}), shown in the task's history
 alter table public.ai_studio_task_updates add column if not exists details jsonb;
-alter table public.ai_studio_task_updates add column if not exists report_id uuid references public.ai_studio_daily_reports (id) on delete set null;
-
--- a consolidated (multi-task) report has no single project; a single-task report still names its project
-alter table public.ai_studio_daily_reports alter column project_id drop not null;
-alter table public.ai_studio_daily_reports add column if not exists consolidated boolean not null default false;
-alter table public.ai_studio_daily_reports add column if not exists total_minutes integer;
-do $$ begin
-  if not exists (select 1 from pg_constraint where conname = 'ai_studio_daily_reports_project_check') then
-    alter table public.ai_studio_daily_reports add constraint ai_studio_daily_reports_project_check check (consolidated or project_id is not null);
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'ai_studio_daily_reports_minutes_check') then
-    alter table public.ai_studio_daily_reports add constraint ai_studio_daily_reports_minutes_check check (total_minutes is null or total_minutes between 0 and 1440);
-  end if;
-end $$;
--- one consolidated report per person and day: a double click or a retry finds the same report
-create unique index if not exists ai_studio_daily_reports_one_per_day on public.ai_studio_daily_reports (author_id, report_date) where consolidated;
-
-create table if not exists public.ai_studio_report_entries (
-  id uuid primary key default gen_random_uuid(),
-  report_id uuid not null references public.ai_studio_daily_reports (id) on delete cascade,
-  task_id uuid references public.ai_studio_tasks (id) on delete set null,
-  project_id uuid references public.ai_studio_projects (id) on delete set null,
-  -- what the task was when it was reported (kept if the task or project changes later)
-  task_title text not null,
-  project_name text,
-  assignment_type text not null default 'STANDARD' check (assignment_type in ('STANDARD', 'CROSS_TEAM')),
-  assigned_by uuid references public.profiles (id) on delete set null,
-  assigned_by_name text,
-  task_status text,
-  previous_progress integer check (previous_progress is null or previous_progress between 0 and 100),
-  reported_progress integer check (reported_progress is null or reported_progress between 0 and 100),
-  minutes_spent integer check (minutes_spent is null or minutes_spent between 0 and 1440),
-  work_completed text check (work_completed is null or length(work_completed) <= 4000),
-  blockers text check (blockers is null or length(blockers) <= 4000),
-  next_action text check (next_action is null or length(next_action) <= 4000),
-  position smallint not null default 0,
-  legacy boolean not null default false,          -- made from a single-task report written before this migration
-  progress_synced boolean not null default false,  -- the reported progress was written to the task
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-create unique index if not exists ai_studio_report_entries_one_task on public.ai_studio_report_entries (report_id, task_id) where task_id is not null;
-create index if not exists ai_studio_report_entries_task_idx on public.ai_studio_report_entries (task_id);
-drop trigger if exists ai_studio_report_entries_set_updated_at on public.ai_studio_report_entries;
-create trigger ai_studio_report_entries_set_updated_at before update on public.ai_studio_report_entries for each row execute function public.tg_set_updated_at();
-alter table public.ai_studio_report_entries enable row level security;
-revoke all on public.ai_studio_report_entries from public, anon, authenticated;
-
--- Older single-task reports: one entry each, from the report's own text (nothing is invented: a report that names no task gets no entry). Idempotent.
-insert into public.ai_studio_report_entries (report_id, task_id, project_id, task_title, project_name, assignment_type, assigned_by, assigned_by_name,
-                                             work_completed, blockers, next_action, legacy, created_at, updated_at)
-select r.id, r.task_id, r.project_id, t.title, p.name, 'STANDARD', t.assigned_by, b.full_name, r.work_completed, r.blockers, r.pending_work, true, r.created_at, r.updated_at
-  from public.ai_studio_daily_reports r
-  join public.ai_studio_tasks t on t.id = r.task_id
-  left join public.ai_studio_projects p on p.id = r.project_id
-  left join public.profiles b on b.id = t.assigned_by
- where not r.consolidated and r.task_id is not null
-on conflict (report_id, task_id) where task_id is not null do nothing;
 
 -- ---------------------------------------------------------------------------
 -- 2. Helpers
@@ -163,7 +97,6 @@ returns jsonb language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.ai_studio_task_row(public.ai_studio_tasks) from public, anon;
 grant execute on function private.ai_studio_task_row(public.ai_studio_tasks) to authenticated, service_role;
-
 -- ---------------------------------------------------------------------------
 -- 3. Cross-team assignment
 -- ---------------------------------------------------------------------------
@@ -356,8 +289,8 @@ end $$;
 revoke all on function public.ai_studio_task_edit(uuid, text, text, text, date) from public, anon;
 grant execute on function public.ai_studio_task_edit(uuid, text, text, text, date) to authenticated;
 
--- 20270105000100 + who may change it, the daily report entries about this task (whoever reads the task reads them: the assignee, the Team Lead who gave it,
--- the employee's Team Lead, the Department Head, the Managing Director - never the rest of the employee's report), and each history step's values
+-- 20270220000100's task details (canDelete, reportCount) + who may change it (a cross-team task: only the Team Lead who gave it, or the Department Head)
+-- and each history step's before / after values
 create or replace function public.ai_studio_task_get(p_task uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -369,15 +302,11 @@ begin
   return private.ai_studio_task_row(t) || jsonb_build_object(
     'canUpdate', t.assignee_id = auth.uid() and t.status <> 'COMPLETED',
     'canEdit', private.ai_studio_can_edit_task(t),
+    'canDelete', private.ai_studio_delete_problem(t) is null,
+    'reportCount', (select count(distinct x.report_id) from public.ai_studio_report_tasks x where x.task_id = t.id),
     'history', coalesce((select jsonb_agg(jsonb_build_object('id', u.id, 'kind', u.kind, 'status', u.status, 'progress', u.progress, 'note', u.note,
-                                                               'authorName', u.author_name, 'createdAt', u.created_at, 'details', u.details, 'reportId', u.report_id) order by u.seq desc)
-                           from public.ai_studio_task_updates u where u.task_id = t.id), '[]'::jsonb),
-    'reportEntries', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'reportId', r.id, 'reportDate', r.report_date, 'reportStatus', r.status,
-                                 'authorName', r.author_name, 'previousProgress', e.previous_progress, 'reportedProgress', e.reported_progress,
-                                 'minutesSpent', e.minutes_spent, 'workCompleted', e.work_completed, 'blockers', e.blockers, 'nextAction', e.next_action,
-                                 'legacy', e.legacy) order by r.report_date desc, e.created_at desc)
-                               from public.ai_studio_report_entries e join public.ai_studio_daily_reports r on r.id = e.report_id
-                              where e.task_id = t.id and r.status <> 'DRAFT'), '[]'::jsonb));
+                                                               'authorName', u.author_name, 'createdAt', u.created_at, 'details', u.details) order by u.seq desc)
+                           from public.ai_studio_task_updates u where u.task_id = t.id), '[]'::jsonb));
 end $$;
 revoke all on function public.ai_studio_task_get(uuid) from public, anon;
 grant execute on function public.ai_studio_task_get(uuid) to authenticated;
@@ -439,295 +368,7 @@ revoke all on function public.ai_studio_tasks_list(text, uuid, text, uuid, integ
 grant execute on function public.ai_studio_tasks_list(text, uuid, text, uuid, integer, integer) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 4. Daily report: one per person and day, one entry per task
--- ---------------------------------------------------------------------------
--- What the form needs for a date: who is writing, the tasks they may report on (open on that day, or completed that day or later, cross-team ones
--- included), the report already started for that date, and the net hours their attendance recorded (to warn, never to block).
-create or replace function public.ai_studio_daily_context(p_date date default null)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare
-  v_role text := private.ai_studio_require(array['LEAD', 'MEMBER']);
-  v_me uuid := auth.uid();
-  v_tz constant text := 'Asia/Kolkata';
-  v_today date := private.ai_studio_today();
-  v_date date := coalesce(p_date, private.ai_studio_today());
-  me public.profiles;
-  v_lead uuid;
-  a public.attendance_records;
-  v_worked integer;
-  r public.ai_studio_daily_reports;
-begin
-  if v_date > v_today then raise exception 'VALIDATION_ERROR: The report date cannot be in the future.' using errcode = 'P0001'; end if;
-  if v_date < v_today - 60 then raise exception 'VALIDATION_ERROR: A report can be written for the last 60 days only.' using errcode = 'P0001'; end if;
-  select * into me from public.profiles where id = v_me;
-  v_lead := case when v_role = 'MEMBER' then private.direct_lead_of(v_me) end;
-  -- net working minutes from attendance (punch in to punch out, or now for today, less breaks); nothing when there is no punch
-  select * into a from public.attendance_records x where x.profile_id = v_me and x.attendance_date = v_date;
-  if a.punch_in_at is not null and (a.punch_out_at is not null or v_date = v_today) then
-    v_worked := greatest(0, floor(extract(epoch from (coalesce(a.punch_out_at, now()) - a.punch_in_at)) / 60)::integer
-      - coalesce((select floor(sum(extract(epoch from (coalesce(l.ended_at, now()) - l.started_at))) / 60)::integer
-                    from public.attendance_lunches l where l.profile_id = v_me and l.attendance_date = v_date), 0));
-  end if;
-  select * into r from public.ai_studio_daily_reports x where x.author_id = v_me and x.report_date = v_date and x.consolidated;
-  return jsonb_build_object(
-    'date', v_date, 'today', v_today, 'role', v_role,
-    'me', jsonb_build_object('name', me.full_name, 'department', (select d.name from public.departments d where d.id = me.department_id),
-                             'team', case when v_role = 'MEMBER' then private.ai_studio_team_label(v_lead) else private.ai_studio_team_label(v_me) end),
-    'reviewer', case when v_role = 'MEMBER' and v_lead is not null then (select l.full_name from public.profiles l where l.id = v_lead) else 'the Department Head' end,
-    'route', case when v_role = 'MEMBER' and v_lead is not null then 'TEAM_LEAD' else 'DIRECT' end,
-    'workedMinutes', v_worked,
-    'report', case when r.id is not null then private.ai_studio_report_detail(r) end,
-    'legacyReports', (select count(*) from public.ai_studio_daily_reports x where x.author_id = v_me and x.report_date = v_date and not x.consolidated),
-    'tasks', coalesce((
-      select jsonb_agg(jsonb_build_object('id', t.id, 'title', t.title, 'projectId', t.project_id, 'projectName', pr.name, 'status', t.status, 'progress', t.progress,
-               'priority', t.priority, 'dueDate', t.due_date, 'assignmentType', t.assignment_type, 'assignedByName', b.full_name,
-               'ownerTeam', case when coalesce(t.owner_lead_id, case when b.role = 'TEAM_HEAD' then b.id end) is not null
-                                 then private.ai_studio_team_label(coalesce(t.owner_lead_id, case when b.role = 'TEAM_HEAD' then b.id end)) end,
-               'completedAt', t.completed_at) order by pr.name, (t.status = 'COMPLETED'), t.due_date nulls last, t.title)
-        from public.ai_studio_tasks t
-        join public.ai_studio_projects pr on pr.id = t.project_id
-        left join public.profiles b on b.id = t.assigned_by
-       where t.assignee_id = v_me and (t.created_at at time zone v_tz)::date <= v_date
-         and (t.status <> 'COMPLETED' or (t.completed_at at time zone v_tz)::date >= v_date)), '[]'::jsonb));
-end $$;
-revoke all on function public.ai_studio_daily_context(date) from public, anon;
-grant execute on function public.ai_studio_daily_context(date) to authenticated;
-
--- Save (draft) or submit the day's report. p_entries: [{taskId, workCompleted, minutesSpent, reportedProgress, blockers, nextAction}]. All or nothing: one
--- transaction, the first problem is named with the task's number in the form ("Task 2: ..."). A second click finds the same report (one per day).
-create or replace function public.ai_studio_daily_report_save(
-  p_id uuid, p_date date, p_summary text, p_additional text, p_blockers text, p_tomorrow text, p_entries jsonb, p_submit boolean default false)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare
-  v_role text := private.ai_studio_require(array['LEAD', 'MEMBER']);
-  v_me uuid := auth.uid();
-  v_tz constant text := 'Asia/Kolkata';
-  v_today date := private.ai_studio_today();
-  v_summary text := nullif(btrim(coalesce(p_summary, '')), '');
-  v_additional text := nullif(btrim(coalesce(p_additional, '')), '');
-  v_blockers text := nullif(btrim(coalesce(p_blockers, '')), '');
-  v_tomorrow text := nullif(btrim(coalesce(p_tomorrow, '')), '');
-  v_entries jsonb := coalesce(p_entries, '[]'::jsonb);
-  v_ids uuid[] := '{}';
-  v_n integer := 0;
-  e record;
-  t public.ai_studio_tasks;
-  me public.profiles;
-  r public.ai_studio_daily_reports;
-  v_task_id uuid;
-  v_work text;
-  v_block text;
-  v_next text;
-  v_minutes integer;
-  v_progress integer;
-  v_total integer := 0;
-  v_from text;
-  v_action text;
-  v_lead uuid;
-  v_label text;
-  v_primary uuid;
-  x record;
-begin
-  select * into me from public.profiles where id = v_me;
-  if p_date is null then raise exception 'VALIDATION_ERROR: Choose the report date.' using errcode = 'P0001'; end if;
-  if p_date > v_today then raise exception 'VALIDATION_ERROR: The report date cannot be in the future.' using errcode = 'P0001'; end if;
-  if p_date < v_today - 60 then raise exception 'VALIDATION_ERROR: A report can be written for the last 60 days only.' using errcode = 'P0001'; end if;
-  if greatest(length(coalesce(v_summary, '')), length(coalesce(v_additional, '')), length(coalesce(v_blockers, '')), length(coalesce(v_tomorrow, ''))) > 4000 then
-    raise exception 'VALIDATION_ERROR: Each part of the report can have at most 4000 characters.' using errcode = 'P0001';
-  end if;
-  if jsonb_typeof(v_entries) <> 'array' then raise exception 'VALIDATION_ERROR: The tasks of the report could not be read.' using errcode = 'P0001'; end if;
-  if jsonb_array_length(v_entries) > 25 then raise exception 'VALIDATION_ERROR: A daily report can name at most 25 tasks.' using errcode = 'P0001'; end if;
-  if p_submit and jsonb_array_length(v_entries) = 0 then raise exception 'VALIDATION_ERROR: Choose at least one task you worked on.' using errcode = 'P0001'; end if;
-  if p_submit and (v_summary is null or length(v_summary) < 3) then raise exception 'VALIDATION_ERROR: Write the overall summary of the day before you submit.' using errcode = 'P0001'; end if;
-
-  -- the tasks: read and lock them once (in id order, so two reports never wait on each other), then check every entry
-  for e in select value as v, ordinality as n from jsonb_array_elements(v_entries) with ordinality loop
-    begin
-      v_task_id := (e.v ->> 'taskId')::uuid;
-    exception when others then
-      raise exception 'VALIDATION_ERROR: Task %: choose the task again.', e.n using errcode = 'P0001';
-    end;
-    if v_task_id is null then raise exception 'VALIDATION_ERROR: Task %: choose the task again.', e.n using errcode = 'P0001'; end if;
-    if v_task_id = any(v_ids) then raise exception 'VALIDATION_ERROR: Task %: this task is already in the report once.', e.n using errcode = 'P0001'; end if;
-    v_ids := v_ids || v_task_id;
-  end loop;
-  perform 1 from public.ai_studio_tasks where id = any(v_ids) order by id for update;
-
-  for e in select value as v, ordinality as n from jsonb_array_elements(v_entries) with ordinality loop
-    select * into t from public.ai_studio_tasks where id = (e.v ->> 'taskId')::uuid;
-    if t.id is null or t.assignee_id <> v_me then
-      raise exception 'VALIDATION_ERROR: Task %: this is not one of your tasks.', e.n using errcode = 'P0001';
-    end if;
-    if (t.created_at at time zone v_tz)::date > p_date then
-      raise exception 'VALIDATION_ERROR: Task % ("%"): it was assigned after this date.', e.n, t.title using errcode = 'P0001';
-    end if;
-    if t.status = 'COMPLETED' and (t.completed_at at time zone v_tz)::date < p_date then
-      raise exception 'VALIDATION_ERROR: Task % ("%"): it was completed before this date.', e.n, t.title using errcode = 'P0001';
-    end if;
-    v_work := nullif(btrim(coalesce(e.v ->> 'workCompleted', '')), '');
-    v_block := nullif(btrim(coalesce(e.v ->> 'blockers', '')), '');
-    v_next := nullif(btrim(coalesce(e.v ->> 'nextAction', '')), '');
-    if greatest(length(coalesce(v_work, '')), length(coalesce(v_block, '')), length(coalesce(v_next, ''))) > 4000 then
-      raise exception 'VALIDATION_ERROR: Task % ("%"): each part can have at most 4000 characters.', e.n, t.title using errcode = 'P0001';
-    end if;
-    begin
-      v_minutes := nullif(e.v ->> 'minutesSpent', '')::integer;
-      v_progress := nullif(e.v ->> 'reportedProgress', '')::integer;
-    exception when others then
-      raise exception 'VALIDATION_ERROR: Task % ("%"): enter the time and the progress as numbers.', e.n, t.title using errcode = 'P0001';
-    end;
-    if v_minutes is not null and (v_minutes < 1 or v_minutes > 1440) then
-      raise exception 'VALIDATION_ERROR: Task % ("%"): the time spent is between 1 minute and 24 hours.', e.n, t.title using errcode = 'P0001';
-    end if;
-    -- a completed task is reported at 100%; an open one moves at most to 99% here (completing it is its own step, with completion details)
-    if t.status = 'COMPLETED' then
-      v_progress := 100;
-    elsif v_progress is not null and (v_progress < 0 or v_progress > 99) then
-      raise exception 'VALIDATION_ERROR: Task % ("%"): progress here is 0 to 99%%. Complete the task from the task itself, with its completion details.', e.n, t.title using errcode = 'P0001';
-    end if;
-    if p_submit then
-      if v_work is null or length(v_work) < 3 then
-        raise exception 'VALIDATION_ERROR: Task % ("%"): describe the work done on it today.', e.n, t.title using errcode = 'P0001';
-      end if;
-      if v_minutes is null then
-        raise exception 'VALIDATION_ERROR: Task % ("%"): enter the time spent on it.', e.n, t.title using errcode = 'P0001';
-      end if;
-      if v_progress is null then
-        raise exception 'VALIDATION_ERROR: Task % ("%"): enter its progress.', e.n, t.title using errcode = 'P0001';
-      end if;
-    end if;
-    v_total := v_total + coalesce(v_minutes, 0);
-  end loop;
-  if v_total > 1440 then raise exception 'VALIDATION_ERROR: The time spent adds up to more than 24 hours.' using errcode = 'P0001'; end if;
-
-  -- the report itself (one per person and day)
-  if p_id is null then
-    select * into r from public.ai_studio_daily_reports where author_id = v_me and report_date = p_date and consolidated for update;
-  else
-    select * into r from public.ai_studio_daily_reports where id = p_id for update;
-    if r.id is null or r.author_id <> v_me or not r.consolidated then raise exception 'NOT_FOUND: Report not found.' using errcode = 'P0001'; end if;
-  end if;
-  if r.id is not null and r.status not in ('DRAFT', 'RETURNED_BY_TL', 'RETURNED_BY_DH') then
-    raise exception 'CONFLICT: Your daily report for % is already submitted. Open it from My Daily Reports.', to_char(r.report_date, 'DD Mon YYYY') using errcode = 'P0001';
-  end if;
-  if r.id is null then
-    begin
-      insert into public.ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, remarks, blockers, pending_work, status, consolidated, total_minutes)
-      values (v_me, me.full_name, v_role, null, null, p_date, v_summary, v_additional, v_blockers, v_tomorrow, 'DRAFT', true, v_total)
-      returning * into r;
-    exception when unique_violation then
-      raise exception 'CONFLICT: You already have a daily report for %. Open it from My Daily Reports.', to_char(p_date, 'DD Mon YYYY') using errcode = 'P0001';
-    end;
-    perform private.ai_studio_event(r, 'CREATED', null, null, null);
-  else
-    begin
-      update public.ai_studio_daily_reports set report_date = p_date, work_completed = v_summary, remarks = v_additional, blockers = v_blockers, pending_work = v_tomorrow,
-             total_minutes = v_total where id = r.id returning * into r;
-    exception when unique_violation then
-      raise exception 'CONFLICT: You already have a daily report for %. Open it from My Daily Reports.', to_char(p_date, 'DD Mon YYYY') using errcode = 'P0001';
-    end;
-  end if;
-
-  -- the entries: those taken out of the report go, the others are written (each task once)
-  delete from public.ai_studio_report_entries where report_id = r.id and (task_id is null or task_id <> all(v_ids));
-  for e in select value as v, ordinality as n from jsonb_array_elements(v_entries) with ordinality loop
-    select * into t from public.ai_studio_tasks where id = (e.v ->> 'taskId')::uuid;
-    insert into public.ai_studio_report_entries (report_id, task_id, project_id, task_title, project_name, assignment_type, assigned_by, assigned_by_name, task_status,
-                                                 previous_progress, reported_progress, minutes_spent, work_completed, blockers, next_action, position)
-    values (r.id, t.id, t.project_id, t.title, (select p.name from public.ai_studio_projects p where p.id = t.project_id), t.assignment_type, t.assigned_by,
-            (select b.full_name from public.profiles b where b.id = t.assigned_by), t.status, t.progress,
-            case when t.status = 'COMPLETED' then 100 else nullif(e.v ->> 'reportedProgress', '')::integer end,
-            nullif(e.v ->> 'minutesSpent', '')::integer, nullif(btrim(coalesce(e.v ->> 'workCompleted', '')), ''),
-            nullif(btrim(coalesce(e.v ->> 'blockers', '')), ''), nullif(btrim(coalesce(e.v ->> 'nextAction', '')), ''), e.n)
-    on conflict (report_id, task_id) where task_id is not null do update
-      set task_title = excluded.task_title, project_id = excluded.project_id, project_name = excluded.project_name, assignment_type = excluded.assignment_type,
-          assigned_by = excluded.assigned_by, assigned_by_name = excluded.assigned_by_name, task_status = excluded.task_status,
-          previous_progress = excluded.previous_progress, reported_progress = excluded.reported_progress, minutes_spent = excluded.minutes_spent,
-          work_completed = excluded.work_completed, blockers = excluded.blockers, next_action = excluded.next_action, position = excluded.position, progress_synced = false;
-  end loop;
-
-  if p_submit then
-    v_from := r.status;
-    v_action := case when v_from in ('RETURNED_BY_TL', 'RETURNED_BY_DH') then 'RESUBMITTED' else 'SUBMITTED' end;
-    -- the same route as every daily report: a Team Member with a Team Lead goes through them; otherwise straight to the Department Head
-    if v_role = 'MEMBER' then v_lead := private.direct_lead_of(v_me); end if;
-    update public.ai_studio_daily_reports
-       set status = case when v_lead is not null then 'PENDING_TL_APPROVAL' else 'PENDING_DH_APPROVAL' end,
-           lead_id = v_lead, lead_name = (select l.full_name from public.profiles l where l.id = v_lead),
-           revision = case when v_action = 'RESUBMITTED' then revision + 1 else revision end,
-           tl_reviewed_by = null, tl_reviewed_at = null, tl_comment = null, dh_reviewed_by = null, dh_reviewed_at = null, dh_comment = null,
-           submitted_at = now(), approved_at = null
-     where id = r.id returning * into r;
-    perform private.ai_studio_event(r, v_action, null, v_from, case when v_role = 'MEMBER' and v_lead is null then 'No Team Lead is assigned: sent straight to the Department Head.' end);
-    v_label := format('%s task%s · %s', jsonb_array_length(v_entries), case when jsonb_array_length(v_entries) = 1 then '' else 's' end, to_char(r.report_date, 'DD Mon YYYY'));
-    if v_lead is not null then
-      perform private.notify(v_lead, 'AI_STUDIO_REPORT_SUBMITTED', format('Daily report to review: %s', me.full_name),
-        v_label || case when v_action = 'RESUBMITTED' then ' · resubmitted' else '' end, 'ai_studio_report', r.id);
-    else
-      perform private.notify(h, 'AI_STUDIO_REPORT_PENDING_HEAD', format('Daily report to review: %s', me.full_name),
-        format('%s · %s', case when v_role = 'MEMBER' then 'No Team Lead assigned' else 'Team Lead' end, v_label), 'ai_studio_report', r.id) from private.ai_studio_head_ids() h;
-    end if;
-
-    -- each task: the report is linked in its history; its progress follows the report only upwards (a stale report never lowers newer progress) and
-    -- never completes it; a blocker is told to the Team Lead who gave the task (and, for a cross-team task, the employee's own Team Lead)
-    for x in select en.id as entry_id, en.reported_progress, en.work_completed, en.blockers, en.minutes_spent, tk.*
-               from public.ai_studio_report_entries en join public.ai_studio_tasks tk on tk.id = en.task_id
-              where en.report_id = r.id order by en.position loop
-      if x.status <> 'COMPLETED' and x.reported_progress is not null and x.reported_progress > x.progress then
-        update public.ai_studio_tasks
-           set progress = x.reported_progress, status = case when status = 'ASSIGNED' then 'IN_PROGRESS' else status end,
-               started_at = coalesce(started_at, now()), last_update_note = left('Daily report: ' || coalesce(x.work_completed, ''), 2000), last_update_at = now()
-         where id = x.id;
-        update public.ai_studio_report_entries set progress_synced = true where id = x.entry_id;
-      end if;
-      insert into public.ai_studio_task_updates (task_id, author_id, author_name, kind, status, progress, note, details, report_id)
-      select tk.id, v_me, me.full_name, 'REPORT', tk.status, tk.progress,
-             left(format('Daily report of %s%s: %s', to_char(r.report_date, 'DD Mon YYYY'),
-                         case when x.minutes_spent is not null then format(' (%s h %s min)', x.minutes_spent / 60, x.minutes_spent % 60) else '' end, coalesce(x.work_completed, '')), 2000),
-             jsonb_build_object('progressFrom', x.progress, 'progressTo', tk.progress, 'reported', x.reported_progress, 'minutes', x.minutes_spent), r.id
-        from public.ai_studio_tasks tk where tk.id = x.id;
-      if x.blockers is not null then
-        insert into public.ai_studio_task_updates (task_id, author_id, author_name, kind, status, progress, note, report_id)
-        select tk.id, v_me, me.full_name, 'BLOCKER', tk.status, tk.progress, left(x.blockers, 2000), r.id from public.ai_studio_tasks tk where tk.id = x.id;
-        if x.assigned_by is not null and x.assigned_by <> v_me then
-          perform private.notify(x.assigned_by, 'AI_STUDIO_TASK_BLOCKER', format('Blocker reported: %s', x.title), format('%s: %s', me.full_name, left(x.blockers, 200)), 'ai_studio_task', x.id);
-        end if;
-        v_primary := case when x.assignment_type = 'CROSS_TEAM' then private.direct_lead_of(v_me) end;
-        if v_primary is not null and v_primary is distinct from x.assigned_by then
-          perform private.notify(v_primary, 'AI_STUDIO_TASK_BLOCKER', format('Blocker reported: %s', x.title), format('%s (cross-team task): %s', me.full_name, left(x.blockers, 200)), 'ai_studio_task', x.id);
-        end if;
-      end if;
-    end loop;
-  end if;
-  perform private.write_audit(case when p_submit then 'AI_STUDIO_DAILY_REPORT_SUBMITTED' else 'AI_STUDIO_DAILY_REPORT_SAVED' end, 'ai_studio_report', r.id, me.department_id, me.team_id,
-    jsonb_build_object('date', r.report_date, 'tasks', jsonb_array_length(v_entries), 'minutes', v_total, 'revision', r.revision));
-  return private.ai_studio_report_detail(r);
-end $$;
-revoke all on function public.ai_studio_daily_report_save(uuid, date, text, text, text, text, jsonb, boolean) from public, anon;
-grant execute on function public.ai_studio_daily_report_save(uuid, date, text, text, text, text, jsonb, boolean) to authenticated;
-
--- A report in a list: a consolidated report has no single project (its projects are named instead) and says how many tasks and minutes it holds
-create or replace function private.ai_studio_report_row(r public.ai_studio_daily_reports)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select jsonb_build_object(
-    'id', r.id, 'authorId', r.author_id, 'authorName', r.author_name, 'authorRole', r.author_role,
-    'projectId', r.project_id,
-    'projectName', coalesce(pr.name, (select string_agg(distinct e.project_name, ', ') from public.ai_studio_report_entries e where e.report_id = r.id), 'No task chosen yet'),
-    'taskId', r.task_id, 'taskTitle', k.title,
-    'reportDate', r.report_date, 'status', r.status, 'revision', r.revision,
-    'leadId', private.ai_studio_report_lead(r), 'leadName', (select l.full_name from public.profiles l where l.id = private.ai_studio_report_lead(r)),
-    'submittedAt', r.submitted_at, 'approvedAt', r.approved_at, 'updatedAt', r.updated_at,
-    'consolidated', r.consolidated, 'totalMinutes', r.total_minutes,
-    'taskCount', (select count(*) from public.ai_studio_report_entries e where e.report_id = r.id))
-    from (select 1) one
-    left join public.ai_studio_projects pr on pr.id = r.project_id
-    left join public.ai_studio_tasks k on k.id = r.task_id
-$$;
-revoke all on function private.ai_studio_report_row(public.ai_studio_daily_reports) from public, anon;
-grant execute on function private.ai_studio_report_row(public.ai_studio_daily_reports) to authenticated, service_role;
-
--- ---------------------------------------------------------------------------
--- 6. Global search: the AI Studio tasks, projects and daily reports the person may already open (the same checks as the AI Studio pages)
+-- 4. Global search: the AI Studio tasks, projects and daily reports the person may already open (the same checks as the AI Studio pages)
 -- ---------------------------------------------------------------------------
 create or replace function private.search_ai_studio(p_q text, p_tokens text[], p_limit integer)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
@@ -759,16 +400,21 @@ begin
              and (v_role in ('ADMIN', 'HEAD') or private.ai_studio_on_project(pr.id, v_me)
                   or exists (select 1 from public.ai_studio_tasks t where t.project_id = pr.id and t.assignee_id = v_me))
            limit 100) s;
+  -- daily reports: by author, date, project, or a task they cover (20270219000100_ai_studio_consolidated_reports: ai_studio_report_tasks; an older
+  -- report names its own project)
   select coalesce(jsonb_agg(x order by (x ->> 'score')::int desc, x ->> 'title') filter (where (x ->> 'score')::int > 0), '[]'::jsonb) into v_reports
     from (select jsonb_build_object('type', 'ai_studio_report', 'id', r.id, 'title', format('Daily report · %s · %s', r.author_name, to_char(r.report_date, 'DD Mon YYYY')),
-                   'subtitle', coalesce(pr.name, (select string_agg(distinct e.project_name, ', ') from public.ai_studio_report_entries e where e.report_id = r.id)),
+                   'subtitle', coalesce(pr.name, (select string_agg(distinct p2.name, ', ') from public.ai_studio_report_tasks rt join public.ai_studio_tasks t2 on t2.id = rt.task_id
+                                                     join public.ai_studio_projects p2 on p2.id = t2.project_id where rt.report_id = r.id)),
                    'meta', initcap(lower(replace(r.status, '_', ' '))),
                    'score', private.search_score(r.author_name, concat_ws(' ', 'daily report', r.author_name, pr.name, to_char(r.report_date, 'DD Mon YYYY YYYY-MM-DD'),
-                                                 (select string_agg(e.task_title || ' ' || coalesce(e.project_name, ''), ' ') from public.ai_studio_report_entries e where e.report_id = r.id)), p_q, p_tokens)) as x
+                                                 (select string_agg(t2.title || ' ' || p2.name, ' ') from public.ai_studio_report_tasks rt join public.ai_studio_tasks t2 on t2.id = rt.task_id
+                                                     join public.ai_studio_projects p2 on p2.id = t2.project_id where rt.report_id = r.id)), p_q, p_tokens)) as x
             from public.ai_studio_daily_reports r left join public.ai_studio_projects pr on pr.id = r.project_id
            where (lower(r.author_name) like '%' || p_tokens[1] || '%' or to_char(r.report_date, 'DD Mon YYYY YYYY-MM-DD') ilike '%' || p_tokens[1] || '%'
                   or lower(coalesce(pr.name, '')) like '%' || p_tokens[1] || '%' or (p_tokens[1] in ('daily', 'report', 'reports'))
-                  or exists (select 1 from public.ai_studio_report_entries e where e.report_id = r.id and (lower(e.task_title) like '%' || p_tokens[1] || '%' or lower(coalesce(e.project_name, '')) like '%' || p_tokens[1] || '%')))
+                  or exists (select 1 from public.ai_studio_report_tasks rt join public.ai_studio_tasks t2 on t2.id = rt.task_id join public.ai_studio_projects p2 on p2.id = t2.project_id
+                              where rt.report_id = r.id and (lower(t2.title) like '%' || p_tokens[1] || '%' or lower(p2.name) like '%' || p_tokens[1] || '%')))
              and private.ai_studio_can_see_report(r)
            order by r.report_date desc limit 200) s;
   return jsonb_build_object('tasks', (select coalesce(jsonb_agg(v), '[]'::jsonb) from (select v from jsonb_array_elements(v_tasks) with ordinality a(v, n) where n <= p_limit) z),
@@ -779,264 +425,8 @@ revoke all on function private.search_ai_studio(text, text[], integer) from publ
 grant execute on function private.search_ai_studio(text, text[], integer) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. Earlier functions that now read the task entries and the cross-team tasks (their bodies otherwise unchanged)
+-- 5. The projects a person works with now include a project they only have a task in (a cross-team task)
 -- ---------------------------------------------------------------------------
--- 20270214000100's report detail + the report's task entries
-create or replace function private.ai_studio_report_detail(r public.ai_studio_daily_reports)
-returns jsonb language sql stable security definer set search_path = '' as $$
-  select private.ai_studio_report_row(r) || jsonb_build_object(
-    'workCompleted', r.work_completed, 'workInProgress', r.work_in_progress, 'pendingWork', r.pending_work, 'blockers', r.blockers, 'remarks', r.remarks,
-    'tlComment', r.tl_comment, 'tlReviewedAt', r.tl_reviewed_at, 'tlReviewerName', (select p.full_name from public.profiles p where p.id = r.tl_reviewed_by),
-    'dhComment', r.dh_comment, 'dhReviewedAt', r.dh_reviewed_at, 'dhReviewerName', (select p.full_name from public.profiles p where p.id = r.dh_reviewed_by),
-    'canEdit', r.author_id = auth.uid() and r.status in ('DRAFT', 'RETURNED_BY_TL', 'RETURNED_BY_DH'),
-    'canReview', private.ai_studio_can_review(r),
-    -- 20270214000100: the reviewer at the Team Lead's step may correct the report before deciding it
-    'canLeadEdit', r.status = 'PENDING_TL_APPROVAL' and private.ai_studio_can_review(r),
-    -- 20270219000100: a consolidated report's tasks (whoever reads the report reads them all: the author, their Team Lead, the Department Head)
-    'entries', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'taskId', e.task_id, 'taskTitle', e.task_title, 'projectId', e.project_id, 'projectName', e.project_name,
-                           'assignmentType', e.assignment_type, 'assignedByName', e.assigned_by_name, 'taskStatus', e.task_status,
-                           'currentStatus', (select k.status from public.ai_studio_tasks k where k.id = e.task_id),
-                           'previousProgress', e.previous_progress, 'reportedProgress', e.reported_progress, 'minutesSpent', e.minutes_spent,
-                           'workCompleted', e.work_completed, 'blockers', e.blockers, 'nextAction', e.next_action, 'legacy', e.legacy, 'progressSynced', e.progress_synced)
-                           order by e.position, e.created_at) from public.ai_studio_report_entries e where e.report_id = r.id), '[]'::jsonb),
-    'reviewStage', case when r.status = 'PENDING_TL_APPROVAL' then 'TEAM_LEAD' when r.status = 'PENDING_DH_APPROVAL' then 'DEPARTMENT_HEAD' end,
-    'history', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'action', e.action, 'stage', e.stage, 'fromStatus', e.from_status, 'toStatus', e.to_status,
-                                                               'comment', e.comment, 'actorName', e.actor_name, 'actorRole', e.actor_role, 'revision', e.revision,
-                                                               'createdAt', e.created_at, 'changes', e.changes) order by e.seq)
-                           from public.ai_studio_report_events e where e.report_id = r.id), '[]'::jsonb))
-$$;
-revoke all on function private.ai_studio_report_detail(public.ai_studio_daily_reports) from public, anon;
-grant execute on function private.ai_studio_report_detail(public.ai_studio_daily_reports) to authenticated, service_role;
--- 20270105000100's report lists: a project filter also finds a consolidated report with a task of that project
-create or replace function public.ai_studio_reports_list(
-  p_view text default 'mine', p_project uuid default null, p_status text default null, p_lead uuid default null, p_author uuid default null,
-  p_from date default null, p_to date default null, p_page integer default 1, p_page_size integer default 25)
-returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare
-  v_role text := private.ai_studio_require(array['ADMIN', 'HEAD', 'LEAD', 'MEMBER']);
-  v_me uuid := auth.uid();
-  v_size integer := least(greatest(coalesce(p_page_size, 25), 1), 100);
-  v_page integer := greatest(coalesce(p_page, 1), 1);
-  v_total bigint;
-  v_items jsonb;
-  v_counts jsonb;
-begin
-  if p_view not in ('mine', 'team', 'department') then raise exception 'VALIDATION_ERROR: Unknown report list.' using errcode = 'P0001'; end if;
-  if p_view = 'mine' and v_role in ('ADMIN', 'HEAD') then raise exception 'FORBIDDEN: You do not write daily reports.' using errcode = '42501'; end if;
-  if p_view = 'team' and v_role <> 'LEAD' then raise exception 'FORBIDDEN: Team reports are for Team Leads.' using errcode = '42501'; end if;
-  if p_view = 'department' and v_role not in ('ADMIN', 'HEAD') then raise exception 'FORBIDDEN: Department reports are for the Department Head.' using errcode = '42501'; end if;
-  if p_status is not null and p_status not in ('DRAFT', 'SUBMITTED', 'PENDING_TL_APPROVAL', 'RETURNED_BY_TL', 'PENDING_DH_APPROVAL', 'RETURNED_BY_DH', 'APPROVED') then
-    raise exception 'VALIDATION_ERROR: Unknown report status.' using errcode = 'P0001';
-  end if;
-
-  select coalesce(jsonb_object_agg(s.status, s.n), '{}'::jsonb) into v_counts
-    from (select r.status, count(*) as n from public.ai_studio_daily_reports r
-           where (case p_view when 'mine' then r.author_id = v_me
-                              when 'team' then r.author_role = 'MEMBER' and r.status <> 'DRAFT' and private.ai_studio_report_lead(r) = v_me
-                              else r.status <> 'DRAFT' end)
-             and (p_project is null or r.project_id = p_project or exists (select 1 from public.ai_studio_report_entries pe where pe.report_id = r.id and pe.project_id = p_project))
-             and (p_lead is null or r.lead_id = p_lead or r.author_id = p_lead)
-             and (p_author is null or r.author_id = p_author)
-             and (p_from is null or r.report_date >= p_from) and (p_to is null or r.report_date <= p_to)
-           group by r.status) s;
-  select count(*) into v_total from public.ai_studio_daily_reports r
-   where (case p_view when 'mine' then r.author_id = v_me
-                      when 'team' then r.author_role = 'MEMBER' and r.status <> 'DRAFT' and private.ai_studio_report_lead(r) = v_me
-                      else r.status <> 'DRAFT' end)
-     and (p_project is null or r.project_id = p_project or exists (select 1 from public.ai_studio_report_entries pe where pe.report_id = r.id and pe.project_id = p_project)) and (p_status is null or r.status = p_status)
-     and (p_lead is null or r.lead_id = p_lead or r.author_id = p_lead) and (p_author is null or r.author_id = p_author)
-     and (p_from is null or r.report_date >= p_from) and (p_to is null or r.report_date <= p_to);
-  select coalesce(jsonb_agg(private.ai_studio_report_row(x) order by x.report_date desc, x.updated_at desc, x.id), '[]'::jsonb) into v_items
-    from (select r.* from public.ai_studio_daily_reports r
-           where (case p_view when 'mine' then r.author_id = v_me
-                              when 'team' then r.author_role = 'MEMBER' and r.status <> 'DRAFT' and private.ai_studio_report_lead(r) = v_me
-                              else r.status <> 'DRAFT' end)
-             and (p_project is null or r.project_id = p_project or exists (select 1 from public.ai_studio_report_entries pe where pe.report_id = r.id and pe.project_id = p_project)) and (p_status is null or r.status = p_status)
-             and (p_lead is null or r.lead_id = p_lead or r.author_id = p_lead) and (p_author is null or r.author_id = p_author)
-             and (p_from is null or r.report_date >= p_from) and (p_to is null or r.report_date <= p_to)
-           order by r.report_date desc, r.updated_at desc, r.id
-           limit v_size offset (v_page - 1) * v_size) x;
-  return jsonb_build_object('items', v_items, 'total', v_total, 'page', v_page, 'pageSize', v_size, 'counts', v_counts);
-end $$;
-revoke all on function public.ai_studio_reports_list(text, uuid, text, uuid, uuid, date, date, integer, integer) from public, anon;
-grant execute on function public.ai_studio_reports_list(text, uuid, text, uuid, uuid, date, date, integer, integer) to authenticated;
--- 20270106000100's review, unchanged except the label of a consolidated report in the notifications
-create or replace function public.ai_studio_report_review(p_report uuid, p_decision text, p_comment text default null)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare
-  v_role text := private.ai_studio_require(array['LEAD', 'HEAD', 'ADMIN']);
-  v_me uuid := auth.uid();
-  v_comment text := nullif(btrim(coalesce(p_comment, '')), '');
-  r public.ai_studio_daily_reports;
-  v_from text;
-  v_stage text;
-  v_name text;
-  pr_name text;
-begin
-  if p_decision not in ('APPROVE', 'RETURN') then raise exception 'VALIDATION_ERROR: Choose Approve or Return.' using errcode = 'P0001'; end if;
-  if v_comment is not null and length(v_comment) > 2000 then raise exception 'VALIDATION_ERROR: The remarks can have at most 2000 characters.' using errcode = 'P0001'; end if;
-  if p_decision = 'RETURN' and (v_comment is null or length(v_comment) < 3) then
-    raise exception 'VALIDATION_ERROR: Write the remarks the employee should act on.' using errcode = 'P0001';
-  end if;
-  select * into r from public.ai_studio_daily_reports where id = p_report for update;
-  if r.id is null or not private.ai_studio_can_see_report(r) then raise exception 'NOT_FOUND: Report not found.' using errcode = 'P0001'; end if;
-  if r.author_id = v_me then raise exception 'FORBIDDEN: You cannot decide your own report.' using errcode = '42501'; end if;
-  if not private.ai_studio_can_review(r) then
-    raise exception 'CONFLICT: This report is not waiting for your decision.' using errcode = 'P0001';
-  end if;
-  v_from := r.status;
-  select full_name into v_name from public.profiles where id = v_me;
-  -- a consolidated report names its tasks instead of one project (20270219000100)
-  pr_name := coalesce((select name from public.ai_studio_projects where id = r.project_id),
-                      (select format('%s task%s', count(*), case when count(*) = 1 then '' else 's' end) from public.ai_studio_report_entries e where e.report_id = r.id));
-
-  if v_from = 'PENDING_TL_APPROVAL' then
-    v_stage := 'TEAM_LEAD';
-    update public.ai_studio_daily_reports
-       set status = case when p_decision = 'APPROVE' then 'PENDING_DH_APPROVAL' else 'RETURNED_BY_TL' end,
-           lead_id = v_me, lead_name = v_name, tl_reviewed_by = v_me, tl_reviewed_at = now(), tl_comment = v_comment
-     where id = r.id returning * into r;
-  else
-    v_stage := 'DEPARTMENT_HEAD';
-    update public.ai_studio_daily_reports
-       set status = case when p_decision = 'APPROVE' then 'APPROVED' else 'RETURNED_BY_DH' end,
-           dh_reviewed_by = v_me, dh_reviewed_at = now(), dh_comment = v_comment,
-           approved_at = case when p_decision = 'APPROVE' then now() else null end
-     where id = r.id returning * into r;
-  end if;
-  perform private.ai_studio_event(r, case when p_decision = 'APPROVE' then 'APPROVED' else 'RETURNED' end, v_stage, v_from, v_comment);
-  perform private.write_audit('AI_STUDIO_REPORT_' || case when p_decision = 'APPROVE' then 'APPROVED' else 'RETURNED' end, 'ai_studio_report', r.id,
-                              private.ai_studio_department(), null, jsonb_build_object('stage', v_stage, 'from', v_from, 'to', r.status, 'author', r.author_id));
-
-  if v_stage = 'TEAM_LEAD' and p_decision = 'APPROVE' then
-    perform private.notify(r.author_id, 'AI_STUDIO_REPORT_TL_APPROVED', 'Your daily report was approved by your Team Lead',
-      format('%s · %s. It now waits for the Department Head.', pr_name, to_char(r.report_date, 'DD Mon YYYY')), 'ai_studio_report', r.id);
-    perform private.notify(h, 'AI_STUDIO_REPORT_PENDING_HEAD', format('Daily report to review: %s', r.author_name),
-      format('Approved by %s · %s · %s', v_name, pr_name, to_char(r.report_date, 'DD Mon YYYY')), 'ai_studio_report', r.id) from private.ai_studio_head_ids() h;
-  elsif v_stage = 'TEAM_LEAD' then
-    perform private.notify(r.author_id, 'AI_STUDIO_REPORT_RETURNED', 'Your Team Lead returned your daily report',
-      format('%s · %s: %s', pr_name, to_char(r.report_date, 'DD Mon YYYY'), v_comment), 'ai_studio_report', r.id);
-  elsif p_decision = 'APPROVE' then
-    perform private.notify(r.author_id, 'AI_STUDIO_REPORT_APPROVED', 'Your daily report was approved',
-      format('%s · %s. Final approval by the Department Head.', pr_name, to_char(r.report_date, 'DD Mon YYYY')), 'ai_studio_report', r.id);
-    if r.lead_id is not null then
-      perform private.notify(r.lead_id, 'AI_STUDIO_REPORT_APPROVED', format('%s''s daily report was approved', r.author_name),
-        format('%s · %s · final approval by the Department Head.', pr_name, to_char(r.report_date, 'DD Mon YYYY')), 'ai_studio_report', r.id);
-    end if;
-  else
-    perform private.notify(r.author_id, 'AI_STUDIO_REPORT_RETURNED', 'The Department Head returned your daily report',
-      format('%s · %s: %s', pr_name, to_char(r.report_date, 'DD Mon YYYY'), v_comment), 'ai_studio_report', r.id);
-    if r.lead_id is not null then
-      perform private.notify(r.lead_id, 'AI_STUDIO_REPORT_RETURNED', format('%s''s daily report was returned by the Department Head', r.author_name),
-        format('%s · %s: %s', pr_name, to_char(r.report_date, 'DD Mon YYYY'), v_comment), 'ai_studio_report', r.id);
-    end if;
-  end if;
-  return private.ai_studio_report_detail(r);
-end $$;
-revoke all on function public.ai_studio_report_review(uuid, text, text) from public, anon;
-grant execute on function public.ai_studio_report_review(uuid, text, text) to authenticated;
--- 20270107000100's single-task save, unchanged except that it never touches a consolidated report
-create or replace function public.ai_studio_report_save(
-  p_id uuid, p_project uuid, p_task uuid, p_date date, p_work_completed text, p_work_in_progress text, p_pending_work text, p_blockers text, p_remarks text, p_submit boolean default false)
-returns jsonb language plpgsql security definer set search_path = '' as $$
-declare
-  v_role text := private.ai_studio_require(array['LEAD', 'MEMBER']);
-  v_me uuid := auth.uid();
-  v_completed text := nullif(btrim(coalesce(p_work_completed, '')), '');
-  v_progress text := nullif(btrim(coalesce(p_work_in_progress, '')), '');
-  v_pending text := nullif(btrim(coalesce(p_pending_work, '')), '');
-  v_blockers text := nullif(btrim(coalesce(p_blockers, '')), '');
-  v_remarks text := nullif(btrim(coalesce(p_remarks, '')), '');
-  me public.profiles;
-  pr public.ai_studio_projects;
-  tk public.ai_studio_tasks;
-  r public.ai_studio_daily_reports;
-  v_lead uuid;
-  v_from text;
-  v_action text;
-begin
-  select * into me from public.profiles where id = v_me;
-  if p_date is null then raise exception 'VALIDATION_ERROR: Choose the report date.' using errcode = 'P0001'; end if;
-  if p_date > private.ai_studio_today() then raise exception 'VALIDATION_ERROR: The report date cannot be in the future.' using errcode = 'P0001'; end if;
-  if p_date < private.ai_studio_today() - 60 then raise exception 'VALIDATION_ERROR: A report can be written for the last 60 days only.' using errcode = 'P0001'; end if;
-  if greatest(length(coalesce(v_completed, '')), length(coalesce(v_progress, '')), length(coalesce(v_pending, '')), length(coalesce(v_blockers, '')), length(coalesce(v_remarks, ''))) > 4000 then
-    raise exception 'VALIDATION_ERROR: Each part of the report can have at most 4000 characters.' using errcode = 'P0001';
-  end if;
-  select * into pr from public.ai_studio_projects where id = p_project;
-  if pr.id is null or pr.status = 'ARCHIVED' or not private.ai_studio_on_project(p_project, v_me) then
-    raise exception 'VALIDATION_ERROR: Choose one of your projects.' using errcode = 'P0001';
-  end if;
-  if p_task is not null then
-    select * into tk from public.ai_studio_tasks where id = p_task;
-    if tk.id is null or tk.assignee_id <> v_me or tk.project_id <> p_project then
-      raise exception 'VALIDATION_ERROR: Choose a task that was assigned to you in this project.' using errcode = 'P0001';
-    end if;
-  end if;
-  if p_submit and v_completed is null then
-    raise exception 'VALIDATION_ERROR: Describe the work completed today before you submit.' using errcode = 'P0001';
-  end if;
-
-  if p_id is null then
-    if exists (select 1 from public.ai_studio_daily_reports x where x.author_id = v_me and x.report_date = p_date and x.project_id = p_project
-                  and coalesce(x.task_id, '00000000-0000-0000-0000-000000000000'::uuid) = coalesce(p_task, '00000000-0000-0000-0000-000000000000'::uuid)) then
-      raise exception 'CONFLICT: You already have a report for this project, task and date. Open it from My Daily Reports.' using errcode = 'P0001';
-    end if;
-    begin
-      insert into public.ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, work_in_progress, pending_work, blockers, remarks, status)
-      values (v_me, me.full_name, v_role, p_project, p_task, p_date, v_completed, v_progress, v_pending, v_blockers, v_remarks, 'DRAFT') returning * into r;
-    exception when unique_violation then
-      raise exception 'CONFLICT: You already have a report for this project, task and date. Open it from My Daily Reports.' using errcode = 'P0001';
-    end;
-    perform private.ai_studio_event(r, 'CREATED', null, null, null);
-    v_from := 'DRAFT';
-  else
-    select * into r from public.ai_studio_daily_reports where id = p_id for update;
-    if r.id is null or r.author_id <> v_me then raise exception 'NOT_FOUND: Report not found.' using errcode = 'P0001'; end if;
-    -- 20270219000100: a report with several tasks is saved by ai_studio_daily_report_save only
-    if r.consolidated then raise exception 'CONFLICT: This daily report has several tasks: open it in the daily report form.' using errcode = 'P0001'; end if;
-    if r.status not in ('DRAFT', 'RETURNED_BY_TL', 'RETURNED_BY_DH') then
-      raise exception 'CONFLICT: This report was already submitted and can no longer be changed.' using errcode = 'P0001';
-    end if;
-    begin
-      update public.ai_studio_daily_reports
-         set project_id = p_project, task_id = p_task, report_date = p_date, work_completed = v_completed, work_in_progress = v_progress,
-             pending_work = v_pending, blockers = v_blockers, remarks = v_remarks
-       where id = r.id returning * into r;
-    exception when unique_violation then
-      raise exception 'CONFLICT: You already have a report for this project, task and date. Open it from My Daily Reports.' using errcode = 'P0001';
-    end;
-    v_from := r.status;
-  end if;
-
-  if p_submit then
-    -- a Team Member with a Team Lead goes through them; with none (yet) the report goes straight to the Department Head. The route is fixed when the report is
-    -- submitted: a Team Lead assigned later does not take over reports that are already in.
-    if v_role = 'MEMBER' then
-      v_lead := private.direct_lead_of(v_me);
-    end if;
-    v_action := case when v_from in ('RETURNED_BY_TL', 'RETURNED_BY_DH') then 'RESUBMITTED' else 'SUBMITTED' end;
-    update public.ai_studio_daily_reports
-       set status = case when v_lead is not null then 'PENDING_TL_APPROVAL' else 'PENDING_DH_APPROVAL' end,
-           lead_id = v_lead, lead_name = (select l.full_name from public.profiles l where l.id = v_lead),
-           revision = case when v_action = 'RESUBMITTED' then revision + 1 else revision end,
-           tl_reviewed_by = null, tl_reviewed_at = null, tl_comment = null, dh_reviewed_by = null, dh_reviewed_at = null, dh_comment = null,
-           submitted_at = now(), approved_at = null
-     where id = r.id returning * into r;
-    perform private.ai_studio_event(r, v_action, null, v_from, case when v_role = 'MEMBER' and v_lead is null then 'No Team Lead is assigned: sent straight to the Department Head.' end);
-    perform private.write_audit('AI_STUDIO_REPORT_' || v_action, 'ai_studio_report', r.id, me.department_id, me.team_id, jsonb_build_object('date', r.report_date, 'revision', r.revision));
-    if v_lead is not null then
-      perform private.notify(v_lead, 'AI_STUDIO_REPORT_SUBMITTED', format('Daily report to review: %s', me.full_name),
-        format('%s · %s%s', pr.name, to_char(r.report_date, 'DD Mon YYYY'), case when v_action = 'RESUBMITTED' then ' · resubmitted' else '' end), 'ai_studio_report', r.id);
-    else
-      perform private.notify(h, 'AI_STUDIO_REPORT_PENDING_HEAD', format('Daily report to review: %s', me.full_name),
-        format('%s · %s · %s', case when v_role = 'MEMBER' then 'No Team Lead assigned' else 'Team Lead' end, pr.name, to_char(r.report_date, 'DD Mon YYYY')), 'ai_studio_report', r.id) from private.ai_studio_head_ids() h;
-    end if;
-  end if;
-  return private.ai_studio_report_detail(r);
-end $$;
-revoke all on function public.ai_studio_report_save(uuid, uuid, uuid, date, text, text, text, text, text, boolean) from public, anon;
-grant execute on function public.ai_studio_report_save(uuid, uuid, uuid, date, text, text, text, text, text, boolean) to authenticated;
--- 20270120000100's project list + the projects of the person's own (cross-team) tasks
 create or replace function public.ai_studio_projects_list()
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -1047,7 +437,7 @@ begin
     select jsonb_agg(jsonb_build_object(
       'id', pr.id, 'name', pr.name, 'description', pr.description, 'status', pr.status, 'createdAt', pr.created_at, 'deadlineAt', pr.deadline_at,
       'mine', exists (select 1 from public.ai_studio_project_members m where m.project_id = pr.id and m.profile_id = v_me),
-      -- 20270219000100: a project the person is not on but has a task in (a cross-team task): only that task is theirs to see
+      -- a project the person is not on but has a task in (a cross-team task): only that task is theirs to see
       'viaTask', not exists (select 1 from public.ai_studio_project_members m where m.project_id = pr.id and m.profile_id = v_me)
                  and exists (select 1 from public.ai_studio_tasks t where t.project_id = pr.id and t.assignee_id = v_me),
       'leads', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'name', l.full_name) order by l.full_name)
@@ -1070,8 +460,10 @@ begin
 end $$;
 revoke all on function public.ai_studio_projects_list() from public, anon;
 grant execute on function public.ai_studio_projects_list() to authenticated;
--- 20270214000100's AI Studio member figures + cross-team tasks, projects contributed to, reported minutes and blockers (each task still counted once,
--- for the person who did it)
+
+-- ---------------------------------------------------------------------------
+-- 6. Performance figures (20270214000100) + cross-team tasks, projects contributed to, reports with blockers
+-- ---------------------------------------------------------------------------
 create or replace function private.perf2_member_ai(p_member uuid, p_start date, p_end date, p_today date)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -1105,9 +497,9 @@ begin
     from (select private.perf2_ai_report_state(r) as s, r.report_date as d from public.ai_studio_daily_reports r
            where r.author_id = p_member and r.status <> 'DRAFT' and r.report_date between p_start and p_end) x;
 
-  -- 20270219000100: the day-by-day entries of the person's reports in the period (each task's minutes once per report)
-  select coalesce(sum(e.minutes_spent), 0)::int as minutes, count(*) filter (where e.blockers is not null)::int as blockers
-    into c from public.ai_studio_report_entries e join public.ai_studio_daily_reports r on r.id = e.report_id
+  -- the person's submitted daily reports in the period that name a blocker
+  select count(*) filter (where nullif(btrim(coalesce(r.blockers, '')), '') is not null)::int as blockers
+    into c from public.ai_studio_daily_reports r
    where r.author_id = p_member and r.status <> 'DRAFT' and r.report_date between p_start and p_end;
 
   -- the working days (not Sunday, not after today) on which the person had an AI Studio task open
@@ -1128,14 +520,14 @@ begin
     jsonb_build_object('key', 'consistency', 'label', 'Reporting consistency', 'weight', 15, 'value', v_consistency));
   return jsonb_build_object(
     'tasks', jsonb_build_object('total', k.total, 'completed', k.completed, 'pending', k.pending, 'overdue', k.overdue, 'onTime', k.on_time, 'late', k.late, 'crossTeam', k.cross_team),
-    'contribution', jsonb_build_object('projects', k.projects, 'crossTeamTasks', k.cross_team, 'reportedMinutes', c.minutes, 'blockers', c.blockers),
+    'contribution', jsonb_build_object('projects', k.projects, 'crossTeamTasks', k.cross_team, 'blockers', c.blockers),
     'completionPct', private.perf2_pct(k.completed, k.total), 'onTimePct', private.perf2_pct(k.on_time, k.on_time + k.late), 'progressPct', v_progress,
     'reports', jsonb_build_object('submitted', g.submitted, 'approved', g.approved, 'returned', g.returned, 'pending', g.pending,
         'approvalPct', v_approval, 'expectedDays', v_expected, 'approvedDays', g.approved_days, 'consistencyPct', v_consistency),
     'parts', v_parts, 'score', private.perf2_score(v_parts));
 end $$;
 revoke all on function private.perf2_member_ai(uuid, date, date, date) from public, anon, authenticated;
--- 20270214000100's AI Studio Team Lead figures + the cross-team tasks they gave
+
 create or replace function private.perf2_lead_ai(p_lead uuid, p_start date, p_end date, p_today date, p_members jsonb)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -1185,7 +577,7 @@ begin
     'parts', v_parts, 'score', private.perf2_score(v_parts));
 end $$;
 revoke all on function private.perf2_lead_ai(uuid, date, date, date, jsonb) from public, anon, authenticated;
--- 20270214000100's work view, reading AI Studio reports through their task entries
+
 create or replace function public.performance_member_work(p_subject uuid, p_start date, p_end date)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -1215,14 +607,16 @@ begin
                  'onTime', case when t.status = 'COMPLETED' and t.completed_at is not null and t.due_date is not null
                                 then (t.completed_at at time zone 'Asia/Kolkata')::date <= t.due_date end,
                  'assignmentType', t.assignment_type,
-                 -- 20270219000100: reports through their task entries (a consolidated report names many tasks; older ones have one entry each)
-                 'reports', (select count(*) from public.ai_studio_report_entries e join public.ai_studio_daily_reports x on x.id = e.report_id
-                              where e.task_id = t.id and x.status <> 'DRAFT' and x.report_date between p_start and p_end),
-                 'pendingReports', (select count(*) from public.ai_studio_report_entries e join public.ai_studio_daily_reports x on x.id = e.report_id
-                                     where e.task_id = t.id and x.status <> 'DRAFT' and x.report_date between p_start and p_end and private.perf2_ai_report_state(x) = 'PENDING'),
-                 'lastReport', (select jsonb_build_object('id', x.id, 'reportDate', x.report_date, 'progress', coalesce(e.reported_progress, t.progress), 'status', private.perf2_ai_report_state(x))
-                                  from public.ai_studio_report_entries e join public.ai_studio_daily_reports x on x.id = e.report_id
-                                 where e.task_id = t.id and x.status <> 'DRAFT' order by x.report_date desc, x.updated_at desc limit 1))
+                 -- the reports that cover the task: an older one-task report (task_id) or a consolidated one that picked it (ai_studio_report_tasks)
+                 'reports', (select count(*) from public.ai_studio_daily_reports x where x.status <> 'DRAFT' and x.report_date between p_start and p_end
+                               and (x.task_id = t.id or exists (select 1 from public.ai_studio_report_tasks rt where rt.report_id = x.id and rt.task_id = t.id))),
+                 'pendingReports', (select count(*) from public.ai_studio_daily_reports x where x.status <> 'DRAFT' and x.report_date between p_start and p_end
+                                      and (x.task_id = t.id or exists (select 1 from public.ai_studio_report_tasks rt where rt.report_id = x.id and rt.task_id = t.id))
+                                      and private.perf2_ai_report_state(x) = 'PENDING'),
+                 'lastReport', (select jsonb_build_object('id', x.id, 'reportDate', x.report_date, 'progress', t.progress, 'status', private.perf2_ai_report_state(x))
+                                  from public.ai_studio_daily_reports x where x.status <> 'DRAFT'
+                                   and (x.task_id = t.id or exists (select 1 from public.ai_studio_report_tasks rt where rt.report_id = x.id and rt.task_id = t.id))
+                                 order by x.report_date desc, x.updated_at desc limit 1))
                order by (t.status = 'COMPLETED'), t.due_date nulls last, t.created_at desc)
           from (select w.* from public.ai_studio_tasks w
                  where w.assignee_id = s.id and coalesce(w.due_date, (w.created_at at time zone 'Asia/Kolkata')::date) between p_start and p_end
@@ -1247,7 +641,10 @@ begin
 end $$;
 revoke all on function public.performance_member_work(uuid, date, date) from public, anon;
 grant execute on function public.performance_member_work(uuid, date, date) to authenticated;
--- 20270215000100's global search + the AI Studio groups
+
+-- ---------------------------------------------------------------------------
+-- 7. Global search (20270215000100) + the AI Studio groups
+-- ---------------------------------------------------------------------------
 create or replace function public.global_search(p_query text, p_limit integer default 5)
 returns jsonb language plpgsql stable security invoker set search_path = '' as $$
 declare
@@ -1361,7 +758,7 @@ begin
 
   v_mtg := private.search_meetings(v_q, v_tokens, v_lim + 1);
   v_not := private.search_notices(v_q, v_tokens, v_lim + 1);
-  -- 20270219000100: AI Studio tasks, projects and daily reports, with the AI Studio pages' own checks
+  -- AI Studio tasks, projects and daily reports, with the AI Studio pages' own checks
   v_ai := private.search_ai_studio(v_q, v_tokens, v_lim + 1);
 
   return jsonb_build_object('query', v_q, 'groups', (
@@ -1374,3 +771,5 @@ begin
 end $$;
 revoke all on function public.global_search(text, integer) from public, anon;
 grant execute on function public.global_search(text, integer) to authenticated, service_role;
+
+notify pgrst, 'reload schema';

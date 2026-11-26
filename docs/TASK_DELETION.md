@@ -23,9 +23,10 @@ Also:
 ## What a delete does
 
 * Removes the task and what hangs off it through the existing `on delete cascade` keys: sub-tasks / parts passed on to Team Members, their progress
-  updates, update requests and (Task module) the per-task daily reports. Nothing is left orphaned.
-* Rows that only point at the task keep their content and lose the link (`on delete set null`): AI Studio daily report entries (they keep their own copy of the
-  task title), AI Design Studio reports and issues, field visits.
+  updates, update requests, the Task module's per-task daily reports, and an AI Studio task's place in the consolidated daily reports that picked it
+  (the report itself and its remarks stay). Nothing is left orphaned. The confirmation lists what goes with the task.
+* Rows that only point at the task keep their content and lose the link (`on delete set null`): older one-task AI Studio daily reports,
+  AI Design Studio reports and issues, field visits.
 * Removes the task's own notifications (they would open a task that no longer exists) and tells the assignee (and everyone who had a part of it, and the giver
   when a head deletes a Team Lead's task) with `TASK_DELETED` / `AI_STUDIO_TASK_DELETED` / `ADS_ASSIGNMENT_DELETED`.
 * Writes `TASK_DELETED` / `AI_STUDIO_TASK_DELETED` / `ADS_ASSIGNMENT_DELETED` to the audit log with a snapshot of the task.

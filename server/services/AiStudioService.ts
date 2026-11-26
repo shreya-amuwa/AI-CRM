@@ -1,10 +1,10 @@
 import type {
-  AiStudioTaskDeleteResult,
-  AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
-  AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioTaskDeleteResult, AiStudioAssignees,
+  AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
+  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../shared/contracts.js';
 import {
-  aiStudioAssignLeadSchema, aiStudioDailyContextQuerySchema, aiStudioDailyReportSchema, aiStudioProjectAssignSchema, aiStudioReportLeadEditSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
+  aiStudioDailyReportOptionsQuerySchema, aiStudioDailyReportPreviewSchema, aiStudioDailyReportSchema, aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioReportLeadEditSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
   aiStudioTaskEditSchema, aiStudioTasksQuerySchema, aiStudioTaskUpdateSchema, uuidSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
@@ -35,6 +35,8 @@ export class AiStudioService {
   tasks(query: unknown): Promise<AiStudioTaskPage> { return this.repo.tasks(parse(aiStudioTasksQuerySchema, query)); }
   task(id: string): Promise<AiStudioTaskDetail> { return this.repo.task(parse(uuidSchema, id)); }
   assignTask(body: unknown): Promise<AiStudioTask> { return this.repo.assignTask(parse(aiStudioTaskCreateSchema, body)); }
+  /** Who a task of this project can go to: the database works out the team, the assignment type and who is eligible (20270221000100). */
+  assignees(projectId: string): Promise<AiStudioAssignees> { return this.repo.assignees(parse(uuidSchema, projectId)); }
   editTask(id: string, body: unknown): Promise<AiStudioTask> { return this.repo.editTask(parse(uuidSchema, id), parse(aiStudioTaskEditSchema, body)); }
   /** The Team Lead who gave it or the Department Head (the database checks; the Managing Director's access is unchanged). */
   deleteTask(id: string): Promise<AiStudioTaskDeleteResult> { return this.repo.deleteTask(parse(uuidSchema, id)); }
@@ -50,12 +52,16 @@ export class AiStudioService {
     const { decision, comment } = parse(aiStudioReportReviewSchema, body);
     return this.repo.reviewReport(parse(uuidSchema, id), decision, comment);
   }
-  /** Who a task of this project can go to: the database works out the team, the assignment type and who is eligible (20270219000100). */
-  assignees(projectId: string): Promise<AiStudioAssignees> { return this.repo.assignees(parse(uuidSchema, projectId)); }
-  /** The day's report form: the tasks the person may report on, the report already started, the attendance hours (to warn only). */
-  dailyContext(query: unknown): Promise<AiStudioDailyContext> { return this.repo.dailyContext(parse(aiStudioDailyContextQuerySchema, query ?? {}).date); }
-  /** Save or submit the day's report (one per person and day, one entry per task); the database checks every task and writes it all or nothing. */
-  saveDailyReport(body: unknown): Promise<AiStudioReportDetail> { return this.repo.saveDailyReport(parse(aiStudioDailyReportSchema, body)); }
+  // the consolidated daily report (20270219000100): the browser sends dates and task ids only; the database checks every id and builds the work
+  dailyReportOptions(query: unknown): Promise<AiStudioDailyReportOptions> { return this.repo.dailyReportOptions(parse(aiStudioDailyReportOptionsQuerySchema, query).date); }
+  dailyReportPreview(body: unknown): Promise<AiStudioDailyReportPreview> {
+    const { reportDate, taskIds } = parse(aiStudioDailyReportPreviewSchema, body);
+    return this.repo.dailyReportPreview(reportDate, taskIds);
+  }
+  createDailyReport(body: unknown): Promise<AiStudioReportDetail> { return this.repo.saveDailyReport(null, parse(aiStudioDailyReportSchema, body)); }
+  updateDailyReport(id: string, body: unknown): Promise<AiStudioReportDetail> { return this.repo.saveDailyReport(parse(uuidSchema, id), parse(aiStudioDailyReportSchema, body)); }
+  /** A task's own part of the daily reports (for whoever may see the task). */
+  taskReports(id: string): Promise<AiStudioTaskReportEntry[]> { return this.repo.taskReports(parse(uuidSchema, id)); }
   /** The Team Lead corrects a report waiting for their approval (the database checks that the caller is that reviewer). */
   leadEditReport(id: string, body: unknown): Promise<AiStudioReportDetail> { return this.repo.leadEditReport(parse(uuidSchema, id), parse(aiStudioReportLeadEditSchema, body)); }
 }

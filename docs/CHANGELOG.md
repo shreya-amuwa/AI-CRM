@@ -18,21 +18,23 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Added
 
+* **AI Studio: cross-team task assignment** (docs/AI_STUDIO_CROSS_TEAM.md). A Team Lead on a project can give a task of that project to a member of
+  another AI Studio team, from a grouped, searchable list with each person's workload and a heavy-load warning; the server decides the assignment type and
+  keeps the project-owning team and the employee's team; nobody's team, Team Lead or project membership changes. Only the Team Lead who gave a cross-team
+  task (or the Department Head) changes it; the employee's Team Lead sees it and is notified. Task filters (my team / cross-team / overdue), task details
+  (ownership), notifications, performance figures and Ctrl+K search for AI Studio tasks, projects and reports. Works with main's daily report (#319).
+  Migration `20270221000100_ai_studio_cross_team.sql`.
 * **Deleting assigned tasks** (docs/TASK_DELETION.md). Team Leads delete the tasks they assigned; Department Heads and Operations Heads delete tasks
   within their department and function, in the Task module of every department, AI Studio and AI Design Studio. Team Members (Telecallers, Business
   Associates and every member designation) cannot, and the Super Admin's access is unchanged. The database checks the role and scope on every delete; the
   button appears only when it says so and opens a confirmation naming the task. Sub-tasks, updates and per-task reports go with the task; the assignee is
   notified and the delete is audited. Migration `20270220000100_task_deletion.sql`.
-* **AI Studio: cross-team tasks and multi-task daily reports** (docs/AI_STUDIO_CROSS_TEAM.md). A Team Lead on a project can give a task of that project
-  to a member of another AI Studio team, from a grouped, searchable list with each person's workload and a heavy-load warning; the server decides the
-  assignment type and keeps the project-owning team and the employee's team; nobody's team, Team Lead or project membership changes. Only the Team Lead who
-  gave a cross-team task (or the Department Head) changes it; the employee's Team Lead sees it and is notified. Employees report on several tasks from
-  several projects in one daily report per day (one entry per task: work, time, progress, blockers, next action), with the hours compared with attendance;
-  progress is written to each task's history only upwards and never completes a task; the assigning Team Lead reads only the entries about their task.
-  Task filters (my team / cross-team / overdue), task details (ownership, report entries), notifications, performance contribution figures and Ctrl+K
-  search for AI Studio tasks, projects and reports. Older single-task reports keep working and gain one entry each. Migration
-  `20270219000100_ai_studio_cross_team_multi_task.sql`.
-
+* **AI Studio: one daily report built from the tasks** (docs/AI_STUDIO_DAILY_REPORTS.md): the employee picks the tasks they worked on, from
+  any of their projects, and the report shows the completion details, work updates and links already recorded on those tasks for that
+  date, read-only. Only new remarks are typed (additional work, pending work, blockers, tomorrow's plan, remarks). The report stores
+  references to the task history, never copies; a submitted report keeps showing its day. The Team Lead and Department Head read it
+  project by project (with counts, blockers and cross-team filters); the Team Lead who gave a cross-team task sees only that task's part,
+  in the task window. Older one-task reports stay as they are. Migration `20270219000100_ai_studio_consolidated_reports.sql`.
 * **Global search (Ctrl / Cmd + K)** (docs/GLOBAL_SEARCH_ARCHITECTURE.md, docs/COMMAND_PALETTE_GUIDE.md): a command palette on every staff
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,
   departments and notices the person may already open. The database's row-level rules decide (security invoker). Results open the exact
@@ -99,6 +101,9 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Database migrations in this release
 
+* `20270219000100_ai_studio_consolidated_reports.sql`: `ai_studio_report_tasks`, `ai_studio_report_task_updates` (references only), the links
+  of a task update (`ai_studio_task_updates.links`, stored when they change), write-once task history, and the daily report functions
+  (additive; safe to run twice).
 * `20270215000100_global_search.sql`: `global_search`, `search_record`, private candidate helpers and trigram indexes (additive; safe to run twice).
 
 Run in the Supabase SQL editor, in this order, **before** the matching code is deployed. Every one is additive and safe to run twice. See

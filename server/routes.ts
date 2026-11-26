@@ -405,6 +405,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/ai-studio/projects', handler: aiStudio.createProject, options: S },
   { method: 'PATCH', path: '/ai-studio/projects/:id', handler: aiStudio.updateProject, options: S },
   { method: 'POST', path: '/ai-studio/projects/:id/assign', handler: aiStudio.assignProject, options: S },
+  // 20270221000100: who a task of this project can go to (cross-team assignment)
+  { method: 'GET', path: '/ai-studio/projects/:id/assignees', handler: aiStudio.assignees },
   { method: 'GET', path: '/ai-studio/tasks', handler: aiStudio.tasks },
   { method: 'POST', path: '/ai-studio/tasks', handler: aiStudio.assignTask },
   { method: 'GET', path: '/ai-studio/tasks/:id', handler: aiStudio.task },
@@ -412,10 +414,6 @@ export const routes: RouteDef[] = [
   { method: 'DELETE', path: '/ai-studio/tasks/:id', handler: aiStudio.deleteTask, options: S },
   { method: 'POST', path: '/ai-studio/tasks/:id/update', handler: aiStudio.updateTask },
   { method: 'GET', path: '/ai-studio/reports/context', handler: aiStudio.reportContext },
-  // 20270219000100: cross-team assignment and the multi-task daily report (fixed paths before /ai-studio/reports/:id)
-  { method: 'GET', path: '/ai-studio/projects/:id/assignees', handler: aiStudio.assignees },
-  { method: 'GET', path: '/ai-studio/daily-reports/context', handler: aiStudio.dailyContext },
-  { method: 'POST', path: '/ai-studio/daily-reports', handler: aiStudio.saveDailyReport, options: S },
   { method: 'GET', path: '/ai-studio/reports', handler: aiStudio.reports },
   { method: 'POST', path: '/ai-studio/reports', handler: aiStudio.createReport },
   { method: 'GET', path: '/ai-studio/reports/:id', handler: aiStudio.report },
@@ -423,6 +421,11 @@ export const routes: RouteDef[] = [
   { method: 'DELETE', path: '/ai-studio/reports/:id', handler: aiStudio.deleteDraft },
   { method: 'POST', path: '/ai-studio/reports/:id/review', handler: aiStudio.reviewReport, options: S },
   { method: 'POST', path: '/ai-studio/reports/:id/lead-edit', handler: aiStudio.leadEditReport, options: S },
+  { method: 'GET', path: '/ai-studio/tasks/:id/reports', handler: aiStudio.taskReports },
+  { method: 'GET', path: '/ai-studio/daily-reports/options', handler: aiStudio.dailyReportOptions },
+  { method: 'POST', path: '/ai-studio/daily-reports/preview', handler: aiStudio.dailyReportPreview },
+  { method: 'POST', path: '/ai-studio/daily-reports', handler: aiStudio.createDailyReport },
+  { method: 'PATCH', path: '/ai-studio/daily-reports/:id', handler: aiStudio.updateDailyReport },
   // Work reports (Team Member -> Team Lead -> Department Head -> Operations Head); the fixed paths come before /work-reports/:id
   { method: 'GET', path: '/work-reports/context', handler: workReports.context },
   { method: 'GET', path: '/work-reports/mine', handler: workReports.mine },

@@ -1,8 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AiStudioTaskDeleteResult, AiStudioAssignees, AiStudioDailyContext, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask,
-  AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioTaskDeleteResult, AiStudioAssignees,
+  AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
+  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../shared/contracts.js';
+import type { AiStudioDailyReportInput } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { unwrap } from './base.js';
 
@@ -58,20 +60,12 @@ export class AiStudioRepository {
   }
 
   tasks(q: { scope: string; projectId?: string; status?: string; assigneeId?: string; kind?: string; page: number; pageSize: number }) {
-    // the my team / cross-team filter is ai_studio_tasks_page (20270219000100); without it the earlier list, so it also works on an older database
+    // the my team / cross-team filter is ai_studio_tasks_page (20270221000100); without it the earlier list, so it also works on an older database
     const args = { p_scope: q.scope, p_project: q.projectId ?? null, p_status: q.status ?? null, p_assignee: q.assigneeId ?? null, p_page: q.page, p_page_size: q.pageSize };
     return q.kind ? this.rpc<AiStudioTaskPage>('ai_studio_tasks_page', { ...args, p_kind: q.kind }) : this.rpc<AiStudioTaskPage>('ai_studio_tasks_list', args);
   }
-  /** Who a task of this project can go to, grouped by team, with their workload (20270219000100). */
+  /** Who a task of this project can go to, grouped by team, with their workload (20270221000100). */
   assignees(projectId: string) { return this.rpc<AiStudioAssignees>('ai_studio_assignees', { p_project: projectId }); }
-  dailyContext(date?: string) { return this.rpc<AiStudioDailyContext>('ai_studio_daily_context', { p_date: date ?? null }); }
-  saveDailyReport(i: { id?: string | null; reportDate: string; summary?: string | null; additionalWork?: string | null; blockers?: string | null; tomorrowPlan?: string | null;
-    entries: { taskId: string; workCompleted?: string | null; minutesSpent?: number | null; reportedProgress?: number | null; blockers?: string | null; nextAction?: string | null }[]; submit: boolean }) {
-    return this.rpc<AiStudioReportDetail>('ai_studio_daily_report_save', {
-      p_id: i.id ?? null, p_date: i.reportDate, p_summary: i.summary ?? null, p_additional: i.additionalWork ?? null, p_blockers: i.blockers ?? null,
-      p_tomorrow: i.tomorrowPlan ?? null, p_entries: i.entries, p_submit: i.submit
-    });
-  }
   task(id: string) { return this.rpc<AiStudioTaskDetail>('ai_studio_task_get', { p_task: id }); }
   assignTask(i: { projectId: string; assigneeId: string; title: string; description?: string | null; priority: string; dueDate?: string | null; attachments?: string[] }) {
     return this.rpc<AiStudioTask>('ai_studio_task_assign', {
@@ -88,12 +82,22 @@ export class AiStudioRepository {
   }
 
   reportContext() { return this.rpc<AiStudioReportContext>('ai_studio_report_context'); }
-  reports(q: { view: string; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page: number; pageSize: number }) {
-    return this.rpc<AiStudioReportPage>('ai_studio_reports_list', {
+  reports(q: { view: string; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page: number; pageSize: number; blockers?: boolean; crossTeam?: boolean }) {
+    return this.rpc<AiStudioReportPage>('ai_studio_reports_page', {
       p_view: q.view, p_project: q.projectId ?? null, p_status: q.status ?? null, p_lead: q.leadId ?? null, p_author: q.authorId ?? null,
-      p_from: q.from ?? null, p_to: q.to ?? null, p_page: q.page, p_page_size: q.pageSize
+      p_from: q.from ?? null, p_to: q.to ?? null, p_page: q.page, p_page_size: q.pageSize, p_blockers: q.blockers ?? null, p_cross_team: q.crossTeam ?? null
     });
   }
+  // ---- the consolidated daily report (20270219000100): the database builds it from the task history and checks every id ----
+  dailyReportOptions(date: string) { return this.rpc<AiStudioDailyReportOptions>('ai_studio_daily_report_options', { p_date: date }); }
+  dailyReportPreview(date: string, taskIds: string[]) { return this.rpc<AiStudioDailyReportPreview>('ai_studio_daily_report_preview', { p_date: date, p_tasks: taskIds }); }
+  saveDailyReport(id: string | null, i: AiStudioDailyReportInput) {
+    return this.rpc<AiStudioReportDetail>('ai_studio_daily_report_save', {
+      p_id: id, p_date: i.reportDate, p_tasks: i.taskIds, p_work_completed: i.workCompleted ?? null, p_pending_work: i.pendingWork ?? null,
+      p_blockers: i.blockers ?? null, p_tomorrow_plan: i.tomorrowPlan ?? null, p_remarks: i.remarks ?? null, p_submit: i.submit, p_expected: i.expectedUpdateIds ?? null
+    });
+  }
+  taskReports(taskId: string) { return this.rpc<AiStudioTaskReportEntry[]>('ai_studio_task_reports', { p_task: taskId }); }
   report(id: string) { return this.rpc<AiStudioReportDetail>('ai_studio_report_get', { p_id: id }); }
   saveReport(id: string | null, i: { projectId: string; taskId?: string | null; reportDate: string; workCompleted?: string | null; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; submit: boolean }) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_save', {
@@ -105,9 +109,9 @@ export class AiStudioRepository {
   reviewReport(id: string, decision: string, comment?: string | null) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_review', { p_report: id, p_decision: decision, p_comment: comment ?? null });
   }
-  leadEditReport(id: string, e: { workCompleted: string; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) {
+  leadEditReport(id: string, e: { workCompleted?: string | null; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_lead_edit', {
-      p_report: id, p_work_completed: e.workCompleted, p_work_in_progress: e.workInProgress ?? null, p_pending_work: e.pendingWork ?? null,
+      p_report: id, p_work_completed: e.workCompleted ?? null, p_work_in_progress: e.workInProgress ?? null, p_pending_work: e.pendingWork ?? null,
       p_blockers: e.blockers ?? null, p_remarks: e.remarks ?? null, p_reason: e.reason
     });
   }
