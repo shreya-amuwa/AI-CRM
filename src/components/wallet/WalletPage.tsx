@@ -8,6 +8,7 @@ import { WithdrawDialog } from '../income/WithdrawDialog';
 import { Empty, Notice, Section, Tile, TransactionList, dayText, timeText } from './walletParts';
 import { confirmAction } from '../feedback/AppFeedback';
 import { WalletPinGate } from './WalletPinGate';
+import { WalletActivity } from './WalletActivity';
 
 /**
  * The Wallet, in the side panel of every employee dashboard (20270207000100; docs/EMPLOYEE_WALLET.md). Every figure is read from the database for the
@@ -120,6 +121,7 @@ const WalletContent: React.FC = () => {
 
       {tab === 'overview' && s && (
         <div className="space-y-4" role="tabpanel" aria-label="Overview">
+          <WalletActivity />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Section title="What is in your wallet" hint="Credited money only. Nothing pending counts until it is credited.">
               <dl className="divide-y divide-slate-100 text-sm">

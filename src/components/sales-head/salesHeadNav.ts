@@ -1,4 +1,4 @@
-import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import type { ShellNavGroup, ShellNavItem } from '../layout/shell';
 
 /**
@@ -46,9 +46,8 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
         label: 'My Sales',
         items: [
           // the head's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
-          { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] },
-          // sales incentives: what the head earns
-          { id: 'my-income', label: 'My Income', icon: IndianRupee }
+          { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] }
+          // what the head earns is in the Wallet (My Income moved there, 20270221000100)
         ]
       },
       {

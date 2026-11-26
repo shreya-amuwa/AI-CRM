@@ -84,5 +84,8 @@ Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
   `wallet_monthly` refuse with `WALLET_LOCKED` until the PIN was entered (`private.wallet_me()`), so the browser cannot skip the screen. Set, change, lock-out
   and reset are audited, never with the PIN or code.
 - **The Managing Director** has no employee wallet and no PIN. Accounts' and HR's wallet screens (credits, report) are not behind a PIN.
-- **Not yet behind the PIN:** My Income and its withdrawals; they move into the Wallet in the next change and then share the same lock.
+- **My Income is in the Wallet** (migration `20270221000100_wallet_pin_income.sql`): the My Income menu entry is gone from every Sales dashboard; today's
+  incentives, targets and this month's activity are on Overview (**Incentives and activity**). `income_summary`, `income_earnings` and the person's own
+  withdrawal functions (`private.payout_me`) need the Wallet PIN of this sign-in once the person has set one (`private.wallet_pin_ok`); before a PIN is set
+  there is nothing to protect, and the Wallet asks for one first. Any of them answering `WALLET_LOCKED` brings the PIN screen back (`src/lib/walletLock.ts`).
 - Tests: `supabase/tests/wallet_pin_test.sql`, the Wallet PIN block of `api_integration.test.ts`, the PIN section of `ui_wallet.test.mjs`.

@@ -10,10 +10,8 @@ import {
   Bell,
   ChevronDown,
   ClipboardList,
-  IndianRupee,
   PackageCheck
 } from 'lucide-react';
-import { IncomePage } from '../income/IncomePage';
 import { useAuth } from '../../context/AuthContext';
 import { memberTitle } from '../../lib/auth/roleMapping';
 import { NavButton, NavGroupLabel, SidebarBrand, SidebarFrame, TopBar } from '../layout/shell';
@@ -68,9 +66,9 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   onSelectNav,
   pipelineCounts
 }) => {
-  const { user, profile, logout } = useAuth();
-  // sales incentives (20270119000100): "My Income" for Sales team members only
-  const sales = profile?.team?.division === 'SALES';
+  const { user, logout } = useAuth();
+  // My Income moved into the Wallet (20270221000100): a remembered or linked "income" page opens the Wallet
+  const asNav = (n: TeamMemberNav): TeamMemberNav => (n === 'income' ? WALLET_NAV as TeamMemberNav : n);
 
   const navItems = [
     // Punch In / Punch Out and lunch (20261230000400): the first entry, as in every dashboard's menu
@@ -86,7 +84,6 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
     { id: 'invoices' as TeamMemberNav, label: 'Invoices', icon: FileText },
     { id: 'work-tasks' as TeamMemberNav, label: 'My Assigned Tasks', icon: ClipboardList },
     { id: 'tasks' as TeamMemberNav, label: 'Tasks & Follow-ups', icon: CheckSquare },
-    ...(sales ? [{ id: 'income' as TeamMemberNav, label: 'My Income', icon: IndianRupee }] : []),
     { id: REPORTS_NAV.id as TeamMemberNav, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
     // no My Performance: performance is the Team Lead's and the Department Head's (20270213000100); a remembered old page opens Home
     // services other departments sent here for delivery (empty for most teams)
@@ -105,12 +102,12 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   ], id => handleNavClick(id as TeamMemberNav));
 
   // a tapped reminder opens the CRM on /?open=attendance
-  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(() => meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV as TeamMemberNav : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : activeNav || 'leads');
+  const [currentNav, setCurrentNav] = useState<TeamMemberNav>(() => meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV as TeamMemberNav : attendanceRequested() ? ATTENDANCE_NAV_ID as TeamMemberNav : asNav(activeNav || 'leads'));
   const [leadsOpen, setLeadsOpen] = useState(() => isPipelineNav(activeNav || 'leads'));
 
   React.useEffect(() => {
     if (activeNav) {
-      setCurrentNav(activeNav);
+      setCurrentNav(asNav(activeNav));
       if (isPipelineNav(activeNav)) setLeadsOpen(true);
     }
   }, [activeNav]);
@@ -242,12 +239,11 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
           {currentNav === 'chat' && <ChatRoute />}
           {currentNav === 'raise-issue' && <IssuesRoute />}
           {currentNav === 'work-reports' && <ReportsRoute />}
-          {currentNav === 'income' && sales && <IncomePage />}
           {currentNav === ATTENDANCE_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage /></React.Suspense>}
           {currentNav === MEETINGS_NAV_ID && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><MeetingsPage /></React.Suspense>}
           {currentNav === NOTICES_NAV && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><NoticeBoard /></React.Suspense>}
           {currentNav === WALLET_NAV && <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><WalletPage /></React.Suspense>}
-          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || (currentNav === 'income' && sales) || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID || currentNav === NOTICES_NAV || currentNav === WALLET_NAV}>{children}</div>
+          <div hidden={currentNav === 'chat' || currentNav === 'raise-issue' || currentNav === 'work-reports' || currentNav === ATTENDANCE_NAV_ID || currentNav === MEETINGS_NAV_ID || currentNav === NOTICES_NAV || currentNav === WALLET_NAV}>{children}</div>
         </main>
       </div>
     </div>

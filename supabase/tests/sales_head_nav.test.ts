@@ -26,9 +26,9 @@ const ids = (o: Partial<SalesHeadNavOptions>) => {
   return { groups, labels: groups.map(g => g.label), top: groups.flatMap(g => g.items.map(i => i.id)), all: groups.flatMap(g => g.items.flatMap(i => [i.id, ...(i.children ?? []).map(c => c.id)])) };
 };
 
-// the entries of the old flat menu (before the sections)
+// the entries of the old flat menu (before the sections); My Income moved into the Wallet (20270221000100)
 const OLD_TOP = ['overview', 'leads', 'sheet-upload', 'my-leads-group', 'field-visits-group', 'assign-task', 'tasks', 'work-updates', 'performance', 'telecaller-group', 'business-associate-group', 'top-performers',
-  'income', 'my-income', 'incentive-setup', 'reports', 'work-reports', 'telecaller-sheets', 'service-prices', 'lead-whatsapp', 'notices', 'team', 'raise-issue', 'chat', 'notifications'];
+  'income', 'incentive-setup', 'reports', 'work-reports', 'telecaller-sheets', 'service-prices', 'lead-whatsapp', 'notices', 'team', 'raise-issue', 'chat', 'notifications'];
 const sorted = (a: string[]) => [...a].sort();
 
 let m = ids({});
@@ -39,7 +39,7 @@ check(m.groups.every(g => g.items.length > 0), 'no section is empty');
 check(m.groups[0].items.map(i => i.id).join() === 'overview', 'Overview is alone on top (the shell adds Attendance and Meetings above it)');
 const section = (label: string) => m.groups.find(g => g.label === label)!.items.map(i => i.id);
 check(section('Leads').join() === 'leads,sheet-upload,telecaller-sheets,field-visits-group,lead-whatsapp', 'Leads holds the lead flow: Lead list / assign, Sheet Upload, Telecaller Sheets, Field Visits, Lead Welcome WhatsApp', section('Leads'));
-check(section('My Sales').join() === 'my-leads-group,my-income', 'My Sales holds the head\'s own leads and income');
+check(section('My Sales').join() === 'my-leads-group', 'My Sales holds the head\'s own leads (their income is in the Wallet)');
 check(section('Team').join() === 'team,telecaller-group,business-associate-group', 'Team holds Team Members & Access and the role lists');
 check(section('Communication').join() === 'raise-issue,chat,notifications', 'Communication holds Raise an Issue, Chat and the Notification Center');
 

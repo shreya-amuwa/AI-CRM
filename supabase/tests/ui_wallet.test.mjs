@@ -66,6 +66,10 @@ try {
     check(/Wallet balance ₹7,000/i.test(await text(page, '[role="tabpanel"]')), `${label}: overview: the balance adds up from its parts`);
     check((await page.locator('[role="tabpanel"] [data-testid="wallet-row"]').count()) >= 4, `${label}: overview: recent transactions`);
     check((await page.locator('[data-testid="wallet-month-row"]').count()) === 3, `${label}: overview: the monthly summary`);
+    await page.getByTestId('wallet-activity').waitFor();
+    const act = await text(page, '[data-testid="wallet-activity"]');
+    check(/Earned today ₹500/i.test(act) && /Business this month ₹1,20,000/i.test(act) && /Demos completed 4/i.test(act) && /Field visits completed 2/i.test(act)
+      && /WhatsApp API/.test(act) && (await text(page, '[data-testid="target-progress"]')) === '3 of 10', `${label}: overview: what My Income showed (today, activity, a target) is in the Wallet`, act);
 
     // ---- earnings
     await page.getByTestId('wallet-tab-earnings').click();

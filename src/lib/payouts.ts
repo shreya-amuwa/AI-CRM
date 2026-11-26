@@ -1,3 +1,4 @@
+import { reportIfWalletLocked } from './walletLock';
 import { getSupabase } from '../services/supabaseClient';
 import { api } from './api/client';
 
@@ -45,7 +46,7 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   const db = getSupabase();
   if (!db) throw new Error('The CRM is not connected to its database.');
   const { data, error } = await db.rpc(fn, args);
-  if (error) throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
+  if (error) { reportIfWalletLocked(error.message); throw new Error(error.message.replace(/^[A-Z_]+:\s*/, '')); }
   return data as T;
 }
 export const newRequestId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);

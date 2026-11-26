@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Bell, CalendarClock, CalendarDays, ClipboardList, CheckSquare, FileText, FileSignature, Home, IndianRupee, LayoutList, MapPinned, MessageCircle, PackageCheck, Receipt,
+  Bell, CalendarClock, CalendarDays, ClipboardList, CheckSquare, FileText, FileSignature, Home, LayoutList, MapPinned, MessageCircle, PackageCheck, Receipt,
   Settings, Target, Users
 } from 'lucide-react';
-import { IncomePage } from '../income/IncomePage';
+import { openWallet } from '../wallet/walletEvents';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
@@ -66,8 +66,6 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: 'quotation', label: 'Quotation', icon: FileText },
   { id: 'demos', label: 'Demo Schedule', icon: CalendarClock },
   { id: 'scope', label: 'Scope of Project', icon: FileSignature },
-  // sales incentives (20270119000100): what the Business Associate has earned
-  { id: 'income', label: 'My Income', icon: IndianRupee },
   { id: 'subscriptions', label: 'Subscriptions', icon: Receipt },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
@@ -80,7 +78,7 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
 const SECTIONS_OF_NAV = [
   { label: 'Overview', ids: ['home'] },
   { label: 'Sales & Leads', ids: ['leads-group', 'customers', 'follow-ups', 'work-tasks', FIELD_VISIT_GROUP_ID, 'calendar'] },
-  { label: 'Business Associate', ids: ['tasks', 'quotation', 'demos', 'scope', 'income'] },
+  { label: 'Business Associate', ids: ['tasks', 'quotation', 'demos', 'scope'] },
   { label: 'Subscriptions & Services', ids: ['subscriptions', 'invoices', 'delivery'] },
   { label: 'Communication', ids: ['chat', 'notifications', REPORTS_NAV.id, ISSUES_NAV.id] },
   { label: 'Account', ids: ['settings'] }
@@ -128,6 +126,8 @@ export const BusinessAssociateDashboard: React.FC = () => {
     navigateTo(next === 'home' ? BA_BASE(userId) : `${BA_BASE(userId)}/${SEGMENT[next]}`);
   };
   const go: BaNavigate = (next, t) => open(next, t);
+  // My Income moved into the Wallet (20270221000100): an old /income address opens the Wallet over Home
+  useEffect(() => { if (page === 'income') { open('home'); openWallet(); } }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => open('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenChatRequest(React.useCallback(() => open('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenReportsRequest(React.useCallback(() => open('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
@@ -198,7 +198,6 @@ export const BusinessAssociateDashboard: React.FC = () => {
           {page === 'demos' && <DemoSchedulePage key={key} go={go} initialContactId={target.contactId} openNew={!!target.newDemo} />}
           {page === 'scope' && <ScopePage key={key} go={go} initialContactId={target.contactId} initialScopeId={target.scopeId} />}
           {page === 'subscriptions' && <SubscriptionsPage key={key} />}
-          {page === 'income' && <IncomePage />}
           {page === 'raise-issue' && <IssuesRoute />}
           {page === 'work-reports' && <ReportsRoute />}
         </div>

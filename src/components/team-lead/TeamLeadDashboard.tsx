@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bell, Briefcase, ClipboardList, IndianRupee, LayoutDashboard, LineChart, ListChecks, Navigation, PhoneCall, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, ClipboardList, LayoutDashboard, LineChart, ListChecks, Navigation, PhoneCall, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { ActiveFieldVisits } from '../field-visit/ActiveFieldVisits';
@@ -25,7 +25,7 @@ import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamP
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
-import { IncomePage } from '../income/IncomePage';
+import { openWallet } from '../wallet/walletEvents';
 import { IncentiveSetup } from '../income/IncentiveSetup';
 
 export const TEAM_LEAD_NAVS = ['overview', 'my-leads', 'my-potential', 'my-onboarding', 'my-part-payments', 'customers', 'assigned-tasks', 'performance', 'field-visits', 'team-members', 'chat', 'raise-issue', 'work-reports', 'notifications', 'crocodial', 'crocodial-me', 'crocodial-leads', 'my-income', 'incentive-setup'] as const;
@@ -62,7 +62,9 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
 
   const sales = profile?.team?.division === 'SALES';
   // a remembered Income page of a Team Lead who is not in Sales (or has moved) opens the overview instead of a blank page
-  React.useEffect(() => { if (profile && !sales && (nav === 'my-income' || nav === 'incentive-setup')) setNav('overview'); }, [profile, sales, nav]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => { if (profile && !sales && nav === 'incentive-setup') setNav('overview'); }, [profile, sales, nav]); // eslint-disable-line react-hooks/exhaustive-deps
+  // My Income moved into the Wallet (20270221000100): a remembered My Income page opens the Wallet over the overview
+  React.useEffect(() => { if (nav === 'my-income') { setNav('overview'); openWallet(); } }, [nav]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups: ShellNavGroup[] = useMemo(
     () => [
@@ -74,10 +76,10 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
           { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] }
         ]
       },
-      // sales incentives (20270119000100): a Sales Team Lead's own income and the amounts they pass to their members
+      // sales incentives (20270119000100): the amounts a Sales Team Lead passes to their members (their own income is in the Wallet)
       ...(sales ? [{
         label: 'Income',
-        items: [{ id: 'my-income', label: 'My Income', icon: IndianRupee }, { id: 'incentive-setup', label: 'Incentive setup', icon: SlidersHorizontal }]
+        items: [{ id: 'incentive-setup', label: 'Incentive setup', icon: SlidersHorizontal }]
       }] : []),
       ...(crocodial.self || crocodial.team ? [{
         // Crocodial (read-only calling app): the Team Lead's own activity and leads when they are connected, and the connected people they lead
@@ -155,7 +157,6 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
       {nav === 'raise-issue' && <IssuesRoute />}
       {nav === 'work-reports' && <ReportsRoute />}
       {nav === 'notifications' && <NotificationsPage />}
-      {nav === 'my-income' && sales && <IncomePage />}
       {nav === 'incentive-setup' && sales && <IncentiveSetup />}
       {nav === 'crocodial' && <CrocodialTeamPanel title="Team Crocodial Activity" />}
       {nav === 'crocodial-me' && <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} />}

@@ -50,6 +50,10 @@ const pinCheck = (p: string, c: string) => {
   if (/^(.)\1{5}$/.test(p) || p === '123456') fail('VALIDATION_ERROR: Choose a PIN that is harder to guess (not the same digit six times or a simple sequence).');
 };
 const handlers: Record<string, (a: any) => any> = {
+  // what My Income showed besides the money (20270221000100): today's incentives, a target, this month's activity
+  income_summary: () => { locked(); return { startsOn: '2026-01-16', eligible: true, today: 500, month: 5000, total: 5800, balance: 7000,
+    targets: [{ ruleId: 'r1', name: 'WhatsApp API sales', serviceName: 'WhatsApp API', targetUnits: 10, unitsDone: 3 }],
+    activity: { businessThisMonth: 120000, demosCompletedThisMonth: 4, visitsCompletedThisMonth: 2 } }; },
   wallet_pin_status: () => ({ hasPin: state.pin.hasPin, unlocked: state.pin.unlocked, unlockExpiresAt: null, lockedUntil: state.pin.lockedUntil, triesLeft: 5 - state.pin.fails }),
   wallet_pin_set: (a: any) => { pinCheck(a.p_pin, a.p_confirm); if (state.pin.hasPin) fail('CONFLICT: Your Wallet PIN is already set.'); Object.assign(state.pin, { hasPin: true, pin: a.p_pin, unlocked: true }); return { unlocked: true }; },
   wallet_pin_unlock: (a: any) => {
