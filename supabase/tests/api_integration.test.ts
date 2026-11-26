@@ -11167,6 +11167,42 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('ail2', 'GET', `/ai-studio/reports/${q.json.data.id}`);
   check(q.status === 404, 'AI Studio: another Team Lead cannot read it', q);
 
+  // the consolidated daily report (20270216000100): built from the task's history, references only
+  q = await api('aim1', 'GET', '/ai-studio/reports/context');
+  const aiToday = q.json.data.today;
+  q = await api('aim1', 'GET', `/ai-studio/daily-reports/options?date=${aiToday}`);
+  check(q.status === 200 && q.json.data.tasks.some((t: any) => t.id === task1 && t.status === 'COMPLETED' && t.updatesOnDate === 2),
+    'AI Studio daily report: the task completed today is offered, with its two updates of the day', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports/preview', { reportDate: aiToday, taskIds: [task1] });
+  check(q.status === 200 && q.json.data.work.length === 1 && q.json.data.work[0].entries.length === 2 && q.json.data.work[0].entries[1].note === 'Merged'
+    && q.json.data.work[0].links.includes('https://example.com/pr/1') && q.json.data.updateIds.length === 2 && q.json.data.summary.completed === 1,
+    'AI Studio daily report: the completion details, the updates and the link come from the task', q);
+  const dailyUpdates = q.json.data.updateIds;
+  q = await api('aim2', 'POST', '/ai-studio/daily-reports/preview', { reportDate: aiToday, taskIds: [task1] });
+  check(q.status === 422, 'AI Studio daily report: another member cannot pull this task into their report', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, completionNote: 'copy' });
+  check(q.status === 422, 'AI Studio daily report: no task text can be sent with the report', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: [dailyUpdates[0]] });
+  check(q.status === 409, 'AI Studio daily report: a report the author did not see in full is not submitted', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates });
+  check(q.status === 201 && q.json.data.kind === 'DAILY' && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.work.length === 1 && q.json.data.workCompleted === null && q.json.data.tomorrowPlan === 'Docs',
+    'AI Studio daily report: submitted with no "work completed" text (the task carries the work)', q);
+  const daily1 = q.json.data.id;
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], submit: true });
+  check(q.status === 409, 'AI Studio daily report: one report per day (a second click makes none)', q);
+  q = await api('ail1', 'GET', `/ai-studio/reports/${daily1}`);
+  check(q.status === 200 && q.json.data.frozen === true && q.json.data.summary.tasks === 1 && q.json.data.work[0].entries.length === 2 && q.json.data.canReview === true,
+    'AI Studio daily report: the Team Lead reads the consolidated report and can decide it', q);
+  q = await api('ail1', 'GET', '/ai-studio/reports?view=team&crossTeam=false');
+  check(q.status === 200 && q.json.data.items.some((r: any) => r.id === daily1 && r.kind === 'DAILY' && r.counts.tasks === 1 && r.counts.completed === 1), 'AI Studio daily report: the list row has its counts, and the filters work', q);
+  q = await api('ail2', 'GET', `/ai-studio/reports/${daily1}`);
+  check(q.status === 404, 'AI Studio daily report: another Team Lead cannot read it', q);
+  q = await api('ail1', 'GET', `/ai-studio/tasks/${task1}/reports`);
+  check(q.status === 200 && q.json.data.some((r: any) => r.reportId === daily1 && r.entries.length === 2), 'AI Studio daily report: the task shows the reports that mention it', q);
+  q = await api('aim2', 'GET', `/ai-studio/tasks/${task1}/reports`);
+  check(q.status === 404, 'AI Studio daily report: not to someone who cannot see the task', q);
+  await db.query('delete from public.ai_studio_daily_reports where id = $1', [daily1]);
+
   // a Team Member without a Team Lead (the Team Lead is optional and independent of the project), assigned later
   q = await api('sa', 'POST', '/users', { email: 'ai.m5@amuwa.com', fullName: 'AI Member Five', role: 'TEAM_MEMBER', teamId: aiTeam.id, aiStudioProjectIds: [crm.id, aiqr.id] });
   check(q.status === 201 && q.json.data.defaultDashboard === 'ai-studio-member', 'AI Studio: a Team Member is created with projects and no Team Lead', q);

@@ -18,6 +18,12 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Added
 
+* **AI Studio: one daily report built from the tasks** (docs/AI_STUDIO_DAILY_REPORTS.md): the employee picks the tasks they worked on, from
+  any of their projects, and the report shows the completion details, work updates and links already recorded on those tasks for that
+  date, read-only. Only new remarks are typed (additional work, pending work, blockers, tomorrow's plan, remarks). The report stores
+  references to the task history, never copies; a submitted report keeps showing its day. The Team Lead and Department Head read it
+  project by project (with counts, blockers and cross-team filters); the Team Lead who gave a cross-team task sees only that task's part,
+  in the task window. Older one-task reports stay as they are. Migration `20270216000100_ai_studio_consolidated_reports.sql`.
 * **Global search (Ctrl / Cmd + K)** (docs/GLOBAL_SEARCH_ARCHITECTURE.md, docs/COMMAND_PALETTE_GUIDE.md): a command palette on every staff
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,
   departments and notices the person may already open. The database's row-level rules decide (security invoker). Results open the exact
@@ -84,6 +90,9 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Database migrations in this release
 
+* `20270216000100_ai_studio_consolidated_reports.sql`: `ai_studio_report_tasks`, `ai_studio_report_task_updates` (references only), the links
+  of a task update (`ai_studio_task_updates.links`, stored when they change), write-once task history, and the daily report functions
+  (additive; safe to run twice).
 * `20270215000100_global_search.sql`: `global_search`, `search_record`, private candidate helpers and trigram indexes (additive; safe to run twice).
 
 Run in the Supabase SQL editor, in this order, **before** the matching code is deployed. Every one is additive and safe to run twice. See

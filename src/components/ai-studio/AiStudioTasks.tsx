@@ -15,6 +15,7 @@ import { errorMessage } from '../../lib/api/client';
 import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipeline/shared';
 import { Card, ghostBtn, fieldCls, primaryBtn, textareaCls } from '../tasks/head/headParts';
 import { notifyAiStudioChanged, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
+import { TaskReportsPanel } from './TaskReportsPanel';
 import { PRIORITY_LABELS, PriorityBadge, ProgressBar, TASK_STATUS_LABELS, TableWrap, TaskStatusBadge, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
 
 const linkLines = (text: string) => text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -74,6 +75,7 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
               ))}
             </ol>
           </div>
+          <TaskReportsPanel taskId={task.id} />
           <div className="flex justify-end"><button type="button" className={ghostBtn} onClick={onClose}>Close</button></div>
         </div>
       )}
