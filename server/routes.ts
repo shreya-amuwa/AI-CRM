@@ -127,6 +127,7 @@ export const routes: RouteDef[] = [
   { method: 'DELETE', path: '/customers/sheet-sync', handler: customers.sheetSyncDisconnect, options: S },
   { method: 'POST', path: '/customers/:id/client-password-email', handler: customers.sendClientPasswordEmail, options: S },
   { method: 'GET', path: '/customers/:id/client-login', handler: customers.clientLoginStatus },
+  { method: 'POST', path: '/customers/:id/client-login', handler: customers.createClientLoginBySupport, options: S },
   { method: 'GET', path: '/customers/summary', handler: customers.summary },
   { method: 'GET', path: '/customers/:id', handler: customers.get },
   { method: 'PATCH', path: '/customers/:id', handler: customers.update },

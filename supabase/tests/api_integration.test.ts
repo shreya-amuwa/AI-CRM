@@ -13122,6 +13122,36 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 403, 'weekly report without an Operations Head: HR cannot send a department\'s week', q);
 }
 
+// ---- Support "Create login" on the customer's Client login card (20270218000100) ----
+{
+  const noLogin = (await db.query(`select id from public.customers where phone = '9000000202'`)).rows[0]?.id as string;
+  check(!!noLogin, 'support create login: fixture (the imported customer without a login)');
+  await db.query(`update public.customers set email = 'nologin.client@example.com' where id = $1`, [noLogin]);
+  let s: any = await api('sm', 'GET', `/customers/${noLogin}/client-login`);
+  check(s.status === 200 && s.json.data.hasLogin === false && s.json.data.canCreate === true && s.json.data.suggestedEmail === 'nologin.client@example.com',
+    'support create login: the card offers it to the member, with the customer\'s e-mail', s);
+  s = await api('a', 'POST', `/customers/${noLogin}/client-login`, {});
+  check(s.status === 404, 'support create login: someone who does not look after the customer cannot', s);
+  s = await api('sm', 'POST', `/customers/${noLogin}/client-login`, { email: 'not an email' });
+  check(s.status === 422, 'support create login: an invalid e-mail is refused', s);
+  s = await api('sm', 'POST', `/customers/${noLogin}/client-login`, { email: 'imp.client@example.com' });
+  check(s.status === 409, 'support create login: an e-mail that already has a login is refused', s);
+  const before = outbox.filter(o => o.path === '/emails').length;
+  s = await api('sm', 'POST', `/customers/${noLogin}/client-login`, {});
+  // by this point of the suite e-mails may be switched off (AUTOMATION_MODE): the login is made either way, and the card then offers "Send password link"
+  check(s.status === 201 && s.json.data.login === 'CREATED' && s.json.data.email === 'nologin.client@example.com' && ['SENT', 'NOT_SENT'].includes(s.json.data.mail),
+    'support create login: created with the customer\'s e-mail', s);
+  const sent = outbox.filter(o => o.path === '/emails').slice(before).find(o => o.body.to?.[0] === 'nologin.client@example.com');
+  check(s.json.data.mail === 'SENT' ? !!sent && /set your password/i.test(sent.body.subject) : !sent && /switched off|not sent|could not/i.test(s.json.data.detail ?? ''),
+    'support create login: the "Set your password" e-mail goes out, or the reason it did not is returned', { mail: s.json.data.mail, detail: s.json.data.detail, subject: sent?.body?.subject });
+  const row = (await db.query(`select a.email, u.raw_app_meta_data ->> 'client_customer_id' as cid from public.customer_client_accounts a join auth.users u on u.id = a.auth_user_id where a.customer_id = $1`, [noLogin])).rows[0];
+  check(row?.email === 'nologin.client@example.com' && row.cid === noLogin, 'support create login: the login is recorded for that customer only', row);
+  s = await api('sm', 'POST', `/customers/${noLogin}/client-login`, {});
+  check(s.status === 409, 'support create login: a second one is refused', s);
+  s = await api('sm', 'GET', `/customers/${noLogin}/client-login`);
+  check(s.status === 200 && s.json.data.hasLogin === true && s.json.data.email === 'nologin.client@example.com', 'support create login: the card now shows the login', s);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();
