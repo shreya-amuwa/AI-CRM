@@ -5596,6 +5596,11 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   await addRecord('HRBD-3', 'Probation Person', 'hrbd.prob@example.com', await joinForProbationEnd(7), '1992-01-01');
 
   const before = emails().length;
+  // Today's HR e-mails go out at 09:00 Indian time. Before that hour (CI runs at any time of day) a run would queue them but send none, so for this
+  // section 09:00 of today (or an earlier day) is "now" at the latest, later days keep their 09:00; the real time is restored at the end of the section.
+  const nineAm = (kind: string, body: string) => db.query(`create or replace function private.hr_nine_am(p_date date) returns timestamptz language sql ${kind} set search_path = '' as $$ ${body} $$`);
+  await nineAm('stable', `select case when p_date <= private.hr_today() then least((p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata', now())
+                                       else (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata' end`);
   let hr = await hrRun();
   check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
   const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
@@ -5745,6 +5750,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(unauth.status === 401, 'HR automation: the scheduler endpoint needs its secret', unauth.status);
 
   if (hrBack > 0) await setHrClock(0);
+  await nineAm('immutable', `select (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata'`);
   mailMock.close();
   for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 }

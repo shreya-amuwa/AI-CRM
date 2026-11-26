@@ -125,7 +125,7 @@ insert into push_subscriptions (profile_id, endpoint, p256dh, auth, label, activ
   (test.id('wkr_tmp'), 'https://push.example.com/rel-phone', 'BPk-phone', 'auth-phone', 'Chrome on Android', true),
   (test.id('wkr_tms'), 'https://push.example.com/rel-shared', 'BPk-shared', 'auth-shared', 'Shared phone', true);
 select test.gen('10:00');
-update notification_deliveries set expires_at = now() + interval '1 hour' where profile_id in (test.id('wkr_tmp'), test.id('wkr_tms'));
+update notification_deliveries set expires_at = now() + interval '1 hour', next_attempt_at = least(next_attempt_at, now()) where profile_id in (test.id('wkr_tmp'), test.id('wkr_tms'));
 -- wkr_tmp punches in before the push goes out; the shared phone is now used by wkr_tmp
 insert into attendance_records (profile_id, attendance_date, punch_in_at) values (test.id('wkr_tmp'), private.office_today(), now());
 update push_subscriptions set profile_id = test.id('wkr_tmp') where endpoint = 'https://push.example.com/rel-shared';

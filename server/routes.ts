@@ -30,6 +30,7 @@ import {
   meetingsController as meetings,
   leadWhatsAppController as leadWhatsApp,
   crocodialController as crocodial,
+  searchController as search,
   workReportsController as workReports,
   aiDesignStudioController as ads,
   hrReviewsController as hrReviews,
@@ -460,6 +461,9 @@ export const routes: RouteDef[] = [
   // Lead welcome WhatsApp ("our services", once when a lead first reaches a sales person): settings for the Super Admin / Sales Department Head,
   // a lead's message and "Send again" for anyone who can open the lead (the database checks both)
   // Crocodial integration (read-only connector; configuration by the Super Admin, enforced in the database)
+  // global search (Ctrl / Cmd + K): POST so the query is not in the address or access logs; the per-user quota applies
+  { method: 'POST', path: '/search', handler: search.search },
+  { method: 'GET', path: '/search/records/:type/:id', handler: search.record },
   { method: 'GET', path: '/crocodial/admin', handler: crocodial.overview },
   { method: 'POST', path: '/crocodial/rollout', handler: crocodial.rolloutSet, options: S },
   { method: 'POST', path: '/crocodial/connections', handler: crocodial.connectionSave, options: S },

@@ -37,22 +37,22 @@ create temp table uph (k text primary key, v uuid);
 grant all on uph to authenticated;
 with ins as (
   insert into work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
-  select p.department_id, p.team_id, 'UPH unled follow-up list', test.id('i_head'), p.id, current_date + 3 from profiles p where p.id = test.id('i_m_x')
+  select p.department_id, p.team_id, 'UPH unled follow-up list', test.id('i_head'), p.id, (now() at time zone 'Asia/Kolkata')::date + 3 from profiles p where p.id = test.id('i_m_x')
   returning id) insert into uph select 'T', id from ins;
 
 \echo '   no Team Lead: the Department Head does not stand in'
 set role authenticated;
 select test.login('i_m_x');
-insert into uph select 'R', (task_report_submit((select v from uph where k = 'T'), current_date, 'Prepared the follow-up list for March', 50, 'Call the first ten names') ->> 'id')::uuid;
+insert into uph select 'R', (task_report_submit((select v from uph where k = 'T'), (now() at time zone 'Asia/Kolkata')::date, 'Prepared the follow-up list for March', 50, 'Call the first ten names') ->> 'id')::uuid;
 select test.check((select status = 'PENDING' from task_daily_reports where id = (select v from uph where k = 'R')), 'the member still submits the report (it waits)');
-select test.must_fail($$select performance_overview(current_date - 30, current_date + 30)$$, 'and has no performance view', 'for Team Leads and Department Heads');
+select test.must_fail($$select performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30)$$, 'and has no performance view', 'for Team Leads and Department Heads');
 select test.login('i_head');
 select test.check((select (i ->> 'canReview')::boolean = false from jsonb_array_elements(task_reports_list('TEAM') -> 'items') i where i ->> 'id' = (select v::text from uph where k = 'R')),
   'the Department Head reads the report but may not decide it');
 select test.must_fail(format($$select task_report_review(%L, 'APPROVE', null)$$, (select v from uph where k = 'R')), 'the Department Head cannot approve a member''s report', 'Team Lead');
 select test.check((select (j ->> 'leadDecidesMembers')::boolean
                           and exists (select 1 from jsonb_array_elements(j -> 'unassignedMembers') x where x ->> 'id' = test.id('i_m_x')::text and (x #>> '{record,canDecide}')::boolean = false)
-                     from (select performance_overview(current_date - 30, current_date + 30) j) o),
+                     from (select performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) j) o),
   'the head''s overview lists the member under "without a Team Lead", read only, and says the Team Lead decides members');
 select test.must_fail(format($$select performance_record_review(%L, 'APPROVE', 'Head approval', null, 3)$$, (select id from performance_records where subject_id = test.id('i_m_x') limit 1)),
   'nor approve that member''s performance', 'Only the Team Lead');
@@ -90,7 +90,7 @@ set role authenticated;
 select test.login('i_lead_a');
 select test.check((task_report_review((select v from uph where k = 'R'), 'APPROVE', 'Good start') ->> 'status') = 'APPROVED', 'the newly named Team Lead approves the waiting report');
 select test.check((select x #>> '{record,status}' = 'PENDING' and (x #>> '{record,canDecide}')::boolean and (x #>> '{record,ratingRequired}')::boolean
-                     from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'members') x where x ->> 'id' = test.id('i_m_x')::text),
+                     from jsonb_array_elements(performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) -> 'members') x where x ->> 'id' = test.id('i_m_x')::text),
   'and now evaluates the member''s performance (rating required)');
 
 \echo '   evaluation history: Team Lead and Department Head, nobody else'
@@ -111,11 +111,11 @@ select test.check(jsonb_array_length(performance_subject_history(test.id('i_m_a1
 
 \echo '   an ordinary department: the same Team-Lead-first rules (20270213000100), the Department Head still stands in for members without a Team Lead'
 select test.login('tdr_m1');
-select test.must_fail($$select performance_overview(current_date - 30, current_date + 30)$$, 'its member has no performance view either', 'for Team Leads and Department Heads');
+select test.must_fail($$select performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30)$$, 'its member has no performance view either', 'for Team Leads and Department Heads');
 select test.must_fail(format($$select performance_subject_history(%L)$$, test.id('tdr_m1')), 'nor their own history', 'not found');
 select test.login('tdr_dha');
-select test.check((performance_overview(current_date - 30, current_date + 30) ->> 'leadDecidesMembers')::boolean = false, 'its Department Head still stands in for members without a Team Lead');
-select test.check((select bool_and((x #>> '{record,ratingRequired}')::boolean) from jsonb_array_elements(performance_overview(current_date - 30, current_date + 30) -> 'leads') x where x -> 'record' <> 'null'::jsonb),
+select test.check((performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) ->> 'leadDecidesMembers')::boolean = false, 'its Department Head still stands in for members without a Team Lead');
+select test.check((select bool_and((x #>> '{record,ratingRequired}')::boolean) from jsonb_array_elements(performance_overview((now() at time zone 'Asia/Kolkata')::date - 30, (now() at time zone 'Asia/Kolkata')::date + 30) -> 'leads') x where x -> 'record' <> 'null'::jsonb),
   'and the rating is required there too');
 reset role;
 -- leave International as the other suites expect it (their counts are exact): this file's member, task, report and record go
