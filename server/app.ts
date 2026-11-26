@@ -52,6 +52,7 @@ import { StorageRepository } from './repositories/StorageRepository.js';
 import { timingSafeEqual } from 'node:crypto';
 import { getServiceClient, hasServiceClient } from './db/supabase.js';
 import { clientForgotPassword } from './services/CustomerImportService.js';
+import { runSheetSync, sheetSyncKeyFrom, sheetSyncKeyHash } from './services/SheetSyncService.js';
 import { staffForgotPassword } from './services/StaffPasswordService.js';
 import { registerCandidate } from './services/CandidateRegistrationService.js';
 import { requestInfo } from './http/context.js';
@@ -108,7 +109,7 @@ const defaultBodyLimit = bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge 
 // The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows); so does the Upload Leads preview.
 const importBodyLimit = bodyLimit({ maxSize: IMPORT_BODY_BYTES, onError: tooLarge });
 // a template sample / letterhead (up to 2.5 MB, sent as base64) uses the larger limit too
-app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/lead-uploads/check' || relativePath(c) === '/hr/offer-templates/files' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
+app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/integrations/customer-sheet/sync' || relativePath(c) === '/lead-uploads/check' || relativePath(c) === '/hr/offer-templates/files' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
 // Layer 1: coarse per-IP flood protection before any auth work. On the Worker: Cloudflare's rate limiter (counts across the edge location,
 // not per isolate); elsewhere, or if it fails: the in-memory limiter.
 app.use('*', async (c, next) => {
@@ -384,6 +385,18 @@ app.post('/integrations/biometric/punch', async c => {
   if (error) throw fromDatabaseError(error);
   if (data === 'UNKNOWN_EMPLOYEE') throw new AppError('NOT_FOUND', 'No active employee has this e-mail.');
   return c.json(ok({ recorded: true }));
+});
+
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md): "CRM Sync > Sync now" in the team's sheet. No CRM login: authenticated
+// with "Authorization: Bearer <sync key>"; the database finds the connection by the key's hash and saves AS the person who connected the sheet.
+// Only clicks reach it (no timer in the script): a few calls a minute per sheet at most, and one at a time (the database refuses a second).
+app.post('/integrations/customer-sheet/sync', async c => {
+  const key = sheetSyncKeyFrom(c.req.header('authorization'));
+  await enforce([
+    { key: `sheet-sync:key:${sheetSyncKeyHash(key).slice(0, 24)}`, limit: 12, window: 60 },
+    { key: `sheet-sync:ip:${clientIp(c)}`, limit: 120, window: 60 }
+  ], 'memory');
+  return c.json(ok(await runSheetSync(c.req.header('authorization'), await readJson(c))));
 });
 
 // Meetings: Google's return from an employee's "Connect Google Calendar" (no CRM login: the signed state names the employee). Redirects back.
@@ -790,7 +803,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/health/database', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/health/database', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/integrations/customer-sheet/sync', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

@@ -112,7 +112,11 @@ export const customersController = {
   importExisting: (async ctx => ok(await svc(ctx).customerImport.importExisting(ctx.actor, ctx.req.body, ctx.req.headers.origin))) as Handler,
   sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler,
   /** The "Client login" card on the customer's page (20270212000100). */
-  clientLoginStatus: (async ctx => ok(await svc(ctx).customerImport.clientLoginStatus(ctx.params.id))) as Handler
+  clientLoginStatus: (async ctx => ok(await svc(ctx).customerImport.clientLoginStatus(ctx.params.id))) as Handler,
+  /** Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md): the person's own connection. */
+  sheetSyncConnection: (async ctx => ok(await svc(ctx).sheetSync.connection())) as Handler,
+  sheetSyncConnect: (async ctx => ok(await svc(ctx).sheetSync.connect())) as Handler,
+  sheetSyncDisconnect: (async ctx => ok(await svc(ctx).sheetSync.disconnect())) as Handler
 };
 
 export const chatController = {

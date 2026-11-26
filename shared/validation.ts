@@ -3952,6 +3952,24 @@ export const performanceRecordReviewSchema = z
   .strict()
   .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100): what the Apps Script sends.
+// "header" = the sheet's first rows (up to 6, the headings are among them); "rows" = the rows that changed, each with its sheet row number.
+// Every cell is a string, a number or empty (the script sends dates as yyyy-mm-dd). The import's own limits apply after parsing.
+// ---------------------------------------------------------------------------------------------------------------------------------
+const sheetCellSchema = z.union([z.string().max(2000), z.number().finite(), z.null()]);
+export const SHEET_SYNC_MAX_ROWS = 2000;
+export const sheetSyncSchema = z
+  .object({
+    sheetName: z.string().max(120).optional(),
+    scriptVersion: z.number().int().min(1).max(1000).optional(),
+    header: z.array(z.array(sheetCellSchema).max(250)).min(1).max(6),
+    rows: z
+      .array(z.object({ r: z.number().int().min(2).max(20000), c: z.array(sheetCellSchema).max(250) }).strict())
+      .max(SHEET_SYNC_MAX_ROWS, `Send at most ${SHEET_SYNC_MAX_ROWS} rows at a time (the script does this by itself).`)
+  })
+  .strict();
+export type SheetSyncInput = z.infer<typeof sheetSyncSchema>;
 /** POST /search: the query travels in the body (not the address), so it is not written to access logs. */
 export const globalSearchSchema = z
   .object({ q: z.string().max(200), limit: z.number().int().min(1).max(20).optional() })

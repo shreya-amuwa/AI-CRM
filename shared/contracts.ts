@@ -7450,6 +7450,29 @@ export interface PerformanceSubjectRecord {
 }
 export interface PerformanceSubjectHistory { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; records: PerformanceSubjectRecord[] }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100)
+// ---------------------------------------------------------------------------------------------------------------------------------
+export interface SheetSyncRun { at: string; rows: number; added: number; updated: number; saved: number; rejected: number; duplicates: number; outcome: 'OK' | 'PARTIAL' | 'FAILED' | 'EMPTY' }
+export interface SheetSyncConnection {
+  id: string;
+  keyHint: string;
+  status: 'ACTIVE' | 'REVOKED';
+  createdAt: string;
+  lastSyncAt: string | null;
+  syncCount: number;
+  lastResult: Omit<SheetSyncRun, 'at' | 'rows'> | null;
+  runs: SheetSyncRun[];
+}
+/** The answer when a sheet is connected (or its key replaced): the key is shown ONCE, inside the script. */
+export interface SheetSyncConnectResult { connection: SheetSyncConnection; key: string }
+export type SheetSyncRowStatus = 'ADDED' | 'UPDATED' | 'SAVED' | 'DUPLICATE' | 'ERROR' | 'SKIPPED';
+/** What the sheet gets back: one result per sheet row, written into its "CRM Status" column. */
+export interface SheetSyncResult {
+  results: { row: number; status: SheetSyncRowStatus; message: string }[];
+  summary: { added: number; updated: number; saved: number; rejected: number; duplicates: number; outcome: SheetSyncRun['outcome'] };
+  logins: { row?: number; email: string; created: boolean; mail: 'SENT' | 'NOT_SENT'; detail?: string }[];
+}
 /** Global search (Ctrl / Cmd + K): the kinds of records the database may return (public.global_search). */
 export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice'] as const;
 export type SearchRecordType = (typeof SEARCH_RECORD_TYPES)[number];

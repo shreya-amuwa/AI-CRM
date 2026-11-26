@@ -121,6 +121,10 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/customers', handler: customers.create },
   { method: 'POST', path: '/customers/import', handler: customers.import, options: { rate: 'import' } },
   { method: 'POST', path: '/customers/import-existing', handler: customers.importExisting, options: { rate: 'import' } },
+  // Google Sheet sync (docs/CUSTOMER_SHEET_SYNC.md): connect / replace the key (shown once) / disconnect. The sheet itself calls /integrations/customer-sheet/sync.
+  { method: 'GET', path: '/customers/sheet-sync', handler: customers.sheetSyncConnection },
+  { method: 'POST', path: '/customers/sheet-sync', handler: customers.sheetSyncConnect, options: S },
+  { method: 'DELETE', path: '/customers/sheet-sync', handler: customers.sheetSyncDisconnect, options: S },
   { method: 'POST', path: '/customers/:id/client-password-email', handler: customers.sendClientPasswordEmail, options: S },
   { method: 'GET', path: '/customers/:id/client-login', handler: customers.clientLoginStatus },
   { method: 'GET', path: '/customers/summary', handler: customers.summary },
