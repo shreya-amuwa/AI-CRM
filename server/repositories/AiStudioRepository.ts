@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
+  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../shared/contracts.js';
+import type { AiStudioDailyReportInput } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { unwrap } from './base.js';
 
@@ -76,12 +78,22 @@ export class AiStudioRepository {
   }
 
   reportContext() { return this.rpc<AiStudioReportContext>('ai_studio_report_context'); }
-  reports(q: { view: string; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page: number; pageSize: number }) {
-    return this.rpc<AiStudioReportPage>('ai_studio_reports_list', {
+  reports(q: { view: string; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page: number; pageSize: number; blockers?: boolean; crossTeam?: boolean }) {
+    return this.rpc<AiStudioReportPage>('ai_studio_reports_page', {
       p_view: q.view, p_project: q.projectId ?? null, p_status: q.status ?? null, p_lead: q.leadId ?? null, p_author: q.authorId ?? null,
-      p_from: q.from ?? null, p_to: q.to ?? null, p_page: q.page, p_page_size: q.pageSize
+      p_from: q.from ?? null, p_to: q.to ?? null, p_page: q.page, p_page_size: q.pageSize, p_blockers: q.blockers ?? null, p_cross_team: q.crossTeam ?? null
     });
   }
+  // ---- the consolidated daily report (20270219000100): the database builds it from the task history and checks every id ----
+  dailyReportOptions(date: string) { return this.rpc<AiStudioDailyReportOptions>('ai_studio_daily_report_options', { p_date: date }); }
+  dailyReportPreview(date: string, taskIds: string[]) { return this.rpc<AiStudioDailyReportPreview>('ai_studio_daily_report_preview', { p_date: date, p_tasks: taskIds }); }
+  saveDailyReport(id: string | null, i: AiStudioDailyReportInput) {
+    return this.rpc<AiStudioReportDetail>('ai_studio_daily_report_save', {
+      p_id: id, p_date: i.reportDate, p_tasks: i.taskIds, p_work_completed: i.workCompleted ?? null, p_pending_work: i.pendingWork ?? null,
+      p_blockers: i.blockers ?? null, p_tomorrow_plan: i.tomorrowPlan ?? null, p_remarks: i.remarks ?? null, p_submit: i.submit, p_expected: i.expectedUpdateIds ?? null
+    });
+  }
+  taskReports(taskId: string) { return this.rpc<AiStudioTaskReportEntry[]>('ai_studio_task_reports', { p_task: taskId }); }
   report(id: string) { return this.rpc<AiStudioReportDetail>('ai_studio_report_get', { p_id: id }); }
   saveReport(id: string | null, i: { projectId: string; taskId?: string | null; reportDate: string; workCompleted?: string | null; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; submit: boolean }) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_save', {
@@ -93,9 +105,9 @@ export class AiStudioRepository {
   reviewReport(id: string, decision: string, comment?: string | null) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_review', { p_report: id, p_decision: decision, p_comment: comment ?? null });
   }
-  leadEditReport(id: string, e: { workCompleted: string; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) {
+  leadEditReport(id: string, e: { workCompleted?: string | null; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_lead_edit', {
-      p_report: id, p_work_completed: e.workCompleted, p_work_in_progress: e.workInProgress ?? null, p_pending_work: e.pendingWork ?? null,
+      p_report: id, p_work_completed: e.workCompleted ?? null, p_work_in_progress: e.workInProgress ?? null, p_pending_work: e.pendingWork ?? null,
       p_blockers: e.blockers ?? null, p_remarks: e.remarks ?? null, p_reason: e.reason
     });
   }

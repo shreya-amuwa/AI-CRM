@@ -29,6 +29,7 @@ let mode = 'normal';
 const item = (over) => ({ projectId: 'p' + Math.random(), name: 'Project', status: 'ACTIVE', mine: true, openTasks: 4, myOpenTasks: 1, ...over });
 const api = (req, res) => {
   const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+  if (/\/ai-studio\/tasks\/[0-9a-f-]{36}\/reports/.test(req.url)) return send(200, { success: true, data: [] });
   if (req.url.startsWith('/api/v1/ai-studio/tasks')) {
     const task = { id: 'aaaaaaaa-0000-4000-8000-000000000001', projectId: 'p1', projectName: 'AI Website', title: 'Changes discussed in meeting',
       description: 'To perform the changes discussed in the landing page', priority: 'HIGH', status: 'IN_PROGRESS', progress: 90, dueDate: '2026-11-26',

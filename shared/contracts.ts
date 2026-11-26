@@ -6373,6 +6373,11 @@ export interface AiStudioReportSummary {
   submittedAt: string | null;
   approvedAt: string | null;
   updatedAt: string;
+  /** 20270219000100: 'DAILY' (one report for the day, many tasks) or 'SINGLE' (an older one-project report). Absent on an older database. */
+  kind?: 'DAILY' | 'SINGLE';
+  teamName?: string | null;
+  counts?: { projects: number; tasks: number; completed: number; crossTeam: number } | null;
+  hasBlockers?: boolean;
 }
 export interface AiStudioReportHistoryEntry {
   id: string;
@@ -6388,7 +6393,51 @@ export interface AiStudioReportHistoryEntry {
   revision: number;
   createdAt: string;
 }
+/** 20270219000100: one history entry of a task, as a report shows it (read from the task's history, never copied). */
+export interface AiStudioReportWorkEntry { id: string; at: string; status: AiStudioTaskStatus; progress: number; note: string | null }
+/** One task of a consolidated report: the day's entries and the state the day ended with. */
+export interface AiStudioReportWorkTask {
+  taskId: string;
+  title: string;
+  description: string | null;
+  priority: AiStudioPriority;
+  projectId: string;
+  projectName: string;
+  assignedById: string | null;
+  assignedByName: string | null;
+  assignedAt: string;
+  dueDate: string | null;
+  crossTeam: boolean;
+  entries: AiStudioReportWorkEntry[];
+  /** No update was recorded on this task on the report date. */
+  noUpdate: boolean;
+  status: AiStudioTaskStatus;
+  progress: number;
+  progressBefore: number | null;
+  completedAt: string | null;
+  links: string[];
+  currentStatus: AiStudioTaskStatus;
+  currentProgress: number;
+}
+export interface AiStudioReportWorkSummary { projects: number; tasks: number; completed: number; inProgress: number; onHold: number; crossTeam: number; updates: number; links: number; withoutUpdate: number }
+export interface AiStudioDailyReportOptions {
+  date: string;
+  existingReportId: string | null;
+  tasks: { id: string; title: string; projectId: string; projectName: string; status: AiStudioTaskStatus; progress: number; crossTeam: boolean; assignedByName: string | null; updatesOnDate: number }[];
+}
+export interface AiStudioDailyReportPreview { date: string; work: AiStudioReportWorkTask[]; summary: AiStudioReportWorkSummary; updateIds: string[] }
+/** A task's own part of the daily reports that mention it (whoever may see the task, e.g. the Team Lead who gave it). */
+export interface AiStudioTaskReportEntry { reportId: string; reportDate: string; status: AiStudioReportStatus; authorName: string; submittedAt: string | null; entries: AiStudioReportWorkEntry[]; canOpen: boolean }
+
 export interface AiStudioReportDetail extends AiStudioReportSummary {
+  /** 20270219000100 (absent on an older database). */
+  tomorrowPlan?: string | null;
+  authorDesignation?: string | null;
+  /** The content is fixed (submitted and not returned): the work shown is exactly what was submitted. */
+  frozen?: boolean;
+  /** A consolidated report's tasks and their work (null for an older one-task report). */
+  work?: AiStudioReportWorkTask[] | null;
+  summary?: AiStudioReportWorkSummary | null;
   workCompleted: string | null;
   workInProgress: string | null;
   pendingWork: string | null;

@@ -3357,7 +3357,8 @@ export const aiStudioReportReviewSchema = z
 const aiReportPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
 export const aiStudioReportLeadEditSchema = z
   .object({
-    workCompleted: z.string().trim().min(1, 'Describe the work completed today.').max(4000, 'Each part of the report can have at most 4000 characters.'),
+    /** Empty is allowed for a consolidated report whose tasks carry the work (20270219000100); the database refuses it otherwise. */
+    workCompleted: aiReportPart,
     workInProgress: aiReportPart, pendingWork: aiReportPart, blockers: aiReportPart, remarks: aiReportPart,
     reason: z.string().trim().min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.').max(1000, 'The reason can have at most 1000 characters.')
   })
@@ -3373,9 +3374,30 @@ export const aiStudioReportsQuerySchema = z
     from: isoDate.optional(),
     to: isoDate.optional(),
     page: z.coerce.number().int().min(1).max(5000).default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(25)
+    pageSize: z.coerce.number().int().min(1).max(100).default(25),
+    /** 20270219000100: reports with blockers / with a task given by another Team Lead ('true' / 'false'). */
+    blockers: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
+    crossTeam: z.enum(['true', 'false']).transform(v => v === 'true').optional()
   })
   .strict();
+
+// ---- AI Studio consolidated daily report (20270219000100): built from the work recorded on the tasks ----
+const aiTaskIds = z.array(uuidSchema).max(30, 'A daily report can have at most 30 tasks.').default([]);
+const aiDailyPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
+export const aiStudioDailyReportOptionsQuerySchema = z.object({ date: isoDate }).strict();
+export const aiStudioDailyReportPreviewSchema = z.object({ reportDate: isoDate, taskIds: aiTaskIds }).strict();
+export const aiStudioDailyReportSchema = z
+  .object({
+    reportDate: isoDate,
+    taskIds: aiTaskIds,
+    /** Only what is NOT already in the tasks: additional work, pending work, blockers, tomorrow's plan, remarks. */
+    workCompleted: aiDailyPart, pendingWork: aiDailyPart, blockers: aiDailyPart, tomorrowPlan: aiDailyPart, remarks: aiDailyPart,
+    submit: z.boolean().default(false),
+    /** The history entries the person saw in the preview when they submitted: if the tasks changed since, the database refuses and the form refreshes. */
+    expectedUpdateIds: z.array(uuidSchema).max(1000).optional()
+  })
+  .strict();
+export type AiStudioDailyReportInput = z.infer<typeof aiStudioDailyReportSchema>;
 
 // ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
 /** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */
