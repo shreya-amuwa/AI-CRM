@@ -121,9 +121,9 @@ export const TaskDetails: React.FC<{ taskId: string; onClose: () => void; onChan
 
   const load = useCallback(async () => {
     try {
-      const [details, preview] = await Promise.all([workTasksApi.details(taskId), workTasksApi.deletePreview(taskId)]);
-      setData(details);
-      setDeletion(preview);
+      // the Delete check never holds up the task itself: the details show at once, the button follows when the server answers
+      void workTasksApi.deletePreview(taskId).then(setDeletion);
+      setData(await workTasksApi.details(taskId));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the task.');
