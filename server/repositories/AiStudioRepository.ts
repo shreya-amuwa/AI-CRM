@@ -84,7 +84,7 @@ export class AiStudioRepository {
       p_from: q.from ?? null, p_to: q.to ?? null, p_page: q.page, p_page_size: q.pageSize, p_blockers: q.blockers ?? null, p_cross_team: q.crossTeam ?? null
     });
   }
-  // ---- the consolidated daily report (20270216000100): the database builds it from the task history and checks every id ----
+  // ---- the consolidated daily report (20270219000100): the database builds it from the task history and checks every id ----
   dailyReportOptions(date: string) { return this.rpc<AiStudioDailyReportOptions>('ai_studio_daily_report_options', { p_date: date }); }
   dailyReportPreview(date: string, taskIds: string[]) { return this.rpc<AiStudioDailyReportPreview>('ai_studio_daily_report_preview', { p_date: date, p_tasks: taskIds }); }
   saveDailyReport(id: string | null, i: AiStudioDailyReportInput) {

@@ -1,6 +1,6 @@
 # Google Sheet sync of existing customers
 
-Migration `supabase/migrations/20270216000100_customer_sheet_sync.sql` (re-runnable, additive). Staff guide: `docs-site/content/support/importing-existing-customers.md`.
+Migration `supabase/migrations/20270219000100_customer_sheet_sync.sql` (re-runnable, additive). Staff guide: `docs-site/content/support/importing-existing-customers.md`.
 
 The Support team keeps one shared Google Sheet in the one-sheet import template. Instead of downloading and uploading it after every change, a person who may import
 customers connects the sheet once and clicks **CRM Sync > Sync now** inside it. The Excel upload is unchanged and still available.

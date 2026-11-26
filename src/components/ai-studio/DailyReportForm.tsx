@@ -13,7 +13,7 @@ import { ReportWorkView, WorkSummary } from './ReportWork';
 import { TaskStatusBadge, dateText, todayIso, useLoad } from './ui';
 
 /**
- * The consolidated daily report (20270216000100): one report for the day, built from the work the person ALREADY recorded on their tasks.
+ * The consolidated daily report (20270219000100): one report for the day, built from the work the person ALREADY recorded on their tasks.
  * They pick the tasks (any of their projects); the completion details, work updates and links of that date are fetched from the task history and
  * shown read-only. They only type what is not in the tasks (additional work, pending work, blockers, tomorrow's plan, remarks). Nothing of the tasks
  * is copied into the report: it keeps references, and on submit exactly the entries shown here.

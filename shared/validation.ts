@@ -3357,7 +3357,7 @@ export const aiStudioReportReviewSchema = z
 const aiReportPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
 export const aiStudioReportLeadEditSchema = z
   .object({
-    /** Empty is allowed for a consolidated report whose tasks carry the work (20270216000100); the database refuses it otherwise. */
+    /** Empty is allowed for a consolidated report whose tasks carry the work (20270219000100); the database refuses it otherwise. */
     workCompleted: aiReportPart,
     workInProgress: aiReportPart, pendingWork: aiReportPart, blockers: aiReportPart, remarks: aiReportPart,
     reason: z.string().trim().min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.').max(1000, 'The reason can have at most 1000 characters.')
@@ -3375,13 +3375,13 @@ export const aiStudioReportsQuerySchema = z
     to: isoDate.optional(),
     page: z.coerce.number().int().min(1).max(5000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25),
-    /** 20270216000100: reports with blockers / with a task given by another Team Lead ('true' / 'false'). */
+    /** 20270219000100: reports with blockers / with a task given by another Team Lead ('true' / 'false'). */
     blockers: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
     crossTeam: z.enum(['true', 'false']).transform(v => v === 'true').optional()
   })
   .strict();
 
-// ---- AI Studio consolidated daily report (20270216000100): built from the work recorded on the tasks ----
+// ---- AI Studio consolidated daily report (20270219000100): built from the work recorded on the tasks ----
 const aiTaskIds = z.array(uuidSchema).max(30, 'A daily report can have at most 30 tasks.').default([]);
 const aiDailyPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
 export const aiStudioDailyReportOptionsQuerySchema = z.object({ date: isoDate }).strict();
@@ -3979,7 +3979,7 @@ export const performanceRecordReviewSchema = z
   .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100): what the Apps Script sends.
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100): what the Apps Script sends.
 // "header" = the sheet's first rows (up to 6, the headings are among them); "rows" = the rows that changed, each with its sheet row number.
 // Every cell is a string, a number or empty (the script sends dates as yyyy-mm-dd). The import's own limits apply after parsing.
 // ---------------------------------------------------------------------------------------------------------------------------------

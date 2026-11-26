@@ -17,7 +17,7 @@ export interface AiStudioReportForm {
   submit: boolean;
 }
 export interface AiStudioReportsFilter { view: 'mine' | 'team' | 'department'; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page?: number; pageSize?: number; blockers?: 'true' | 'false'; crossTeam?: 'true' | 'false' }
-/** The consolidated daily report (20270216000100): task ids and the person's own additional remarks only. */
+/** The consolidated daily report (20270219000100): task ids and the person's own additional remarks only. */
 export interface AiStudioDailyReportForm {
   reportDate: string;
   taskIds: string[];

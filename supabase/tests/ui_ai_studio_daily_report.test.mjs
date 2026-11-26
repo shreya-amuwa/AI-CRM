@@ -1,4 +1,4 @@
-// Browser test of the AI Studio consolidated daily report (20270216000100), at desktop and phone widths (390 and 320 px):
+// Browser test of the AI Studio consolidated daily report (20270219000100), at desktop and phone widths (390 and 320 px):
 // the tasks are picked across projects, the work recorded on them (completion details, updates, links) is fetched and shown read-only, only new
 // remarks are typed, the in-app confirmation lists what is submitted, the request carries task ids and the exact history entries shown (never task
 // text or files), a report the tasks changed under is refreshed instead of submitted, and the Department Head reads the consolidated report.

@@ -4,7 +4,7 @@ import type { AiStudioReportWorkEntry, AiStudioReportWorkSummary, AiStudioReport
 import { TaskStatusBadge, dateText, dateTimeText } from './ui';
 
 /**
- * The work of a consolidated daily report (20270216000100), read straight from the tasks' history: nothing here is typed again or copied.
+ * The work of a consolidated daily report (20270219000100), read straight from the tasks' history: nothing here is typed again or copied.
  * Shown in the report form (the preview), in the report window (Team Lead, Department Head) and in a task's window (its own part only).
  * Everything is read-only: a correction is made on the task itself ("Open task").
  */

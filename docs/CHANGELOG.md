@@ -23,7 +23,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
   date, read-only. Only new remarks are typed (additional work, pending work, blockers, tomorrow's plan, remarks). The report stores
   references to the task history, never copies; a submitted report keeps showing its day. The Team Lead and Department Head read it
   project by project (with counts, blockers and cross-team filters); the Team Lead who gave a cross-team task sees only that task's part,
-  in the task window. Older one-task reports stay as they are. Migration `20270216000100_ai_studio_consolidated_reports.sql`.
+  in the task window. Older one-task reports stay as they are. Migration `20270219000100_ai_studio_consolidated_reports.sql`.
 * **Global search (Ctrl / Cmd + K)** (docs/GLOBAL_SEARCH_ARCHITECTURE.md, docs/COMMAND_PALETTE_GUIDE.md): a command palette on every staff
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,
   departments and notices the person may already open. The database's row-level rules decide (security invoker). Results open the exact
@@ -90,7 +90,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Database migrations in this release
 
-* `20270216000100_ai_studio_consolidated_reports.sql`: `ai_studio_report_tasks`, `ai_studio_report_task_updates` (references only), the links
+* `20270219000100_ai_studio_consolidated_reports.sql`: `ai_studio_report_tasks`, `ai_studio_report_task_updates` (references only), the links
   of a task update (`ai_studio_task_updates.links`, stored when they change), write-once task history, and the daily report functions
   (additive; safe to run twice).
 * `20270215000100_global_search.sql`: `global_search`, `search_record`, private candidate helpers and trigram indexes (additive; safe to run twice).

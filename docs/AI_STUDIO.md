@@ -151,7 +151,7 @@ Every project can have a **deadline**, and the people who work on it see a **clo
 * Report attachments are not supported (reports are text); task attachments are links, as in the work reports of other departments.
 * Live push (Realtime) is not used (no timers either): a page reads again after the person's own action, and a page opened from a notification reads fresh. Someone else's change shows after the next action or reload.
 
-## One daily report built from the tasks (migration 20270216000100)
+## One daily report built from the tasks (migration 20270219000100)
 
 New daily reports are one per person and day and are built from the work already recorded on the tasks. See
 **docs/AI_STUDIO_DAILY_REPORTS.md**. Older one-project / one-task reports (below) stay as they are and still open.

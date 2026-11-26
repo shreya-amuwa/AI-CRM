@@ -11167,7 +11167,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('ail2', 'GET', `/ai-studio/reports/${q.json.data.id}`);
   check(q.status === 404, 'AI Studio: another Team Lead cannot read it', q);
 
-  // the consolidated daily report (20270216000100): built from the task's history, references only
+  // the consolidated daily report (20270219000100): built from the task's history, references only
   q = await api('aim1', 'GET', '/ai-studio/reports/context');
   const aiToday = q.json.data.today;
   q = await api('aim1', 'GET', `/ai-studio/daily-reports/options?date=${aiToday}`);
@@ -13074,7 +13074,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
-// --- Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100) ---
+// --- Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100) ---
 {
   let q: any = await api('a', 'GET', '/customers/sheet-sync');
   check(q.status === 403, 'sheet sync: a Sales member cannot connect a customer sheet', q);

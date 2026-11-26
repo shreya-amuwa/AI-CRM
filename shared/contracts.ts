@@ -6373,7 +6373,7 @@ export interface AiStudioReportSummary {
   submittedAt: string | null;
   approvedAt: string | null;
   updatedAt: string;
-  /** 20270216000100: 'DAILY' (one report for the day, many tasks) or 'SINGLE' (an older one-project report). Absent on an older database. */
+  /** 20270219000100: 'DAILY' (one report for the day, many tasks) or 'SINGLE' (an older one-project report). Absent on an older database. */
   kind?: 'DAILY' | 'SINGLE';
   teamName?: string | null;
   counts?: { projects: number; tasks: number; completed: number; crossTeam: number } | null;
@@ -6393,7 +6393,7 @@ export interface AiStudioReportHistoryEntry {
   revision: number;
   createdAt: string;
 }
-/** 20270216000100: one history entry of a task, as a report shows it (read from the task's history, never copied). */
+/** 20270219000100: one history entry of a task, as a report shows it (read from the task's history, never copied). */
 export interface AiStudioReportWorkEntry { id: string; at: string; status: AiStudioTaskStatus; progress: number; note: string | null }
 /** One task of a consolidated report: the day's entries and the state the day ended with. */
 export interface AiStudioReportWorkTask {
@@ -6430,7 +6430,7 @@ export interface AiStudioDailyReportPreview { date: string; work: AiStudioReport
 export interface AiStudioTaskReportEntry { reportId: string; reportDate: string; status: AiStudioReportStatus; authorName: string; submittedAt: string | null; entries: AiStudioReportWorkEntry[]; canOpen: boolean }
 
 export interface AiStudioReportDetail extends AiStudioReportSummary {
-  /** 20270216000100 (absent on an older database). */
+  /** 20270219000100 (absent on an older database). */
   tomorrowPlan?: string | null;
   authorDesignation?: string | null;
   /** The content is fixed (submitted and not returned): the work shown is exactly what was submitted. */
@@ -7500,7 +7500,7 @@ export interface PerformanceSubjectRecord {
 export interface PerformanceSubjectHistory { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; records: PerformanceSubjectRecord[] }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100)
+// Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270219000100)
 // ---------------------------------------------------------------------------------------------------------------------------------
 export interface SheetSyncRun { at: string; rows: number; added: number; updated: number; saved: number; rejected: number; duplicates: number; outcome: 'OK' | 'PARTIAL' | 'FAILED' | 'EMPTY' }
 export interface SheetSyncConnection {

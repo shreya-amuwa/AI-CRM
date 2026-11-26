@@ -47,7 +47,7 @@ export class AiStudioService {
     const { decision, comment } = parse(aiStudioReportReviewSchema, body);
     return this.repo.reviewReport(parse(uuidSchema, id), decision, comment);
   }
-  // the consolidated daily report (20270216000100): the browser sends dates and task ids only; the database checks every id and builds the work
+  // the consolidated daily report (20270219000100): the browser sends dates and task ids only; the database checks every id and builds the work
   dailyReportOptions(query: unknown): Promise<AiStudioDailyReportOptions> { return this.repo.dailyReportOptions(parse(aiStudioDailyReportOptionsQuerySchema, query).date); }
   dailyReportPreview(body: unknown): Promise<AiStudioDailyReportPreview> {
     const { reportDate, taskIds } = parse(aiStudioDailyReportPreviewSchema, body);

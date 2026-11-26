@@ -1,6 +1,6 @@
 # AI Studio: one daily report built from the tasks
 
-Migration `20270216000100_ai_studio_consolidated_reports.sql`. Screens: `src/components/ai-studio/DailyReportForm.tsx`, `ReportWork.tsx`,
+Migration `20270219000100_ai_studio_consolidated_reports.sql`. Screens: `src/components/ai-studio/DailyReportForm.tsx`, `ReportWork.tsx`,
 `TaskReportsPanel.tsx`, `AiStudioReports.tsx`.
 
 An employee writes **one report per day**. They pick the tasks they worked on, from any of their projects. The report then shows what is
@@ -189,7 +189,7 @@ The older `ai_studio_reports_list` and `/reports` (one-task) endpoints still wor
 ## Deploying and rolling back
 
 **Deploying**
-1. Run `20270216000100_ai_studio_consolidated_reports.sql` in the Supabase SQL editor. It is additive and safe to run twice.
+1. Run `20270219000100_ai_studio_consolidated_reports.sql` in the Supabase SQL editor. It is additive and safe to run twice.
 2. Deploy the app. The Submit Daily Report tab uses the new form. Older reports open in the old form.
 
 **Rolling back the app**

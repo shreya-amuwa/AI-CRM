@@ -5,7 +5,7 @@ import { WorkEntries } from './ReportWork';
 import { ReportStatusBadge, dateText, useLoad } from './ui';
 
 /**
- * In a task's window: the daily reports that mention this task, with only THIS task's part of each (20270216000100). The Team Lead who gave a
+ * In a task's window: the daily reports that mention this task, with only THIS task's part of each (20270219000100). The Team Lead who gave a
  * cross-team task sees the work reported on it here, without getting the rest of the employee's report.
  */
 export const TaskReportsPanel: React.FC<{ taskId: string; onOpenReport?: (reportId: string) => void }> = ({ taskId, onOpenReport }) => {

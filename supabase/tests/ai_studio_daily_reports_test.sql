@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI Studio consolidated daily reports (migration 20270216000100): a report built from the work already recorded on the tasks.
+-- AI Studio consolidated daily reports (migration 20270219000100): a report built from the work already recorded on the tasks.
 -- Uses the AI Studio people of ai_studio_test.sql: ai_tl1 (Team Lead of ai_tm1a / ai_tm1b), ai_tl2 (another Team Lead), ai_dh.
 -- Past days are written straight into the history (as the table owner) so the dates are exact; today's work goes through the app's functions.
 -- =============================================================================
@@ -7,8 +7,8 @@
 \set QUIET 1
 \echo '--- 150. AI Studio daily reports built from the tasks'
 reset role;
-\i supabase/migrations/20270216000100_ai_studio_consolidated_reports.sql
-\i supabase/migrations/20270216000100_ai_studio_consolidated_reports.sql
+\i supabase/migrations/20270219000100_ai_studio_consolidated_reports.sql
+\i supabase/migrations/20270219000100_ai_studio_consolidated_reports.sql
 
 create or replace function test.ist(p_day integer, p_time text) returns timestamptz language sql stable as $$
   select (((now() at time zone 'Asia/Kolkata')::date + p_day) + p_time::time) at time zone 'Asia/Kolkata' $$;

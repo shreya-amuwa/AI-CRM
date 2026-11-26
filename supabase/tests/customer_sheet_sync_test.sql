@@ -1,5 +1,5 @@
 -- =============================================================================
--- Google Sheet sync of existing customers (migration 20270216000100, docs/CUSTOMER_SHEET_SYNC.md).
+-- Google Sheet sync of existing customers (migration 20270219000100, docs/CUSTOMER_SHEET_SYNC.md).
 -- A Support Team Member connects a sheet; the sheet's rows are saved AS them (service role call with the key's hash), row by row:
 -- new customers added, a mobile already in the CRM never added twice (usage only for their own customer, held for someone else's),
 -- a new mobile with another customer's e-mail held as a possible duplicate, one wrong row never blocks the others, revoked keys and
@@ -9,8 +9,8 @@
 \set ON_ERROR_STOP 1
 \set QUIET 1
 reset role;
-\i supabase/migrations/20270216000100_customer_sheet_sync.sql
-\i supabase/migrations/20270216000100_customer_sheet_sync.sql
+\i supabase/migrations/20270219000100_customer_sheet_sync.sql
+\i supabase/migrations/20270219000100_customer_sheet_sync.sql
 \echo '--- Google Sheet sync of existing customers'
 
 delete from customer_sheet_connections where owner_id in (test.id('sup_plain'), test.id('sup_b'), test.id('tm_a'));
