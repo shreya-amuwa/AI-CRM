@@ -203,7 +203,7 @@ const EditForm: React.FC<{ task: AiStudioTaskDetail; onCancel: () => void; onDon
 export const AssignTaskDialog: React.FC<{ role: AiStudioRole; projects: AiStudioProject[]; people: AiStudioPerson[]; onClose: () => void; onDone: () => void }> = ({ role, projects, people, onClose, onDone }) => {
   const usable = projects.filter(p => p.status === 'ACTIVE' && (role !== 'LEAD' || p.mine));
   const [projectId, setProjectId] = useState(usable[0]?.id ?? '');
-  // 20270218000100: the people the database offers for this project (cross-team for a Team Lead on it), with their workload; an older database
+  // 20270219000100: the people the database offers for this project (cross-team for a Team Lead on it), with their workload; an older database
   // without it falls back to the earlier list (the project's people; a Team Lead's own Team Members)
   const offered = useLoad<AiStudioAssignees | null>(() => (projectId ? aiStudioApi.assignees(projectId).then(d => (d && Array.isArray(d.people) ? d : null), () => null) : Promise.resolve(null)), [projectId]);
   const fallback = useMemo(() => assignablePeople(people, projectId, role), [people, projectId, role]);

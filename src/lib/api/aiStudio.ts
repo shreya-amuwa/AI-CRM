@@ -18,7 +18,7 @@ export interface AiStudioReportForm {
 }
 export interface AiStudioReportsFilter { view: 'mine' | 'team' | 'department'; projectId?: string; status?: string; leadId?: string; authorId?: string; from?: string; to?: string; page?: number; pageSize?: number }
 export interface AiStudioTasksFilter { scope: 'mine' | 'ongoing' | 'team'; projectId?: string; status?: string; assigneeId?: string; kind?: 'STANDARD' | 'CROSS_TEAM'; page?: number; pageSize?: number }
-/** The day's report (20270218000100): one per person and day, one entry per task. */
+/** The day's report (20270219000100): one per person and day, one entry per task. */
 export interface AiStudioDailyReportForm {
   id?: string | null;
   reportDate: string;

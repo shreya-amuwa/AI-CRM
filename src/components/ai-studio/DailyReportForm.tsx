@@ -12,7 +12,7 @@ import { notifyAiStudioChanged } from './aiStudioEvents';
 import { TASK_STATUS_LABELS, todayIso } from './ui';
 
 /**
- * The day's daily report (20270218000100): one report per person and day, one entry per task worked on - from any project, cross-team tasks included.
+ * The day's daily report (20270219000100): one report per person and day, one entry per task worked on - from any project, cross-team tasks included.
  * Each task has its own section (work done, time, progress, blockers, next action); the summary keeps the totals in view, and the hours are compared with
  * the attendance hours (a warning only). The database checks every task again and writes the report all or nothing; on an error nothing is lost here.
  */

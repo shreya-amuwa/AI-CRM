@@ -6299,7 +6299,7 @@ export interface AiStudioProject {
   leads: { id: string; name: string }[];
   memberCount: number;
   tasks: AiStudioTaskCounts;
-  /** 20270218000100: the caller is not on the project but has a task in it (a cross-team task). */
+  /** 20270219000100: the caller is not on the project but has a task in it (a cross-team task). */
   viaTask?: boolean;
 }
 /** The clock (migration 20270119000100): a running project with a deadline. The server's own time comes with the list so every browser counts to the same moment. */
@@ -6353,7 +6353,7 @@ export interface AiStudioTask {
   completionNote: string | null;
   attachments: string[];
   overdue: boolean;
-  /** 20270218000100 (optional: absent on an older database). STANDARD (the employee's own team) or CROSS_TEAM (another team's Team Lead gave it). */
+  /** 20270219000100 (optional: absent on an older database). STANDARD (the employee's own team) or CROSS_TEAM (another team's Team Lead gave it). */
   assignmentType?: AiStudioAssignmentType;
   /** The project-owning team: the Team Lead who gave it ("<name>'s team"). */
   ownerTeam?: string | null;
@@ -6364,7 +6364,7 @@ export interface AiStudioTask {
 export type AiStudioAssignmentType = 'STANDARD' | 'CROSS_TEAM';
 export interface AiStudioTaskHistoryEntry {
   id: string;
-  /** REPORT: a daily report named this task; BLOCKER: a blocker was reported in one (20270218000100). */
+  /** REPORT: a daily report named this task; BLOCKER: a blocker was reported in one (20270219000100). */
   kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED' | 'REPORT' | 'BLOCKER';
   status: AiStudioTaskStatus;
   progress: number;
@@ -6431,7 +6431,7 @@ export interface AiStudioReportSummary {
   submittedAt: string | null;
   approvedAt: string | null;
   updatedAt: string;
-  /** 20270218000100: one report for the day with one entry per task (projectId is then null and projectName lists the projects). */
+  /** 20270219000100: one report for the day with one entry per task (projectId is then null and projectName lists the projects). */
   consolidated?: boolean;
   totalMinutes?: number | null;
   taskCount?: number;
@@ -6517,7 +6517,7 @@ export interface AiStudioReportDetail extends AiStudioReportSummary {
   canLeadEdit?: boolean;
   reviewStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   history: AiStudioReportHistoryEntry[];
-  /** 20270218000100: the report's tasks (a single-task report written earlier has one, from its own text). */
+  /** 20270219000100: the report's tasks (a single-task report written earlier has one, from its own text). */
   entries?: AiStudioReportEntry[];
 }
 export interface AiStudioReportPage { items: AiStudioReportSummary[]; total: number; page: number; pageSize: number; counts: Partial<Record<AiStudioReportStatus, number>> }
@@ -7445,7 +7445,7 @@ export interface TaskReportTaskOption {
 export interface PerformancePart { key: string; label: string; weight: number; value: number | null }
 export interface MemberPerformanceMetrics {
   tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; crossTeam?: number };
-  /** AI Studio (20270218000100): projects contributed to, cross-team tasks, minutes reported in daily reports, blockers reported. */
+  /** AI Studio (20270219000100): projects contributed to, cross-team tasks, minutes reported in daily reports, blockers reported. */
   contribution?: { projects: number; crossTeamTasks: number; reportedMinutes: number; blockers: number };
   completionPct: number | null;
   onTimePct: number | null;

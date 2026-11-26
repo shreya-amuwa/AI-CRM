@@ -26,7 +26,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
   progress is written to each task's history only upwards and never completes a task; the assigning Team Lead reads only the entries about their task.
   Task filters (my team / cross-team / overdue), task details (ownership, report entries), notifications, performance contribution figures and Ctrl+K
   search for AI Studio tasks, projects and reports. Older single-task reports keep working and gain one entry each. Migration
-  `20270218000100_ai_studio_cross_team_multi_task.sql`.
+  `20270219000100_ai_studio_cross_team_multi_task.sql`.
 
 * **Global search (Ctrl / Cmd + K)** (docs/GLOBAL_SEARCH_ARCHITECTURE.md, docs/COMMAND_PALETTE_GUIDE.md): a command palette on every staff
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,

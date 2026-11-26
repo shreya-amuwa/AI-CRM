@@ -1,6 +1,6 @@
 # AI Studio: cross-team tasks and multi-task daily reports
 
-Migration `supabase/migrations/20270218000100_ai_studio_cross_team_multi_task.sql` (run after `20270217000100`; safe to run twice; no temp tables;
+Migration `supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql` (run after `20270218000100_support_client_login.sql`; safe to run twice; no temp tables;
 nothing deleted). Builds on [AI_STUDIO.md](AI_STUDIO.md) and the performance pages of [TASK_DAILY_REPORTS_PERFORMANCE.md](TASK_DAILY_REPORTS_PERFORMANCE.md).
 
 ## 1. What was there (audit)

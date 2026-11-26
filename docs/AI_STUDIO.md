@@ -157,7 +157,7 @@ The daily report form asks three things: **Work Completed Today** (required), **
 work) and *Remarks or Additional Updates* were removed from the form. Nothing changed in the database or the API (the two parts were already optional): an older report
 that has text in them still shows it, in the report and in the form when it is edited, so nothing written earlier is lost.
 
-## Cross-team tasks and multi-task daily reports (migration 20270218000100)
+## Cross-team tasks and multi-task daily reports (migration 20270219000100)
 
 A Team Lead on a project can give its tasks to members of other AI Studio teams (a task-level permission: nobody changes team), and a daily report now holds
 every task worked on that day, from any project, with time and progress per task. The rules, the permission matrix, the data, the notifications and the

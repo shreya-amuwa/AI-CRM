@@ -1,6 +1,6 @@
 -- =============================================================================
 -- AI Studio: cross-team task assignment and multi-task daily reports (docs/AI_STUDIO_CROSS_TEAM.md).
--- Run after 20270217000100_weekly_report_direct_to_hr.sql. Safe to run twice; no temp tables; nothing is deleted; existing reports and tasks keep their meaning.
+-- Run after 20270218000100_support_client_login.sql. Safe to run twice; no temp tables; nothing is deleted; existing reports and tasks keep their meaning.
 --
 -- What was there (the audit): a Team Lead could give tasks to their OWN Team Members only, and only on a project the member was on
 -- (ai_studio_task_assign); a Team Lead could edit every task they could see (ai_studio_task_get / _edit), which would let an employee's own Team Lead
@@ -792,7 +792,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'canReview', private.ai_studio_can_review(r),
     -- 20270214000100: the reviewer at the Team Lead's step may correct the report before deciding it
     'canLeadEdit', r.status = 'PENDING_TL_APPROVAL' and private.ai_studio_can_review(r),
-    -- 20270218000100: a consolidated report's tasks (whoever reads the report reads them all: the author, their Team Lead, the Department Head)
+    -- 20270219000100: a consolidated report's tasks (whoever reads the report reads them all: the author, their Team Lead, the Department Head)
     'entries', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'taskId', e.task_id, 'taskTitle', e.task_title, 'projectId', e.project_id, 'projectName', e.project_name,
                            'assignmentType', e.assignment_type, 'assignedByName', e.assigned_by_name, 'taskStatus', e.task_status,
                            'currentStatus', (select k.status from public.ai_studio_tasks k where k.id = e.task_id),
@@ -886,7 +886,7 @@ begin
   end if;
   v_from := r.status;
   select full_name into v_name from public.profiles where id = v_me;
-  -- a consolidated report names its tasks instead of one project (20270218000100)
+  -- a consolidated report names its tasks instead of one project (20270219000100)
   pr_name := coalesce((select name from public.ai_studio_projects where id = r.project_id),
                       (select format('%s task%s', count(*), case when count(*) = 1 then '' else 's' end) from public.ai_studio_report_entries e where e.report_id = r.id));
 
@@ -992,7 +992,7 @@ begin
   else
     select * into r from public.ai_studio_daily_reports where id = p_id for update;
     if r.id is null or r.author_id <> v_me then raise exception 'NOT_FOUND: Report not found.' using errcode = 'P0001'; end if;
-    -- 20270218000100: a report with several tasks is saved by ai_studio_daily_report_save only
+    -- 20270219000100: a report with several tasks is saved by ai_studio_daily_report_save only
     if r.consolidated then raise exception 'CONFLICT: This daily report has several tasks: open it in the daily report form.' using errcode = 'P0001'; end if;
     if r.status not in ('DRAFT', 'RETURNED_BY_TL', 'RETURNED_BY_DH') then
       raise exception 'CONFLICT: This report was already submitted and can no longer be changed.' using errcode = 'P0001';
@@ -1047,7 +1047,7 @@ begin
     select jsonb_agg(jsonb_build_object(
       'id', pr.id, 'name', pr.name, 'description', pr.description, 'status', pr.status, 'createdAt', pr.created_at, 'deadlineAt', pr.deadline_at,
       'mine', exists (select 1 from public.ai_studio_project_members m where m.project_id = pr.id and m.profile_id = v_me),
-      -- 20270218000100: a project the person is not on but has a task in (a cross-team task): only that task is theirs to see
+      -- 20270219000100: a project the person is not on but has a task in (a cross-team task): only that task is theirs to see
       'viaTask', not exists (select 1 from public.ai_studio_project_members m where m.project_id = pr.id and m.profile_id = v_me)
                  and exists (select 1 from public.ai_studio_tasks t where t.project_id = pr.id and t.assignee_id = v_me),
       'leads', coalesce((select jsonb_agg(jsonb_build_object('id', l.id, 'name', l.full_name) order by l.full_name)
@@ -1105,7 +1105,7 @@ begin
     from (select private.perf2_ai_report_state(r) as s, r.report_date as d from public.ai_studio_daily_reports r
            where r.author_id = p_member and r.status <> 'DRAFT' and r.report_date between p_start and p_end) x;
 
-  -- 20270218000100: the day-by-day entries of the person's reports in the period (each task's minutes once per report)
+  -- 20270219000100: the day-by-day entries of the person's reports in the period (each task's minutes once per report)
   select coalesce(sum(e.minutes_spent), 0)::int as minutes, count(*) filter (where e.blockers is not null)::int as blockers
     into c from public.ai_studio_report_entries e join public.ai_studio_daily_reports r on r.id = e.report_id
    where r.author_id = p_member and r.status <> 'DRAFT' and r.report_date between p_start and p_end;
@@ -1215,7 +1215,7 @@ begin
                  'onTime', case when t.status = 'COMPLETED' and t.completed_at is not null and t.due_date is not null
                                 then (t.completed_at at time zone 'Asia/Kolkata')::date <= t.due_date end,
                  'assignmentType', t.assignment_type,
-                 -- 20270218000100: reports through their task entries (a consolidated report names many tasks; older ones have one entry each)
+                 -- 20270219000100: reports through their task entries (a consolidated report names many tasks; older ones have one entry each)
                  'reports', (select count(*) from public.ai_studio_report_entries e join public.ai_studio_daily_reports x on x.id = e.report_id
                               where e.task_id = t.id and x.status <> 'DRAFT' and x.report_date between p_start and p_end),
                  'pendingReports', (select count(*) from public.ai_studio_report_entries e join public.ai_studio_daily_reports x on x.id = e.report_id
@@ -1361,7 +1361,7 @@ begin
 
   v_mtg := private.search_meetings(v_q, v_tokens, v_lim + 1);
   v_not := private.search_notices(v_q, v_tokens, v_lim + 1);
-  -- 20270218000100: AI Studio tasks, projects and daily reports, with the AI Studio pages' own checks
+  -- 20270219000100: AI Studio tasks, projects and daily reports, with the AI Studio pages' own checks
   v_ai := private.search_ai_studio(v_q, v_tokens, v_lim + 1);
 
   return jsonb_build_object('query', v_q, 'groups', (

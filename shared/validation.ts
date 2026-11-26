@@ -175,6 +175,10 @@ export const clientForgotPasswordSchema = z.object({ email: z.string().trim().to
 /** Staff "Forgot password?" on the CRM sign-in page: the same rules as the client one. */
 export const staffForgotPasswordSchema = clientForgotPasswordSchema;
 
+// ---- Support: "Create login" on the customer's Client login card (20270218000100) ----
+/** The e-mail the client will sign in with; empty = the customer's own e-mail. */
+export const supportClientLoginSchema = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional() }).strict();
+
 export const customerActivityCreateSchema = z
   .object({
     type: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9_]{1,49}$/, 'Invalid activity type.'),
@@ -3320,7 +3324,7 @@ export const aiStudioTasksQuerySchema = z
     projectId: uuidSchema.optional(),
     status: z.enum([...AI_STUDIO_TASK_STATUSES, 'OPEN', 'OVERDUE']).optional(),
     assigneeId: uuidSchema.optional(),
-    // 20270218000100: my team's tasks or cross-team ones
+    // 20270219000100: my team's tasks or cross-team ones
     kind: z.enum(['STANDARD', 'CROSS_TEAM']).optional(),
     page: z.coerce.number().int().min(1).max(5000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
@@ -3351,7 +3355,7 @@ export const aiStudioReportReviewSchema = z
   })
   .strict()
   .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write the remarks the employee should act on.', path: ['comment'] });
-// ---- AI Studio cross-team tasks and multi-task daily reports (20270218000100) ----
+// ---- AI Studio cross-team tasks and multi-task daily reports (20270219000100) ----
 const aiText = (max: number, msg: string) => z.preprocess(v => (v === '' ? null : v), z.string().trim().max(max, msg).nullable().optional());
 /** One task of the day's report: what was done, the time it took (minutes), its progress (0 to 99 for an open task; completing is its own step). */
 export const aiStudioReportEntrySchema = z

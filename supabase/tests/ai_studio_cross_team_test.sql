@@ -1,5 +1,5 @@
 -- =============================================================================
--- AI Studio cross-team task assignment and multi-task daily reports (migration 20270218000100).
+-- AI Studio cross-team task assignment and multi-task daily reports (migration 20270219000100).
 -- Two teams: Team Lead A (xt_lead_a) with Employee A (xt_mem_a) on "XT Web"; Team Lead B (xt_lead_b) with Employee C (xt_mem_c) on "XT Sales".
 -- Team Lead B gives Employee A a task of XT Sales (cross-team); Employee A reports on three tasks of three projects in one daily report.
 -- Own people and projects; removed at the end.
@@ -9,8 +9,8 @@
 \echo '--- 194. AI Studio: cross-team tasks and multi-task daily reports'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270218000100_ai_studio_cross_team_multi_task.sql
-\i supabase/migrations/20270218000100_ai_studio_cross_team_multi_task.sql
+\i supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql
+\i supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql
 
 delete from ai_studio_daily_reports where author_id in (select id from test.users where name like 'xt\_%');
 delete from ai_studio_tasks where title like 'XT %';
@@ -228,7 +228,7 @@ with ins as (
   insert into ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, status, submitted_at)
   values (test.id('xt_mem_a'), 'XT Mem A', 'MEMBER', (select v from xt where k = 'web'), (select v from xt where k = 'T_WEB'), current_date - 2, 'Old single-task report', 'APPROVED', now())
   returning id) insert into xt select 'OLD', id from ins;
-\i supabase/migrations/20270218000100_ai_studio_cross_team_multi_task.sql
+\i supabase/migrations/20270219000100_ai_studio_cross_team_multi_task.sql
 select test.check((select count(*) = 1 and bool_and(legacy and work_completed = 'Old single-task report') from ai_studio_report_entries where report_id = (select v from xt where k = 'OLD'))
                   and (select project_id = (select v from xt where k = 'web') and not consolidated from ai_studio_daily_reports where id = (select v from xt where k = 'OLD')),
   'an older single-task report keeps its project and gains one entry from its own text (the migration runs again safely)');

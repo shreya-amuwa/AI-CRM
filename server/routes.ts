@@ -127,6 +127,7 @@ export const routes: RouteDef[] = [
   { method: 'DELETE', path: '/customers/sheet-sync', handler: customers.sheetSyncDisconnect, options: S },
   { method: 'POST', path: '/customers/:id/client-password-email', handler: customers.sendClientPasswordEmail, options: S },
   { method: 'GET', path: '/customers/:id/client-login', handler: customers.clientLoginStatus },
+  { method: 'POST', path: '/customers/:id/client-login', handler: customers.createClientLoginBySupport, options: S },
   { method: 'GET', path: '/customers/summary', handler: customers.summary },
   { method: 'GET', path: '/customers/:id', handler: customers.get },
   { method: 'PATCH', path: '/customers/:id', handler: customers.update },
@@ -408,7 +409,7 @@ export const routes: RouteDef[] = [
   { method: 'PATCH', path: '/ai-studio/tasks/:id', handler: aiStudio.editTask },
   { method: 'POST', path: '/ai-studio/tasks/:id/update', handler: aiStudio.updateTask },
   { method: 'GET', path: '/ai-studio/reports/context', handler: aiStudio.reportContext },
-  // 20270218000100: cross-team assignment and the multi-task daily report (fixed paths before /ai-studio/reports/:id)
+  // 20270219000100: cross-team assignment and the multi-task daily report (fixed paths before /ai-studio/reports/:id)
   { method: 'GET', path: '/ai-studio/projects/:id/assignees', handler: aiStudio.assignees },
   { method: 'GET', path: '/ai-studio/daily-reports/context', handler: aiStudio.dailyContext },
   { method: 'POST', path: '/ai-studio/daily-reports', handler: aiStudio.saveDailyReport, options: S },

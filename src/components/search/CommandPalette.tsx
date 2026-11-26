@@ -28,7 +28,7 @@ export const KIND: Record<Kind, { label: string; one: string; icon: React.Elemen
   ticket: { label: 'Support tickets', one: 'Ticket', icon: LifeBuoy },
   department: { label: 'Departments', one: 'Department', icon: Network },
   notice: { label: 'Notices', one: 'Notice', icon: Megaphone },
-  // AI Studio (20270218000100): opened on the AI Studio pages, which check access again
+  // AI Studio (20270219000100): opened on the AI Studio pages, which check access again
   ai_studio_task: { label: 'AI Studio tasks', one: 'Task', icon: ClipboardList },
   ai_studio_project: { label: 'AI Studio projects', one: 'Project', icon: FolderKanban },
   ai_studio_report: { label: 'AI Studio daily reports', one: 'Daily report', icon: FileText }

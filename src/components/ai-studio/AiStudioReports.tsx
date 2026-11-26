@@ -23,7 +23,7 @@ const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blocke
 ];
 /** The parts to show: the three of the form, and an older report's extra parts only when they have text. */
 const shownParts = (values: Partial<Record<(typeof PARTS)[number]['key'], string | null>>) => PARTS.filter(p => !p.legacy || (values[p.key] ?? '').trim() !== '');
-// a day's report with several tasks (20270218000100) keeps its day-level parts in the same columns, under these names
+// a day's report with several tasks (20270219000100) keeps its day-level parts in the same columns, under these names
 const DAY_PARTS: typeof PARTS = [
   { key: 'workCompleted', label: 'Overall daily summary', required: true },
   { key: 'remarks', label: 'Additional work performed' },
@@ -375,7 +375,7 @@ export const DailyReportsPage: React.FC<{ role: 'LEAD' | 'MEMBER' }> = ({ role }
         subtitle={role === 'LEAD' ? 'Write your own daily report, and review the reports of your Team Members.' : 'Write your daily report and follow it through your Team Lead and the Department Head.'}
       />
       <Tabs<ReportTab> label="Daily report views" value={tab} options={tabs} onChange={t => { setTab(t); setComposing(false); }} />
-      {/* 20270218000100: one report for the day with every task worked on; older single-task reports still open (and are corrected) in their own form */}
+      {/* 20270219000100: one report for the day with every task worked on; older single-task reports still open (and are corrected) in their own form */}
       {tab === 'submit' && <DailyReportForm key={version} onDone={() => { setVersion(v => v + 1); setTab('mine'); }} />}
       {tab === 'mine' && (composing
         ? <DailyReportForm onDone={() => setComposing(false)} onCancel={() => setComposing(false)} />

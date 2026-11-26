@@ -47,7 +47,7 @@ export class AiStudioService {
     const { decision, comment } = parse(aiStudioReportReviewSchema, body);
     return this.repo.reviewReport(parse(uuidSchema, id), decision, comment);
   }
-  /** Who a task of this project can go to: the database works out the team, the assignment type and who is eligible (20270218000100). */
+  /** Who a task of this project can go to: the database works out the team, the assignment type and who is eligible (20270219000100). */
   assignees(projectId: string): Promise<AiStudioAssignees> { return this.repo.assignees(parse(uuidSchema, projectId)); }
   /** The day's report form: the tasks the person may report on, the report already started, the attendance hours (to warn only). */
   dailyContext(query: unknown): Promise<AiStudioDailyContext> { return this.repo.dailyContext(parse(aiStudioDailyContextQuerySchema, query ?? {}).date); }

@@ -1,7 +1,7 @@
 import type { AiStudioAssignee } from '../../shared/contracts';
 
 /**
- * AI Studio cross-team assignment (20270218000100): when a person's open work is heavy (several open tasks, two or more urgent ones, or anything
+ * AI Studio cross-team assignment (20270219000100): when a person's open work is heavy (several open tasks, two or more urgent ones, or anything
  * overdue) the assign form warns before the task is given. It never blocks: there is no organizational limit on assignments.
  */
 export function workloadWarning(p: Pick<AiStudioAssignee, 'workload'>): string | null {

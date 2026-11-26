@@ -113,6 +113,7 @@ export const customersController = {
   sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler,
   /** The "Client login" card on the customer's page (20270212000100). */
   clientLoginStatus: (async ctx => ok(await svc(ctx).customerImport.clientLoginStatus(ctx.params.id))) as Handler,
+  createClientLoginBySupport: (async ctx => ok(await svc(ctx).customerImport.createLoginBySupport(ctx.actor, ctx.params.id, ctx.req.body, ctx.req.headers.origin), 201)) as Handler,
   /** Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md): the person's own connection. */
   sheetSyncConnection: (async ctx => ok(await svc(ctx).sheetSync.connection())) as Handler,
   sheetSyncConnect: (async ctx => ok(await svc(ctx).sheetSync.connect())) as Handler,
