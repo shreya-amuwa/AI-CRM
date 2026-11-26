@@ -11088,8 +11088,13 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('ail1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member1, title: 'Build the login screen', description: 'With validation', dueDate: '2099-02-01' });
   check(q.status === 201 && q.json.data.status === 'ASSIGNED', 'AI Studio: the Team Lead gives a task to their member', q);
   const task1 = q.json.data.id;
-  q = await api('ail1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member2, title: 'Not yours' });
-  check(q.status === 403 || q.status === 422, 'AI Studio: a Team Lead cannot give a task to another lead\'s member', q);
+  // 20270221000100: another lead's member gets a task only from a Team Lead ON that project (cross-team); AIQR is not Lead One's
+  q = await api('ail1', 'POST', '/ai-studio/tasks', { projectId: aiqr.id, assigneeId: member2, title: 'Not yours' });
+  check(q.status === 403 || q.status === 422, 'AI Studio: a Team Lead cannot give another lead\'s member a task of a project they are not on', q);
+  q = await api('ail1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member2, title: 'Cross-team help' });
+  check(q.status === 201 && q.json.data.assignmentType === 'CROSS_TEAM', 'AI Studio: on their own project a Team Lead gives another lead\'s member a cross-team task', q);
+  // the rest of this block counts tasks as before: the cross-team one is removed again
+  await db.query(`delete from public.ai_studio_tasks where id = $1`, [q.json.data.id]);
   q = await api('aim1', 'POST', '/ai-studio/tasks', { projectId: crm.id, assigneeId: member1, title: 'Self' });
   check(q.status === 403, 'AI Studio: a Team Member cannot assign tasks', q);
   q = await api('aim1', 'GET', '/ai-studio/tasks?scope=mine');
