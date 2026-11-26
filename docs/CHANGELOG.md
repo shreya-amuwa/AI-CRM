@@ -79,6 +79,11 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Fixed
 
+* **Add Team Member: "Choose a designation." although CEO was selected.** Choosing the CEO role set the designation to its on-screen label ("CEO")
+  instead of the stored value (`Operations Head`, shown as CEO), so the dropdown looked right while the form held a value no option has, and
+  picking "CEO" again changed nothing. The form now keeps the stored value and never holds a designation its dropdown does not offer. The
+  validation is unchanged. No migration.
+
 - **Meeting notices** never reached a phone, and there was no reminder close to the start (#292).
 - **Sideways scrolling on phones** in four places (#294):
   - Client Portal → Client Manual;
