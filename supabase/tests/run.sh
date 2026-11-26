@@ -240,3 +240,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/support_client_login_test.sql 2>&1
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/ai_studio_daily_reports_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/wallet_pin_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/wallet_pin_income_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/support_incentives_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
