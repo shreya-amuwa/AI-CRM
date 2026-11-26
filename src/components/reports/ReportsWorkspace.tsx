@@ -24,7 +24,7 @@ const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e
 const SUBTITLE: Record<ReportContext['level'], string> = {
   MEMBER: 'Report your tasks each day. Your Team Lead and then your Department Head approve it.',
   TEAM_LEAD: 'Approve your team\'s daily reports and send your own to your Department Head.',
-  DEPARTMENT_HEAD: 'Approve the daily reports your Team Leads passed on, follow every team and send the weekly report to the CEO.',
+  DEPARTMENT_HEAD: 'Approve the daily reports your Team Leads passed on, follow every team and send the weekly report to the CEO (straight to HR when your department has none).',
   OPERATIONS_HEAD: 'Review the weekly department reports and open a department down to every Team Member.',
   SUPER_ADMIN: 'Every department\'s reports, from the Department Head down to each Team Member.'
 };

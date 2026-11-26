@@ -53,6 +53,20 @@ Statuses: `DRAFT, COMPILING, PENDING_OPERATIONS_HEAD, REVISION_REQUIRED, APPROVE
 (labels in `WEEKLY_STATUS_LABEL`). Approval sets `SENT_TO_HR` and records the Operations Head, comment and time; a revision returns it to the Department Head (revision number +1). HR reads only `SENT_TO_HR` and
 later; an unapproved week never reaches HR. The Department Head cannot approve their own week. Every step is in `work_report_package_events`.
 
+### 4.1 Departments with no Operations Head: straight to HR (migration `20270217000100_weekly_report_direct_to_hr.sql`)
+
+The route is chosen when the Department Head submits, by `private.weekly_reviewer_ids(department, function)` (the active Operations Head of that department and function):
+
+| The department / function has | The weekly report goes | Status after submit |
+| --- | --- | --- |
+| an active Operations Head | Department Head -> Operations Head decides -> HR | `PENDING_OPERATIONS_HEAD`, then `SENT_TO_HR` on approval |
+| no Operations Head, or the assigned one is suspended / revoked | Department Head -> **HR directly** | `SENT_TO_HR` at once; history entry *Sent directly to HR*; no Operations Head decision is recorded |
+
+From `SENT_TO_HR` both routes are identical: HR reviews every Team Lead and Team Member, submits the consolidated report to the Super Admin, and the Super Admin's leaderboard (which includes the HR rating) is calculated.
+Notes: HR is notified either way (the text says when there was no Operations Head); a week waiting for an Operations Head who has since left can be sent to HR by the Department Head; when an Operations Head is
+assigned later, the *next* weeks go through them and weeks already with HR are untouched; the Super Admin's routing review (*Operations Heads* tab) still lists the departments without one so they can assign one.
+Not changed: a Department Head's own **daily** report still needs an Operations Head reviewer, and the sent-to-HR week cannot be edited by the Department Head (HR has no "send back").
+
 API: `GET /work-reports/daily-summary`, `GET|POST /work-reports/weekly` (`weekStart` must be a Monday; `submit:true` sends it), `GET /work-reports/weekly/board`, `GET /work-reports/weekly/pending`,
 `POST /work-reports/weekly/:id/review`. The older `POST /work-reports/package` only accepts a Monday-to-Sunday week and calls the same function.
 

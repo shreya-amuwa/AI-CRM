@@ -13,6 +13,7 @@
 reset role;
 \i supabase/migrations/20261230000200_weekly_report_operations_routing.sql
 \i supabase/migrations/20261230000200_weekly_report_operations_routing.sql
+\i supabase/migrations/20270217000100_weekly_report_direct_to_hr.sql
 
 delete from work_report_packages where department_id in (select id from departments where slug like 'wkr-%');
 delete from work_reports where author_id in (select id from profiles where email like 'wkr.%@example.com');
@@ -163,12 +164,17 @@ set role authenticated;
 select test.login('wkr_ohs');
 select test.must_fail(format($$select work_report_review('%s', 'APPROVED', null)$$, (select v from wk where k = 'daily')), 'the Sales Operations Head cannot review it', null);
 
-\echo '   4. a department with no Operations Head: an explicit configuration issue, never an automatic approval'
+\echo '   4. a department with no Operations Head: the Department Head sends the week straight to HR (20270217000100); nothing is approved on anybody''s behalf'
 select test.login('wkr_dhn');
-select test.check((select w ->> 'routingIssue' like 'No active Operations Head is assigned to WKR None%' and jsonb_array_length(w -> 'reviewers') = 0
-                     from (select work_reports_weekly(test.wkweek()) w) x), 'the head sees why it cannot be submitted');
-select test.must_fail($$select work_report_weekly_save(test.wkweek(), 'None week', null, null, null, true)$$, 'submitting is refused, with the reason', 'No active Operations Head is assigned to WKR None');
+select test.check((select w ->> 'routingIssue' like 'No active Operations Head is assigned to WKR None%goes directly to HR%' and jsonb_array_length(w -> 'reviewers') = 0
+                     from (select work_reports_weekly(test.wkweek()) w) x), 'the head is told it goes to HR directly');
 select test.check((select work_report_weekly_save(test.wkweek(), 'None week', 'Kept', null, null, false) ->> 'status') = 'DRAFT', 'the draft is kept');
+select test.check((select work_report_weekly_save(test.wkweek(), 'None week', 'Kept', null, null, true) ->> 'status') = 'SENT_TO_HR', 'submitting sends it directly to HR');
+reset role;
+select test.check((select status = 'SENT_TO_HR' and oh_reviewer_id is null and oh_reviewed_at is null from work_report_packages where department_id = test.dept('wkr-n') and period_start = test.wkweek()),
+  'no Operations Head decision is recorded');
+delete from work_report_packages where department_id = test.dept('wkr-n') and period_start = test.wkweek();
+set role authenticated;
 select test.login('sa');
 select test.check((select x ->> 'issue' = 'MISSING' from jsonb_array_elements(weekly_report_routing_review()) x where (x ->> 'departmentId')::uuid = test.dept('wkr-n')),
   'the Super Admin''s routing review lists it as missing');
