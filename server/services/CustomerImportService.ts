@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CustomerDataImportError, CustomerDataImportLogin, CustomerDataImportResult } from '../../shared/contracts.js';
-import { clientAccountSchema, clientForgotPasswordSchema, customerDataImportSchema, uuidSchema } from '../../shared/validation.js';
+import { clientAccountSchema, clientForgotPasswordSchema, customerDataImportSchema, supportClientLoginSchema, uuidSchema } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
 import { automationSettings, clientEmailSettings, liveChannels } from '../automations/config.js';
 import { sendEmail } from '../automations/providers.js';
@@ -148,6 +148,22 @@ export class CustomerImportService {
       requestId: info?.requestId, ip: info?.ip, dedupeKey: `client-pwd-link:${customerId}:${Math.floor(Date.now() / 60_000)}`, metadata: { sent: r.sent }
     });
     return { email: t.email, ...r };
+  }
+
+  /**
+   * "Create login" on the Client login card, for the Support team member who looks after a customer with no login (e.g. added by the sheet sync
+   * without a Client Login E-mail). The database checks who may, that there is no login yet and that the e-mail is free; the sign-in gets a
+   * random password nobody knows and the client sets their own from the e-mailed link (the same path as the import).
+   */
+  async createLoginBySupport(actor: Actor, id: string, body: unknown, origin?: string): Promise<CustomerDataImportLogin> {
+    const customerId = parse(uuidSchema, id);
+    const { email } = parse(supportClientLoginSchema, body ?? {});
+    if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'Client logins are not set up on the server.');
+    const t = unwrap(await this.db.rpc('support_client_login_begin', { p_customer: customerId, p_email: email ?? null })) as { email: string; name: string; businessName: string };
+    const out = await this.createLogin(actor, { customerId, email: t.email, name: t.name, businessName: t.businessName }, origin, undefined,
+      async (cid, userId, mail) => unwrap(await this.db.rpc('support_client_login_record', { p_customer: cid, p_user_id: userId, p_email: mail })));
+    if (out.login !== 'CREATED') throw new AppError('CONFLICT', out.detail ?? 'The client login could not be created.');
+    return out;
   }
 
   /** The "Client login" card: is there a login, did the client choose a password, the last link and when the next can be sent. */

@@ -175,6 +175,10 @@ export const clientForgotPasswordSchema = z.object({ email: z.string().trim().to
 /** Staff "Forgot password?" on the CRM sign-in page: the same rules as the client one. */
 export const staffForgotPasswordSchema = clientForgotPasswordSchema;
 
+// ---- Support: "Create login" on the customer's Client login card (20270218000100) ----
+/** The e-mail the client will sign in with; empty = the customer's own e-mail. */
+export const supportClientLoginSchema = z.object({ email: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional() }).strict();
+
 export const customerActivityCreateSchema = z
   .object({
     type: z.string().trim().toUpperCase().regex(/^[A-Z][A-Z0-9_]{1,49}$/, 'Invalid activity type.'),
