@@ -305,13 +305,14 @@ export const ReportList: React.FC<{
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.items.map(r => (
-                <tr key={r.id} className="hover:bg-slate-50">
-                  {view !== 'mine' && <td className={tdCls}><button type="button" onClick={() => setOpenId(r.id)} className="font-bold text-slate-900 hover:text-blue-700 text-left">{r.authorName}</button><div className="text-xs text-slate-500">{r.authorRole === 'LEAD' ? 'Team Lead' : r.leadName ? `Team: ${r.leadName}` : 'Team Member'}</div></td>}
+                // the whole row opens the report; the buttons stay for the keyboard
+                <tr key={r.id} onClick={() => setOpenId(r.id)} data-testid="ai-report-row" className="hover:bg-slate-50 cursor-pointer">
+                  {view !== 'mine' && <td className={tdCls}><button type="button" onClick={e => { e.stopPropagation(); setOpenId(r.id); }} className="font-bold text-slate-900 hover:text-blue-700 text-left">{r.authorName}</button><div className="text-xs text-slate-500">{r.authorRole === 'LEAD' ? 'Team Lead' : r.leadName ? `Team: ${r.leadName}` : 'Team Member'}</div></td>}
                   <td className={tdCls}>{r.projectName}{r.taskTitle && <div className="text-xs text-slate-500">{r.taskTitle}</div>}</td>
                   <td className={tdCls}>{dateText(r.reportDate)}</td>
                   <td className={tdCls}>{dateTimeText(r.submittedAt)}</td>
                   <td className={tdCls}><ReportStatusBadge status={r.status} /></td>
-                  <td className={tdCls}><button type="button" onClick={() => setOpenId(r.id)} className="text-blue-600 hover:underline text-xs font-bold">Open</button></td>
+                  <td className={tdCls}><button type="button" onClick={e => { e.stopPropagation(); setOpenId(r.id); }} className="text-blue-600 hover:underline text-xs font-bold">Open</button></td>
                 </tr>
               ))}
             </tbody>

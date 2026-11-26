@@ -281,16 +281,16 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
             <thead className="border-b border-slate-100">
               <tr>
                 <th className={thCls}>Task</th><th className={thCls}>Project</th>{team && <th className={thCls}>Assigned to</th>}
-                <th className={thCls}>Assigned</th><th className={thCls}>Deadline</th><th className={thCls}>Priority</th><th className={thCls}>Status</th><th className={thCls}>Progress</th><th className={thCls}><span className="sr-only">Open</span></th>
+                <th className={thCls}>Assigned</th><th className={thCls}>Deadline</th><th className={thCls}>Priority</th><th className={thCls}>Status</th><th className={thCls}>Progress</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.items.map((t: AiStudioTask) => (
-                <tr key={t.id} className="hover:bg-slate-50">
+                // the whole row opens the task (its full details and update history); the title stays a button for the keyboard
+                <tr key={t.id} onClick={() => setOpenId(t.id)} data-testid="ai-task-row" className="hover:bg-slate-50 cursor-pointer">
                   <td className={`${tdCls} max-w-[22rem]`}>
-                    <button type="button" onClick={() => setOpenId(t.id)} className="text-left font-bold text-slate-900 hover:text-blue-700">{t.title}</button>
+                    <button type="button" onClick={e => { e.stopPropagation(); setOpenId(t.id); }} className="text-left font-bold text-slate-900 hover:text-blue-700">{t.title}</button>
                     {t.description && <p className="text-xs text-slate-500 line-clamp-2">{t.description}</p>}
-                    {t.lastUpdateNote && <p className="text-xs text-slate-500 mt-0.5">Latest: {t.lastUpdateNote}</p>}
                   </td>
                   <td className={tdCls}>{t.projectName}</td>
                   {team && <td className={tdCls}>{t.assigneeName}</td>}
@@ -301,7 +301,6 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
                   <td className={tdCls}><PriorityBadge priority={t.priority} /></td>
                   <td className={tdCls}><TaskStatusBadge status={t.status} /></td>
                   <td className={tdCls}><ProgressBar value={t.progress} /></td>
-                  <td className={tdCls}><button type="button" onClick={() => setOpenId(t.id)} className="text-blue-600 hover:underline text-xs font-bold">Open</button></td>
                 </tr>
               ))}
             </tbody>

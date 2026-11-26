@@ -29,6 +29,18 @@ let mode = 'normal';
 const item = (over) => ({ projectId: 'p' + Math.random(), name: 'Project', status: 'ACTIVE', mine: true, openTasks: 4, myOpenTasks: 1, ...over });
 const api = (req, res) => {
   const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+  if (req.url.startsWith('/api/v1/ai-studio/tasks')) {
+    const task = { id: 'aaaaaaaa-0000-4000-8000-000000000001', projectId: 'p1', projectName: 'AI Website', title: 'Changes discussed in meeting',
+      description: 'To perform the changes discussed in the landing page', priority: 'HIGH', status: 'IN_PROGRESS', progress: 90, dueDate: '2026-11-26',
+      assignedAt: '2026-11-26T04:00:00Z', startedAt: '2026-11-26T05:00:00Z', completedAt: null, assigneeId: 'u1', assigneeName: 'Aryan', assignedById: 'u2',
+      assignedByName: 'Head', lastUpdateNote: 'LONG-REPORT: the landing page is live, clean links, faster loading', lastUpdateAt: '2026-11-26T06:00:00Z',
+      completionNote: null, attachments: [], overdue: false };
+    if (/\/ai-studio\/tasks\/[0-9a-f-]{36}/.test(req.url)) {
+      return send(200, { success: true, data: { ...task, canUpdate: false, canEdit: false, history: [{ id: 'h1', kind: 'PROGRESS', status: 'IN_PROGRESS', progress: 90,
+        note: 'LONG-REPORT: the landing page is live, clean links, faster loading', authorName: 'Aryan', createdAt: '2026-11-26T06:00:00Z' }] } });
+    }
+    return send(200, { success: true, data: { items: [task], total: 1, page: 1, pageSize: 10 } });
+  }
   if (!req.url.startsWith('/api/v1/ai-studio/deadlines')) return send(404, { success: false, error: { code: 'NOT_FOUND', message: 'no fake' } });
   if (mode === 'error') return send(500, { success: false, error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } });
   const serverNow = Date.now() + SKEW_MS;
@@ -118,6 +130,17 @@ try {
     await page.evaluate(() => { window.chipAt = null; window.mount(false); });
     await page.getByRole('button', { name: /retry|try again/i }).first().waitFor();
     check(true, `${label}: an error is shown with a way to try again`);
+    // the task list: the row shows the title and the description only (not the long update), and clicking anywhere on the row opens the task
+    mode = 'normal';
+    await page.goto(base);
+    await page.evaluate(() => window.mountTasks());
+    const taskRow = page.getByTestId('ai-task-row').first();
+    await taskRow.waitFor();
+    check(/To perform the changes discussed/.test(await taskRow.innerText()) && !/LONG-REPORT/.test(await taskRow.innerText()), `${label}: a task row shows its description, not the whole update`);
+    check(await page.getByRole('button', { name: 'Open', exact: true }).count() === 0, `${label}: there is no separate Open button to find`);
+    await taskRow.locator('td').nth(3).click(); // a plain cell (the assigned date), not the title
+    await page.getByRole('dialog').getByText(/LONG-REPORT/).waitFor();
+    check(true, `${label}: clicking the row opens the task, and its update is there`);
     check(errors.length === 0, `${label}: no script errors`, errors);
     await ctx.close();
   }
