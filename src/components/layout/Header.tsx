@@ -9,6 +9,7 @@ import { Dialog } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { MenuButton, SignOutButton } from './shell';
+import { GlobalSearchTrigger } from '../search/GlobalSearch';
 
 interface HeaderProps {
   onNavigateHome?: () => void;
@@ -85,6 +86,7 @@ export const Header: React.FC<HeaderProps> = ({ onNavigateHome, showMenu = false
             </button>
           )}
 
+          <GlobalSearchTrigger />
           <LeaveCenter />
           <NotificationBell />
 

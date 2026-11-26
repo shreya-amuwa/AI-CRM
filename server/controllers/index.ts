@@ -168,6 +168,12 @@ export const chatController = {
 };
 
 // Crocodial integration: configuration (Super Admin; the database checks the caller) and an employee's own switch
+/** Global search (Ctrl / Cmd + K): what the caller may open, from the database's own rules. */
+export const searchController = {
+  search: (async ctx => ok(await svc(ctx).search.search(ctx.req.body))) as Handler,
+  record: (async ctx => ok(await svc(ctx).search.record(ctx.params.type, ctx.params.id))) as Handler
+};
+
 export const crocodialController = {
   overview: (async ctx => ok(await svc(ctx).crocodial.overview())) as Handler,
   rolloutSet: (async ctx => ok(await svc(ctx).crocodial.rolloutSet(ctx.req.body))) as Handler,

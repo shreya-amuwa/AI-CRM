@@ -39,9 +39,9 @@ select test.login('wkr_tmp');
 select test.check((select attendance_today() -> 'punchIn' ->> 'place') = 'Baner Road, Baner, Pune, Maharashtra 411045', 'the employee sees their own punch''s place');
 select test.login('hr_head');
 select test.check((select bool_or(x -> 'punchIn' ->> 'place' = 'Baner Road, Baner, Pune, Maharashtra 411045')
-                     from jsonb_array_elements(hr_attendance_punches(current_date - 1, current_date, test.dept('wkr-a'), null) -> 'rows') x), 'HR sees it in the punch list');
+                     from jsonb_array_elements(hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, test.dept('wkr-a'), null) -> 'rows') x), 'HR sees it in the punch list');
 select test.login('wkr_ohp');
-select test.check((select not bool_or(x::text like '%Baner%') from jsonb_array_elements(attendance_lunch_overview(current_date - 1, current_date) -> 'rows') x),
+select test.check((select not bool_or(x::text like '%Baner%') from jsonb_array_elements(attendance_lunch_overview((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date) -> 'rows') x),
   'an Operations Head never gets it (lunch only)');
 reset role;
 

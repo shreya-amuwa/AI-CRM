@@ -183,9 +183,9 @@ select test.check(test.wt_q($q$select count(*) from public.notifications where r
 \echo '   7. Accounts pays, rejects; the employee cancels'
 set role authenticated;
 select test.login('tm_b');
-select test.must_fail(format($$select payout_mark_paid('%s', 'UTR1', current_date, 0)$$, (select v from wt where k = 'w1')), 'an employee cannot pay their own withdrawal', 'Accounts');
+select test.must_fail(format($$select payout_mark_paid('%s', 'UTR1', (now() at time zone 'Asia/Kolkata')::date, 0)$$, (select v from wt where k = 'w1')), 'an employee cannot pay their own withdrawal', 'Accounts');
 select test.login('acc_m');
-select test.check((payout_mark_paid((select v from wt where k = 'w1')::uuid, 'UTR-WT-1', current_date, 0) ->> 'status') = 'PAID', 'Accounts pays it');
+select test.check((payout_mark_paid((select v from wt where k = 'w1')::uuid, 'UTR-WT-1', (now() at time zone 'Asia/Kolkata')::date, 0) ->> 'status') = 'PAID', 'Accounts pays it');
 select test.login('tm_b');
 select test.check((wallet_summary() ->> 'balance')::numeric = :earned0 + :credits0 - :paid0 + 5000 and (wallet_summary() ->> 'reserved')::numeric = 0 and (wallet_summary() #>> '{withdrawals,total}')::numeric = :paid0 + 1000,
   'the payment takes 1000 off the balance; the total withdrawn is 1000 more');
@@ -217,12 +217,10 @@ set role authenticated;
 select test.login('tm_b');
 select test.check((select (x ->> 'incentives')::numeric >= 5000 and (x ->> 'bonuses')::numeric >= 2000 and (x ->> 'withdrawn')::numeric >= 1000 from jsonb_array_elements(wallet_monthly(3)) x limit 1), 'this month: incentives, bonuses and withdrawals');
 select test.check(jsonb_array_length(wallet_monthly(12)) = 12 and jsonb_array_length(wallet_monthly(1)) = 1, 'the months asked for');
--- the filter compares India dates (Asia/Kolkata), so "today" here is the India date: current_date is UTC and is a day behind from 18:30 UTC
-select test.check((wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date + 1) ->> 'total')::integer = 0
-                  and (wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date - 1, p_to => (now() at time zone 'Asia/Kolkata')::date + 1) ->> 'total')::integer >= 5, 'the date filter');
+select test.check((wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date + 1) ->> 'total')::integer = 0 and (wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date - 1, p_to => (now() at time zone 'Asia/Kolkata')::date + 1) ->> 'total')::integer >= 5, 'the date filter');
 select test.check(jsonb_array_length(wallet_transactions(p_limit => 2) -> 'items') = 2 and (wallet_transactions(p_limit => 2, p_offset => 2) ->> 'total') = (wallet_transactions(p_limit => 2) ->> 'total'), 'paging');
 select test.must_fail($$select wallet_transactions(p_type => 'MAGIC')$$, 'an unknown type is refused', 'Unknown transaction type');
-select test.must_fail($$select wallet_transactions(p_from => current_date, p_to => current_date - 3)$$, 'an end before the start is refused', 'before');
+select test.must_fail($$select wallet_transactions(p_from => (now() at time zone 'Asia/Kolkata')::date, p_to => (now() at time zone 'Asia/Kolkata')::date - 3)$$, 'an end before the start is refused', 'before');
 
 \echo '   9. Isolation: nobody else sees this wallet'
 select test.login('tm_a');

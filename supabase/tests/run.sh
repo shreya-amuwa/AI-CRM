@@ -213,6 +213,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_sync_now_test.sql 2>&1 |
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_count_from_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_leads_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_refresh_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/global_search_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_role_dashboards_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/realtime_publication_trim_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/chat_inbox_mentions_reactions_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
