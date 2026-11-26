@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Plus } from 'lucide-react';
+import { AlertCircle, Plus, Trash2 } from 'lucide-react';
 import {
   AI_STUDIO_PRIORITIES,
   type AiStudioPerson,
@@ -12,6 +12,8 @@ import {
 import { aiStudioTaskCreateSchema, aiStudioTaskEditSchema, aiStudioTaskUpdateSchema } from '../../../shared/validation';
 import { aiStudioApi, type AiStudioTasksFilter } from '../../lib/api/aiStudio';
 import { errorMessage } from '../../lib/api/client';
+import { confirmTaskDeletion, countLine } from '../../lib/taskDeletion';
+import { toast } from '../../lib/feedback/feedbackStore';
 import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipeline/shared';
 import { Card, ghostBtn, fieldCls, primaryBtn, textareaCls } from '../tasks/head/headParts';
 import { notifyAiStudioChanged, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
@@ -30,8 +32,24 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
   const { data: task, error, reload } = useLoad<AiStudioTaskDetail>(() => aiStudioApi.task(id), [id]);
   const [mode, setMode] = useState<'view' | 'update' | 'edit'>('view');
   const changed = () => { notifyAiStudioChanged(); onChanged?.(); reload(); setMode('view'); };
+  // Delete: shown only when the database says so (the Team Lead who gave it, the Department Head); the delete is checked there again
+  const remove = async () => {
+    if (!task?.canDelete) return;
+    const done = await confirmTaskDeletion({
+      title: task.title, assigneeName: task.assigneeName, status: TASK_STATUS_LABELS[task.status] ?? task.status, dueDate: task.dueDate ? dateText(task.dueDate) : null,
+      alsoRemoved: [countLine(task.history.length, 'history entry', 'history entries'), countLine(task.reportCount, 'daily report entry', 'daily report entries')],
+      run: () => aiStudioApi.deleteTask(task.id)
+    });
+    if (!done) return;
+    toast.success(`Task deleted: ${task.title}`);
+    notifyAiStudioChanged();
+    onChanged?.();
+    onClose();
+  };
+  // Escape inside the delete confirmation closes only the confirmation
+  const close = () => { if (!document.querySelector('[data-testid="app-dialog-layer"]')) onClose(); };
   return (
-    <Dialog title={task?.title ?? 'Task'} description={task ? `${task.projectName} · assigned to ${task.assigneeName}` : undefined} onClose={onClose} wide>
+    <Dialog title={task?.title ?? 'Task'} description={task ? `${task.projectName} · assigned to ${task.assigneeName}` : undefined} onClose={close} wide>
       {error && <ErrorBanner message={error} onRetry={reload} />}
       {!task && !error && <Spinner label="Loading the task…" />}
       {task && (
@@ -53,10 +71,16 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
               </ul>
             </div>
           )}
-          {mode === 'view' && (task.canUpdate || task.canEdit) && (
+          {mode === 'view' && (task.canUpdate || task.canEdit || task.canDelete) && (
             <div className="flex flex-wrap gap-2">
               {task.canUpdate && <button type="button" className={primaryBtn} onClick={() => setMode('update')}>Update progress</button>}
               {task.canEdit && <button type="button" className={ghostBtn} onClick={() => setMode('edit')}>Edit task / deadline</button>}
+              {task.canDelete && (
+                <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 sm:ml-auto"
+                  onClick={() => void remove()} data-testid="ai-task-delete">
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete task
+                </button>
+              )}
             </div>
           )}
           {mode === 'update' && <UpdateForm task={task} onCancel={() => setMode('view')} onDone={changed} />}

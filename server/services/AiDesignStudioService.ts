@@ -1,4 +1,5 @@
 import type {
+  AdsAssignmentDeleteResult,
   AdsAssignment, AdsAssignmentDetail, AdsClient, AdsContext, AdsIssue, AdsIssueDetail, AdsNotice, AdsOverview, AdsPerson, AdsReport, AdsReportDetail
 } from '../../shared/contracts.js';
 import {
@@ -38,6 +39,9 @@ export class AiDesignStudioService {
     const b = parse(adsAssignmentReassignSchema, body);
     return this.repo.assignmentReassign(parse(uuidSchema, id), b.assigneeId, b.note);
   }
+
+  /** The Team Lead who gave the work or the Department Head (the database checks). */
+  assignmentDelete(id: string): Promise<AdsAssignmentDeleteResult> { return this.repo.assignmentDelete(parse(uuidSchema, id)); }
 
   reportSubmit(body: unknown): Promise<AdsReport> { return this.repo.reportSubmit(parse(adsReportSchema, body)); }
   reports(query: unknown): Promise<AdsReport[]> { return this.repo.reports(parse(adsReportListQuerySchema, query ?? {})); }
