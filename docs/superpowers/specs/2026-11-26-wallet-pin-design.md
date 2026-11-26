@@ -9,8 +9,8 @@ The Super Admin needs no PIN. Later PRs move My Income (with Withdraw) into the 
 ## Goals
 - First open: **Set Wallet PIN** (6 digits, entered twice). Afterwards: **Enter Wallet PIN** before anything is shown.
 - One PIN per person, whatever dashboard; one unlock lasts for that sign-in session, 15 minutes (renewed while the wallet is used).
-- 5 wrong PINs lock the wallet for 15 minutes. Change PIN (old PIN + new). **Forgot PIN**: a one-time reset link e-mailed to the person, valid 30 minutes,
-  usable only by that person while signed in.
+- 5 wrong PINs lock the wallet for 15 minutes. Change PIN (old PIN + new). **Forgot PIN**: a one-time reset code e-mailed to the person, valid 30 minutes, at most 5 tries,
+  usable only by that person while signed in (typed into the Wallet with the new PIN).
 - The PIN is stored hashed (bcrypt via pgcrypto); the **database** refuses the wallet's own data (`wallet_summary`, `wallet_transactions`,
   `wallet_monthly`) until the PIN was entered in this sign-in session - the browser cannot skip it.
 
@@ -28,5 +28,6 @@ the browser carries (more moving parts than the sign-in session the database alr
 
 ## Builder's calls
 - 6 digits only; refuse obvious ones (all the same digit, 123456 / 654321).
+- Reset code instead of a link (builder's call): 8 characters from an unambiguous alphabet; no routing into a dashboard tab is needed.
 - The reset e-mail goes through the existing client/staff e-mail sender; in test mode the link is not sent and the screen says so.
 - A session without a `session_id` claim (older tokens) never counts as unlocked: the person enters the PIN again after signing in.
