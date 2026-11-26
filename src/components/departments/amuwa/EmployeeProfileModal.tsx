@@ -10,6 +10,7 @@ import { DocumentPreviewModal } from '../../common/DocumentPreviewModal';
 import { HR_EMPLOYEE_FILE_KIND_LABEL, HR_EMPLOYEE_FILE_KINDS, type HrEmployeeFile, type HrEmployeeFileKind } from '../../../../shared/contracts';
 import { hrEmployeeFilesApi } from '../../../lib/api/endpoints';
 import { hrEmployeeKeyOf, uploadHrEmployeeFile } from '../../../lib/hrEmployeeFiles';
+import { confirmAction } from '../../feedback/AppFeedback';
 
 /** What HR picks from when uploading to the documents vault (leave mails are uploaded from the leave form). */
 const VAULT_KINDS = HR_EMPLOYEE_FILE_KINDS.filter(k => k !== 'LEAVE_MAIL' && k !== 'LEAVE_CANCELLATION_MAIL');
@@ -77,6 +78,9 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   const [cancellingLeaveId, setCancellingLeaveId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelMailFile, setCancelMailFile] = useState<File | null>(null);
+  // shown inside each leave form (a missing attachment, an upload that failed), never as a browser alert
+  const [leaveFormError, setLeaveFormError] = useState<string | null>(null);
+  const [cancelFormError, setCancelFormError] = useState<string | null>(null);
 
   // 2. Documents vault: files are stored in R2 through the API (only their metadata in the database) and listed from there,
   //    so they survive a refresh. HR staff upload / delete; every preview / download gets a short-lived signed link.
@@ -135,7 +139,11 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   };
 
   const deleteFile = async (file: HrEmployeeFile) => {
-    if (!window.confirm(`Delete "${file.fileName}" from this employee's documents? This cannot be undone.`)) return;
+    if (!(await confirmAction({
+      title: `Delete "${file.fileName}"?`,
+      description: "It is removed from this employee's documents. This cannot be undone.",
+      confirmLabel: 'Delete document', cancelLabel: 'Keep document', variant: 'destructive'
+    }))) return;
     try {
       await hrEmployeeFilesApi.remove(file.id);
       setFiles(prev => prev.filter(f => f.id !== file.id));
@@ -156,9 +164,10 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
     e.preventDefault();
     if (leaveBusy) return;
     if (!leaveMailFile) {
-      alert('Mandatory Mail Attachment Required: Please attach approval email screenshot or PDF file from your computer!');
+      setLeaveFormError('Attach the approval e-mail (a screenshot or PDF) before filing this leave.');
       return;
     }
+    setLeaveFormError(null);
 
     const leaveId = `LR-${Date.now()}`;
     let mail: HrEmployeeFile;
@@ -166,7 +175,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
     try {
       mail = await uploadHrEmployeeFile(emp, leaveMailFile, 'LEAVE_MAIL', { leaveRef: leaveId });
     } catch (err) {
-      alert(`The mail attachment could not be saved: ${errorText(err, 'upload failed.')}`);
+      setLeaveFormError(`The mail attachment could not be saved: ${errorText(err, 'upload failed.')}`);
       setLeaveBusy(false);
       return;
     }
@@ -209,16 +218,17 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
     e.preventDefault();
     if (leaveBusy) return;
     if (!cancellingLeaveId || !cancelMailFile) {
-      alert('Mandatory Cancellation Mail Attachment Required: Please attach cancellation approval mail file!');
+      setCancelFormError('Attach the cancellation approval e-mail (a screenshot or PDF) before confirming.');
       return;
     }
+    setCancelFormError(null);
 
     let cancelMail: HrEmployeeFile;
     setLeaveBusy(true);
     try {
       cancelMail = await uploadHrEmployeeFile(emp, cancelMailFile, 'LEAVE_CANCELLATION_MAIL', { leaveRef: cancellingLeaveId, note: cancelReason || null });
     } catch (err) {
-      alert(`The cancellation mail could not be saved: ${errorText(err, 'upload failed.')}`);
+      setCancelFormError(`The cancellation mail could not be saved: ${errorText(err, 'upload failed.')}`);
       setLeaveBusy(false);
       return;
     }
@@ -275,8 +285,12 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
   };
 
   // 7. Action: Mark as Left Company
-  const handleMarkLeft = () => {
-    const confirmLeft = window.confirm(`Are you sure you want to mark ${emp.name} as "Left Company"?`);
+  const handleMarkLeft = async () => {
+    const confirmLeft = await confirmAction({
+      title: `Mark ${emp.name} as left the company?`,
+      description: "Today is recorded as their leaving date and their status becomes Left.",
+      confirmLabel: 'Mark as left', cancelLabel: 'Keep as active', variant: 'destructive'
+    });
     if (!confirmLeft) return;
 
     const updated = {
@@ -646,7 +660,8 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                       type="file"
                       required
                       accept={FILE_ACCEPT}
-                      onChange={e => setLeaveMailFile(e.target.files?.[0] || null)}
+                      onChange={e => { setLeaveMailFile(e.target.files?.[0] || null); setLeaveFormError(null); }}
+                      aria-invalid={leaveFormError ? true : undefined}
                       className="text-xs font-mono"
                     />
                     {leaveMailFile && (
@@ -656,6 +671,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                       </span>
                     )}
                   </div>
+                  {leaveFormError ? <p role="alert" className="text-[11px] font-semibold text-rose-700" data-testid="leave-form-error">{leaveFormError}</p> : null}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-1">
@@ -858,9 +874,11 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                   type="file"
                   required
                   accept={FILE_ACCEPT}
-                  onChange={e => setCancelMailFile(e.target.files?.[0] || null)}
+                  onChange={e => { setCancelMailFile(e.target.files?.[0] || null); setCancelFormError(null); }}
+                  aria-invalid={cancelFormError ? true : undefined}
                   className="text-xs font-mono pt-1"
                 />
+                {cancelFormError ? <p role="alert" className="text-[11px] font-semibold text-rose-700">{cancelFormError}</p> : null}
               </div>
 
               <div className="flex gap-2 pt-2">

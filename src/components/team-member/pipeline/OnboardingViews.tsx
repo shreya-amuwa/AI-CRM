@@ -1,4 +1,6 @@
 import { WorkflowStatusPanel } from '../../support/consultant/WorkflowStatusPanel';
+import { AiWebsiteOnboardingCard } from './AiWebsiteOnboarding';
+import { AI_WEBSITE_SERVICE } from '../../../../shared/validation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
@@ -492,6 +494,9 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
         </div>
       )}
 
+      {/* AI Website: the client's onboarding details from the lead, so nobody asks the client again */}
+      <AiWebsiteOnboardingCard data={c.aiWebsiteOnboarding} hasService={c.services.includes(AI_WEBSITE_SERVICE)} />
+
       {mode === 'sales' && (
         <>
           {direct && journey && <DirectJourneyCard journey={journey} customerId={c.id} onChanged={changed} />}
@@ -562,7 +567,7 @@ export const OnboardingCustomerView: React.FC<{ id: string; onBack: () => void; 
             </div>
             {noRecipient && !toAccounts && !forwarded && !withAccounts && (
               <p role="status" className="mt-3 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                This department has no active {recipient} yet, so the customer cannot be sent. Ask the Super Admin or your Department Head to assign one.
+                This department has no active {recipient} yet, so the customer cannot be sent. Ask the Managing Director or your Department Head to assign one.
               </p>
             )}
             {confirmSend && !forwarded && !withAccounts && (

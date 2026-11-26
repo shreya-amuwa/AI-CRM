@@ -32,7 +32,7 @@ const mkDept = async (slug, name) => {
   return id;
 };
 const withOh = await mkDept('wde-with', 'WDE With Operations Head');
-const noOh = await mkDept('wde-none', 'WDE Without Operations Head');
+const noOh = await mkDept('wde-none', 'WDE Unassigned');
 const home = await mkDept('wde-home', 'WDE Home');
 const hrTeam = (await q(`insert into public.teams (department_id, name, division) select id, 'WDE HR', 'GENERAL' from public.departments where slug = 'hr' returning id`))[0].id;
 const accounts = {};
@@ -64,7 +64,7 @@ const login = async (key, ready = 'nav button') => {
 };
 const openWeekly = async p => {
   current = p;
-  await p.locator('nav button').filter({ hasText: /^\s*Reports(\s*\d+)?\s*$/ }).first().click();
+  await p.locator('nav button').filter({ hasText: /^\s*(Daily )?Reports(\s*\d+)?\s*$/ }).first().click();
   await p.waitForSelector('[data-testid="reports-workspace"]', { timeout: 20000 }).catch(() => fail('the Reports page did not open'));
   await p.getByRole('tab', { name: /Weekly Department Report/ }).click();
   await p.getByRole('form', { name: 'Weekly report' }).waitFor({ timeout: 20000 }).catch(() => fail('the weekly report form did not open'));
@@ -74,14 +74,14 @@ const openWeekly = async p => {
 let p = await login('dhwith');
 await openWeekly(p);
 expect(await p.locator('[data-testid="weekly-routing-issue"]').count() === 0, 'with an Operations Head: no "goes directly to HR" note');
-expect(await p.getByRole('button', { name: 'Submit to Operations Head' }).count() > 0 && await p.getByRole('button', { name: 'Send to HR' }).count() === 0, 'with an Operations Head: the button says Submit to Operations Head');
+expect(await p.getByRole('button', { name: 'Submit to CEO' }).count() > 0 && await p.getByRole('button', { name: 'Send to HR' }).count() === 0, 'with an Operations Head: the button says Submit to CEO');
 await p.close();
 
 // ------------------------------------------------------------------ a department WITHOUT one: straight to HR
 p = await login('dhnone');
 await openWeekly(p);
 const note = await p.locator('[data-testid="weekly-routing-issue"]').innerText().catch(() => '');
-expect(/WDE Without Operations Head/.test(note) && /directly to HR/.test(note), 'without an Operations Head: the head is told the week goes directly to HR', note);
+expect(/WDE Unassigned/.test(note) && /directly to HR/.test(note), 'without an Operations Head: the head is told the week goes directly to HR', note);
 expect(await p.getByRole('button', { name: 'Send to HR' }).count() > 0, 'without an Operations Head: the button says Send to HR');
 await p.getByLabel('Weekly report title').fill('Weekly report without an Operations Head');
 await p.getByLabel('Remarks / Department summary').fill('Steady week.');
@@ -95,7 +95,7 @@ const pk = (await q(`select status, oh_reviewer_id, sent_to_hr_at from public.wo
 expect(pk && pk.status === 'SENT_TO_HR' && pk.oh_reviewer_id === null && pk.sent_to_hr_at, 'the week is SENT_TO_HR with no Operations Head decision invented', pk);
 const wk = (await q(`select period_start::text d from public.work_report_packages where department_id = $1`, [noOh]))[0].d;
 const ov = await api(hrId, 'GET', `/hr-reviews/overview?weekStart=${wk}`);
-expect(ov.departments.some(d => d.name === 'WDE Without Operations Head'), 'HR sees the department for review', ov.departments.map(d => d.name));
+expect(ov.departments.some(d => d.name === 'WDE Unassigned'), 'HR sees the department for review', ov.departments.map(d => d.name));
 const withPk = await q(`select count(*)::int n from public.work_report_packages where department_id = $1`, [withOh]);
 expect(withPk[0].n === 0, 'the department with an Operations Head sent nothing to HR');
 console.log(`ALL ${step} WEEKLY DIRECT-TO-HR BROWSER CHECKS PASSED`);

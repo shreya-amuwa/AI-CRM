@@ -20,6 +20,7 @@ import {
   Building2,
   UserCheck
 } from 'lucide-react';
+import { confirmAction } from '../../feedback/AppFeedback';
 
 export interface HRStaffMember {
   id: string;
@@ -227,8 +228,12 @@ export const AmuwaHRStaffManagement: React.FC = () => {
     setShowModal(false);
   };
 
-  const handleDeleteStaff = (id: string, name: string) => {
-    if (window.confirm(`Are you sure you want to remove ${name} from the HR staff roster?`)) {
+  const handleDeleteStaff = async (id: string, name: string) => {
+    if (await confirmAction({
+      title: `Remove ${name} from the HR staff roster?`,
+      description: 'They are taken off this roster.',
+      confirmLabel: 'Remove from roster', cancelLabel: 'Keep on roster', variant: 'destructive'
+    })) {
       setStaffList(prev => prev.filter(s => s.id !== id));
       showToast(`🗑️ Removed ${name} from HR team.`);
     }
@@ -308,7 +313,7 @@ export const AmuwaHRStaffManagement: React.FC = () => {
               HR Staff Management
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Superadmin oversight of the internal Human Resources personnel, recruiter roster, attendance, and leave approvals
+              Managing Director oversight of the internal Human Resources personnel, recruiter roster, attendance, and leave approvals
             </p>
           </div>
         </div>
@@ -652,7 +657,7 @@ export const AmuwaHRStaffManagement: React.FC = () => {
         <div className="space-y-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
             <h4 className="font-bold text-slate-900 text-sm">HR Staff Leave Applications</h4>
-            <p className="text-xs text-slate-500 mt-0.5">Leaves submitted by HR team members requiring direct Superadmin approval</p>
+            <p className="text-xs text-slate-500 mt-0.5">Leaves submitted by HR team members requiring direct Managing Director approval</p>
           </div>
 
           <div className="space-y-3">

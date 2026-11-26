@@ -10,6 +10,7 @@ import { StaffManagementPanel } from './StaffManagementPanel';
 import { DepartmentEmployeeDirectoryPanel } from '../employees/DepartmentEmployeeDirectory';
 import { EmployeeRequestsPanel } from '../employees/EmployeeRequestsPanel';
 import { OperationsHeadsAdminPanel } from '../employees/OperationsHeadsAdmin';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * Team Member Management: one full-screen page with three tabs, used by the Super Admin, Department Head and Team Lead dashboards.
@@ -72,9 +73,15 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
   const showTab = useCallback(
     (next: TeamMemberTab) => {
       if (next === tab || !tabs.includes(next)) return;
-      if (tab === 'access' && accessDirty && !window.confirm('You have unsaved access changes. Leave this tab anyway? They will be lost.')) return;
-      if (tab === 'access') setAccessDirty(false);
-      setTab(next);
+      void (async () => {
+        if (tab === 'access' && accessDirty && !(await confirmAction({
+          title: 'Leave without saving the access changes?',
+          description: 'The access changes you made on this tab are not saved yet and will be lost.',
+          confirmLabel: 'Leave without saving', cancelLabel: 'Stay on this tab', variant: 'destructive'
+        }))) return;
+        if (tab === 'access') setAccessDirty(false);
+        setTab(next);
+      })();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tab, accessDirty, tabs.join(',')]
@@ -98,9 +105,9 @@ export const TeamMemberManagement: React.FC<Props> = ({ departmentSlug, subDept,
 
   const meta: Record<TeamMemberTab, { label: string; icon: typeof Users; hint: string }> = {
     add: { label: 'Add Team Member', icon: UserPlus, hint: isTeamLead ? 'Add a team member to your team. The account is active at once: no approval is needed.' : 'Create an account. Only the roles you may create are offered.' },
-    approvals: { label: 'Employee Approvals', icon: ClipboardCheck, hint: isSuperAdmin ? 'Operations Heads HR asked for. You decide them and choose the departments they manage.' : 'Team Leads and Team Members HR asked for in your department.' },
+    approvals: { label: 'Employee Approvals', icon: ClipboardCheck, hint: isSuperAdmin ? 'CEOs HR asked for. You decide them and choose the departments they manage.' : 'Team Leads and Team Members HR asked for in your department.' },
     directory: { label: 'Approved Employees', icon: UserCheck, hint: 'Put approved Team Members under a Team Lead.' },
-    operations: { label: 'Operations Heads', icon: Building2, hint: 'The departments each Operations Head manages, and who approves the Department Heads of each.' },
+    operations: { label: 'CEOs', icon: Building2, hint: 'The departments each CEO manages, and who approves the Department Heads of each.' },
     members: {
       label: 'Team Members',
       icon: Users,

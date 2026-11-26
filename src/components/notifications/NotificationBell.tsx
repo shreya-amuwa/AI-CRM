@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Bell, BellOff } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { SideDrawer } from '../common/SideDrawer';
-import { openChat } from '../chat/chatEvents';
-import { openFromNotification } from '../issues/issueEvents';
+import { openNotificationTarget } from './openNotification';
+import { MyAvailabilityBadge } from '../meetings/CeoPresence';
+import { fullTime } from '../../lib/notifications/notificationCategory';
 
 /**
  * The bell in the header: the unread count, and a side panel with the person's own notifications (newest first),
@@ -15,6 +16,8 @@ export const NotificationBell: React.FC = () => {
 
   return (
     <>
+      {/* the CEO's live meeting availability, on every dashboard (Realtime) */}
+      <MyAvailabilityBadge />
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -54,7 +57,7 @@ export const NotificationBell: React.FC = () => {
                 <li key={n.id}>
                   <button
                     type="button"
-                    onClick={() => { markAsRead(n.id); if (n.entityType === 'chat' && n.entityId) { setOpen(false); openChat({ clientConversationId: n.entityId }); } else if (openFromNotification(n)) setOpen(false); }}
+                    onClick={() => { markAsRead(n.id); if (openNotificationTarget(n)) setOpen(false); }}
                     aria-label={`${n.isRead ? '' : 'Unread: '}${n.title}`}
                     className={`w-full text-left px-5 py-3.5 hover:bg-slate-50 transition-colors cursor-pointer ${n.isRead ? '' : 'bg-blue-50/50'}`}
                   >
@@ -68,7 +71,10 @@ export const NotificationBell: React.FC = () => {
                           )}
                         </div>
                         {n.message && <p className="text-[11px] text-slate-500 mt-0.5 break-words">{n.message}</p>}
-                        <p className="text-[10px] text-slate-400 mt-1">{n.timestamp}</p>
+                        <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1.5">
+                          <span data-testid="notification-category" className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">{n.category}</span>
+                          <time dateTime={n.createdAt} title={fullTime(n.createdAt)}>{n.timestamp}</time>
+                        </p>
                       </div>
                     </div>
                   </button>

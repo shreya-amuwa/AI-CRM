@@ -5,18 +5,21 @@ import { BLOOD_GROUPS, EMPLOYEE_REQUEST_ROLES, HR_DESIGNATIONS, HR_DESIGNATION_R
 import { useDepartments } from '../../context/DepartmentContext';
 import { errorMessage } from '../../lib/api/client';
 import { employeesApi } from '../../lib/api/endpoints';
+import { requestSidesForDepartment, staffChoicesForDepartment } from '../../lib/auth/departmentRoles';
 import { btn, inputCls } from '../team-member/pipeline/shared';
 
+const SIDE_LABEL = { SALES: 'Sales', SUPPORT: 'Support', GENERAL: 'General' } as const;
+
 export const ROLE_LABEL: Record<EmployeeRequestRole, string> = {
-  OPERATIONS_HEAD: 'Operations Head', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
+  OPERATIONS_HEAD: 'CEO', DEPARTMENT_HEAD: 'Department Head', TEAM_HEAD: 'Team Lead', TEAM_MEMBER: 'Team Member'
 };
 /** Who approves which role (the database decides; this only tells the person submitting what will happen). */
 export const APPROVER_LABEL: Record<EmployeeRequestRole, string> = {
-  OPERATIONS_HEAD: 'the Super Admin', DEPARTMENT_HEAD: 'the Operations Head who owns the department', TEAM_HEAD: 'the Department Head', TEAM_MEMBER: 'the Department Head'
+  OPERATIONS_HEAD: 'the Managing Director', DEPARTMENT_HEAD: 'the CEO who owns the department', TEAM_HEAD: 'the Department Head', TEAM_MEMBER: 'the Department Head'
 };
 
 /** The title of the approver, for the confirmation (the database decides who it is). */
-const APPROVER_TITLE: Record<EmployeeRequestRole, string> = { OPERATIONS_HEAD: 'Super Admin', DEPARTMENT_HEAD: 'Operations Head', TEAM_HEAD: 'Department Head', TEAM_MEMBER: 'Department Head' };
+const APPROVER_TITLE: Record<EmployeeRequestRole, string> = { OPERATIONS_HEAD: 'Managing Director', DEPARTMENT_HEAD: 'CEO', TEAM_HEAD: 'Department Head', TEAM_MEMBER: 'Department Head' };
 
 const label = 'block text-xs font-semibold text-slate-700';
 
@@ -28,7 +31,6 @@ const label = 'block text-xs font-semibold text-slate-700';
 export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeRequest) => void }> = ({ onSubmitted }) => {
   const { departments } = useDepartments();
   const usable = useMemo(() => departments.filter(d => d.dbId), [departments]);
-  const roles = EMPLOYEE_REQUEST_ROLES;
   const [pickedRole, setRole] = useState<EmployeeRequestRole>('TEAM_MEMBER');
   const [departmentId, setDepartmentId] = useState('');
   const [hrDesignation, setHrDesignation] = useState<HrDesignation>('HR Assistant');
@@ -47,7 +49,14 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
 
   // The HR department has its own three designations instead of the generic roles: HR Assistant, HR Recruiter, HR Admin Head (the Department Head of HR). The choice maps to
   // the existing role, so the approval route is unchanged (a Department Head still needs the Super Admin / Operations Head). The database checks the same rule.
-  const isHrDept = usable.find(d => d.dbId === departmentId)?.id === 'hr';
+  const deptSlug = usable.find(d => d.dbId === departmentId)?.id;
+  const isHrDept = deptSlug === 'hr';
+  // Amuwa Design Studio: Department Head, Team Lead and Team Member only, and no Sales / Support side (the database refuses them too)
+  const roles = useMemo(() => staffChoicesForDepartment(deptSlug, EMPLOYEE_REQUEST_ROLES), [deptSlug]);
+  const sides = useMemo(() => requestSidesForDepartment(deptSlug), [deptSlug]);
+  // switching the department never keeps a role or side the new department does not have
+  useEffect(() => { if (!roles.includes(pickedRole)) setRole('TEAM_MEMBER'); }, [roles, pickedRole]);
+  useEffect(() => { if (division && !sides.includes(division)) setDivision(''); }, [sides, division]);
   const role: EmployeeRequestRole = isHrDept ? HR_DESIGNATION_ROLE[hrDesignation] : pickedRole;
   // choosing HR clears a generic role that does not exist there (Operations Head / Team Lead), and leaving HR starts again from Team Member
   useEffect(() => { setRole('TEAM_MEMBER'); }, [isHrDept]);
@@ -114,7 +123,8 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
         {role !== 'OPERATIONS_HEAD' && (
           <label className={label}>Side
             <select className={`${inputCls} mt-1`} value={division} onChange={e => setDivision(e.target.value as typeof division)}>
-              <option value="">Not specified</option><option value="SALES">Sales</option><option value="SUPPORT">Support</option><option value="GENERAL">General</option>
+              <option value="">Not specified</option>
+              {sides.map(v => <option key={v} value={v}>{SIDE_LABEL[v]}</option>)}
             </select>
           </label>
         )}
@@ -136,7 +146,7 @@ export const EmployeeRequestForm: React.FC<{ onSubmitted?: (request: EmployeeReq
       {done && (
         <p role="status" className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" data-testid="submitted-for-approval">
           <span className="block text-sm font-bold">Employee Submitted for {APPROVER_TITLE[done.requestedRole as EmployeeRequestRole]} Approval</span>
-          {done.employee?.name} is waiting for {done.approver?.name ?? (done.awaitingOwner ? 'an Operations Head to be assigned to the department' : APPROVER_LABEL[(done.requestedRole as EmployeeRequestRole)])}. The status is in "Requests you sent" below.
+          {done.employee?.name} is waiting for {done.approver?.name ?? (done.awaitingOwner ? 'an CEO to be assigned to the department' : APPROVER_LABEL[(done.requestedRole as EmployeeRequestRole)])}. The status is in "Requests you sent" below.
         </p>
       )}
       <div className="flex justify-end">

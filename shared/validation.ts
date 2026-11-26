@@ -3,6 +3,7 @@
  * feedback). The database enforces the same rules again with constraints.
  */
 import { z } from 'zod';
+import { OFFER_FIELD_KEY, offerTemplateProblems, type OfferTemplateContent } from './offerTemplates.js';
 import { mobileProblem, normalizeWebsite } from './contactValidation.js';
 import { businessProfileSchema, quotationContentSchema, scopeContentSchema, SCOPE_SECTIONS } from './baContent.js';
 import { isValidGstinFormat, normalizeGstin } from './gst.js';
@@ -66,7 +67,14 @@ import {
   MEETING_MODES,
   MEETING_STATUSES,
   TC_WORKFLOW_STATUSES,
-  META_WORKFLOW_STATUSES
+  META_WORKFLOW_STATUSES,
+  ADS_PRIORITIES,
+  ADS_NOTICE_CATEGORIES,
+  ADS_NOTICE_STATUSES,
+  ADS_ASSIGNMENT_STATUSES,
+  ADS_REPORT_STATUSES,
+  ADS_ISSUE_CATEGORIES,
+  ADS_ISSUE_STATUSES
 } from './contracts.js';
 
 const trimmed = (max: number) => z.string().trim().max(max);
@@ -592,8 +600,46 @@ const leadFields = {
   notes: optionalText(5000)
 };
 
+// ---- AI Website client onboarding (migration 20270113000200) ----------------------------------------------------------------------------
+/** The service whose leads carry the AI Website onboarding details. */
+export const AI_WEBSITE_SERVICE = 'AI_WEBSITE';
+/** The types of business offered (the CRM's business categories; the database holds the same list: private.ai_website_business_types). */
+export const AI_WEBSITE_BUSINESS_TYPES = [
+  'Jewellery / Gold', 'Retail', 'Restaurant / Food', 'Healthcare', 'Education', 'Real Estate',
+  'Beauty / Salon', 'Fitness', 'Manufacturing', 'Services', 'Other'
+] as const;
+/** A 10-digit Indian mobile number; spaces and dashes, and a leading +91 / 91 / 0, are removed. */
+const aiWebsiteMobile = z.preprocess(
+  v => (typeof v === 'string' ? v.replace(/[\s\-()]/g, '').replace(/^(\+91|91|0)(?=\d{10}$)/, '') : v),
+  z.string().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number.')
+);
+export const aiWebsiteOnboardingSchema = z
+  .object({
+    clientName: trimmed(160).min(1, 'Client name is required.'),
+    mobile: aiWebsiteMobile,
+    email: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), emailSchema.optional()).refine(v => !!v, 'Email is required.'),
+    businessName: trimmed(200).min(1, 'Business name is required.'),
+    onGoogleMaps: z.boolean({ required_error: 'Choose whether the business is on Google Maps.', invalid_type_error: 'Choose whether the business is on Google Maps.' }),
+    googleMapsLink: z.preprocess(
+      v => (typeof v === 'string' && v.trim() === '' ? null : v),
+      trimmed(500).regex(/^https?:\/\/\S+$/i, 'Enter the Google Maps link as a web address (https://...).').nullable().optional()
+    ),
+    city: trimmed(80).min(1, 'City is required.'),
+    businessType: z.enum(AI_WEBSITE_BUSINESS_TYPES, { errorMap: () => ({ message: 'Choose the type of business.' }) }),
+    businessTypeOther: optionalText(120)
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.businessType === 'Other' && !v.businessTypeOther) ctx.addIssue({ code: 'custom', path: ['businessTypeOther'], message: 'Type the type of business.' });
+  })
+  // a link belongs to a business that is on Google Maps; another type than "Other" needs no typed type
+  .transform(v => ({ ...v, googleMapsLink: v.onGoogleMaps ? v.googleMapsLink ?? null : null, businessTypeOther: v.businessType === 'Other' ? v.businessTypeOther ?? null : null }));
+export type AiWebsiteOnboardingInput = z.infer<typeof aiWebsiteOnboardingSchema>;
+/** What a form sends (before the schema trims and normalises it). */
+export type AiWebsiteOnboardingBody = z.input<typeof aiWebsiteOnboardingSchema>;
+
 export const leadCreateSchema = z
-  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional(), subscriptions: leadSubscriptionsSchema.optional() })
+  .object({ ...leadFields, services: serviceCodes.min(1, 'Select at least one service.'), ownerId: uuidSchema.optional(), subscriptions: leadSubscriptionsSchema.optional(), aiWebsiteOnboarding: aiWebsiteOnboardingSchema.optional() })
   .strict();
 export type LeadCreateInput = z.infer<typeof leadCreateSchema>;
 
@@ -603,7 +649,8 @@ export const leadUpdateSchema = z
   .extend({
     services: serviceCodes.min(1, 'Select at least one service.').optional(),
     subscriptions: leadSubscriptionsSchema.optional(),
-    activityNote: optionalText(500)
+    activityNote: optionalText(500),
+    aiWebsiteOnboarding: aiWebsiteOnboardingSchema.optional()
   })
   .strict()
   .refine(v => Object.keys(v).length > 0, { message: 'Nothing to update.' });
@@ -1573,7 +1620,9 @@ export const chatSendSchema = z
     body: z.string().max(CHAT_MAX_BODY, `A message can have at most ${CHAT_MAX_BODY} characters.`).default(''),
     clientMsgId: uuidSchema,
     replyTo: uuidSchema.optional(),
-    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([])
+    attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([]),
+    /** @mentions in a group (migration 20270116000300): the members tagged; the database refuses anyone outside the group. */
+    mentions: z.array(uuidSchema).max(50, 'Tag at most 50 people in one message.').default([])
   })
   .strict()
   .refine(v => v.body.trim().length > 0 || v.attachmentIds.length > 0, { message: 'Write a message first.', path: ['body'] });
@@ -1597,9 +1646,22 @@ export const chatSendEncryptedSchema = z
     clientMsgId: uuidSchema,
     replyTo: uuidSchema.optional(),
     attachmentIds: z.array(uuidSchema).max(5, 'You can attach up to 5 files to one message.').default([]),
-    e2ee: chatE2eeSchema
+    e2ee: chatE2eeSchema,
+    mentions: z.array(uuidSchema).max(50, 'Tag at most 50 people in one message.').default([])
   })
   .strict();
+
+// ---- Chat: Delete Inbox, reactions (migration 20270116000300) ----
+export const CHAT_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'] as const;
+export type ChatReactionEmoji = (typeof CHAT_REACTIONS)[number];
+/** Add / change (another emoji) / remove (null) my reaction to a message: one per person and message. */
+export const chatReactSchema = z.object({ emoji: z.enum(CHAT_REACTIONS, { errorMap: () => ({ message: 'Choose one of the offered reactions.' }) }).nullable() }).strict();
+export const chatReactionsQuerySchema = z.object({
+  ids: z.string().max(12000).transform(v => v.split(',').map(x => x.trim()).filter(Boolean)).pipe(z.array(uuidSchema).max(300))
+}).strict();
+/** The Super Admin types this to delete every internal chat (the database checks it again). */
+export const CHAT_PURGE_CONFIRMATION = 'DELETE ALL CHATS';
+export const chatPurgeSchema = z.object({ confirm: z.literal(CHAT_PURGE_CONFIRMATION, { errorMap: () => ({ message: `Type ${CHAT_PURGE_CONFIRMATION} to confirm.` }) }) }).strict();
 const chatKeyBackupBlobSchema = z
   .object({
     v: z.literal(1),
@@ -1639,6 +1701,8 @@ export const verifierDepartmentsSchema = z.object({ departmentIds: z.array(uuidS
 export const chatEscalateSchema = z
   .object({ messageId: uuidSchema.nullish(), targetId: uuidSchema, note: z.string().trim().max(500, 'The note can have at most 500 characters.').nullish() })
   .strict();
+/** Take over or release "currently handling" on a client conversation (information only; the database checks who may). */
+export const chatHandlingSchema = z.object({ action: z.enum(['TAKE', 'RELEASE']) }).strict();
 export const chatSearchQuerySchema = z.object({ q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatReviewQuerySchema = z.object({ q: z.string().trim().max(100).optional(), page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(30) });
 export const chatDirectSchema = z.object({ profileId: uuidSchema }).strict();
@@ -2106,6 +2170,9 @@ export const issueHrListQuerySchema = z
     from: caseDateTime.optional(),
     to: caseDateTime.optional(),
     search: trimmed(120).optional(),
+    // issue routing (20270128000200): the order, and whether HR escalated it to the Developer Team
+    sort: z.enum(['NEWEST', 'OLDEST', 'PRIORITY', 'STATUS', 'DEPARTMENT', 'EMPLOYEE']).optional(),
+    routing: z.enum(['ALL', 'WITH_HR', 'ESCALATED_TO_DEVELOPERS']).optional(),
     ...casePaging
   })
   .strict();
@@ -2757,7 +2824,8 @@ export const hrDocRequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('NDA'), employeeKey: hrDocEmployeeKeySchema, fields: hrNdaFieldsSchema }).strict(),
   // the Experience Letter may carry its edited wording and the Offer Letter always does (block "HR letters" below, migration 20261231000700)
   z.object({ type: z.literal('EXPERIENCE'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrExperienceLetterFieldsSchema) }).strict(),
-  z.object({ type: z.literal('OFFER'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => hrOfferFieldsSchema) }).strict()
+  // the Offer Letter: a role-based template (20270206000100: the template, its version and the values) or the earlier master template
+  z.object({ type: z.literal('OFFER'), employeeKey: hrDocEmployeeKeySchema, fields: z.lazy(() => z.union([hrRoleOfferFieldsSchema, hrOfferFieldsSchema])) }).strict()
 ]);
 export const hrDocListQuerySchema = z.object({ employeeKey: hrDocEmployeeKeySchema.optional(), type: hrDocTypeSchema.optional() }).strict();
 
@@ -2902,6 +2970,8 @@ const meetingGuestSchema = z.object({
 export const meetingCreateSchema = z.object({
   title: trimmed(200).min(2, 'Give the meeting a title.'),
   description: optionalText(4000),
+  /** Extra message to the CEO with a request for their time (the agenda is the description). */
+  message: optionalText(2000),
   kind: z.enum(CALENDAR_MEETING_KINDS).default('MEETING'),
   hostId: uuidSchema.optional().nullable(),
   startsAt: isoInstant,
@@ -2943,7 +3013,23 @@ export const meetingDecisionSchema = z.object({
   { message: 'Propose a start and an end time.', path: ['startsAt'] });
 export const meetingProposalAnswerSchema = z.object({ accept: z.boolean() }).strict();
 export const meetingResponseSchema = z.object({ response: z.enum(['ACCEPTED', 'DECLINED', 'TENTATIVE']) }).strict();
+/** The dashboard sections of the meeting requests with the CEO. */
+export const ceoRequestsQuerySchema = z.object({
+  section: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'RESCHEDULED', 'ALL']).default('ALL'),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();
 export const meetingDirectoryQuerySchema = z.object({ search: optionalText(100) }).strict();
+// ---- Live meeting availability (migration 20270116000400): Enter Meeting may name the meeting being entered ----
+export const meetingPresenceEnterSchema = z.object({ meetingId: uuidSchema.nullable().optional() }).strict();
+/** The Super Admin's fixed meeting-room link (20270128000100): https, or empty to remove it. */
+/** HR marks (or undoes) the CEO's office arrival; ceoId only when there is more than one CEO (20270128000300) */
+export const ceoArrivalSchema = z.object({ ceoId: uuidSchema.optional() }).strict();
+export const meetingRoomLinkSchema = z.object({ roomLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable()) }).strict();
+/** GET /meetings/presence?ids=a,b,c: the live status of up to 100 colleagues (20270122000100); without ids, one's own. */
+export const meetingPresenceQuerySchema = z.object({
+  ids: z.preprocess(v => (typeof v === 'string' ? v.split(',').map(x => x.trim()).filter(Boolean) : v), z.array(uuidSchema).min(1).max(100)).optional()
+}).strict();
 export const meetingBusySchema = z.object({
   profileIds: z.array(uuidSchema).min(1).max(30),
   from: isoInstant,
@@ -3063,13 +3149,132 @@ export const reminderCallListQuerySchema = z
   .strict();
 export type ReminderCallListQuery = z.infer<typeof reminderCallListQuerySchema>;
 
+// ---- AI Design Studio (migration 20270110000100) -------------------------------------------------------------------------------------------
+// The browser sends no role, team or reviewer: the ads_* database functions read those from the login. The database checks every value again.
+const adsLinkSchema = z
+  .object({ name: trimmed(120).optional(), url: z.string().trim().max(500).regex(/^https?:\/\/\S+$/i, 'An attachment link must start with http:// or https://.') })
+  .strict();
+const adsLinks = z.array(adsLinkSchema).max(5, 'Add up to 5 attachment links.');
+const adsOptionalId = z.preprocess(v => (v === '' || v === null ? undefined : v), uuidSchema.optional());
+const adsPriority = z.enum(ADS_PRIORITIES);
+const adsRequiredText = (max: number, what: string) => z.string().trim().min(1, `Enter the ${what}.`).max(max);
+
+const adsClientFields = {
+  clientName: adsRequiredText(150, 'client name'),
+  companyName: optionalText(150),
+  contactPerson: optionalText(150),
+  contactNumber: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? null : v), phoneSchema.nullable().optional()),
+  email: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? null : v), emailSchema.nullable().optional()),
+  businessAddress: optionalText(500),
+  requirements: optionalText(4000),
+  designService: optionalText(200),
+  workDescription: optionalText(4000),
+  remarks: optionalText(2000),
+  attachments: adsLinks.optional()
+};
+export const adsClientCreateSchema = z.object(adsClientFields).strict();
+export type AdsClientCreateInput = z.infer<typeof adsClientCreateSchema>;
+export const adsClientUpdateSchema = z.object({ ...adsClientFields, status: z.enum(['ACTIVE', 'INACTIVE']) }).partial().strict();
+export type AdsClientUpdateInput = z.infer<typeof adsClientUpdateSchema>;
+export const adsClientListQuerySchema = z.object({ search: trimmed(100).optional(), status: z.enum(['ACTIVE', 'INACTIVE']).optional() }).strict();
+
+export const adsNoticeCreateSchema = z
+  .object({
+    clientId: uuidSchema,
+    title: adsRequiredText(200, 'notice title'),
+    category: z.enum(ADS_NOTICE_CATEGORIES),
+    description: adsRequiredText(4000, 'notice description'),
+    priority: adsPriority.default('MEDIUM'),
+    assignedTo: adsOptionalId
+  })
+  .strict();
+export type AdsNoticeCreateInput = z.infer<typeof adsNoticeCreateSchema>;
+export const adsNoticeStatusSchema = z.object({ status: z.enum(ADS_NOTICE_STATUSES) }).strict();
+export const adsNoticeListQuerySchema = z.object({ clientId: adsOptionalId, status: z.enum(ADS_NOTICE_STATUSES).optional() }).strict();
+
+export const adsAssignmentCreateSchema = z
+  .object({
+    clientId: adsOptionalId,
+    parentId: adsOptionalId,
+    assigneeId: uuidSchema,
+    title: z.preprocess(v => (typeof v === 'string' && v.trim() === '' ? undefined : v), trimmed(200).optional()),
+    description: optionalText(4000),
+    instructions: optionalText(2000),
+    priority: adsPriority.optional(),
+    dueDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable().optional()),
+    attachments: adsLinks.optional()
+  })
+  .strict();
+export type AdsAssignmentCreateInput = z.infer<typeof adsAssignmentCreateSchema>;
+export const adsAssignmentListQuerySchema = z
+  .object({ view: z.enum(['mine', 'team', 'all']).default('all'), status: z.enum(ADS_ASSIGNMENT_STATUSES).optional(), clientId: adsOptionalId })
+  .strict();
+export const adsAssignmentStatusSchema = z
+  .object({ status: z.enum(ADS_ASSIGNMENT_STATUSES), progress: z.coerce.number().int().min(0).max(100).optional(), note: optionalText(2000) })
+  .strict();
+export const adsAssignmentUpdateSchema = z
+  .object({ dueDate: z.preprocess(v => (v === '' ? null : v), isoDate.nullable()).optional(), priority: adsPriority.optional(), instructions: optionalText(2000) })
+  .strict();
+export const adsAssignmentReassignSchema = z.object({ assigneeId: uuidSchema, note: optionalText(500) }).strict();
+
+export const adsReportSchema = z
+  .object({
+    id: adsOptionalId,
+    reportDate: z.preprocess(v => (v === '' ? undefined : v), isoDate.optional()),
+    clientId: adsOptionalId,
+    assignmentId: adsOptionalId,
+    workCompleted: adsRequiredText(4000, 'work completed today'),
+    workInProgress: optionalText(4000),
+    pendingWork: optionalText(4000),
+    challenges: optionalText(4000),
+    remarks: optionalText(2000),
+    attachments: adsLinks.optional(),
+    clientRequestId: trimmed(80).optional()
+  })
+  .strict();
+export type AdsReportInput = z.infer<typeof adsReportSchema>;
+export const adsReportListQuerySchema = z
+  .object({
+    view: z.enum(['mine', 'team', 'all']).default('mine'),
+    status: z.enum(ADS_REPORT_STATUSES).optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    clientId: adsOptionalId,
+    authorId: adsOptionalId,
+    leadId: adsOptionalId
+  })
+  .strict();
+export const adsReportReviewSchema = z.object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: optionalText(2000) }).strict();
+
+export const adsIssueCreateSchema = z
+  .object({
+    title: adsRequiredText(200, 'issue title'),
+    category: z.enum(ADS_ISSUE_CATEGORIES),
+    description: adsRequiredText(4000, 'description'),
+    clientId: adsOptionalId,
+    assignmentId: adsOptionalId,
+    priority: adsPriority.default('MEDIUM'),
+    attachments: adsLinks.optional(),
+    clientRequestId: trimmed(80).optional()
+  })
+  .strict();
+export type AdsIssueCreateInput = z.infer<typeof adsIssueCreateSchema>;
+export const adsIssueListQuerySchema = z.object({ view: z.enum(['mine', 'team', 'all']).default('mine'), status: z.enum(ADS_ISSUE_STATUSES).optional() }).strict();
+export const adsIssueUpdateSchema = z
+  .object({ status: z.enum(ADS_ISSUE_STATUSES).optional(), note: optionalText(2000) })
+  .strict()
+  .refine(v => v.status !== undefined || (v.note !== undefined && v.note !== null), { message: 'Write a response or choose a status.' });
+export const adsIssueEscalateSchema = z.object({ note: optionalText(2000) }).strict();
+
 
 // ---- AI Studio (migration 20270105000100) -------------------------------------------------------------------------------------------------
 export const aiStudioProjectSchema = z
   .object({
     name: z.string().trim().min(2, 'Enter the project name (at least 2 characters).').max(120, 'The project name can have at most 120 characters.'),
     description: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The description can have at most 2000 characters.').nullable().optional()),
-    status: z.enum(AI_STUDIO_PROJECT_STATUSES).optional()
+    status: z.enum(AI_STUDIO_PROJECT_STATUSES).optional(),
+    /** Left out = the deadline stays as it is; null (or an empty string) = no deadline; a time with its offset (+05:30) = due then. Only the Super Admin / Department Head. */
+    deadlineAt: z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter the deadline as a date and time.' }).nullable().optional())
   })
   .strict();
 export type AiStudioProjectInput = z.infer<typeof aiStudioProjectSchema>;
@@ -3144,6 +3349,15 @@ export const aiStudioReportReviewSchema = z
   })
   .strict()
   .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write the remarks the employee should act on.', path: ['comment'] });
+// ---- AI Studio Performance Management (20270214000100): the Team Lead corrects a report waiting for their approval ----
+const aiReportPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Each part of the report can have at most 4000 characters.').nullable().optional());
+export const aiStudioReportLeadEditSchema = z
+  .object({
+    workCompleted: z.string().trim().min(1, 'Describe the work completed today.').max(4000, 'Each part of the report can have at most 4000 characters.'),
+    workInProgress: aiReportPart, pendingWork: aiReportPart, blockers: aiReportPart, remarks: aiReportPart,
+    reason: z.string().trim().min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.').max(1000, 'The reason can have at most 1000 characters.')
+  })
+  .strict();
 
 export const aiStudioReportsQuerySchema = z
   .object({
@@ -3158,3 +3372,588 @@ export const aiStudioReportsQuerySchema = z
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
   })
   .strict();
+
+// ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
+/** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */
+export const crocodialCredentialRefSchema = z
+  .string()
+  .trim()
+  .transform(v => v.toUpperCase())
+  .pipe(z.string().regex(/^CROCODIAL_TOKEN_[A-Z0-9_]{1,40}$/, 'Enter the NAME of the server setting that holds the token, like CROCODIAL_TOKEN_MPILLAR (never the token itself).'));
+export const crocodialConnectionSaveSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    name: z.string().trim().min(2, 'Give the connection a name.').max(120),
+    externalAccountLabel: z.string().trim().max(200).optional().nullable(),
+    credentialRef: crocodialCredentialRefSchema,
+    enabled: z.boolean().optional()
+  })
+  .strict();
+export const crocodialRolloutSchema = z
+  .object({ departmentId: uuidSchema, division: z.literal('SALES'), allowed: z.boolean(), note: z.string().trim().max(300).optional().nullable() })
+  .strict();
+export const crocodialDepartmentLinkSchema = z
+  .object({
+    connectionId: uuidSchema,
+    departmentId: uuidSchema,
+    division: z.literal('SALES'),
+    enabled: z.boolean(),
+    stage: z.enum(['PILOT', 'PRODUCTION']).default('PILOT')
+  })
+  .strict();
+export const crocodialMappingSchema = z
+  .object({
+    connectionId: uuidSchema,
+    externalEmployeeId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    profileId: uuidSchema,
+    departmentId: uuidSchema
+  })
+  .strict();
+export const crocodialRevokeSchema = z.object({ reason: z.string().trim().max(300).optional().nullable() }).strict();
+/** The date an approved mapping counts activity from: a day (YYYY-MM-DD), or null for "from the first stored activity". */
+export const crocodialCountFromSchema = z
+  .object({ from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').nullable().optional() })
+  .strict();
+export const crocodialActivityQuerySchema = z
+  .object({
+    profileId: uuidSchema.optional(),
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional()
+  })
+  .strict();
+/** A person's Crocodial leads: search, filter and a page (the database decides whose leads the caller may see). */
+export const crocodialRefreshSchema = z
+  .object({ scope: z.enum(['SELF', 'TEAM', 'DEPARTMENT', 'ALL']), departmentId: uuidSchema.optional() })
+  .strict();
+export const crocodialLeadsQuerySchema = z
+  .object({
+    profileId: uuidSchema.optional(),
+    search: z.string().trim().max(100).optional(),
+    filter: z.enum(['ALL', 'NEVER_CALLED', 'FOLLOW_UP_DUE']).optional(),
+    page: z.coerce.number().int().min(1).max(10000).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional()
+  })
+  .strict();
+export const crocodialTeamActivityQuerySchema = z
+  .object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a date like 2026-11-19.').optional(),
+    departmentId: uuidSchema.optional(),
+    teamId: uuidSchema.optional()
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Sales Department Head: role-wise sections (migration 20270117000300)
+// ---------------------------------------------------------------------------
+export const SALES_ROLES = ['TELECALLER', 'BUSINESS_ASSOCIATE'] as const;
+export const SALES_ROLE_SORTS = [
+  'name', 'teamLead', 'status',
+  // Crocodial
+  'calls', 'connected', 'notConnected', 'uniqueNumbers', 'talkSeconds',
+  // CRM
+  'leadsCreated', 'convertedLeads', 'leadsAssigned', 'demosScheduled', 'demosCompleted', 'quotations', 'dealsClosed', 'dealValue'
+] as const;
+export const salesRoleSchema = z.enum(SALES_ROLES, { message: 'Choose Telecaller or Business Associate.' });
+const salesRolePeriod = {
+  from: isoDate.optional(),
+  to: isoDate.optional()
+};
+export const salesRoleListQuerySchema = z
+  .object({
+    ...salesRolePeriod,
+    search: trimmed(120).optional(),
+    teamLeadId: uuidSchema.optional(),
+    status: z.enum(['ACTIVE', 'SUSPENDED', 'REVOKED']).optional(),
+    sort: z.enum(SALES_ROLE_SORTS).default('name'),
+    page: z.coerce.number().int().min(1).default(1),
+    // the export asks for up to 500 rows at once
+    pageSize: z.coerce.number().int().min(1).max(500).default(25)
+  })
+  .strict()
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'The start date is after the end date.', path: ['from'] });
+export const salesRolePersonQuerySchema = z.object(salesRolePeriod).strict()
+  .refine(q => !q.from || !q.to || q.from <= q.to, { message: 'The start date is after the end date.', path: ['from'] });
+
+// ---------------------------------------------------------------------------
+// Client meetings (migration 20270122000200)
+// ---------------------------------------------------------------------------
+export const clientMeetingSchema = z.object({
+  clientName: trimmed(200).min(1, 'Enter the client\'s name.'),
+  clientEmail: z.string().trim().toLowerCase().max(320).email('Enter a valid client e-mail address.'),
+  companyName: trimmed(200).min(1, 'Enter the company name.'),
+  title: trimmed(200).min(2, 'Give the meeting a title.'),
+  agenda: trimmed(4000).min(5, 'Describe the agenda (at least 5 characters).'),
+  startsAt: isoInstant,
+  endsAt: isoInstant,
+  timezone: optionalText(64),
+  mode: z.enum(['ONLINE', 'OFFLINE'], { message: 'Choose Online or Offline.' }),
+  meetLink: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(500).regex(/^https:\/\/\S+$/, 'Use an https:// link.').nullable().optional()),
+  location: optionalText(500),
+  hostId: uuidSchema.optional().nullable(),
+  clientRequestId: z.string().trim().min(8).max(80)
+}).strict()
+  .refine(v => Date.parse(v.endsAt) > Date.parse(v.startsAt), { message: 'The meeting must end after it starts.', path: ['endsAt'] })
+  .refine(v => v.mode !== 'ONLINE' || !!v.meetLink, { message: 'Give the meeting link for an online meeting.', path: ['meetLink'] })
+  .refine(v => v.mode !== 'OFFLINE' || (v.location ?? '').trim().length >= 3, { message: 'Give the meeting place for an offline meeting.', path: ['location'] });
+export const meetingMailIdSchema = z.coerce.number().int().positive();
+export const clientMeetingListQuerySchema = z.object({
+  scope: z.enum(['UPCOMING', 'PAST', 'ALL']).default('UPCOMING'),
+  status: z.enum(['SCHEDULED', 'RESCHEDULED', 'COMPLETED', 'CANCELLED']).optional()
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Bugs for the Developers team (migration 20270122000300)
+// ---------------------------------------------------------------------------
+export const DEV_BUG_STATUSES = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
+// Issue routing (migration 20270128000200): what an issue to the Developer Team is about, and how urgent
+export const DEV_ISSUE_CATEGORIES = ['BUG', 'FEATURE_REQUEST', 'ACCESS_LOGIN', 'DATA_ISSUE', 'PERFORMANCE', 'OTHER'] as const;
+export const DEV_ISSUE_CATEGORY_LABELS: Record<(typeof DEV_ISSUE_CATEGORIES)[number], string> = {
+  BUG: 'Bug / error', FEATURE_REQUEST: 'Feature request', ACCESS_LOGIN: 'Access / login', DATA_ISSUE: 'Wrong or missing data', PERFORMANCE: 'Slow / performance', OTHER: 'Other'
+};
+export const DEV_ISSUE_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export const bugSubmitSchema = z.object({
+  title: trimmed(200).min(3, 'Give the issue a title (at least 3 characters).'),
+  description: trimmed(5000).min(10, 'Describe the issue (at least 10 characters).'),
+  steps: optionalText(5000),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
+  clientRequestId: z.string().trim().min(8).max(80),
+  category: z.enum(DEV_ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }).default('BUG'),
+  priority: z.enum(DEV_ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }).default('MEDIUM'),
+  /** optional context (HR's reports): which department / employee the problem affects */
+  affectedDepartmentId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional()),
+  affectedEmployeeId: z.preprocess(v => (v === '' ? null : v), uuidSchema.nullable().optional())
+}).strict();
+export const bugListQuerySchema = z.object({
+  status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(),
+  assignee: z.union([z.enum(['ME', 'UNASSIGNED']), uuidSchema]).optional(),
+  search: trimmed(120).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50)
+}).strict();
+/** GET /bugs/mine: the reporter's own issues to the Developer Team (OPEN: still being worked on, DONE: resolved, rejected or closed) */
+export const bugMyListQuerySchema = z.object({ status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(), search: trimmed(120).optional() }).strict();
+/** the reporter answers the developers */
+export const bugFollowUpSchema = z.object({
+  message: trimmed(3000).min(2, 'Write your message.'),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([])
+}).strict();
+/** a developer replies to the reporter; requestInfo: the issue waits for the reporter (Pending information) */
+export const bugReplySchema = z.object({ message: trimmed(3000).min(2, 'Write the reply.'), requestInfo: z.boolean().default(false) }).strict();
+/** HR escalates an employee issue to the Developer Team (once; the priority defaults to the issue's) */
+export const issueEscalateSchema = z.object({
+  note: optionalText(2000),
+  category: z.enum(DEV_ISSUE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }).optional(),
+  priority: z.enum(DEV_ISSUE_PRIORITIES, { errorMap: () => ({ message: 'Choose a priority.' }) }).optional()
+}).strict();
+export const bugAssignSchema = z.object({ developerId: uuidSchema.nullable() }).strict();
+export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note: optionalText(3000) }).strict()
+  .refine(v => !['RESOLVED', 'REJECTED'].includes(v.status) || (v.note ?? '').trim().length >= 5,
+    { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['note'] });
+export const bugCommentSchema = z.object({ note: trimmed(3000).min(1, 'Write a comment.') }).strict();
+export const devTeamSetSchema = z.object({ profileId: uuidSchema, member: z.boolean(), lead: z.boolean().optional() }).strict();
+
+// ---------------------------------------------------------------------------
+// Post-meeting summaries and the CEO's Meeting Decisions (migration 20270124000200). The database checks every rule again.
+// ---------------------------------------------------------------------------
+const meetingSummaryItemKey = z.string().uuid('Every entry needs its key.');
+export const meetingSummaryDecisionSchema = z.object({
+  key: meetingSummaryItemKey,
+  title: z.string().trim().min(2, 'Give the decision a title.').max(200),
+  description: optionalText(2000),
+  departmentId: uuidSchema.nullable().optional(),
+  teamId: uuidSchema.nullable().optional(),
+  decidedBy: uuidSchema.nullable().optional(),
+  status: z.enum(['PROPOSED', 'APPROVED', 'IN_PROGRESS', 'IMPLEMENTED', 'ON_HOLD']).default('APPROVED')
+}).strict();
+export const meetingSummaryActionSchema = z.object({
+  key: meetingSummaryItemKey,
+  title: z.string().trim().min(2, 'Give the action item a title.').max(200),
+  description: optionalText(2000),
+  assigneeId: uuidSchema,
+  dueDate: isoDate.nullable().optional(),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'DONE', 'BLOCKED', 'CANCELLED']).default('PENDING'),
+  decisionKey: uuidSchema.nullable().optional()
+}).strict();
+export const meetingSummaryBlockerSchema = z.object({
+  key: meetingSummaryItemKey,
+  category: z.enum(['PENDING_APPROVAL', 'RESOURCE', 'OPERATIONAL', 'CUSTOMER_ESCALATION', 'DEPENDENCY', 'CEO_DECISION', 'OTHER']).default('OTHER'),
+  description: z.string().trim().min(2, 'Describe the blocker.').max(2000),
+  needsCeoAttention: z.boolean().default(false)
+}).strict();
+export const meetingSummaryContentSchema = z.object({
+  purposeNote: optionalText(1000),
+  executiveSummary: optionalText(8000),
+  discussionPoints: z.array(z.string().trim().max(500, 'Keep each discussion point under 500 characters.')).max(50).default([]),
+  noDecisions: z.boolean().default(false),
+  decisions: z.array(meetingSummaryDecisionSchema).max(50).default([]),
+  actions: z.array(meetingSummaryActionSchema).max(100).default([]),
+  noBlockers: z.boolean().default(false),
+  blockers: z.array(meetingSummaryBlockerSchema).max(50).default([]),
+  nextSteps: optionalText(4000),
+  followUp: z.object({ required: z.boolean().default(false), date: isoDate.nullable().optional(), outcome: optionalText(1000) }).strict().optional()
+}).strict()
+  .refine(v => !(v.noDecisions && v.decisions.length), { message: 'Remove the decisions or untick "No decisions were made".', path: ['decisions'] })
+  .refine(v => !(v.noBlockers && v.blockers.length), { message: 'Remove the blockers or untick "No blockers".', path: ['blockers'] });
+export const meetingSummaryDraftSchema = z.object({ summary: meetingSummaryContentSchema, version: z.number().int().min(1) }).strict();
+/** Submitting also needs the executive summary, the decisions (or "no decisions") and the blockers (or "no blockers"). */
+export const meetingSummarySubmitSchema = z.object({
+  summary: meetingSummaryContentSchema,
+  version: z.number().int().min(1),
+  changeNote: optionalText(1000)
+}).strict().superRefine((v, ctx) => {
+  const s = v.summary;
+  if (!s.executiveSummary || s.executiveSummary.length < 20) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'executiveSummary'], message: 'Write the executive summary: what happened in the meeting (at least 20 characters).' });
+  }
+  if (!s.decisions.length && !s.noDecisions) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'decisions'], message: 'Record the decisions taken, or tick "No decisions were made".' });
+  }
+  if (!s.blockers.length && !s.noBlockers) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'blockers'], message: 'Record the issues or blockers, or tick "No blockers".' });
+  }
+  if (s.followUp?.required && !s.followUp.date) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['summary', 'followUp', 'date'], message: 'Give the target date of the follow-up.' });
+  }
+});
+export const meetingAttendanceSchema = z.object({
+  attendedIds: z.array(uuidSchema).min(1, 'Mark at least one colleague who attended.').max(200),
+  version: z.number().int().min(1).optional()
+}).strict();
+export const meetingSummaryOwnerSchema = z.object({ ownerId: uuidSchema, reason: optionalText(500), version: z.number().int().min(1).optional() }).strict();
+export const meetingSummaryClarifySchema = z.object({ message: z.string().trim().min(5, 'Write the question.').max(2000) }).strict();
+export const meetingSummaryReplySchema = z.object({ message: z.string().trim().min(2, 'Write the answer.').max(2000) }).strict();
+export const meetingSummaryFlagSchema = z.object({
+  itemType: z.enum(['DECISION', 'BLOCKER']),
+  itemId: uuidSchema,
+  flag: z.boolean(),
+  note: optionalText(1000)
+}).strict();
+export const meetingActionUpdateSchema = z.object({
+  status: z.enum(['PENDING', 'IN_PROGRESS', 'DONE', 'BLOCKED', 'CANCELLED']),
+  note: optionalText(1000)
+}).strict();
+export const meetingSummaryListQuerySchema = z.object({
+  scope: z.enum(['MINE', 'TEAM']).default('MINE'),
+  tab: z.enum(['PENDING', 'DRAFT', 'SUBMITTED', 'OVERDUE', 'ALL']).default('PENDING'),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();
+const meetingReportFilters = {
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  departmentId: uuidSchema.optional(),
+  teamId: uuidSchema.optional(),
+  leaderId: uuidSchema.optional(),
+  leaderRank: z.coerce.number().int().min(1).max(4).optional()
+};
+export const meetingReportsOverviewQuerySchema = z.object(meetingReportFilters).strict()
+  .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export const meetingReportsQuerySchema = z.object({
+  ...meetingReportFilters,
+  status: z.enum(['SUBMITTED', 'PENDING', 'OVERDUE', 'REVISION_REQUESTED', 'DRAFT']).optional(),
+  attention: booleanParam.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict().refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export const meetingReportActionsQuerySchema = z.object({
+  ...meetingReportFilters,
+  status: z.enum(['OPEN', 'OVERDUE', 'DONE', 'ALL']).default('OPEN'),
+  assigneeId: uuidSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict().refine(v => !v.from || !v.to || v.from <= v.to, { message: 'Choose a period that ends on or after its start.', path: ['to'] });
+export type MeetingSummaryContentInput = z.infer<typeof meetingSummaryContentSchema>;
+
+// ---------------------------------------------------------------------------
+// Notification Health (migration 20270126000200): Super Admin and HR staff; the database checks the caller again.
+// ---------------------------------------------------------------------------
+export const NOTIFICATION_HEALTH_STATUSES = ['READY', 'SETUP_REQUIRED', 'NOTIFICATIONS_BLOCKED', 'DEVICE_NOT_REGISTERED', 'PUSH_UNAVAILABLE',
+  'DELIVERY_FAILED', 'RETRY_PENDING', 'REMINDERS_DISABLED', 'COMPANY_PAUSED'] as const;
+export const NOTIFICATION_HEALTH_ISSUES = [...NOTIFICATION_HEALTH_STATUSES, 'REMINDER_MISSING', 'SOUND_UNKNOWN'] as const;
+export const notificationHealthQuerySchema = z.object({
+  departmentId: uuidSchema.optional(),
+  role: z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']).optional(),
+  issue: z.enum(NOTIFICATION_HEALTH_ISSUES).optional()
+}).strip();
+export type NotificationHealthQuery = z.infer<typeof notificationHealthQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Email Management (migration 20270201000100): Super Admin settings, senders, CC / BCC rules, suppression; the history for everyone
+// (scoped by the database). The database checks every value and the caller again.
+// ---------------------------------------------------------------------------
+export const EMAIL_CATEGORIES = ['AUTH', 'CREDENTIALS', 'RECRUITMENT', 'INTERVIEW', 'HR', 'CLIENT_ONBOARDING', 'META_VERIFICATION', 'TECHNICAL', 'ACCOUNTS',
+  'INVOICE', 'PAYMENT', 'RENEWAL', 'MEETING', 'SUPPORT', 'SALES', 'GENERAL'] as const;
+/** Never copied to anyone (one-time links, codes, passwords). */
+export const EMAIL_SENSITIVE_CATEGORIES = ['AUTH', 'CREDENTIALS'] as const;
+export const EMAIL_RULE_TARGETS = ['CUSTOMER_OWNER', 'RELATIONSHIP_MANAGER', 'META_VERIFIER', 'ACCOUNTS_OWNER', 'TECHNICAL_CONSULTANT', 'RECRUITER', 'PROFILE', 'ADDRESS'] as const;
+export const EMAIL_APPLICATIONS = ['CRM', 'CANDIDATE_PORTAL', 'CLIENT_PORTAL'] as const;
+export const EMAIL_STATUSES = ['QUEUED', 'PROCESSING', 'ACCEPTED', 'DELIVERY_CONFIRMED', 'DEFERRED', 'BOUNCED', 'COMPLAINED', 'FAILED', 'RETRY_PENDING',
+  'UNKNOWN_ACCEPTANCE', 'CANCELLED', 'EXPIRED', 'SUPPRESSED'] as const;
+const emailAddress = z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(320);
+export const emailSettingsSchema = z.object({
+  providerOrder: z.array(z.enum(['resend', 'ses', 'smtp'])).min(1).max(3).refine(a => new Set(a).size === a.length, 'Each provider once.').nullable(),
+  quotaThresholds: z.array(z.number().int().min(1).max(100)).min(1).max(6),
+  resendDailyLimit: z.number().int().min(0).max(10_000_000),
+  resendMonthlyLimit: z.number().int().min(0).max(100_000_000),
+  sesDailyLimit: z.number().int().min(0).max(100_000_000).nullable(),
+  criticalReserve: z.number().int().min(0).max(10_000),
+  maxAutoRecipients: z.number().int().min(0).max(20),
+  allowedSenderDomains: z.array(z.string().trim().toLowerCase().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'Enter a domain such as amuwa.com.')).min(1).max(5)
+}).strict();
+export const emailSenderSchema = z.object({
+  category: z.enum(EMAIL_CATEGORIES),
+  fromEmail: emailAddress,
+  fromName: z.string().trim().min(1).max(80).refine(v => !/[<>"\r\n]/.test(v), 'No < > or quotes in the sender name.'),
+  replyTo: emailAddress.nullable().optional(),
+  enabled: z.boolean().default(true)
+}).strict();
+export const emailRuleSchema = z.object({
+  id: uuidSchema.optional(),
+  name: z.string().trim().min(1).max(120),
+  category: z.enum(EMAIL_CATEGORIES).refine(c => !(EMAIL_SENSITIVE_CATEGORIES as readonly string[]).includes(c), 'Authentication and credential e-mails can never be copied.'),
+  application: z.enum(EMAIL_APPLICATIONS).nullable().optional(),
+  departmentId: uuidSchema.nullable().optional(),
+  workflow: z.string().trim().max(60).nullable().optional(),
+  mode: z.enum(['CC', 'BCC']),
+  target: z.enum(EMAIL_RULE_TARGETS),
+  profileIds: z.array(uuidSchema).max(20).default([]),
+  addresses: z.array(emailAddress).max(20).default([]),
+  excludeProfileIds: z.array(uuidSchema).max(50).default([]),
+  priority: z.number().int().min(1).max(1000).default(100),
+  enabled: z.boolean().default(false),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  effectiveTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+}).strict()
+  .refine(r => r.target !== 'PROFILE' || r.profileIds.length > 0, { message: 'Choose at least one employee.', path: ['profileIds'] })
+  .refine(r => r.target !== 'ADDRESS' || r.addresses.length > 0, { message: 'Enter at least one company address.', path: ['addresses'] });
+export const emailRulePreviewSchema = z.object({ customerId: uuidSchema.optional(), applicationId: uuidSchema.optional() }).strict()
+  .refine(v => !!v.customerId || !!v.applicationId, 'Choose a customer or a job application to preview with.');
+export const emailSuppressionSchema = z.object({ email: emailAddress, active: z.boolean(), note: z.string().trim().max(300).optional() }).strict();
+export const emailProviderSchema = z.enum(['resend', 'ses', 'smtp']);
+export const emailHistoryQuerySchema = z.object({
+  application: z.enum(EMAIL_APPLICATIONS).optional(),
+  category: z.enum(EMAIL_CATEGORIES).optional(),
+  status: z.union([z.enum(EMAIL_STATUSES), z.literal('PROBLEMS')]).optional(),
+  provider: z.enum(['resend', 'ses', 'smtp', 'brevo']).optional(),
+  departmentId: uuidSchema.optional(),
+  recipient: z.string().trim().max(120).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strip();
+export type EmailHistoryQuery = z.infer<typeof emailHistoryQuerySchema>;
+
+// ---------------------------------------------------------------------------
+// Company Notice Board (migration 20270131000200). The database checks who may publish, to whom, and every rule again.
+// ---------------------------------------------------------------------------
+export const NOTICE_CATEGORIES = ['GENERAL', 'HR', 'POLICY', 'EVENT', 'HOLIDAY', 'IT_SYSTEM', 'OPERATIONS', 'OTHER'] as const;
+export const NOTICE_CATEGORY_LABELS: Record<(typeof NOTICE_CATEGORIES)[number], string> = {
+  GENERAL: 'General', HR: 'HR', POLICY: 'Policy', EVENT: 'Event', HOLIDAY: 'Holiday / office closure', IT_SYSTEM: 'IT / CRM', OPERATIONS: 'Operations', OTHER: 'Other'
+};
+export const NOTICE_PRIORITIES = ['NORMAL', 'IMPORTANT', 'URGENT'] as const;
+export const NOTICE_AUDIENCES = ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES'] as const;
+export const NOTICE_ROLES = ['DEPARTMENT_HEAD', 'OPERATIONS_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER', 'HR', 'SUPER_ADMIN'] as const;
+const noticeTime = z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter a date and time.' }).nullable().optional());
+export const noticePublishSchema = z.object({
+  title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).'),
+  body: trimmed(10000).min(1, 'Write the notice.'),
+  category: z.enum(NOTICE_CATEGORIES, { errorMap: () => ({ message: 'Choose a category.' }) }),
+  priority: z.enum(NOTICE_PRIORITIES, { errorMap: () => ({ message: 'Choose Normal, Important or Urgent.' }) }).default('NORMAL'),
+  audienceType: z.enum(NOTICE_AUDIENCES, { errorMap: () => ({ message: 'Choose who receives the notice.' }) }),
+  departmentIds: z.array(uuidSchema).max(100).default([]),
+  roles: z.array(z.enum(NOTICE_ROLES)).max(6).default([]),
+  employeeIds: z.array(uuidSchema).max(1000).default([]),
+  attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
+  publishAt: noticeTime,
+  expiresAt: noticeTime,
+  clientRequestId: z.string().trim().min(8).max(80)
+}).strict()
+  .refine(v => v.audienceType !== 'DEPARTMENT' || v.departmentIds.length > 0, { message: 'Choose at least one department.', path: ['departmentIds'] })
+  .refine(v => v.audienceType !== 'ROLE' || v.roles.length > 0, { message: 'Choose at least one designation.', path: ['roles'] })
+  .refine(v => v.audienceType !== 'EMPLOYEES' || v.employeeIds.length > 0, { message: 'Choose at least one employee.', path: ['employeeIds'] })
+  .refine(v => !v.expiresAt || new Date(v.expiresAt).getTime() > new Date(v.publishAt ?? Date.now()).getTime(), { message: 'The expiry is after the publish date.', path: ['expiresAt'] });
+export const noticeUpdateSchema = z.object({
+  title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).').optional(),
+  body: trimmed(10000).min(1, 'Write the notice.').optional(),
+  category: z.enum(NOTICE_CATEGORIES).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).optional(),
+  expiresAt: noticeTime,
+  /** a material change: everyone acknowledges this version again (a minor edit leaves every acknowledgement as it was) */
+  acknowledgeAgain: z.boolean().optional(),
+  version: z.number().int().min(1).optional()
+}).strict();
+/** The Super Admin adds or removes a person from the CRM team that runs the Notice Board (20270202000100). */
+export const noticeManagerSetSchema = z.object({ enabled: z.boolean() }).strict();
+export const noticeListQuerySchema = z.object({
+  scope: z.enum(['INBOX', 'ALL', 'MINE']).default('INBOX'),
+  category: z.enum(NOTICE_CATEGORIES).optional(),
+  priority: z.enum(NOTICE_PRIORITIES).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  unread: booleanParam.optional(),
+  includeExpired: booleanParam.optional(),
+  search: trimmed(120).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).default(0)
+}).strict();
+
+// ---------------------------------------------------------------------------
+// HR Awards (20270203000100): Award Management > Awards. The same schemas check the forms and the API; the database checks again.
+// ---------------------------------------------------------------------------
+export const HR_AWARD_CODES = ['PROFESSIONALISM_EXCELLENCE', 'RISING_STAR', 'PLAYER', 'EMERGING_LEADER', 'DEPARTMENT', 'TEAM', 'BUSINESS_ICON'] as const;
+export const HR_AWARD_NOMINEE_TYPES = ['INDIVIDUAL', 'TEAM', 'DEPARTMENT'] as const;
+/** The award month as YYYY-MM (handed to the database as the first day of that month). */
+export const awardMonthSchema = z.string().trim().regex(/^(20[2-9]\d)-(0[1-9]|1[0-2])$/, 'Choose the award month and year.');
+export const awardCodeSchema = z.enum(HR_AWARD_CODES, { errorMap: () => ({ message: 'That award does not exist.' }) });
+export const awardMonthQuerySchema = z.object({ month: awardMonthSchema }).strict();
+const awardReason = z.string().trim().min(3, 'Enter the reason for the nomination (at least 3 characters).').max(2000, 'Keep the reason under 2000 characters.');
+const awardRemarks = z.string().trim().max(2000, 'Keep the remarks under 2000 characters.').optional().nullable()
+  .transform(v => (v ? v : null));
+export const awardNominateSchema = z.object({
+  month: awardMonthSchema,
+  nomineeType: z.enum(HR_AWARD_NOMINEE_TYPES, { errorMap: () => ({ message: 'Choose the nominee type: Individual, Team or Department.' }) }),
+  entityId: z.string({ required_error: 'Choose who is nominated.' }).uuid('Choose who is nominated.'),
+  reason: awardReason,
+  remarks: awardRemarks
+}).strict();
+export const awardNomineeUpdateSchema = z.object({ reason: awardReason, remarks: awardRemarks }).strict();
+export const awardNomineeRemoveSchema = z.object({ reason: z.string().trim().max(500, 'Keep the reason under 500 characters.').optional().nullable() }).strict();
+export const awardDeclareWinnersSchema = z.object({
+  nomineeIds: z.array(uuidSchema).min(1, 'Choose at least one nominee to declare a winner.').max(200, 'Declare at most 200 winners at a time.'),
+  remarks: awardRemarks
+}).strict();
+export const awardWinnerUpdateSchema = z.object({ remarks: awardRemarks }).strict();
+export const awardWinnerRevokeSchema = z.object({
+  reason: z.string().trim().min(3, 'Enter the reason for revoking the winner (at least 3 characters).').max(500, 'Keep the reason under 500 characters.')
+}).strict();
+export type AwardNominateInput = z.input<typeof awardNominateSchema>;
+
+// ---------------------------------------------------------------------------
+// Role-based Offer Letter templates (20270206000100): HR > Offer Letter Generation. The shapes are in shared/offerTemplates.ts.
+// ---------------------------------------------------------------------------
+const offerText = (max: number) => z.string().max(max, `Keep each text under ${max} characters.`);
+const offerBlockSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('title'), text: offerText(300).min(1) }).strict(),
+  z.object({ type: z.literal('paragraph'), text: offerText(4000).min(1), align: z.literal('center').optional(), tight: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('heading'), text: offerText(300).min(1), plain: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal('bullets'), items: z.array(offerText(2000).min(1)).min(1).max(60) }).strict(),
+  z.object({ type: z.literal('signature'), label: offerText(120).min(1) }).strict(),
+  z.object({ type: z.literal('pageBreak') }).strict()
+]);
+const offerFieldSchema = z.object({
+  key: z.string().regex(OFFER_FIELD_KEY, 'A field key is letters and digits starting with a small letter (for example joiningDate).'),
+  label: z.string().trim().min(1, 'Give each field a label.').max(80),
+  type: z.enum(['text', 'textarea', 'date', 'money', 'select']),
+  required: z.boolean(),
+  default: z.string().max(300).optional(),
+  options: z.array(z.string().trim().min(1).max(80)).max(30).optional(),
+  source: z.enum(['employeeName', 'designation', 'department', 'joiningDate', 'monthlySalary', 'today']).optional(),
+  help: z.string().max(200).optional()
+}).strict();
+export const offerTemplateContentSchema = z.object({
+  dateLine: z.object({ left: offerText(200).optional(), right: offerText(200) }).strict(),
+  blocks: z.array(offerBlockSchema).min(1, 'The letter has no wording.').max(400, 'The letter has too many parts.'),
+  fields: z.array(offerFieldSchema).min(1, 'Add at least one field.').max(40, 'Use at most 40 fields.')
+}).strict().superRefine((c, ctx) => {
+  for (const message of offerTemplateProblems(c as OfferTemplateContent)) ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+});
+export const offerLetterheadSchema = z.union([
+  z.object({ builtin: z.enum(['technical-support', 'customer-support', 'business-development', 'sales-executive', 'ai-developer']) }).strict(),
+  z.object({ fileId: uuidSchema }).strict()
+]);
+export const offerTemplateSaveSchema = z.object({
+  designation: z.string().trim().min(2, 'Enter the designation.').max(80, 'Keep the designation under 80 characters.'),
+  description: z.string().trim().max(300).optional().nullable(),
+  content: offerTemplateContentSchema,
+  letterhead: offerLetterheadSchema,
+  sampleFileId: uuidSchema.optional().nullable(),
+  baseVersion: z.number().int().min(0),
+  note: z.string().trim().max(200).optional().nullable()
+}).strict();
+export const OFFER_UPLOAD_MAX_BYTES = 2_500_000;
+export const OFFER_UPLOAD_MIME = { pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } as const;
+export const offerTemplateFileUploadSchema = z.object({
+  kind: z.enum(['SAMPLE', 'LETTERHEAD']),
+  fileName: z.string().trim().min(1).max(200),
+  mimeType: z.enum([OFFER_UPLOAD_MIME.pdf, OFFER_UPLOAD_MIME.docx], { errorMap: () => ({ message: 'Upload a PDF or a Word (.docx) file.' }) }),
+  dataBase64: z.string().min(8).max(Math.ceil(OFFER_UPLOAD_MAX_BYTES / 3) * 4 + 8, 'The file must be at most 2.5 MB.').regex(/^[A-Za-z0-9+/]+=*$/, 'The file could not be read.')
+}).strict().refine(v => v.kind !== 'LETTERHEAD' || v.mimeType === OFFER_UPLOAD_MIME.pdf, { message: 'A letterhead must be a PDF.', path: ['mimeType'] });
+export const hrRoleOfferFieldsSchema = z.object({
+  offerTemplateId: uuidSchema,
+  templateVersion: z.number().int().min(1),
+  values: z.record(z.string().regex(OFFER_FIELD_KEY), z.string().max(2000)).refine(v => Object.keys(v).length <= 40, 'Too many values.')
+}).strict();
+export const offerTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);
+
+// ---- Task daily reports and performance approval ----
+export const taskReportSubmitSchema = z
+  .object({
+    taskId: uuidSchema,
+    reportDate: isoDate.optional(),
+    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    pendingWork: trimmed(2000).optional(),
+    delayReason: trimmed(2000).optional(),
+    remarks: trimmed(2000).optional()
+  })
+  .strict()
+  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+export const taskReportReviewSchema = z
+  .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional() })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
+// ---- Performance Management for Team Leads and Department Heads, every department (20270213000100) ----
+/** The Team Lead edits a member's waiting report: the member's own rules apply, plus a reason the member reads. */
+export const taskReportReviewerEditSchema = z
+  .object({
+    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    pendingWork: trimmed(2000).optional(),
+    delayReason: trimmed(2000).optional(),
+    remarks: trimmed(2000).optional(),
+    reason: trimmed(1000).min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.')
+  })
+  .strict()
+  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+/** The reviewer updates the rating and remarks of an approved evaluation. */
+export const performanceEvaluationUpdateSchema = z
+  .object({ rating: z.number().int().min(1, 'The rating is from 1 to 5.').max(5, 'The rating is from 1 to 5.'), remarks: trimmed(2000).optional() })
+  .strict();
+/** One person's tasks and reports in a period (the reviewer's drill-down). */
+export const performanceWorkQuerySchema = z
+  .object({ start: isoDate, end: isoDate })
+  .strict()
+  .refine(v => v.end >= v.start, { message: 'The end date cannot be before the start date.', path: ['end'] });
+export const taskReportListQuerySchema = z
+  .object({
+    scope: z.enum(['MINE', 'TEAM']).default('MINE'),
+    status: z.enum(['PENDING', 'APPROVED', 'RETURNED']).optional(),
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+    memberId: uuidSchema.optional(),
+    taskId: uuidSchema.optional(),
+    page: z.coerce.number().int().min(1).max(10000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(200).default(50)
+  })
+  .strict();
+export const performanceOverviewQuerySchema = z
+  .object({ start: isoDate, end: isoDate, departmentId: uuidSchema.optional() })
+  .strict()
+  .refine(v => v.end >= v.start, { message: 'The end date cannot be before the start date.', path: ['end'] });
+export const performanceRecordReviewSchema = z
+  .object({
+    decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional(), version: z.number().int().min(1).optional(),
+    // 20270210000100: the rating given when approving (required by the database for International / Reseller)
+    rating: z.number().int().min(1, 'The rating is from 1 to 5.').max(5, 'The rating is from 1 to 5.').optional()
+  })
+  .strict()
+  .refine(v => v.decision === 'APPROVE' || (v.remarks ?? '').length >= 5, { message: 'Say what must be corrected (at least 5 characters).', path: ['remarks'] });
+
+/** POST /search: the query travels in the body (not the address), so it is not written to access logs. */
+export const globalSearchSchema = z
+  .object({ q: z.string().max(200), limit: z.number().int().min(1).max(20).optional() })
+  .strict();
+export const searchRecordParamsSchema = z.object({ type: z.enum(['employee', 'customer', 'lead', 'ticket', 'department']), id: uuidSchema }).strict();

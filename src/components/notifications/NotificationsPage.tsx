@@ -4,6 +4,8 @@ import type { Notification, Paginated } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import { notificationsApi } from '../../lib/api/endpoints';
 import { useNotifications } from '../../context/NotificationContext';
+import { categoryOf, fullTime } from '../../lib/notifications/notificationCategory';
+import { openNotificationTarget } from './openNotification';
 import { Empty, ErrorBanner, Loading, PageHeader, Pager } from '../support-member/SupportParts';
 
 export const NOTIFICATIONS_PAGE_SIZE = 10;
@@ -15,7 +17,7 @@ const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'nume
  * newest first, ten per page (the server pages them, so page 2 is really the next ten).
  */
 export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => void }> = ({ onOpenItem }) => {
-  const { unreadCount, markAsRead, markAllAsRead } = useNotifications();
+  const { unreadCount, markAsRead, markAllAsRead, notifications, realtimeStatus, syncError } = useNotifications();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<Notification> | null>(null);
@@ -35,13 +37,14 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
       e => n === seq.current && setError(errorMessage(e))
     );
   }, [filter, page]);
-  // Reload on page / filter change and whenever the notification context sees a change (realtime or read state).
-  useEffect(load, [load, unreadCount]);
+  // Reload on page / filter change and whenever the notification context read the list again (realtime, reconnect, focus, read state).
+  useEffect(load, [load, unreadCount, notifications]);
   useEffect(() => setPage(1), [filter]);
 
   const open = (n: Notification) => {
-    // a dashboard that links its notifications to the item they are about (AI Studio: the task or the report) opens it
-    onOpenItem?.(n);
+    // a dashboard that links its notifications to the item they are about (AI Studio: the task or the report) opens it; every other one goes where the bell goes
+    if (onOpenItem) onOpenItem(n);
+    else openNotificationTarget({ type: n.type, entityType: n.entityType, entityId: n.entityId, messageId: typeof n.data?.messageId === 'string' ? n.data.messageId : null });
     if (n.readAt) return;
     markAsRead(n.id);
     setData(d => (d ? { ...d, items: d.items.map(i => (i.id === n.id ? { ...i, readAt: new Date().toISOString() } : i)) } : d));
@@ -60,6 +63,11 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
           ) : undefined
         }
       />
+      {(syncError || realtimeStatus === 'offline') && (
+        <p role="status" data-testid="notification-sync" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          {syncError ? `New notifications could not be loaded (${syncError}). Retrying automatically.` : 'Live updates are reconnecting; the list is refreshed every 30 seconds meanwhile.'}
+        </p>
+      )}
       <div className="flex gap-2" role="tablist" aria-label="Filter notifications">
         {(['all', 'unread'] as const).map(f => (
           <button
@@ -97,9 +105,10 @@ export const NotificationsPage: React.FC<{ onOpenItem?: (n: Notification) => voi
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
                         <span className={`text-sm truncate ${n.readAt ? 'font-medium text-slate-700' : 'font-bold text-slate-900'}`}>{n.title}</span>
-                        <span className="text-[11px] text-slate-400 shrink-0">{when(n.createdAt)}</span>
+                        <time dateTime={n.createdAt} title={fullTime(n.createdAt)} className="text-[11px] text-slate-400 shrink-0">{when(n.createdAt)}</time>
                       </span>
                       <span className="block text-xs text-slate-500 mt-0.5">{n.body}</span>
+                      <span data-testid="notification-category" className="inline-block mt-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">{categoryOf(n.type, n.entityType)}</span>
                     </span>
                     {!n.readAt && <span className="mt-2 w-2 h-2 rounded-full bg-blue-600 shrink-0" aria-hidden="true" />}
                   </button>

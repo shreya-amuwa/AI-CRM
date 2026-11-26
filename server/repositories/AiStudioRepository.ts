@@ -1,9 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
+  AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail, AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage
 } from '../../shared/contracts.js';
 import { AppError } from '../http/errors.js';
 import { unwrap } from './base.js';
+
+type ProjectSaved = Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt' | 'deadlineAt'>;
 
 /** AI Studio: projects, tasks and daily reports. Every rule (who sees what, who decides) is in the database functions; the caller's JWT is what they read. */
 export class AiStudioRepository {
@@ -17,11 +19,15 @@ export class AiStudioRepository {
   people() { return this.rpc<AiStudioPerson[]>('ai_studio_people'); }
 
   projects() { return this.rpc<AiStudioProject[]>('ai_studio_projects_list'); }
-  saveProject(id: string | null, i: { name: string; description?: string | null; status?: string }) {
-    return this.rpc<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt'>>('ai_studio_project_save', {
-      p_id: id, p_name: i.name, p_description: i.description ?? null, p_status: i.status ?? null
-    });
+  saveProject(id: string | null, i: { name: string; description?: string | null; status?: string; deadlineAt?: string | null }) {
+    const base = { p_id: id, p_name: i.name, p_description: i.description ?? null, p_status: i.status ?? null };
+    // Only a request that touches the deadline uses the deadline function: a database that has not run migration 20270119000100 still saves projects as before.
+    return i.deadlineAt !== undefined
+      ? this.rpc<ProjectSaved>('ai_studio_project_save_with_deadline', { ...base, p_deadline: i.deadlineAt, p_set_deadline: true })
+      : this.rpc<ProjectSaved>('ai_studio_project_save', base);
   }
+  /** The clock: running projects with a deadline, soonest first, with the server's own time. */
+  deadlines() { return this.rpc<AiStudioDeadlines>('ai_studio_deadlines'); }
   assignProject(projectId: string, profileId: string, assign: boolean) {
     return this.rpc<{ projectId: string; profileId: string; assigned: boolean }>('ai_studio_project_assign', { p_project: projectId, p_profile: profileId, p_assign: assign });
   }
@@ -86,5 +92,11 @@ export class AiStudioRepository {
   async deleteDraft(id: string) { await this.rpc<null>('ai_studio_report_delete_draft', { p_id: id }); }
   reviewReport(id: string, decision: string, comment?: string | null) {
     return this.rpc<AiStudioReportDetail>('ai_studio_report_review', { p_report: id, p_decision: decision, p_comment: comment ?? null });
+  }
+  leadEditReport(id: string, e: { workCompleted: string; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; reason: string }) {
+    return this.rpc<AiStudioReportDetail>('ai_studio_report_lead_edit', {
+      p_report: id, p_work_completed: e.workCompleted, p_work_in_progress: e.workInProgress ?? null, p_pending_work: e.pendingWork ?? null,
+      p_blockers: e.blockers ?? null, p_remarks: e.remarks ?? null, p_reason: e.reason
+    });
   }
 }

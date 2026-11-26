@@ -8,7 +8,8 @@ import { ISSUES_NAV } from '../../issues/IssuesRoute';
 import { REPORTS_NAV } from '../../reports/ReportsRoute';
 import { useReportsBadge } from '../../reports/reportEvents';
 
-export type ConsultantPage = 'customers' | 'addons' | 'followups' | 'onboarding' | 'client-documents' | 'client-calendar' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+export const CONSULTANT_PAGES = ['customers', 'addons', 'followups', 'onboarding', 'client-documents', 'client-calendar', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+export type ConsultantPage = (typeof CONSULTANT_PAGES)[number];
 
 /** Shell of the Technical Consultant / Meta Verifier dashboard (sidebar + top bar), responsive. */
 export const ConsultantLayout: React.FC<{

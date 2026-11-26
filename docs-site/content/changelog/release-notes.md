@@ -21,6 +21,26 @@ This changelog documents verified product releases, architectural updates, and w
 
 ---
 
+## Release: Incentive withdrawals
+**Area:** Sales, Accounts
+
+### Added
+- **Withdraw** on My Income: save payout details (bank, UPI or international), ask for a withdrawal, follow it and download the payout slip. My Income now shows **My Earnings** next to **Balance** (withdrawn so far, available to withdraw). See [Withdraw your income](/sales/withdraw-your-income).
+- **Accounts > Finance > Payout requests**: pay (reference, date, TDS) or reject withdrawals, and pay final settlements to people who left. See [Pay payout requests](/accounts/pay-payout-requests).
+- **Pay through Razorpay**: once the company's RazorpayX is set up, Accounts sends a withdrawal with one click; it is marked paid when Razorpay confirms it.
+
+---
+
+## Release: Sales incentives and My Income
+**Area:** Sales, Super Admin
+
+### Added
+- **My Income** in every Sales dashboard: today, this month, total and balance, target progress, this month's activity and the list of earnings. See [My Income](/sales/my-income).
+- **Incentive setup**: the Super Admin creates, edits, stops and deletes incentive rules; heads and Team Leads set what the people below them get; the Sales Department Head sets the telecaller and Business Associate split. See [Incentive setup](/sales/incentive-setup).
+- **The client's authorised person attended** tick on completed demos in **Demo Schedule**.
+
+---
+
 ## Release: Invoice series, customer revenue, split expenses, Department Head e-mails, Client Panel URL, hand-over queue
 **Area:** Accounts, Meta Verifier, Department Head
 

@@ -3,6 +3,7 @@ import { AlertTriangle, Eye, EyeOff, FileText, Layers, Lock, Mail, MessageCircle
 import { Button, Field } from './ui';
 import { clientApi } from './api';
 import { useClientAuth } from './auth';
+import { useBotCheck } from '../components/auth/useBotCheck';
 
 const POINTS = [
   { Icon: Layers, text: 'Your services, plan and renewal dates' },
@@ -19,15 +20,17 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [error, setError] = useState('');
   const [forgot, setForgot] = useState(false);
   const [sent, setSent] = useState(false);
+  const bot = useBotCheck('reset');
 
   const sendLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(''); clearNotice();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) { setError('Enter the e-mail you sign in with.'); return; }
+    if (!bot.ready) { setError('Please complete the robot check first.'); return; }
     setBusy(true);
-    try { await clientApi.forgotPassword(email.trim().toLowerCase()); setSent(true); }
+    try { await clientApi.forgotPassword(email.trim().toLowerCase(), bot.headers); setSent(true); }
     catch (err) { setError((err as Error).message); }
-    finally { setBusy(false); }
+    finally { bot.renew(); setBusy(false); }
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -60,7 +63,7 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
               <p className="cd-sub">Enter the e-mail you sign in with. We will e-mail you a link to set a new password.</p>
             </div>
             {sent ? (
-              <div className="cd-banner info" role="status"><Mail size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>If {email.trim()} has a client login, a link is on its way. Check your inbox (and the spam folder). The link works once.</span></div>
+              <div className="cd-banner info" role="status"><Mail size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>If {email.trim()} has a client login, a link is on its way. Check your inbox (and the spam folder). The link works once and for 24 hours.</span></div>
             ) : (
               <>
                 {error && <div className="cd-banner danger" role="alert"><AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 1 }} /><span>{error}</span></div>}
@@ -68,6 +71,7 @@ export const Login: React.FC<{ onDone: () => void }> = ({ onDone }) => {
                   <input id="cd-forgot-email" className="cd-input" type="email" autoComplete="username" inputMode="email" autoCapitalize="none"
                     placeholder="you@yourbusiness.com" value={email} onChange={e => setEmail(e.target.value)} />
                 </Field>
+                {bot.element}
                 <Button type="submit" loading={busy}>Send me the link</Button>
               </>
             )}

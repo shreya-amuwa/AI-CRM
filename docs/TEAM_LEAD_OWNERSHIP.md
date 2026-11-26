@@ -105,3 +105,30 @@ select d.name as department, t.name as team, m.full_name as member, m.email,
    and private.direct_lead_of(m.id) is null
  order by d.name, t.name, m.full_name;
 ```
+
+## Skip a level when someone is away, and Support customers per Team Lead (migration `20270114000100`)
+
+**Tasks.** The chain is still Operations Head → Department Head → Team Lead → Team Member, but the person in the middle may be absent:
+
+| Who | May now give a task straight to | Never to |
+|---|---|---|
+| Department Head | any active Team Lead **or ordinary Team Member** of the teams they head (their department and function, `private.head_covers`) | another function's or department's people |
+| Operations Head | Department Heads (as before) **and** active Team Leads / Team Members of the departments and functions they manage (`private.scopes_of`) | anyone outside that scope |
+| Super Admin | any active Team Lead / Team Member | |
+| Team Lead | their **own** Team Members only (unchanged) | another Team Lead's members, even in the same team |
+
+`task_direct_assignees()` feeds the picker (Team Leads, then Team Members with their own Team Lead); `assign_task_direct(assignee, title, details,
+priority, due)` gives the task, checked in the database (`private.can_task_directly`). Technical Consultants and Meta Verifiers are never offered.
+The task is an ordinary top-level task assigned by the head: it shows in the head's Assign list (and the Operations Head's `operations_tasks()`),
+in the receiver's tasks, and to the receiver's own Team Lead, who is also notified ("X gave Y a task"); the other Team Lead of a shared team is not.
+A Team Lead who receives one can work on it or share it with their own members. Reports keep going to each member's own Team Lead.
+Screens: Department Head → Assign ("Assign to": Team Leads / Team Members), Operations Head → Assign ("A Department Head" or "A Team Lead or Team
+Member"). Before the migration is run the screens show the old one-level choices.
+
+**Support customers.** Two Team Leads can share one team (Wabastore "Support"). The department-wide Support desk rule
+(`customers_select_support`, `private.can_access_customer`) let every Support Team Lead and Team Member read **every** customer of the department, so
+one Team Lead saw the other's customers. The migration switches that setting off (`access_settings.support_desk_department_wide = false`, only if no
+Super Admin has set it by hand): a Support Team Lead now sees their own and their own members' customers, a Team Member their own, the Department
+Head / Operations Head / Super Admin everything in scope. Tickets can be raised for the customers a person sees. To go back:
+`select public.set_support_desk_department_wide(true);` as the Super Admin (audited), or `POST /api/v1/access/support-desk {"departmentWide": true}`.
+Tests: `supabase/tests/task_skip_level_test.sql`.

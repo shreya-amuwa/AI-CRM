@@ -63,7 +63,8 @@ async function processWelcome(s: AutomationSettings, ev: ClaimedWelcome, admin: 
     supportEmail: process.env.HR_REPLY_TO?.trim() || s.email.replyTo || COMPANY.companyEmail,
     supportPhone: COMPANY.companyPhone
   });
-  const r = await sendEmail(welcomeSettings(s), { email: to, name: ev.name || to }, mail);
+  // carries the employee's one-time set-password link (made afresh each attempt): CREDENTIALS, never copied to anyone
+  const r = await sendEmail(welcomeSettings(s), { email: to, name: ev.name || to }, mail, undefined, { category: 'CREDENTIALS', priority: 'HIGH', template: 'employee-welcome' });
   if (r.ok) return { outcome: 'SENT', detail: `Accepted by the mail provider for ${maskEmail(to)}`, code: r.code, ref: r.ref };
   return { outcome: r.retry ? 'RETRY' : 'FAILED', detail: r.detail, code: r.code };
 }

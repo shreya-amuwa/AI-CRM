@@ -10,7 +10,7 @@ import { listenToTables } from './realtimeShared';
  */
 
 export type TaskStatus = 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'NOT_COMPLETED' | 'BLOCKED';
-export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH';
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
 export interface WorkTask {
   id: string;
@@ -38,6 +38,19 @@ export interface WorkTask {
 }
 
 /** A Department Head an Operations Head may give a task to, for one department and function. */
+/** A Team Lead or Team Member a Department Head / Operations Head may give a task to directly (task_direct_assignees, 20270114000100). */
+export interface DirectAssignee {
+  id: string;
+  name: string;
+  role: 'TEAM_HEAD' | 'TEAM_MEMBER';
+  teamId: string | null;
+  team: string | null;
+  departmentId: string;
+  department: string | null;
+  teamLeadId: string | null;
+  teamLead: string | null;
+}
+
 export interface OperationsAssignee { id: string; name: string; departmentId: string; department: string; function: 'SALES' | 'SUPPORT' | 'ALL' }
 /** One task with everything below it (task_hierarchy / operations_tasks). */
 export interface TaskNode {
@@ -65,6 +78,8 @@ export interface Person {
   teamId: string | null;
   departmentId: string | null;
   status: string;
+  /** The job title shown next to the name (profiles.position), when the person's record has one. */
+  position?: string | null;
 }
 
 export interface TeamRef {
@@ -156,6 +171,18 @@ export const workTasksApi = {
     }
     throw new Error(cleanError(error.message));
   },
+  // ---- Skip a level (20270114000100): a Department Head / Operations Head gives a task straight to a Team Lead or a Team Member of their own teams ----
+  /** null when the database does not have it yet (before the migration): the screens then keep the one-level-at-a-time choices. */
+  directAssignees: async (): Promise<DirectAssignee[] | null> => {
+    const { data, error } = await db().rpc('task_direct_assignees', {});
+    if (!error) return (data as DirectAssignee[]) ?? [];
+    if (/task_direct_assignees|PGRST202|schema cache/i.test(`${error.code ?? ''} ${error.message}`)) return null;
+    throw new Error(cleanError(error.message));
+  },
+  assignDirect: (input: { assigneeId: string; title: string; description?: string; priority: TaskPriority; dueDate?: string | null }) =>
+    rpc<string>('assign_task_direct', {
+      p_assignee: input.assigneeId, p_title: input.title, p_description: input.description || null, p_priority: input.priority, p_due: input.dueDate || null
+    }),
   // ---- Operations Head -> Department Head -> Team Lead -> Team Member (20261230000300) ----
   operationsAssignees: () => rpc<OperationsAssignee[]>('operations_task_assignees', {}),
   assignToDepartmentHead: (input: { assigneeId: string; departmentId: string; fn: 'SALES' | 'SUPPORT' | 'ALL'; title: string; description?: string; priority: TaskPriority; dueDate?: string | null }) =>
@@ -169,8 +196,54 @@ export const workTasksApi = {
   hierarchy: (taskId: string) => rpc<TaskNode>('task_hierarchy', { p_task: taskId }),
   operationsTasks: () => rpc<TaskNode[]>('operations_tasks', {}),
   submitUpdate: (taskId: string, input: { status: TaskStatus; progress: number; note?: string }) =>
-    rpc<void>('submit_task_update', { p_task: taskId, p_status: input.status, p_progress: input.progress, p_note: input.note || null })
+    rpc<void>('submit_task_update', { p_task: taskId, p_status: input.status, p_progress: input.progress, p_note: input.note || null }),
+  // ---- Work updates v2 (20270117000100): a structured update kept in the task's history; the database checks who may send it ----
+  /** The assignee's work update: status, progress %, what was done, what remains, blockers, next steps, a new expected date; optionally the request it answers. */
+  submitWorkUpdate: (taskId: string, u: WorkUpdateInput) =>
+    rpc<{ id: string; taskId: string; status: TaskStatus; progress: number; at: string; requestId: string | null }>('submit_work_update', {
+      p_task: taskId, p_status: u.status, p_progress: u.progress, p_completed: u.workCompleted?.trim() || null, p_remaining: u.remainingWork?.trim() || null,
+      p_blockers: u.blockers?.trim() || null, p_next: u.nextSteps?.trim() || null, p_expected: u.expectedCompletion || null, p_request: u.requestId || null
+    }),
+  /** One task in full: overview, progress history, update requests, activity timeline. Only for people who may already read the task. */
+  details: (taskId: string) => rpc<TaskDetailsData>('work_task_details', { p_task: taskId })
 };
+
+export interface WorkUpdateInput {
+  status: Exclude<TaskStatus, 'ASSIGNED'>;
+  progress: number;
+  workCompleted?: string;
+  remainingWork?: string;
+  blockers?: string;
+  nextSteps?: string;
+  expectedCompletion?: string | null;
+  requestId?: string | null;
+}
+
+export interface TaskUpdateRecord {
+  id: string; at: string; authorId: string | null; authorName: string | null; status: TaskStatus; progress: number;
+  workCompleted: string | null; remainingWork: string | null; blockers: string | null; nextSteps: string | null; expectedCompletion: string | null;
+  note: string | null; requestId: string | null;
+}
+export interface TaskTimelineItem {
+  kind: 'TASK_CREATED' | 'TASK_ASSIGNED' | 'PROGRESS_UPDATE' | 'WORK_UPDATE_REQUESTED' | 'WORK_UPDATE_FOLLOW_UP' | 'WORK_UPDATE_RESPONDED';
+  at: string; actorName: string | null; note: string | null; data: Record<string, any>;
+}
+export interface TaskDetailsData {
+  task: {
+    id: string; parentId: string | null; title: string; description: string | null; priority: TaskPriority; status: TaskStatus; progress: number; dueDate: string | null;
+    createdAt: string; completedAt: string | null; lastUpdateAt: string | null; lastUpdateNote: string | null; assignmentNote: string | null; handling: 'SELF' | 'DELEGATED' | null;
+    overdue: boolean; blocked: boolean;
+    assignee: { id: string; name: string; role: string; designation: string | null; team: string | null; department: string | null } | null;
+    assignedBy: { id: string; name: string; designation: string | null } | null;
+    customer: { id: string; name: string; code: string } | null;
+  };
+  updates: TaskUpdateRecord[];
+  requests: import('./workUpdates').WorkUpdateRequest[];
+  canUpdate: boolean;
+  canRequest: boolean;
+  canManage: boolean;
+  timeline: TaskTimelineItem[];
+}
 
 export interface WorkTaskData {
   tasks: WorkTask[];
@@ -201,7 +274,7 @@ export function useWorkTasks(): WorkTaskData {
     const [t, u, p, tm] = await Promise.all([
       supabase.from('work_tasks').select('*').order('created_at', { ascending: false }).limit(1000),
       supabase.from('work_task_updates').select('*').order('created_at', { ascending: false }).limit(2000),
-      supabase.from('profiles').select('id, full_name, role, team_id, department_id, status').order('full_name'),
+      supabase.from('profiles').select('id, full_name, role, team_id, department_id, status, position').order('full_name'),
       supabase.from('teams').select('id, name, division')
     ]);
     const firstError = t.error || u.error || p.error || tm.error;
@@ -217,7 +290,8 @@ export function useWorkTasks(): WorkTaskData {
           role: r.role,
           teamId: r.team_id,
           departmentId: r.department_id,
-          status: r.status
+          status: r.status,
+          position: r.position ?? null
         }))
       );
     if (!tm.error) setTeams((tm.data || []).map((r: any) => ({ id: r.id, name: r.name, division: r.division ?? null })));

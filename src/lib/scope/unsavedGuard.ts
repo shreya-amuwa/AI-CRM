@@ -1,3 +1,5 @@
+import { confirmAction } from '../feedback/feedbackStore';
+
 /**
  * Switching department or function re-opens the dashboard. When a form on the page has been typed into and not submitted, ask first.
  * (There was no shared "unsaved changes" convention, so this watches every form on the page: any input marks its form, submit / reset clears it.)
@@ -24,10 +26,14 @@ export function hasUnsavedForm(): boolean {
   return dirty.size > 0;
 }
 
-/** True when it is fine to switch: nothing unsaved, or the person agreed to lose it. */
-export function confirmLeaveUnsaved(): boolean {
+/** True when it is fine to switch: nothing unsaved, or the person agreed (in the CRM's own dialog) to lose it. */
+export async function confirmLeaveUnsaved(): Promise<boolean> {
   if (!hasUnsavedForm()) return true;
-  const ok = typeof window === 'undefined' || window.confirm('You have changes that are not saved. Switch anyway? What you typed will be lost.');
+  const ok = await confirmAction({
+    title: 'Switch without saving?',
+    description: 'You have changes on this page that are not saved. What you typed will be lost.',
+    confirmLabel: 'Switch without saving', cancelLabel: 'Stay on this page', variant: 'destructive'
+  });
   if (ok) dirty.clear();
   return ok;
 }

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Attendance: Punch In / Punch Out with location, lunch (50 minutes), who sees what, 90-day location retention (migration 20261230000400).
+-- Attendance: Punch In / Punch Out with location, lunch (45 minutes, migration 20270109000100), who sees what, 90-day location retention (migration 20261230000400).
 -- Reuses weekly_report_routing_test.sql: wkr-a with a Support member wkr_tmp and a Sales member wkr_tms, the Support Operations Head wkr_ohp,
 -- the Sales Operations Head wkr_ohs, the Support Department Head wkr_dhp; and hr_test.sql's HR head (hr_head).
 -- =============================================================================
@@ -9,6 +9,8 @@
 reset role;
 \i supabase/migrations/20261230000400_attendance_punch_lunch.sql
 \i supabase/migrations/20261230000400_attendance_punch_lunch.sql
+\i supabase/migrations/20270109000100_attendance_lunch_45.sql
+\i supabase/migrations/20270109000100_attendance_lunch_45.sql
 delete from attendance_events where profile_id in (select id from profiles where email like 'wkr.%@example.com');
 delete from attendance_lunches where profile_id in (select id from profiles where email like 'wkr.%@example.com');
 update attendance_records set punch_in_at = null, punch_out_at = null where profile_id in (select id from profiles where email like 'wkr.%@example.com');
@@ -35,27 +37,27 @@ select test.check((select (d -> 'punchIn' ->> 'locationStatus') = 'DENIED' and d
                      from (select attendance_punch_in('DENIED', 18.5, 73.8, 10, gen_random_uuid()) d) x),
   'location denied: the punch is recorded as "location unavailable" and coordinates are never kept (even if sent)');
 
-\echo '   Lunch: one open break, the 50-minute allowance, flags only'
+\echo '   Lunch: one open break, the 45-minute allowance, flags only'
 select test.login('wkr_tmp');
 select attendance_lunch('START');
 select attendance_lunch('START');
 reset role;
 select test.check((select count(*) = 1 from attendance_lunches where profile_id = test.id('wkr_tmp')), 'Start Lunch twice: one break');
--- the break started 50 minutes ago: within the allowance
-update attendance_lunches set started_at = now() - interval '50 minutes' where profile_id = test.id('wkr_tmp') and ended_at is null;
+-- the break started 45 minutes ago: within the allowance
+update attendance_lunches set started_at = now() - interval '45 minutes' where profile_id = test.id('wkr_tmp') and ended_at is null;
 set role authenticated;
 select test.login('wkr_tmp');
-select test.check((select (d -> 'lunch' ->> 'minutes')::int = 50 and (d -> 'lunch' ->> 'exceededMinutes')::int = 0 and d -> 'lunch' -> 'open' is not null
+select test.check((select (d -> 'lunch' ->> 'minutes')::int = 45 and (d -> 'lunch' ->> 'exceededMinutes')::int = 0 and d -> 'lunch' -> 'open' is not null
                           and (d ->> 'serverTime')::timestamptz is not null from (select attendance_today() d) x),
-  'the running timer comes from the server: 50 minutes, not exceeded (and survives a refresh)');
-select test.check((select (d -> 'lunch' ->> 'minutes')::int = 50 and d -> 'lunch' -> 'open' = 'null'::jsonb from (select attendance_lunch('END') d) x), 'End Lunch at 50 minutes');
+  'the running timer comes from the server: 45 minutes, not exceeded (and survives a refresh)');
+select test.check((select (d -> 'lunch' ->> 'minutes')::int = 45 and d -> 'lunch' -> 'open' = 'null'::jsonb from (select attendance_lunch('END') d) x), 'End Lunch at 45 minutes');
 select test.must_fail($$select attendance_lunch('END')$$, 'End Lunch without a running break is refused', 'has not been started');
 reset role;
--- a second, one-minute break the same day: 51 minutes in total
+-- a second, one-minute break the same day: 46 minutes in total
 insert into attendance_lunches (profile_id, attendance_date, started_at, ended_at, ended_by)
 values (test.id('wkr_tmp'), private.office_today(), now() - interval '61 seconds', now(), 'EMPLOYEE');
 select test.check((select (private.attendance_day_json(test.id('wkr_tmp'), private.office_today()) -> 'lunch' ->> 'exceededMinutes')::int = 1),
-  'two breaks add up: 51 minutes is 1 minute over');
+  'two breaks add up: 46 minutes is 1 minute over');
 
 \echo '   Punch Out: append-only, the latest valid one counts, retries and double clicks are not new punches'
 set role authenticated;
@@ -88,22 +90,22 @@ select test.check(test.att_events('wkr_tmp', 'PUNCH_OUT') = 2
 set role authenticated;
 select test.login('wkr_tmp');
 select test.must_fail($$select count(*) from attendance_events$$, 'nobody reads the tables directly', 'permission denied');
-select test.must_fail($$select hr_attendance_punches(current_date - 1, current_date, null, null)$$, 'a Team Member cannot read others'' punches', 'FORBIDDEN');
-select test.check((select jsonb_array_length(d) = 1 from (select my_attendance(current_date - 7, current_date) d) x), 'an employee reads their own days');
+select test.must_fail($$select hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, null, null)$$, 'a Team Member cannot read others'' punches', 'FORBIDDEN');
+select test.check((select jsonb_array_length(d) = 1 from (select my_attendance((now() at time zone 'Asia/Kolkata')::date - 7, (now() at time zone 'Asia/Kolkata')::date) d) x), 'an employee reads their own days');
 select test.login('wkr_dhp');
-select test.must_fail($$select hr_attendance_punches(current_date - 1, current_date, null, null)$$, 'a Department Head cannot read staff punches', 'FORBIDDEN');
-select test.must_fail($$select attendance_lunch_overview(current_date - 1, current_date)$$, 'nor staff lunch', 'FORBIDDEN');
+select test.must_fail($$select hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, null, null)$$, 'a Department Head cannot read staff punches', 'FORBIDDEN');
+select test.must_fail($$select attendance_lunch_overview((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date)$$, 'nor staff lunch', 'FORBIDDEN');
 select test.login('wkr_ohp');
-select test.must_fail($$select hr_attendance_punches(current_date - 1, current_date, null, null)$$, 'an Operations Head cannot read punch times or locations', 'FORBIDDEN');
+select test.must_fail($$select hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, null, null)$$, 'an Operations Head cannot read punch times or locations', 'FORBIDDEN');
 select test.check((select bool_or(x ->> 'name' = 'WKR tmp' and (x ->> 'exceededMinutes')::int = 1 and (x ->> 'flagged')::boolean) and not bool_or(x ->> 'name' = 'WKR tms')
                           and not bool_or(x ? 'punchIn') and not bool_or(x ? 'latitude')
-                     from jsonb_array_elements(attendance_lunch_overview(current_date - 1, current_date) -> 'rows') x),
+                     from jsonb_array_elements(attendance_lunch_overview((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date) -> 'rows') x),
   'the Support Operations Head sees Support lunch durations and flags only (no Sales person, no punch, no location)');
 select test.login('hr_head');
 select test.check((select bool_or(x ->> 'name' = 'WKR tmp' and (x -> 'punchIn' ->> 'latitude')::numeric = 18.52 and jsonb_array_length(x -> 'punchOutHistory') = 2
                                   and (x -> 'punchOut' ->> 'locationStatus') = 'UNAVAILABLE' and (x ->> 'lunchExceededMinutes')::int >= 1)
                           and bool_or(x ->> 'name' = 'WKR tms' and (x ->> 'locationUnavailable')::boolean)
-                     from jsonb_array_elements(hr_attendance_punches(current_date - 1, current_date, test.dept('wkr-a'), null) -> 'rows') x),
+                     from jsonb_array_elements(hr_attendance_punches((now() at time zone 'Asia/Kolkata')::date - 1, (now() at time zone 'Asia/Kolkata')::date, test.dept('wkr-a'), null) -> 'rows') x),
   'HR sees punches with locations, the Punch Out history, location unavailable, lunch over the allowance');
 reset role;
 select test.check((select count(*) >= 1 from audit_logs where action = 'ATTENDANCE_LOCATIONS_VIEWED' and actor_id = test.id('hr_head')), 'reading locations is audited');

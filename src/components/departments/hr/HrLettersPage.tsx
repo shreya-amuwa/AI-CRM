@@ -5,6 +5,8 @@ import type { HrDocType } from '../../../../shared/contracts';
 import { fetchHrDirectory } from '../../../lib/hrDirectory';
 import { HrDocumentStudio } from './HrDocumentStudio';
 import { LetterTemplateManager } from './LetterTemplateManager';
+import { OfferLetterWorkspace } from '../../hr/offers/OfferLetterWorkspace';
+import { HrPageHeader, hrCard } from '../../hr/hrUi';
 
 /**
  * Employee Letters: the NDA, the Offer Letter and the Experience Letter, generated from the HR record, previewed, stored against the employee and
@@ -54,22 +56,21 @@ export const HrLettersPage: React.FC<Props> = ({ initialType = 'OFFER', employee
 
   return (
     <div className="space-y-5 font-sans" data-testid="hr-letters-page">
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold font-heading text-slate-900">Employee Letters</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Generate the NDA, Offer Letter and Experience Letter from the employee's HR record. Every letter is stored on the employee's record.</p>
-        </div>
-        <div role="group" aria-label="Letter" className="flex flex-wrap items-center gap-1.5 p-1.5 bg-slate-100 rounded-2xl text-xs font-semibold shrink-0">
+      <div className={`${hrCard} p-4 sm:p-5`}>
+        <HrPageHeader as="h2" icon={FileText} title="Employee Letters"
+          subtitle="Generate the NDA, Offer Letter and Experience Letter from the employee's HR record. Every letter is stored on the employee's record."
+          actions={
+        <div role="group" aria-label="Letter" className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg text-xs font-semibold shrink-0">
           {LETTERS.map(l => (
             <button key={l.type} type="button" aria-pressed={type === l.type} onClick={() => { setType(l.type); if (l.type === 'NDA') setView('generate'); }}
-              className={`px-3.5 py-2 rounded-xl flex items-center gap-2 ${type === l.type ? `bg-white ${l.active} font-bold shadow-xs` : 'text-slate-600 hover:text-slate-900'}`}>
+              className={`h-8 px-3 rounded-md flex items-center gap-2 ${type === l.type ? `bg-white ${l.active} font-bold shadow-xs` : 'text-slate-600 hover:text-slate-900'}`}>
               <l.icon className="w-4 h-4" /> <span>{l.label}</span>
             </button>
           ))}
-        </div>
+        </div>} />
       </div>
 
-      {type !== 'NDA' && (
+      {type === 'EXPERIENCE' && (
         <div role="group" aria-label={`${current.label} view`} className="flex gap-1.5 text-xs font-semibold">
           {(['generate', 'template'] as View[]).map(v => (
             <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}
@@ -85,7 +86,10 @@ export const HrLettersPage: React.FC<Props> = ({ initialType = 'OFFER', employee
 
       {toast && <div role="status" className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">{toast}</div>}
 
-      {view === 'template' && type !== 'NDA'
+      {type === 'OFFER'
+        // the role-based Offer Letter (one template per designation, 20270206000100): its own Generate / Templates views
+        ? <OfferLetterWorkspace employees={employees ?? undefined} onToast={notify} />
+        : view === 'template' && type !== 'NDA'
         ? <LetterTemplateManager key={type} type={type} onSuccessToast={notify} />
         : loadError
         ? (

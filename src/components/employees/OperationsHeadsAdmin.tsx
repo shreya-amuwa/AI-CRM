@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api/client';
 import { employeesApi, usersApi } from '../../lib/api/endpoints';
 import { weeklyReportsApi } from '../../lib/api/workReports';
 import { btn, Dialog, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
+import { confirmAction } from '../feedback/AppFeedback';
 
 /**
  * Super Admin: the Operations Heads, the departments each manages (a multi-select, stored as proper relations) and the ONE Operations Head accountable
@@ -33,10 +34,14 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
   // Suspending takes the access away at once (the sign-in is blocked and the person supervises nothing); reactivating gives the same departments back.
   const toggleStatus = async (h: OperationsHeadAdmin) => {
     const next = h.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
-    if (next === 'SUSPENDED' && !window.confirm(`Suspend ${h.name}? They cannot sign in until you reactivate them. Their departments, Department Heads and records stay as they are.`)) return;
+    if (next === 'SUSPENDED' && !(await confirmAction({
+      title: `Suspend ${h.name}?`,
+      description: 'They cannot sign in until you reactivate them. Their departments, Department Heads and records stay as they are.',
+      confirmLabel: 'Suspend CEO', cancelLabel: 'Keep active', variant: 'destructive'
+    }))) return;
     setNotice(null);
     try {
-      await usersApi.setStatus(h.id, next, next === 'SUSPENDED' ? 'Suspended from Operations Heads' : undefined);
+      await usersApi.setStatus(h.id, next, next === 'SUSPENDED' ? 'Suspended from CEOs' : undefined);
       setNotice({ text: `${h.name} is now ${next === 'ACTIVE' ? 'active' : 'suspended'}.`, ok: true });
       load();
     } catch (e) {
@@ -45,32 +50,32 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
   };
 
   return (
-    <section className="space-y-4" aria-label="Operations Heads">
+    <section className="space-y-4" aria-label="CEOs">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" /> Operations Heads</h2>
-          <p className="text-xs text-slate-500">Choose the departments each Operations Head manages, and who approves the Department Heads of each. Create one with Add Team Member (any departments, even ones that already have a Department Head), or approve one HR asks for under Employee Approvals.</p>
+          <h2 className="text-base font-bold text-slate-900 flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" aria-hidden="true" /> CEOs</h2>
+          <p className="text-xs text-slate-500">Choose the departments each CEO manages, and who approves the Department Heads of each. Create one with Add Team Member (any departments, even ones that already have a Department Head), or approve one HR asks for under Employee Approvals.</p>
         </div>
         <button type="button" className={btn.secondary} onClick={load}><RefreshCw className="w-3.5 h-3.5" aria-hidden="true" /> Refresh</button>
       </div>
       {error && <ErrorBanner message={error} onRetry={load} />}
       {notice && <p role="status" className={`text-xs font-semibold ${notice.ok ? 'text-emerald-800' : 'text-rose-700'}`} data-testid="operations-notice">{notice.text}</p>}
-      {!data && !error && <Spinner label="Loading Operations Heads…" />}
+      {!data && !error && <Spinner label="Loading CEOs…" />}
       {routing && routing.some(r => r.issue === 'MISSING' || r.issue === 'INACTIVE') && (
         <div role="status" data-testid="weekly-routing" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
           <div>
-            <b>Departments with no Operations Head (their weekly report goes directly to HR):</b>
+            <b>Departments with no CEO (their weekly report goes directly to HR):</b>
             <ul className="mt-1 list-disc pl-4">
               {routing.filter(r => r.issue === 'MISSING' || r.issue === 'INACTIVE').map(r => (
                 <li key={`${r.departmentId}:${r.function}`}>
                   {r.department} - {r.function === 'ALL' ? 'whole department' : r.function === 'SALES' ? 'Sales' : 'Support'}
                   {r.departmentHeads.length ? ` (Department Head: ${r.departmentHeads.map(h => h.name).join(', ')})` : ''}
-                  {r.issue === 'INACTIVE' ? ': the Operations Head named for it is not active' : ': none assigned'}
+                  {r.issue === 'INACTIVE' ? ': the CEO named for it is not active' : ': none assigned'}
                 </li>
               ))}
             </ul>
-            Choose the departments of the right Operations Head below (with &quot;approves heads&quot; for that function). Until then the Department Heads of those departments send their weekly report directly to HR.
+            Choose the departments of the right CEO below (with &quot;approves heads&quot; for that function). Until then the Department Heads of those departments send their weekly report directly to HR.
           </div>
         </div>
       )}
@@ -78,12 +83,12 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
         <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
           <div>
-            <b>No accountable Operations Head:</b> {data.unowned.map(u => `${u.name}${u.pendingRequests ? ` (${u.pendingRequests} request${u.pendingRequests === 1 ? '' : 's'} waiting)` : ''}`).join(', ')}.
+            <b>No accountable CEO:</b> {data.unowned.map(u => `${u.name}${u.pendingRequests ? ` (${u.pendingRequests} request${u.pendingRequests === 1 ? '' : 's'} waiting)` : ''}`).join(', ')}.
             A Department Head request for these departments stays pending until you assign one.
           </div>
         </div>
       )}
-      {data && data.heads.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">There is no Operations Head yet. HR submits one; you approve it.</p>}
+      {data && data.heads.length === 0 && <p className="text-sm text-slate-500 bg-white rounded-2xl border border-slate-200/80 p-6 text-center">There is no CEO yet. HR submits one; you approve it.</p>}
       {data && data.heads.length > 0 && (
         <ul className="space-y-2">
           {data.heads.map(h => (
@@ -114,7 +119,7 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
 };
 
 /** How an operations function is called on screen. */
-export const FUNCTION_LABEL: Record<'SALES' | 'SUPPORT' | 'BOTH', string> = { SALES: 'Sales Operations Head', SUPPORT: 'Support Operations Head', BOTH: 'Sales & Support Operations Head' };
+export const FUNCTION_LABEL: Record<'SALES' | 'SUPPORT' | 'BOTH', string> = { SALES: 'Sales CEO', SUPPORT: 'Support CEO', BOTH: 'Sales & Support CEO' };
 const sideLabel = (f: OperationsFunction | undefined) => (f === 'SALES' ? 'Sales' : f === 'SUPPORT' ? 'Support' : 'Sales & Support');
 
 const ScopeDialog: React.FC<{ head: OperationsHeadAdmin; all: OperationsHeadsAdmin['departments']; onClose: () => void; onSaved: () => void }> = ({ head, all, onClose, onSaved }) => {

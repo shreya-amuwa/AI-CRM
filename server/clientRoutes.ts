@@ -39,7 +39,8 @@ const ok = <T>(data: T, status = 200): HandlerResult => ({ status, data });
  * password that signs in right now (the temporary one), and only then is the temporary password retired in the database. Never logged or returned.
  */
 async function changeClientPassword(c: ClientContext): Promise<HandlerResult> {
-  await enforce([{ key: `pwchange:${c.me.customerId}`, limit: 10, window: 900 }], 'memory');
+  // counted in the database: the same count on every server instance (memory alone resets per instance)
+  await enforce([{ key: `pwchange:${c.me.customerId}`, limit: 10, window: 900 }], 'shared');
   const { password } = parse(clientNewPasswordSchema, c.req.body);
   const userId = c.me.loginId;
   if (!userId) throw new AppError('INTERNAL', 'Could not find your sign-in.');

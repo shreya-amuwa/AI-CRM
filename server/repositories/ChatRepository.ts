@@ -3,7 +3,7 @@ import type {
   ChatReceipt,
   ClientSupportGroup,
   ChatConversation,
-  ChatDeleteResult,
+  ChatDeleteResult, ChatInboxDeleteResult, ChatTaggedPerson, ChatReaction, ChatReactResult,
   ChatDirectoryPerson,
   ChatKeyBackup,
   ChatKeyBackupBlob,
@@ -12,6 +12,8 @@ import type {
   ChatMemberKey,
   ChatMessage,
   ChatMessagePage,
+  ChatDeskClient,
+  ChatHandler,
   ChatMyClient,
   ChatPublicKey,
   ChatReviewList,
@@ -50,6 +52,8 @@ export class ChatRepository {
   customerConversation(customerId: string, channel?: string | null) { return this.rpc<ChatConversation>('chat_customer_conversation', { p_customer: customerId, p_channel: channel ?? null }); }
   detail(id: string) { return this.rpc<ChatConversation>('chat_conversation_detail', { p_conversation: id }); }
   myClients(q: string | null) { return this.rpc<ChatMyClient[]>('chat_my_clients', { p_search: q }); }
+  deskClients(q: string | null) { return this.rpc<ChatDeskClient[]>('chat_desk_clients', { p_search: q }); }
+  setHandling(conversationId: string, action: 'TAKE' | 'RELEASE') { return this.rpc<ChatHandler | null>('chat_set_handling', { p_conversation: conversationId, p_action: action }); }
   clientTab() { return this.rpc<{ eligible: boolean; count: number }>('chat_client_tab', {}); }
   clientTeam(conversationId: string) { return this.rpc<{ id: string; name: string; role: string }[]>('chat_client_team', { p_conversation: conversationId }); }
   escalate(conversationId: string, messageId: string | null, targetId: string, note: string | null) {
@@ -75,6 +79,21 @@ export class ChatRepository {
     return this.rpc<{ id: string; deleted: boolean; files: { id: string; bucket: string; path: string; provider: 'R2' | 'SUPABASE' | null }[] }>('chat_delete_for_everyone', { p_message: messageId });
   }
   async attachmentsRemoved(ids: string[]) { await this.rpc<null>('chat_attachments_removed', { p_ids: ids }); }
+
+  // ---- @mentions, reactions, Delete Inbox (migration 20270116000300; the database decides who may)
+  mention(messageId: string, profileIds: string[]) {
+    return this.rpc<{ messageId: string; mentions: ChatTaggedPerson[] }>('chat_message_mention', { p_message: messageId, p_profiles: profileIds });
+  }
+  react(messageId: string, emoji: string | null) { return this.rpc<ChatReactResult>('chat_message_react', { p_message: messageId, p_emoji: emoji }); }
+  reactions(conversationId: string, messageIds: string[]) {
+    return this.rpc<Record<string, ChatReaction[]>>('chat_reactions_for', { p_conversation: conversationId, p_messages: messageIds });
+  }
+  inboxClear() { return this.rpc<ChatInboxDeleteResult>('chat_inbox_clear'); }
+  inboxPurge(confirm: string) {
+    return this.rpc<{ scope: 'ALL_INTERNAL'; conversations: number; messages: number; files: { id: string; bucket: string; path: string; provider: 'R2' | 'SUPABASE' | null }[] }>(
+      'chat_inbox_purge', { p_confirm: confirm });
+  }
+  async purgedFilesRemoved(ids: string[]) { await this.rpc<null>('chat_purged_files_removed', { p_ids: ids }); }
 
   // ---- end-to-end encryption keys (public keys and the passphrase-encrypted private-key backup; no secret is ever in these calls)
   keyStatus() { return this.rpc<ChatKeyStatus>('chat_key_status'); }

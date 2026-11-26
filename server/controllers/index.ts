@@ -110,13 +110,17 @@ export const customersController = {
   addActivity: (async ctx => ok(await svc(ctx).customers.addActivity(ctx.params.id, ctx.req.body), 201)) as Handler,
   /** Support: the Excel sheet of existing customers (preview or save) and the client's set-password e-mail. */
   importExisting: (async ctx => ok(await svc(ctx).customerImport.importExisting(ctx.actor, ctx.req.body, ctx.req.headers.origin))) as Handler,
-  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler
+  sendClientPasswordEmail: (async ctx => ok(await svc(ctx).customerImport.sendPasswordEmail(ctx.actor, ctx.params.id, ctx.req.headers.origin))) as Handler,
+  /** The "Client login" card on the customer's page (20270212000100). */
+  clientLoginStatus: (async ctx => ok(await svc(ctx).customerImport.clientLoginStatus(ctx.params.id))) as Handler
 };
 
 export const chatController = {
   internalList: (async ctx => ok(await svc(ctx).chat.internalList(ctx.req.query))) as Handler,
   myClients: (async ctx => ok(await svc(ctx).chat.myClients(ctx.req.query))) as Handler,
   clientTab: (async ctx => ok(await svc(ctx).chat.clientTab())) as Handler,
+  deskClients: (async ctx => ok(await svc(ctx).chat.deskClients(ctx.req.query))) as Handler,
+  setHandling: (async ctx => ok(await svc(ctx).chat.setHandling(ctx.params.id, ctx.req.body))) as Handler,
   clientTeam: (async ctx => ok(await svc(ctx).chat.clientTeam(ctx.params.id))) as Handler,
   escalateClientMessage: (async ctx => ok(await svc(ctx).chat.escalate(ctx.params.id, ctx.req.body))) as Handler,
   review: (async ctx => ok(await svc(ctx).chat.review(ctx.req.query))) as Handler,
@@ -142,6 +146,10 @@ export const chatController = {
   sendEncrypted: (async ctx => ok(await svc(ctx).chat.sendEncrypted(ctx.params.id, ctx.req.body), 201)) as Handler,
   deleteForMe: (async ctx => ok(await svc(ctx).chat.deleteForMe(ctx.params.id))) as Handler,
   deleteForEveryone: (async ctx => ok(await svc(ctx).chat.deleteForEveryone(ctx.params.id))) as Handler,
+  react: (async ctx => ok(await svc(ctx).chat.react(ctx.params.id, ctx.req.body))) as Handler,
+  reactions: (async ctx => ok(await svc(ctx).chat.reactions(ctx.params.id, ctx.req.query))) as Handler,
+  inboxClear: (async ctx => ok(await svc(ctx).chat.inboxClear())) as Handler,
+  inboxPurge: (async ctx => ok(await svc(ctx).chat.inboxPurge(ctx.req.body))) as Handler,
   keyStatus: (async ctx => ok(await svc(ctx).chat.keyStatus())) as Handler,
   internalMode: (async ctx => ok(await svc(ctx).chat.internalMode())) as Handler,
   setInternalMode: (async ctx => ok(await svc(ctx).chat.setInternalMode(ctx.req.body))) as Handler,
@@ -157,6 +165,40 @@ export const chatController = {
   completeUpload: (async ctx => ok(await svc(ctx).chat.completeUpload(ctx.params.id))) as Handler,
   abortUpload: (async ctx => ok(await svc(ctx).chat.abortUpload(ctx.params.id))) as Handler,
   attachmentUrl: (async ctx => ok(await svc(ctx).chat.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
+};
+
+// Crocodial integration: configuration (Super Admin; the database checks the caller) and an employee's own switch
+/** Global search (Ctrl / Cmd + K): what the caller may open, from the database's own rules. */
+export const searchController = {
+  search: (async ctx => ok(await svc(ctx).search.search(ctx.req.body))) as Handler,
+  record: (async ctx => ok(await svc(ctx).search.record(ctx.params.type, ctx.params.id))) as Handler
+};
+
+export const crocodialController = {
+  overview: (async ctx => ok(await svc(ctx).crocodial.overview())) as Handler,
+  rolloutSet: (async ctx => ok(await svc(ctx).crocodial.rolloutSet(ctx.req.body))) as Handler,
+  connectionSave: (async ctx => ok(await svc(ctx).crocodial.connectionSave(ctx.req.body))) as Handler,
+  testConnection: (async ctx => ok(await svc(ctx).crocodial.testConnection(ctx.params.id, ctx.req.headers.host))) as Handler,
+  departmentLinkSave: (async ctx => ok(await svc(ctx).crocodial.departmentLinkSave(ctx.req.body))) as Handler,
+  mappingCheck: (async ctx => ok(await svc(ctx).crocodial.mappingCheck(ctx.req.body))) as Handler,
+  mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
+  mappingApprove: (async ctx => ok(await svc(ctx).crocodial.mappingApprove(ctx.params.id))) as Handler,
+  mappingCountFrom: (async ctx => ok(await svc(ctx).crocodial.mappingCountFrom(ctx.params.id, ctx.req.body))) as Handler,
+  mappingRevoke: (async ctx => ok(await svc(ctx).crocodial.mappingRevoke(ctx.params.id, ctx.req.body))) as Handler,
+  myStatus: (async ctx => ok(await svc(ctx).crocodial.myStatus())) as Handler,
+  syncStatus: (async ctx => ok(await svc(ctx).crocodial.syncStatus())) as Handler,
+  syncNow: (async ctx => ok(await svc(ctx).crocodial.syncNow(ctx.params.id))) as Handler,
+  activity: (async ctx => ok(await svc(ctx).crocodial.activity(ctx.req.query))) as Handler,
+  teamActivity: (async ctx => ok(await svc(ctx).crocodial.teamActivity(ctx.req.query))) as Handler,
+  leads: (async ctx => ok(await svc(ctx).crocodial.leads(ctx.req.query))) as Handler,
+  refreshCapabilities: (async ctx => ok(await svc(ctx).crocodial.refreshCapabilities())) as Handler,
+  // the read of the connections this request started runs after the answer (Cloudflare waitUntil)
+  refresh: (async ctx => {
+    const r = await svc(ctx).crocodial.refresh(ctx.req.body);
+    return { ...ok(r.data), after: r.after };
+  }) as Handler,
+  refreshStatus: (async ctx => ok(await svc(ctx).crocodial.refreshStatus(ctx.params.id))) as Handler,
+  connectionHealth: (async ctx => ok(await svc(ctx).crocodial.connectionHealth(ctx.req.headers.host))) as Handler
 };
 
 export const leadWhatsAppController = {
@@ -177,6 +219,21 @@ export const meetingsController = {
   answerProposal: (async ctx => ok(await svc(ctx).meetings.answerProposal(ctx.params.id, ctx.req.body))) as Handler,
   respond: (async ctx => ok(await svc(ctx).meetings.respond(ctx.params.id, ctx.req.body))) as Handler,
   approvals: (async ctx => ok(await svc(ctx).meetings.approvals())) as Handler,
+  presence: (async ctx => ok(await svc(ctx).meetings.presence(ctx.req.query))) as Handler,
+  ceoPresence: (async ctx => ok(await svc(ctx).meetings.ceoPresence())) as Handler,
+  ceoOffice: (async ctx => ok(await svc(ctx).meetings.ceoOffice())) as Handler,
+  ceoArrived: (async ctx => ok(await svc(ctx).meetings.ceoArrived(ctx.req.body))) as Handler,
+  ceoNotArrived: (async ctx => ok(await svc(ctx).meetings.ceoNotArrived(ctx.req.body))) as Handler,
+  ceoArrivalUndo: (async ctx => ok(await svc(ctx).meetings.ceoArrivalUndo(ctx.req.body))) as Handler,
+  roomLink: (async ctx => ok(await svc(ctx).meetings.roomLink())) as Handler,
+  setRoomLink: (async ctx => ok(await svc(ctx).meetings.setRoomLink(ctx.req.body))) as Handler,
+  clientList: (async ctx => ok(await svc(ctx).meetings.clientList(ctx.req.query))) as Handler,
+  createClient: (async ctx => ok(await svc(ctx).meetings.createClient(ctx.req.body), 201)) as Handler,
+  mailLog: (async ctx => ok(await svc(ctx).meetings.mailLog(ctx.params.id))) as Handler,
+  mailRetry: (async ctx => ok(await svc(ctx).meetings.mailRetry(ctx.params.id))) as Handler,
+  presenceEnter: (async ctx => ok(await svc(ctx).meetings.presenceEnter(ctx.req.body))) as Handler,
+  presenceExit: (async ctx => ok(await svc(ctx).meetings.presenceExit())) as Handler,
+  ceoRequests: (async ctx => ok(await svc(ctx).meetings.ceoRequests(ctx.req.query))) as Handler,
   directory: (async ctx => ok(await svc(ctx).meetings.directory(ctx.req.query))) as Handler,
   busy: (async ctx => ok(await svc(ctx).meetings.busy(ctx.req.body))) as Handler,
   settings: (async ctx => ok(await svc(ctx).meetings.settings())) as Handler,
@@ -185,7 +242,57 @@ export const meetingsController = {
   setDelegates: (async ctx => ok(await svc(ctx).meetings.setDelegates(ctx.req.body))) as Handler,
   googleStatus: (async ctx => ok(await svc(ctx).meetings.googleStatus())) as Handler,
   googleConnect: (async ctx => ok(svc(ctx).meetings.googleConnect(ctx.actor))) as Handler,
-  googleDisconnect: (async ctx => ok(await svc(ctx).meetings.googleDisconnect(ctx.actor))) as Handler
+  googleDisconnect: (async ctx => ok(await svc(ctx).meetings.googleDisconnect(ctx.actor))) as Handler,
+  // post-meeting summaries and the CEO's Meeting Decisions (20270124000200)
+  summary: (async ctx => ok(await svc(ctx).meetings.summary(ctx.params.id))) as Handler,
+  summaryAttendance: (async ctx => ok(await svc(ctx).meetings.confirmAttendance(ctx.params.id, ctx.req.body))) as Handler,
+  summaryOwner: (async ctx => ok(await svc(ctx).meetings.assignSummaryOwner(ctx.params.id, ctx.req.body))) as Handler,
+  summaryDraft: (async ctx => ok(await svc(ctx).meetings.saveSummaryDraft(ctx.params.id, ctx.req.body))) as Handler,
+  summarySubmit: (async ctx => ok(await svc(ctx).meetings.submitSummary(ctx.params.id, ctx.req.body))) as Handler,
+  summaryClarify: (async ctx => ok(await svc(ctx).meetings.clarifySummary(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
+  summaryReply: (async ctx => ok(await svc(ctx).meetings.replySummary(ctx.params.id, ctx.req.body), 201)) as Handler,
+  summaryFlag: (async ctx => ok(await svc(ctx).meetings.flagSummaryItem(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  summaryActionUpdate: (async ctx => ok(await svc(ctx).meetings.updateSummaryAction(ctx.params.id, ctx.req.body))) as Handler,
+  summaries: (async ctx => ok(await svc(ctx).meetings.summaries(ctx.req.query))) as Handler,
+  myActions: (async ctx => ok(await svc(ctx).meetings.myActions())) as Handler,
+  reportsOverview: (async ctx => ok(await svc(ctx).meetings.reportsOverview(ctx.actor, ctx.req.query))) as Handler,
+  reports: (async ctx => ok(await svc(ctx).meetings.reports(ctx.actor, ctx.req.query))) as Handler,
+  report: (async ctx => ok(await svc(ctx).meetings.report(ctx.actor, ctx.params.id))) as Handler,
+  reportActions: (async ctx => ok(await svc(ctx).meetings.reportActions(ctx.actor, ctx.req.query))) as Handler
+};
+
+/** Bugs for the Developers team (20270122000300). */
+export const bugsController = {
+  access: (async ctx => ok(await svc(ctx).bugs.access())) as Handler,
+  submit: (async ctx => ok(await svc(ctx).bugs.submit(ctx.req.body), 201)) as Handler,
+  mine: (async ctx => ok(await svc(ctx).bugs.mine(ctx.req.query))) as Handler,
+  followUp: (async ctx => ok(await svc(ctx).bugs.followUp(ctx.params.id, ctx.req.body), 201)) as Handler,
+  reply: (async ctx => ok(await svc(ctx).bugs.reply(ctx.params.id, ctx.req.body), 201)) as Handler,
+  myDetail: (async ctx => ok(await svc(ctx).bugs.myDetail(ctx.params.id))) as Handler,
+  list: (async ctx => ok(await svc(ctx).bugs.list(ctx.req.query))) as Handler,
+  detail: (async ctx => ok(await svc(ctx).bugs.detail(ctx.params.id))) as Handler,
+  assign: (async ctx => ok(await svc(ctx).bugs.assign(ctx.params.id, ctx.req.body))) as Handler,
+  setStatus: (async ctx => ok(await svc(ctx).bugs.setStatus(ctx.params.id, ctx.req.body))) as Handler,
+  comment: (async ctx => ok(await svc(ctx).bugs.comment(ctx.params.id, ctx.req.body), 201)) as Handler,
+  team: (async ctx => ok(await svc(ctx).bugs.team())) as Handler,
+  setTeam: (async ctx => ok(await svc(ctx).bugs.setTeam(ctx.req.body))) as Handler
+};
+
+// Company Notice Board (20270131000200): everyone reads; the database decides who publishes, edits and archives
+export const noticesController = {
+  list: (async ctx => ok(await svc(ctx).notices.list(ctx.req.query))) as Handler,
+  unreadCount: (async ctx => ok(await svc(ctx).notices.unreadCount())) as Handler,
+  audience: (async ctx => ok(await svc(ctx).notices.audienceOptions())) as Handler,
+  pending: (async ctx => ok(await svc(ctx).notices.pending())) as Handler,
+  acknowledge: (async ctx => ok(await svc(ctx).notices.acknowledge(ctx.params.id))) as Handler,
+  managers: (async ctx => ok(await svc(ctx).notices.managers())) as Handler,
+  managerSet: (async ctx => ok(await svc(ctx).notices.managerSet(ctx.params.profileId, ctx.req.body))) as Handler,
+  open: (async ctx => ok(await svc(ctx).notices.open(ctx.params.id))) as Handler,
+  receipts: (async ctx => ok(await svc(ctx).notices.receipts(ctx.params.id))) as Handler,
+  publish: (async ctx => ok(await svc(ctx).notices.publish(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).notices.update(ctx.params.id, ctx.req.body))) as Handler,
+  archive: (async ctx => ok(await svc(ctx).notices.archive(ctx.params.id))) as Handler,
+  delete: (async ctx => ok(await svc(ctx).notices.delete(ctx.params.id))) as Handler
 };
 
 export const employeeCasesController = {
@@ -210,6 +317,7 @@ export const employeeCasesController = {
   issueOverview: (async ctx => ok(await svc(ctx).employeeCases.issueOverview())) as Handler,
   hrIssues: (async ctx => ok(await svc(ctx).employeeCases.hrIssues(ctx.req.query))) as Handler,
   hrIssue: (async ctx => ok(await svc(ctx).employeeCases.hrIssue(ctx.params.id))) as Handler,
+  escalateIssue: (async ctx => ok(await svc(ctx).employeeCases.escalateIssue(ctx.params.id, ctx.req.body))) as Handler,
   assignIssue: (async ctx => ok(await svc(ctx).employeeCases.assignIssue(ctx.params.id, ctx.req.body))) as Handler,
   setIssueStatus: (async ctx => ok(await svc(ctx).employeeCases.setIssueStatus(ctx.params.id, ctx.req.body))) as Handler,
   respondToIssue: (async ctx => ok(await svc(ctx).employeeCases.respondToIssue(ctx.params.id, ctx.req.body))) as Handler,
@@ -239,7 +347,29 @@ export const notificationsController = {
     await svc(ctx).notifications.delete(ctx.params.id);
     return ok(null);
   }) as Handler,
-  broadcast: (async ctx => ok(await svc(ctx).notifications.broadcast(ctx.actor, ctx.req.body), 201)) as Handler
+  broadcast: (async ctx => ok(await svc(ctx).notifications.broadcast(ctx.actor, ctx.req.body), 201)) as Handler,
+  // Notification Health (20270126000200): Super Admin and HR staff; the database checks the caller and audits each read
+  health: (async ctx => ok(await svc(ctx).notificationHealth.report(ctx.req.query))) as Handler,
+  healthEmployee: (async ctx => ok(await svc(ctx).notificationHealth.employee(ctx.params.profileId))) as Handler,
+  healthTest: (async ctx => ok(await svc(ctx).notificationHealth.sendTest(ctx.params.profileId))) as Handler
+};
+
+// Email Management (20270201000100): settings, senders, rules and suppression for the Super Admin (checked again by the database);
+// the history for everyone, scoped by the database to what each person's work allows.
+export const emailController = {
+  overview: (async ctx => ok(await svc(ctx).emailAdmin.overview())) as Handler,
+  saveSettings: (async ctx => ok(await svc(ctx).emailAdmin.saveSettings(ctx.req.body))) as Handler,
+  saveSender: (async ctx => ok(await svc(ctx).emailAdmin.saveSender(ctx.req.body))) as Handler,
+  deleteSender: (async ctx => ok(await svc(ctx).emailAdmin.deleteSender(ctx.params.category))) as Handler,
+  saveRule: (async ctx => ok(await svc(ctx).emailAdmin.saveRule(ctx.req.body))) as Handler,
+  deleteRule: (async ctx => ok(await svc(ctx).emailAdmin.deleteRule(ctx.params.id))) as Handler,
+  previewRule: (async ctx => ok(await svc(ctx).emailAdmin.previewRule(ctx.params.id, ctx.req.body))) as Handler,
+  suppressions: (async ctx => ok(await svc(ctx).emailAdmin.suppressions(ctx.req.query))) as Handler,
+  setSuppression: (async ctx => ok(await svc(ctx).emailAdmin.setSuppression(ctx.req.body))) as Handler,
+  checkProvider: (async ctx => ok(await svc(ctx).emailAdmin.checkProvider(ctx.actor, ctx.params.provider))) as Handler,
+  history: (async ctx => ok(await svc(ctx).emailAdmin.history(ctx.req.query))) as Handler,
+  historyDetail: (async ctx => ok(await svc(ctx).emailAdmin.historyDetail(ctx.params.id))) as Handler,
+  reviewMessage: (async ctx => ok(await svc(ctx).emailAdmin.reviewMessage(ctx.params.id, ctx.req.body))) as Handler
 };
 
 export const organizationController = {
@@ -260,6 +390,19 @@ export const organizationController = {
 };
 
 import { runHrAutomation } from '../automations/hrDispatcher.js';
+
+// HR Awards (20270203000100): Award Management > Awards; the database allows HR staff and the Super Admin
+export const hrAwardsController = {
+  overview: (async ctx => ok(await svc(ctx).hrAwards.overview(ctx.req.query))) as Handler,
+  options: (async ctx => ok(await svc(ctx).hrAwards.options())) as Handler,
+  detail: (async ctx => ok(await svc(ctx).hrAwards.detail(ctx.params.code, ctx.req.query))) as Handler,
+  nominate: (async ctx => ok(await svc(ctx).hrAwards.nominate(ctx.params.code, ctx.req.body), 201)) as Handler,
+  updateNominee: (async ctx => ok(await svc(ctx).hrAwards.updateNominee(ctx.params.id, ctx.req.body))) as Handler,
+  removeNominee: (async ctx => ok(await svc(ctx).hrAwards.removeNominee(ctx.params.id, ctx.req.body))) as Handler,
+  declareWinners: (async ctx => ok(await svc(ctx).hrAwards.declareWinners(ctx.req.body))) as Handler,
+  updateWinner: (async ctx => ok(await svc(ctx).hrAwards.updateWinner(ctx.params.id, ctx.req.body))) as Handler,
+  revokeWinner: (async ctx => ok(await svc(ctx).hrAwards.revokeWinner(ctx.params.id, ctx.req.body))) as Handler
+};
 
 export const hrController = {
   recordRmLogin: (async ctx => (await svc(ctx).hr.recordRmLogin(), ok(null))) as Handler,
@@ -317,7 +460,41 @@ export const hrDocumentController = {
   download: (async ctx => ok(await svc(ctx).hrDocuments.download(ctx.params.id))) as Handler,
   templateState: (async ctx => ok(await svc(ctx).hrDocuments.templateState(ctx.params.type))) as Handler,
   templateVersion: (async ctx => ok(await svc(ctx).hrDocuments.templateVersion(ctx.params.type, ctx.params.version))) as Handler,
-  saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler
+  saveTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveTemplate(ctx.params.type, ctx.req.body), 201)) as Handler,
+  // role-based Offer Letter templates (20270206000100)
+  offerTemplates: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplates())) as Handler,
+  offerLetterheads: (async ctx => ok(await svc(ctx).hrDocuments.offerLetterheads())) as Handler,
+  offerTemplateHistory: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplateHistory(ctx.params.id))) as Handler,
+  offerTemplateVersion: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplateVersion(ctx.params.id, ctx.params.version))) as Handler,
+  createOfferTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveOfferTemplate(null, ctx.req.body), 201)) as Handler,
+  saveOfferTemplate: (async ctx => ok(await svc(ctx).hrDocuments.saveOfferTemplate(ctx.params.id, ctx.req.body), 201)) as Handler,
+  previewOfferTemplate: (async ctx => ok(await svc(ctx).hrDocuments.previewOfferTemplate(ctx.req.body))) as Handler,
+  uploadOfferTemplateFile: (async ctx => ok(await svc(ctx).hrDocuments.uploadOfferTemplateFile(ctx.req.body), 201)) as Handler,
+  offerTemplateFileUrl: (async ctx => ok(await svc(ctx).hrDocuments.offerTemplateFileUrl(ctx.params.id))) as Handler
+};
+
+export const payoutController = {
+  slip: (async ctx => ok(await svc(ctx).payouts.slip(ctx.params.id))) as Handler,
+  razorpayStatus: (async ctx => ok(svc(ctx).payouts.razorpayStatus())) as Handler,
+  payViaRazorpay: (async ctx => ok(await svc(ctx).payouts.payViaRazorpay(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
+  checkRazorpay: (async ctx => ok(await svc(ctx).payouts.checkRazorpay(ctx.params.id))) as Handler
+};
+
+// Task daily reports (Team Member -> Team Lead) and performance approval (Team Member -> Team Lead -> Department Head)
+export const taskReportsController = {
+  myTasks: (async ctx => ok(await svc(ctx).taskReports.myTasks())) as Handler,
+  submit: (async ctx => ok(await svc(ctx).taskReports.submit(ctx.req.body), 201)) as Handler,
+  list: (async ctx => ok(await svc(ctx).taskReports.list(ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).taskReports.get(ctx.params.id))) as Handler,
+  review: (async ctx => ok(await svc(ctx).taskReports.review(ctx.params.id, ctx.req.body))) as Handler,
+  overview: (async ctx => ok(await svc(ctx).taskReports.overview(ctx.req.query))) as Handler,
+  reviewRecord: (async ctx => ok(await svc(ctx).taskReports.reviewRecord(ctx.params.id, ctx.req.body))) as Handler,
+  resubmitRecord: (async ctx => ok(await svc(ctx).taskReports.resubmitRecord(ctx.params.id))) as Handler,
+  recordHistory: (async ctx => ok(await svc(ctx).taskReports.recordHistory(ctx.params.id))) as Handler,
+  subjectHistory: (async ctx => ok(await svc(ctx).taskReports.subjectHistory(ctx.params.id))) as Handler,
+  reviewerEdit: (async ctx => ok(await svc(ctx).taskReports.reviewerEdit(ctx.params.id, ctx.req.body))) as Handler,
+  updateEvaluation: (async ctx => ok(await svc(ctx).taskReports.updateEvaluation(ctx.params.id, ctx.req.body))) as Handler,
+  personWork: (async ctx => ok(await svc(ctx).taskReports.work(ctx.params.id, ctx.req.query))) as Handler
 };
 
 export const performanceController = {
@@ -395,6 +572,7 @@ export const pipelineController = {
   get: (async ctx => ok(await svc(ctx).pipeline.get(ctx.params.id))) as Handler,
   createLead: (async ctx => ok(await svc(ctx).pipeline.createLead(ctx.actor, ctx.req.body), 201)) as Handler,
   updateLead: (async ctx => ok(await svc(ctx).pipeline.updateLead(ctx.params.id, ctx.req.body))) as Handler,
+  saveAiWebsiteOnboarding: (async ctx => ok(await svc(ctx).pipeline.saveAiWebsiteOnboarding(ctx.params.id, ctx.req.body))) as Handler,
   moveToPotential: (async ctx => ok(await svc(ctx).pipeline.moveToPotential(ctx.params.id, ctx.req.body))) as Handler,
   recordPayment: (async ctx => ok(await svc(ctx).pipeline.recordPayment(ctx.params.id, ctx.req.body))) as Handler,
   accountsCreateClientLogin: (async ctx => ok(await svc(ctx).pipeline.accountsCreateClientLogin(ctx.actor, ctx.params.id, ctx.req.body), 201)) as Handler,
@@ -701,8 +879,12 @@ export const salesHeadController = {
   taskAssignees: (async ctx => ok(await svc(ctx).salesHead.taskAssignees())) as Handler,
   createTask: (async ctx => ok(await svc(ctx).salesHead.createTask(ctx.req.body), 201)) as Handler,
   reports: (async ctx => ok(await svc(ctx).salesHead.reports(ctx.req.query))) as Handler,
-  income: (async ctx => ok(await svc(ctx).salesHead.income(ctx.req.query))) as Handler
+  income: (async ctx => ok(await svc(ctx).salesHead.income(ctx.req.query))) as Handler,
+  roleList: (async ctx => ok(await svc(ctx).salesHead.roleList(roleParam(ctx.params.role), ctx.req.query))) as Handler,
+  rolePerson: (async ctx => ok(await svc(ctx).salesHead.rolePerson(roleParam(ctx.params.role), ctx.params.id, ctx.req.query))) as Handler
 };
+/** /sales-head/roles/telecaller -> TELECALLER, /business-associate -> BUSINESS_ASSOCIATE (anything else fails validation in the service). */
+function roleParam(v: string | undefined): string { return (v ?? '').toUpperCase().replace(/-/g, '_'); }
 
 export const businessAssociateController = {
   home: (async ctx => ok(await svc(ctx).ba.home())) as Handler,
@@ -820,6 +1002,35 @@ export const reportAnalyticsController = {
   generate: (async ctx => ok(await svc(ctx).reportAnalytics.generate(ctx.req.body))) as Handler
 };
 
+// AI Design Studio: clients, client notices, assignments, daily reports, issues (the database decides who may do what)
+export const aiDesignStudioController = {
+  context: (async ctx => ok(await svc(ctx).aiDesignStudio.context())) as Handler,
+  people: (async ctx => ok(await svc(ctx).aiDesignStudio.people())) as Handler,
+  overview: (async ctx => ok(await svc(ctx).aiDesignStudio.overview())) as Handler,
+  clientCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.clientCreate(ctx.req.body), 201)) as Handler,
+  clientUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.clientUpdate(ctx.params.id, ctx.req.body))) as Handler,
+  clients: (async ctx => ok(await svc(ctx).aiDesignStudio.clients(ctx.req.query))) as Handler,
+  client: (async ctx => ok(await svc(ctx).aiDesignStudio.client(ctx.params.id))) as Handler,
+  noticeCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.noticeCreate(ctx.req.body), 201)) as Handler,
+  notices: (async ctx => ok(await svc(ctx).aiDesignStudio.notices(ctx.req.query))) as Handler,
+  noticeStatus: (async ctx => ok(await svc(ctx).aiDesignStudio.noticeStatus(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentCreate(ctx.req.body), 201)) as Handler,
+  assignments: (async ctx => ok(await svc(ctx).aiDesignStudio.assignments(ctx.req.query))) as Handler,
+  assignment: (async ctx => ok(await svc(ctx).aiDesignStudio.assignment(ctx.params.id))) as Handler,
+  assignmentStatus: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentStatus(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentUpdate(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentReassign: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentReassign(ctx.params.id, ctx.req.body))) as Handler,
+  reportSubmit: (async ctx => ok(await svc(ctx).aiDesignStudio.reportSubmit(ctx.req.body), 201)) as Handler,
+  reports: (async ctx => ok(await svc(ctx).aiDesignStudio.reports(ctx.req.query))) as Handler,
+  report: (async ctx => ok(await svc(ctx).aiDesignStudio.report(ctx.params.id))) as Handler,
+  reportReview: (async ctx => ok(await svc(ctx).aiDesignStudio.reportReview(ctx.params.id, ctx.req.body))) as Handler,
+  issueCreate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueCreate(ctx.req.body), 201)) as Handler,
+  issues: (async ctx => ok(await svc(ctx).aiDesignStudio.issues(ctx.req.query))) as Handler,
+  issue: (async ctx => ok(await svc(ctx).aiDesignStudio.issue(ctx.params.id))) as Handler,
+  issueUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueUpdate(ctx.params.id, ctx.req.body))) as Handler,
+  issueEscalate: (async ctx => ok(await svc(ctx).aiDesignStudio.issueEscalate(ctx.params.id, ctx.req.body))) as Handler
+};
+
 // ---- AI Studio ----
 export const aiStudioController = {
   overview: (async ctx => ok(await svc(ctx).aiStudio.overview())) as Handler,
@@ -827,6 +1038,7 @@ export const aiStudioController = {
   assignLead: (async ctx => ok(await svc(ctx).aiStudio.assignLead(ctx.req.body))) as Handler,
   setLead: (async ctx => ok(await svc(ctx).aiStudio.setLead(ctx.params.id, ctx.req.body))) as Handler,
   projects: (async ctx => ok(await svc(ctx).aiStudio.projects())) as Handler,
+  deadlines: (async ctx => ok(await svc(ctx).aiStudio.deadlines())) as Handler,
   createProject: (async ctx => ok(await svc(ctx).aiStudio.createProject(ctx.req.body), 201)) as Handler,
   updateProject: (async ctx => ok(await svc(ctx).aiStudio.updateProject(ctx.params.id, ctx.req.body))) as Handler,
   assignProject: (async ctx => ok(await svc(ctx).aiStudio.assignProject(ctx.params.id, ctx.req.body))) as Handler,
@@ -841,5 +1053,6 @@ export const aiStudioController = {
   createReport: (async ctx => ok(await svc(ctx).aiStudio.createReport(ctx.req.body), 201)) as Handler,
   updateReport: (async ctx => ok(await svc(ctx).aiStudio.updateReport(ctx.params.id, ctx.req.body))) as Handler,
   deleteDraft: (async ctx => { await svc(ctx).aiStudio.deleteDraft(ctx.params.id); return ok(null); }) as Handler,
-  reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler
+  reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler,
+  leadEditReport: (async ctx => ok(await svc(ctx).aiStudio.leadEditReport(ctx.params.id, ctx.req.body))) as Handler
 };

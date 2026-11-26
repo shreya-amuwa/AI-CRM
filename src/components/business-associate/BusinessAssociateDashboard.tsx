@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Bell, CalendarClock, CalendarDays, ClipboardList, CheckSquare, FileText, FileSignature, Home, LayoutList, MapPinned, MessageCircle, PackageCheck, Receipt,
+  Bell, CalendarClock, CalendarDays, ClipboardList, CheckSquare, FileText, FileSignature, Home, IndianRupee, LayoutList, MapPinned, MessageCircle, PackageCheck, Receipt,
   Settings, Target, Users
 } from 'lucide-react';
+import { IncomePage } from '../income/IncomePage';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, groupNavItems } from '../layout/shell';
@@ -30,7 +31,7 @@ export type BaPage = 'home' | 'tasks' | 'leads' | 'quotation' | 'demos' | 'scope
 /** The pages of the Business Associate pages that also take a client (and document) to open. */
 type MemberPage = 'customers' | 'follow-ups' | 'work-tasks' | 'calendar' | 'invoices' | 'delivery' | 'settings' | 'notifications';
 /** The pages of this dashboard: the Business Associate pages, the Leads group, the member pages (customers, follow-ups, calendar ...), subscriptions and chat. */
-type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage | MemberPage | 'subscriptions' | 'chat' | 'raise-issue' | 'work-reports';
+type Section = BaPage | Exclude<PipelineSection, 'leads'> | FieldVisitPage | MemberPage | 'subscriptions' | 'chat' | 'raise-issue' | 'work-reports' | 'income';
 /** Where a button sends the Business Associate: a page, and optionally the client (and document) to open there. */
 export interface BaTarget { contactId?: string; quotationId?: string; scopeId?: string; stage?: string; addLead?: boolean; newDemo?: boolean }
 export type BaNavigate = (page: BaPage, target?: BaTarget) => void;
@@ -65,6 +66,8 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: 'quotation', label: 'Quotation', icon: FileText },
   { id: 'demos', label: 'Demo Schedule', icon: CalendarClock },
   { id: 'scope', label: 'Scope of Project', icon: FileSignature },
+  // sales incentives (20270119000100): what the Business Associate has earned
+  { id: 'income', label: 'My Income', icon: IndianRupee },
   { id: 'subscriptions', label: 'Subscriptions', icon: Receipt },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
@@ -77,7 +80,7 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
 const SECTIONS_OF_NAV = [
   { label: 'Overview', ids: ['home'] },
   { label: 'Sales & Leads', ids: ['leads-group', 'customers', 'follow-ups', 'work-tasks', FIELD_VISIT_GROUP_ID, 'calendar'] },
-  { label: 'Business Associate', ids: ['tasks', 'quotation', 'demos', 'scope'] },
+  { label: 'Business Associate', ids: ['tasks', 'quotation', 'demos', 'scope', 'income'] },
   { label: 'Subscriptions & Services', ids: ['subscriptions', 'invoices', 'delivery'] },
   { label: 'Communication', ids: ['chat', 'notifications', REPORTS_NAV.id, ISSUES_NAV.id] },
   { label: 'Account', ids: ['settings'] }
@@ -87,7 +90,7 @@ const SEGMENT: Record<Section, string> = {
   home: '', tasks: 'tasks', leads: 'leads', potential: 'potential', onboarding: 'customer-onboarding', 'part-payments': 'part-payments',
   quotation: 'quotation', demos: 'demo-schedule', scope: 'scope-of-project', 'raise-issue': 'raise-issue', 'work-reports': 'work-reports',
   customers: 'customers', 'follow-ups': 'follow-ups', 'work-tasks': 'my-tasks', calendar: 'calendar', invoices: 'invoices', delivery: 'delivery-queue',
-  settings: 'settings', notifications: 'notifications', subscriptions: 'subscriptions', chat: 'chat'
+  settings: 'settings', notifications: 'notifications', subscriptions: 'subscriptions', chat: 'chat', income: 'income'
 };
 /** The member page (shared with the Team Member dashboard) behind a menu entry. */
 const MEMBER_SECTION: Partial<Record<Section, MemberSection>> = {
@@ -195,6 +198,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
           {page === 'demos' && <DemoSchedulePage key={key} go={go} initialContactId={target.contactId} openNew={!!target.newDemo} />}
           {page === 'scope' && <ScopePage key={key} go={go} initialContactId={target.contactId} initialScopeId={target.scopeId} />}
           {page === 'subscriptions' && <SubscriptionsPage key={key} />}
+          {page === 'income' && <IncomePage />}
           {page === 'raise-issue' && <IssuesRoute />}
           {page === 'work-reports' && <ReportsRoute />}
         </div>

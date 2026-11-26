@@ -6,6 +6,7 @@ import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/she
 import { NotificationBell } from '../notifications/NotificationBell';
 import { CHAT_NAV, ChatRoute, useChatNavBadge } from '../chat/ChatRoute';
 import { useOpenChatRequest } from '../chat/chatEvents';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { ISSUES_NAV, IssuesRoute } from '../issues/IssuesRoute';
 import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
@@ -16,7 +17,7 @@ import { useSupportInvoices, useTickets } from '../../lib/support';
 import { CustomerProfile, CustomersPage } from './CustomersPage';
 import { TasksPage } from './TasksPage';
 import { AddCustomerPage } from './AddCustomerPage';
-import { TicketsPage } from './TicketsPage';
+import { TicketsWithDesk } from './DeskTickets';
 import { InvoicesPage } from './InvoicesPage';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { HandoverBoard } from '../handover/HandoverBoard';
@@ -37,8 +38,9 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'customers', label: 'Dashboard - Existing Customers', icon: LayoutDashboard },
   // Clients handed over Technical Consultant -> Department Head -> Support Team Lead -> me.
   { id: 'my-clients', label: 'My Clients', icon: UserCheck },
-  { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
+  { id: 'tasks', label: 'My Assigned Tasks', icon: ClipboardList },
   { id: 'work-reports', label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
+  // no My Performance: performance is the Team Lead's and the Department Head's (20270213000100); an old /my-performance address opens the dashboard
   { id: 'add-customer', label: 'Add Customer', icon: UserPlus },
   { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
   // Support also pitches services (referrals and other channels): the same lead pipeline Sales uses, limited to their own records
@@ -97,6 +99,7 @@ export const SupportMemberDashboard: React.FC = () => {
   useOpenChatRequest(React.useCallback(() => { setProfileId(null); setPage('chat'); }, []));
   useOpenIssuesRequest(React.useCallback(() => { setProfileId(null); setPage('raise-issue'); }, []));
   useOpenReportsRequest(React.useCallback(() => { setProfileId(null); setPage('work-reports'); }, []));
+  useOpenWorkUpdateRequest(React.useCallback(() => { setProfileId(null); setPage('tasks'); }, []));
 
   const go = (next: SupportPage) => {
     setProfileId(null);
@@ -183,7 +186,7 @@ export const SupportMemberDashboard: React.FC = () => {
           }}
         />
       ) : page === 'tickets' ? (
-        <TicketsPage mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
+        <TicketsWithDesk mode="member" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={openCustomer} />
       ) : page === 'chat' ? (
         <ChatRoute />
       ) : page === 'raise-issue' ? (

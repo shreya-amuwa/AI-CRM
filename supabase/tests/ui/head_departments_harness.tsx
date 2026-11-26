@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HeadDepartmentsField } from '../../../src/components/scope/HeadDepartmentsField';
 import { buildHeadAssignment, type HeadFunction } from '../../../src/lib/scope/headAssignment';
+import './withAppFeedback';
 
 const dep = (id: string, name: string, facetOf: string | null = null, facetDivision: 'SALES' | 'SUPPORT' | null = null) => ({ id, slug: id, name, facetOf, facetDivision });
 const departments = [dep('wabastore', 'Wabastore'), dep('whatsbox', 'Whatsbox'), dep('wabastar', 'Wabastar'), dep('dtalk', 'D Talk Corporation'), dep('wabatalk', 'Wabatalk', 'dtalk', 'SUPPORT'), dep('mpillar', 'M Pillar Corporation')];

@@ -17,7 +17,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ApiResponse } from '../shared/contracts.js';
 import { assertActive, authenticateRequest, type Actor } from './auth/authenticate.js';
 import { ConfigurationError, getEnv } from './config/env.js';
-import { healthCheck } from './health.js';
+import { databaseReadiness, healthCheck } from './health.js';
 import { AppError, fromDatabaseError } from './http/errors.js';
 import { parse } from './http/validate.js';
 import { biometricPunchSchema, loginFailureReportSchema } from '../shared/validation.js';
@@ -28,8 +28,13 @@ import { automationSettings } from './automations/config.js';
 import { authenticateClient, clientRouteMatchers, clientRoutes, clientServices } from './clientRoutes.js';
 import { dispatchQuietly, runDispatch } from './automations/dispatcher.js';
 import { resolveAttendancePlaces } from './automations/attendancePlaces.js';
+import { runAttendanceReminders } from './automations/attendanceReminders.js';
+import { runChatUnansweredReminders } from './automations/chatWaiting.js';
+import { messageIdFrom, pushChatMessage } from './automations/chatPush.js';
 import { runWelcomeEmailDispatch, welcomeEmailQuietly } from './automations/welcomeDispatcher.js';
 import { handleAuthEmailHook } from './automations/authEmailHook.js';
+import { handleResendWebhook } from './email/resendWebhook.js';
+import { checkPendingRazorpayPayouts, handleRazorpayWebhook } from './services/PayoutService.js';
 import { isPausedVercelCron } from './platform.js';
 import { runDecisionEmailDispatch } from './recruitment/emailDispatcher.js';
 import { runHrAutomation } from './automations/hrDispatcher.js';
@@ -53,8 +58,9 @@ import { requestInfo } from './http/context.js';
 import { deviceLabel, recordSecurityEvent, sessionClaims } from './security/events.js';
 import { reportServerError } from './monitoring.js';
 import { locateRequest, trustedClientIp } from './security/clientNetwork.js';
-import { currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
+import { crmTurnstileConfig, currentEdgeLimiter, emailKey, isDisposableEmail, isPortalServer, limitOf, turnstileRefused, verifiedPortalClient, verifyTurnstile, type TurnstileAction } from './security/abuse.js';
 import { candidateGuardSchema } from '../shared/validation.js';
+import { crocodialSyncQuietly } from './crocodial/sync.js';
 
 export const API_PREFIX = '/api/v1';
 const MAX_BODY_BYTES = 1_000_000;
@@ -101,7 +107,8 @@ const tooLarge = () => {
 const defaultBodyLimit = bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge });
 // The Excel import of existing customers sends the whole workbook as JSON (up to 5000 rows); so does the Upload Leads preview.
 const importBodyLimit = bodyLimit({ maxSize: IMPORT_BODY_BYTES, onError: tooLarge });
-app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/lead-uploads/check' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
+// a template sample / letterhead (up to 2.5 MB, sent as base64) uses the larger limit too
+app.use('*', (c, next) => (relativePath(c) === '/customers/import-existing' || relativePath(c) === '/lead-uploads/check' || relativePath(c) === '/hr/offer-templates/files' ? importBodyLimit(c, next) : defaultBodyLimit(c, next)));
 // Layer 1: coarse per-IP flood protection before any auth work. On the Worker: Cloudflare's rate limiter (counts across the edge location,
 // not per isolate); elsewhere, or if it fails: the in-memory limiter.
 app.use('*', async (c, next) => {
@@ -125,6 +132,12 @@ app.use('*', async (c, next) => {
 // Routes
 // ---------------------------------------------------------------------------
 app.get('/health', async c => c.json(ok(await healthCheck())));
+// for an uptime monitor: 503 when the database is down or slower than 3 s (docs/OUTAGES.md)
+app.get('/health/database', async c => {
+  const r = await databaseReadiness();
+  c.header('cache-control', 'no-store');
+  return c.json(r.status === 200 ? ok(r.body) : { success: false, data: r.body, error: { code: 'DATABASE_UNAVAILABLE', message: `The database is ${r.body.database}.` } }, r.status);
+});
 
 // Onboarding emails / WhatsApp: a change made in the Technical Consultant's (or
 // Accounts') work queues messages in the database; send them right away, within
@@ -133,6 +146,18 @@ app.use('/pipeline/customers/*', async (c, next) => {
   await next();
   if (c.req.method !== 'GET' && c.res.status < 300) await dispatchQuietly();
 });
+
+// Chat push notifications (20270111000100): a message that was sent is pushed to the other people's phones and laptops right after the
+// answer (Worker waitUntil), so sending never waits for it or fails because of it.
+const chatPushAfterSend: MiddlewareHandler = async (c, next) => {
+  await next();
+  if (c.req.method !== 'POST' || c.res.status >= 300) return;
+  const id = messageIdFrom(await c.res.clone().json().catch(() => null));
+  if (id) await afterResponse(c, pushChatMessage(id));
+};
+app.use('/chat/conversations/:id/messages', chatPushAfterSend);
+app.use('/chat/conversations/:id/secure-messages', chatPushAfterSend);
+app.use('/client/chat/messages', chatPushAfterSend);
 
 // New employees: the database queues the welcome e-mail when an account becomes active (a request approved, or an active account created);
 // it is sent right away, within the same request, so the employee has the e-mail in seconds. Never fails the request itself. The scheduler
@@ -207,17 +232,60 @@ app.post('/internal/bolify/call-status', async c => {
   return c.json(ok({ matched: true, ...(data as Record<string, unknown>) }));
 });
 
-// Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
-// (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
-app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
+// RazorpayX payout events (migration 20270125000100): signed with RAZORPAYX_WEBHOOK_SECRET (X-Razorpay-Signature over the raw body); no session.
+// Set it up in RazorpayX > Webhooks with this URL and the events payout.processed, payout.reversed, payout.failed, payout.rejected.
+app.post('/internal/razorpay/payouts', async c => {
+  if (Number(c.req.header('content-length') || 0) > 50_000) throw new AppError('VALIDATION_ERROR', 'The event is too large.');
+  const raw = await c.req.text();
+  if (raw.length > 50_000) throw new AppError('VALIDATION_ERROR', 'The event is too large.');
+  return c.json(ok(await handleRazorpayWebhook(raw, c.req.header('x-razorpay-signature'), c.req.header('x-razorpay-event-id'))));
+});
+
+/** The scheduled runs' check: "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>" (or Vercel Cron's CRON_SECRET), compared in constant time. */
+function requireDispatchSecret(header: string | undefined): void {
   const secrets = automationSettings().dispatchSecrets;
   if (!secrets.length) throw new AppError('SERVICE_UNAVAILABLE', 'Automation dispatch is not configured.');
-  const given = Buffer.from((c.req.header('authorization') || '').replace(/^Bearer\s+/i, ''));
+  const given = Buffer.from((header || '').replace(/^Bearer\s+/i, ''));
   const okSecret = secrets.some(sec => {
     const want = Buffer.from(sec);
     return want.length === given.length && timingSafeEqual(want, given);
   });
   if (!okSecret) throw new AppError('UNAUTHENTICATED');
+}
+
+// Attendance reminders, every 5 minutes from the Worker's scheduled run (migration 20270109000200): the database decides what is due and
+// puts it in the bell; this pushes it to the person's devices. Same secret and the same Vercel stand-down as the dispatch below.
+// Crocodial (read-only): continues the sync of the connections that are switched on - on the attendance reminders' 5-minute cron, every
+// CROCODIAL_SYNC_EVERY_MINUTES (default 60; worker/index.ts crocodialSyncDue). A connection is due once that long has passed (croc_sync_due,
+// same setting); a read in progress continues on the next such run, at most 10 pages per list each time. Never throws.
+app.post('/internal/crocodial/sync', async c => {
+  requireDispatchSecret(c.req.header('authorization'));
+  if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
+  return c.json(ok(await crocodialSyncQuietly(25_000)));
+});
+
+app.post('/internal/attendance/reminders', async c => {
+  requireDispatchSecret(c.req.header('authorization'));
+  if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
+  // meeting reminders (24 h, 1 h, 15 min, at the start; 20270208000100) are created first, so this run's delivery step sends them too
+  // (two database calls only: Google sync and e-mails stay with the dispatch, so the attendance reminders keep their request budget)
+  const meetings = await runMeetingsDispatch({ budgetMs: 8_000, remindersOnly: true }).catch(e => {
+    log('error', 'meeting reminders failed', c, { message: e instanceof Error ? e.message : 'error' });
+    return { reminders: 0, error: 'FAILED' };
+  });
+  const run = await runAttendanceReminders();
+  // the same run reminds the team of client messages nobody has answered (20270202000200); a failure here never stops the reminders above
+  const chatWaiting = await runChatUnansweredReminders().catch(e => {
+    log('error', 'unanswered chat reminders failed', c, { message: e instanceof Error ? e.message : 'error' });
+    return { reminded: 0, skipped: 'FAILED' };
+  });
+  return c.json(ok({ ...run, chatWaiting, meetings }));
+});
+
+// Safety net + retries: call with "Authorization: Bearer <AUTOMATION_DISPATCH_SECRET>"
+// (or Vercel Cron's CRON_SECRET), e.g. every few minutes from Supabase pg_cron.
+app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
+  requireDispatchSecret(c.req.header('authorization'));
   // After the move to Cloudflare: Vercel's own cron stands down when VERCEL_CRON_PAUSED=true, so the automations run on one platform only.
   if (isPausedVercelCron(c.req.header('user-agent'))) return c.json(ok({ skipped: true, reason: 'VERCEL_CRON_PAUSED is true: the scheduled automations run on Cloudflare.' }));
   // The same safety-net run moves overdue tickets up (RM -> Team Lead -> Department Head) when pg_cron is not set up.
@@ -252,6 +320,11 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   const invoiceWhatsApp = await runInvoiceWhatsApp(new StorageRepository());
   // Lead welcome WhatsApp ("our services", once when a lead is first given to a sales person): the retries and anything left waiting.
   const leadWhatsApp = await runLeadWhatsApp().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
+  // Crocodial (read-only): leads, call logs, follow-ups and remarks of the connections that are switched on, at most every
+  // CROCODIAL_SYNC_EVERY_MINUTES (default 60) each; a long first pull continues on the next runs. Never throws.
+  const crocodial = await crocodialSyncQuietly(15_000);
+  // RazorpayX payouts still being sent after 10 minutes (a missed webhook): ask Razorpay. Never throws.
+  const razorpayPayouts = await checkPendingRazorpayPayouts();
   // Performance reports (Team Lead / Department Head): refresh the weekly and monthly reports whose task figures changed, then write their analysis. Idempotent.
   // HR training: end the programs that are over, make the consolidated reports, remind HR of the day reports still missing. Idempotent.
   const careers = await runCareerAutomation().catch(() => ({ error: 'Candidate maintenance failed.' }));
@@ -265,7 +338,12 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
   // Meetings: reminders (24 h / 1 h before), the Google Calendar sync of every changed meeting, and the e-mails to guests. Idempotent.
   const meetings = await runMeetingsDispatch({ budgetMs: 15_000 }).catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   const attendancePlaces = await resolveAttendancePlaces({ limit: 10, budgetMs: 15_000 });
-  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, performance, topPerformers, reportAnalysis, training, careers }));
+  // E-mail log retention (20270201000100): a little at a time; never fails the run
+  if (hasServiceClient()) {
+    const { error } = await getServiceClient().rpc('email_purge_old');
+    if (error && !/email_purge_old/.test(error.message)) log('error', 'email log purge failed', c, { message: error.message });
+  }
+  return c.json(ok({ ...(await runDispatch({ limit: 50, budgetMs: 25_000 })), attendancePlaces, meetings, ticketsEscalated, tcFollowups, hr, welcomeEmails, recruitmentEmails, financeMail, subscriptionReminders, subscriptionMessages, invoiceWhatsApp, leadWhatsApp, crocodial, razorpayPayouts, performance, topPerformers, reportAnalysis, training, careers }));
 });
 
 // Supabase "Send Email" auth hook: Supabase hands every sign-up / reset / invite e-mail to the CRM, which sends it through its own mail setup
@@ -276,6 +354,18 @@ app.post('/internal/auth/email-hook', async c => {
     id: c.req.header('webhook-id'),
     timestamp: c.req.header('webhook-timestamp'),
     signature: c.req.header('webhook-signature')
+  });
+  return c.json(reply.body, reply.status as 200);
+});
+
+// Resend delivery events (docs/EMAIL_MANAGEMENT.md): authenticated by Resend's Svix signature (RESEND_WEBHOOK_SECRET), not by a user token.
+app.post('/internal/email/resend-webhook', async c => {
+  await enforce([{ key: `resend-webhook:ip:${clientIp(c)}`, limit: 600, window: 60 }], 'memory');
+  const reply = await handleResendWebhook({
+    body: await c.req.text(),
+    id: c.req.header('svix-id'),
+    timestamp: c.req.header('svix-timestamp'),
+    signature: c.req.header('svix-signature')
   });
   return c.json(reply.body, reply.status as 200);
 });
@@ -383,6 +473,8 @@ app.post('/candidate-auth/guard', async c => {
 
 // "Forgot password?" on the staff sign-in page (no login). Same answer whatever the e-mail; at most a few a quarter hour per caller and per address.
 app.post('/auth/forgot-password', async c => {
+  // "confirm you are not a robot" when TURNSTILE_CRM_MODE is on (docs/PASSWORD_LINKS.md)
+  await botCheck(c, 'reset', 'crm');
   const body = await readJson(c);
   const typed = typeof (body as { email?: unknown })?.email === 'string' ? String((body as { email: string }).email).trim().toLowerCase().slice(0, 254) : '';
   // counted in the database: one shared count across every server instance (each request may land on a different one)
@@ -393,8 +485,30 @@ app.post('/auth/forgot-password', async c => {
   return c.json(ok(await staffForgotPassword(body)));
 });
 
+// Attendance reminders: a browser renewed its push subscription on its own (public/sw.js, "pushsubscriptionchange"). The service worker
+// runs with nobody signed in, so the old subscription address (known only to that browser and the CRM) is the proof: the database moves
+// an existing, active device to the new address for the same person, and changes nothing otherwise (20270110000200).
+app.post('/attendance/push-resubscribe', async c => {
+  await enforce([{ key: `push-resubscribe:ip:${clientIp(c)}`, limit: 30, window: 3600 }], 'memory');
+  const body = (await readJson(c)) as { oldEndpoint?: unknown; endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } } | undefined;
+  const str = (v: unknown, max: number) => (typeof v === 'string' && v.length > 0 && v.length <= max ? v : null);
+  const oldEndpoint = str(body?.oldEndpoint, 1000), endpoint = str(body?.endpoint, 1000);
+  const p256dh = str(body?.keys?.p256dh, 200), auth = str(body?.keys?.auth, 100);
+  if (!oldEndpoint || !endpoint || !p256dh || !auth || !/^https:\/\//.test(endpoint)) {
+    throw new AppError('VALIDATION_ERROR', 'Send the old and the new subscription.');
+  }
+  if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'The server has no service key.');
+  const { data, error } = await getServiceClient().rpc('push_subscription_replace', { p_old_endpoint: oldEndpoint, p_new_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth });
+  if (error) {
+    if (/VALIDATION_ERROR/.test(error.message)) throw new AppError('VALIDATION_ERROR', 'The renewed subscription is not valid.');
+    throw new AppError('SERVICE_UNAVAILABLE', 'The subscription could not be updated.');
+  }
+  return c.json(ok({ replaced: data === true }));
+});
+
 // "Forgot password?" on the client sign-in page (no login). Same answer whatever the e-mail.
 app.post('/client-auth/forgot-password', async c => {
+  await botCheck(c, 'reset', 'crm');
   const body = await readJson(c);
   const typed = emailKey((body as { email?: unknown } | undefined)?.email);
   await enforce([
@@ -486,7 +600,7 @@ const routeMatchers = [...candidateRoutes.map(r => new RegExp(`^${r.path.replace
 
 app.notFound(c => {
   const path = relativePath(c);
-  const known = path === '/health' || routeMatchers.some(rx => rx.test(path));
+  const known = path === '/health' || path === '/health/database' || routeMatchers.some(rx => rx.test(path));
   return fail(c, known ? new AppError('METHOD_NOT_ALLOWED') : new AppError('NOT_FOUND', 'Unknown API route.'));
 });
 
@@ -555,6 +669,7 @@ function adapt(route: RouteDef) {
     const result = await route.handler({ req: request, params: c.req.param() as Record<string, string>, actor: c.get('actor')!, db: c.get('db')! });
     // a lead may have just got its first sales person: send its welcome WhatsApp now (the scheduled dispatch is the safety net)
     if (assignsLeads(request.method, request.path)) await afterResponse(c, leadWhatsAppQuietly());
+    if (result.after) await afterResponse(c, result.after());
     return c.json(ok(result.data), (result.status ?? 200) as 200);
   };
 }
@@ -621,9 +736,10 @@ function auditIp(c: Context): string | null {
  * Cloudflare Turnstile (security/abuse.ts): the token comes in the x-turnstile-token header. Refused only in TURNSTILE_MODE=enforce; every
  * failed check is recorded in the Security & Audit log (at most one per address and action a minute).
  */
-async function botCheck(c: Context, action: TurnstileAction): Promise<void> {
+async function botCheck(c: Context, action: TurnstileAction, surface: 'candidate' | 'crm' = 'candidate'): Promise<void> {
   const ip = clientIp(c);
-  const outcome = await verifyTurnstile(c.req.header('x-turnstile-token'), action, ip === 'unknown' ? null : ip);
+  const outcome = await verifyTurnstile(c.req.header('x-turnstile-token'), action, ip === 'unknown' ? null : ip,
+    surface === 'crm' ? crmTurnstileConfig() : undefined);
   if (outcome.result !== 'ok' && outcome.result !== 'off') {
     const audit = auditIp(c);
     await recordSecurityEvent({
@@ -633,8 +749,8 @@ async function botCheck(c: Context, action: TurnstileAction): Promise<void> {
       outcome: outcome.allowed ? 'FAILURE' : 'DENIED',
       requestId: c.get('requestId'),
       ip: audit ?? undefined,
-      dedupeKey: `botcheck:${ip}:${action}:${Math.floor(Date.now() / 60_000)}`,
-      metadata: { surface: 'candidate', check: action, result: outcome.result, refused: !outcome.allowed }
+      dedupeKey: `botcheck:${surface}:${ip}:${action}:${Math.floor(Date.now() / 60_000)}`,
+      metadata: { surface, check: action, result: outcome.result, refused: !outcome.allowed }
     });
   }
   if (!outcome.allowed) throw turnstileRefused();
@@ -674,7 +790,7 @@ const ROUTE_LABELS: { rx: RegExp; method: string; label: string }[] = [
   ...routes.map(r => ({ rx: new RegExp(`^${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: r.path })),
   ...clientRoutes.map(r => ({ rx: new RegExp(`^/client${r.path.replace(/:[^/]+/g, '[^/]+')}$`), method: r.method, label: `/client${r.path}` }))
 ];
-const STATIC_LABELS = new Set(['/health', '/internal/automations/dispatch', '/internal/bolify/call-status', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
+const STATIC_LABELS = new Set(['/health', '/health/database', '/internal/automations/dispatch', '/internal/attendance/reminders', '/internal/crocodial/sync', '/attendance/push-resubscribe', '/internal/bolify/call-status', '/internal/razorpay/payouts', '/internal/email/resend-webhook', '/internal/auth/email-hook', '/integrations/biometric/punch', '/client-auth/forgot-password', '/auth/forgot-password', '/candidate-auth/register', '/auth/login-failed', '/integrations/google/callback']);
 
 /** The route PATTERN (never the raw path: no ids, no query string), or 'unmatched'. */
 function routeLabel(method: string, path: string): string {

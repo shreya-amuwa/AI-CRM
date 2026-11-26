@@ -239,6 +239,13 @@ async function handleStorage(req, res, path, url) {
     for (const p of body.prefixes || []) if (objects.delete(`${m[1]}/${p}`)) removed.push({ name: p });
     return json(res, 200, removed);
   }
+  // Authenticated download (as Supabase Storage): GET /object/<bucket>/<path> (the server reads a stored file, e.g. an uploaded letterhead)
+  if ((m = /^\/object\/(?!sign\/|upload\/|list\/)(.+)$/.exec(path)) && req.method === 'GET' && path !== '/__objects') {
+    const obj = objects.get(decodeURIComponent(m[1]));
+    if (!obj) return json(res, 400, { statusCode: '404', error: 'not_found', message: 'Object not found' });
+    res.writeHead(200, { 'content-type': obj.contentType, ...CORS });
+    return res.end(obj.body);
+  }
   // Test hook: GET /__objects lists stored keys (service role only).
   if (path === '/__objects') return json(res, 200, [...objects.keys()]);
   return json(res, 404, { msg: `unhandled storage route ${req.method} ${path}` });

@@ -29,6 +29,8 @@ export interface InvoiceMailInput {
   total: string;
   pdf: Uint8Array;
   fileName: string;
+  /** the customer the invoice is for: CC rules (e.g. the Accounts owner) and who may see the e-mail in the history */
+  customerId?: string | null;
 }
 
 /**
@@ -95,7 +97,9 @@ export async function sendInvoiceEmail(i: InvoiceMailInput, settings: Automation
   const mail = renderInvoiceEmail(i);
   const attachment: MailAttachment = { filename: i.fileName, content: i.pdf, contentType: 'application/pdf' };
   try {
-    const r = await sendEmail(settings, { email: to!, name: recipientName(i), display: true }, mail, [attachment]);
+    // no idempotency key: every Accounts "send" is a deliberate send (the invoice's own e-mail record prevents accidental repeats)
+    const r = await sendEmail(settings, { email: to!, name: recipientName(i), display: true }, mail, [attachment],
+      { category: 'INVOICE', application: 'CRM', priority: 'HIGH', template: `invoice-${i.stage.toLowerCase()}`, ...(i.customerId ? { context: { customerId: i.customerId } } : {}) });
     if (r.ok) return { outcome: 'SENT', detail: `Sent from ${settings.email.fromEmail || COMPANY.teamEmail}`, messageId: r.ref, to };
     return { outcome: 'FAILED', detail: r.detail, messageId: null, to };
   } catch (e) {

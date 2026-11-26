@@ -2,11 +2,16 @@
  * Typed API endpoints, grouped by resource. Components and hooks call these;
  * they never call fetch() or Supabase tables directly.
  */
+import { registerUnifiedDepartments } from '../auth/departmentRoles';
+import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
+import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
+  AiWebsiteOnboarding,
   WelcomeEmailItem, WelcomeEmailList,
   ReminderCallList,
   OperationsHeadReviewItem, OperationsOverviewRow,
@@ -19,7 +24,7 @@ import type {
   HeadDivision,
   MyDepartmentScopes,
   DepartmentAccessInfo, DepartmentHeadAccess, VerifierDepartments, OffboardingImpact, OffboardingResult, ReassignmentItem,
-  SalesIncome, SalesLeadAssignee, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList,
+  SalesIncome, SalesLeadAssignee, SalesRole, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList,
   TelecallerAssignee,
   TelecallerContact,
   TelecallerContactList,
@@ -190,7 +195,10 @@ import type {
   Team,
   TeamDivision
 } from '../../../shared/contracts';
-import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType } from '../../../shared/validation';
+import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuery, InvoiceBusinessTagInput, MemberDetailsInput, PricedLineInput, ExpenseInput, CustomerCreateInput, CustomerUpdateInput, LeadCreateInput, LeadCreateRequestInput, LeadUpdateInput, UploadMimeType, AiWebsiteOnboardingBody } from '../../../shared/validation';
+import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
+import type { AwardNominateInput } from '../../../shared/validation';
+import type { OfferLetterhead, OfferLetterheadOption, OfferTemplate, OfferTemplateContent, OfferTemplateFile, OfferTemplateHistory, OfferTemplateList, OfferTemplateVersion } from '../../../shared/contracts';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -283,6 +291,8 @@ export const pipelineApi = {
   get: (id: string) => api.get<PipelineCustomerDetail>(`/pipeline/customers/${id}`),
   createLead: (body: LeadCreateRequestInput) => api.post<PipelineCustomer>('/pipeline/leads', body),
   updateLead: (id: string, body: LeadUpdateInput) => api.patch<PipelineCustomer>(`/pipeline/leads/${id}`, body),
+  /** Add or update the AI Website client onboarding details of a lead (one record per lead). */
+  saveAiWebsiteOnboarding: (id: string, body: AiWebsiteOnboardingBody) => api.post<AiWebsiteOnboarding>(`/pipeline/customers/${id}/ai-website-onboarding`, body),
   moveToPotential: (id: string, body: { dealAmount: number; paymentDueDate: string }) =>
     api.post<PipelineCustomer>(`/pipeline/customers/${id}/move-to-potential`, body),
   recordPayment: (id: string, body: { amount: number; method?: PaymentMethod }) =>
@@ -603,7 +613,11 @@ export const notificationsApi = {
   markAllRead: () => api.post<{ updated: number }>('/notifications/read-all'),
   remove: (id: string) => api.delete<null>(`/notifications/${id}`),
   broadcast: (body: { title: string; body: string; priority?: NotificationPriority; departmentId?: string; division?: TeamDivision }) =>
-    api.post<{ recipients: number }>('/announcements', body)
+    api.post<{ recipients: number }>('/announcements', body),
+  // Notification Health (20270126000200): Super Admin and HR staff
+  health: (q: { departmentId?: string; role?: string; issue?: string } = {}) => api.get<NotificationHealthReport>('/notifications/health', { ...q }),
+  healthEmployee: (profileId: string) => api.get<NotificationHealthDetail>(`/notifications/health/${profileId}`),
+  healthTest: (profileId: string) => api.post<NotificationTestResult>(`/notifications/health/${profileId}/test`, {})
 };
 
 /** Attendance, employee details and the Department Head -> HR leave approval. */
@@ -654,7 +668,12 @@ export const salesHeadApi = {
   taskAssignees: () => api.get<SalesTaskAssignee[]>('/sales-head/task-assignees'),
   createTask: (body: { assigneeId: string; title: string; description?: string | null; priority: 'LOW' | 'MEDIUM' | 'HIGH'; dueDate?: string | null }) => api.post<{ id: string }>('/sales-head/tasks', body),
   reports: (q: { who?: string; from?: string; to?: string; taskStatus?: string }) => api.get<SalesReport>('/sales-head/reports', q),
-  income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q)
+  income: (q: { from?: string; to?: string }) => api.get<SalesIncome>('/sales-head/income', q),
+  // role-wise sections (migration 20270117000300): /roles/telecaller, /roles/business-associate
+  roleList: (role: SalesRole, q: { from?: string; to?: string; search?: string; teamLeadId?: string; status?: string; sort?: string; page?: number; pageSize?: number }) =>
+    api.get<SalesRoleList>(`/sales-head/roles/${role.toLowerCase().replace(/_/g, '-')}/people`, q),
+  rolePerson: (role: SalesRole, id: string, q: { from?: string; to?: string }) =>
+    api.get<SalesRolePersonDashboard>(`/sales-head/roles/${role.toLowerCase().replace(/_/g, '-')}/people/${encodeURIComponent(id)}`, q)
 };
 /** Field Visit: the Sales employee's leads and visits, and the Department Head's assignments. */
 export const fieldVisitApi = {
@@ -868,7 +887,8 @@ export const signInReportApi = {
 };
 
 export const organizationApi = {
-  departments: () => api.get<Department[]>('/departments'),
+  // the departments the database marks unified (Sales + Support) are remembered, so the forms recognise them whatever their slug is
+  departments: () => api.get<Department[]>('/departments').then(list => { registerUnifiedDepartments(list); return list; }),
   createDepartment: (body: { name: string; description?: string; category?: string }) => api.post<Department>('/departments', body),
   updateDepartment: (id: string, body: Partial<Pick<Department, 'name' | 'description'>>) => api.patch<Department>(`/departments/${id}`, body),
   deleteDepartment: (id: string) => api.delete<null>(`/departments/${id}`),
@@ -1050,6 +1070,36 @@ export const leadUploadApi = {
 };
 
 /** The lead welcome WhatsApp ("our services", once when a lead first reaches a sales person). */
+/** Crocodial integration: the Super Admin's configuration and an employee's own switch (the database decides who may do what). */
+export const crocodialApi = {
+  overview: () => api.get<CrocodialAdminOverview>('/crocodial/admin'),
+  setRollout: (body: { departmentId: string; division: 'SALES'; allowed: boolean; note?: string | null }) => api.post<CrocodialAdminOverview>('/crocodial/rollout', body),
+  saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef: string; enabled?: boolean }) =>
+    api.post<CrocodialConnection>('/crocodial/connections', body),
+  testConnection: (id: string) => api.post<CrocodialTestResult>(`/crocodial/connections/${id}/test`, {}),
+  saveDepartmentLink: (body: { connectionId: string; departmentId: string; division: 'SALES'; enabled: boolean; stage?: 'PILOT' | 'PRODUCTION' }) =>
+    api.post<{ id: string }>('/crocodial/department-links', body),
+  checkMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
+    api.post<CrocodialMappingCheck>('/crocodial/mappings/check', body),
+  createMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
+    api.post<CrocodialMapping>('/crocodial/mappings', body),
+  approveMapping: (id: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/approve`, {}),
+  countMappingFrom: (id: string, from: string | null) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/count-from`, { from }),
+  revokeMapping: (id: string, reason?: string) => api.post<CrocodialMapping>(`/crocodial/mappings/${id}/revoke`, { reason: reason || null }),
+  me: () => api.get<CrocodialMyStatus>('/crocodial/me'),
+  syncStatus: () => api.get<CrocodialSyncStatus[]>('/crocodial/sync'),
+  syncNow: (id: string) => api.post<CrocodialSyncRunResult>(`/crocodial/connections/${id}/sync`, {}),
+  activity: (q: { profileId?: string; from?: string; to?: string } = {}) => api.get<CrocodialActivity>('/crocodial/activity', { ...q }),
+  leads: (q: { profileId?: string; search?: string; filter?: 'ALL' | 'NEVER_CALLED' | 'FOLLOW_UP_DUE'; page?: number; pageSize?: number } = {}) =>
+    api.get<CrocodialLeads>('/crocodial/leads', { ...q }),
+  refreshCapabilities: () => api.get<CrocodialRefreshCapabilities>('/crocodial/refresh-capabilities'),
+  refresh: (scope: CrocodialRefreshScope, departmentId?: string) =>
+    api.post<CrocodialRefreshRequest>('/crocodial/refresh', departmentId ? { scope, departmentId } : { scope }),
+  refreshStatus: (id: string) => api.get<CrocodialRefreshRequest>(`/crocodial/refresh/${id}`),
+  connectionHealth: () => api.get<CrocodialHealthReport>('/crocodial/connection-health'),
+  teamActivity: (q: { from?: string; to?: string; departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamActivity>('/crocodial/team-activity', { ...q })
+};
+
 export const leadWhatsAppApi = {
   settings: () => api.get<LeadWhatsAppSettings>('/sales/lead-whatsapp/settings'),
   saveSettings: (body: { enabled: boolean; templateName: string | null; templateLanguage: string; templateApproved: boolean; variables: LeadWhatsAppVariable[] }) =>
@@ -1057,3 +1107,49 @@ export const leadWhatsAppApi = {
   history: (customerId: string) => api.get<LeadWhatsAppMessage[]>(`/leads/${customerId}/whatsapp`),
   resend: (customerId: string) => api.post<LeadWhatsAppMessage>(`/leads/${customerId}/whatsapp/retry`, {})
 };
+
+/** Email Management (20270201000100): the Super Admin's settings; the history for everyone (scoped by the database). */
+export const emailApi = {
+  overview: () => api.get<EmailOverview>('/email/admin/overview'),
+  saveSettings: (s: EmailSettings) => api.post<EmailSettings>('/email/admin/settings', s),
+  saveSender: (b: { category: string; fromEmail: string; fromName: string; replyTo: string | null; enabled: boolean }) => api.post<EmailOverview>('/email/admin/senders', b),
+  deleteSender: (category: string) => api.delete<EmailOverview>(`/email/admin/senders/${category}`),
+  saveRule: (r: Partial<EmailRule>) => api.post<EmailOverview>('/email/admin/rules', r),
+  deleteRule: (id: string) => api.delete<EmailOverview>(`/email/admin/rules/${id}`),
+  previewRule: (id: string, b: { customerId?: string; applicationId?: string }) => api.post<EmailRulePreview>(`/email/admin/rules/${id}/preview`, b),
+  suppressions: (search?: string) => api.get<EmailSuppression[]>('/email/admin/suppressions', search ? { search } : {}),
+  setSuppression: (b: { email: string; active: boolean; note?: string }) => api.post<EmailSuppression[]>('/email/admin/suppressions', b),
+  checkProvider: (provider: 'resend' | 'ses' | 'smtp') => api.post<EmailProviderCheck>(`/email/admin/providers/${provider}/check`, {}),
+  history: (q: Record<string, string | number | undefined>) => api.get<EmailHistoryPage>('/email/history', Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string>),
+  historyDetail: (id: string) => api.get<EmailHistoryDetail>(`/email/history/${id}`),
+  review: (id: string, received: boolean) => api.post<{ ok: true }>(`/email/history/${id}/review`, { received })
+};
+
+// HR Awards (20270203000100): Award Management > Awards (HR staff and the Super Admin; the database checks)
+export const hrAwardsApi = {
+  overview: (month: string) => api.get<HrAwardsOverview>('/hr/awards', { month }),
+  options: () => api.get<HrAwardOptions>('/hr/awards/options'),
+  detail: (code: string, month: string) => api.get<HrAwardDetail>(`/hr/awards/${encodeURIComponent(code)}`, { month }),
+  nominate: (code: string, body: AwardNominateInput) => api.post<HrAwardDetail>(`/hr/awards/${encodeURIComponent(code)}/nominees`, body),
+  updateNominee: (id: string, body: { reason: string; remarks?: string | null }) => api.post<HrAwardDetail>(`/hr/awards/nominees/${id}/update`, body),
+  removeNominee: (id: string, reason?: string) => api.post<HrAwardDetail>(`/hr/awards/nominees/${id}/remove`, reason ? { reason } : {}),
+  declareWinners: (nomineeIds: string[], remarks?: string) => api.post<HrAwardDetail>('/hr/awards/winners', { nomineeIds, remarks: remarks || null }),
+  updateWinner: (id: string, remarks: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/update`, { remarks: remarks || null }),
+  revokeWinner: (id: string, reason: string) => api.post<HrAwardDetail>(`/hr/awards/winners/${id}/revoke`, { reason })
+};
+
+// Role-based Offer Letter templates (20270206000100): HR > Offer Letter Generation (the database checks HR staff / the HR Admin Head)
+export const offerTemplatesApi = {
+  list: () => api.get<OfferTemplateList>('/hr/offer-templates'),
+  letterheads: () => api.get<OfferLetterheadOption[]>('/hr/offer-templates/letterheads'),
+  history: (id: string) => api.get<OfferTemplateHistory>(`/hr/offer-templates/${id}`),
+  version: (id: string, version: number) => api.get<OfferTemplateVersion>(`/hr/offer-templates/${id}/versions/${version}`),
+  create: (body: OfferTemplateSaveBody) => api.post<OfferTemplate>('/hr/offer-templates', body),
+  save: (id: string, body: OfferTemplateSaveBody) => api.post<OfferTemplate>(`/hr/offer-templates/${id}`, body),
+  preview: (body: Pick<OfferTemplateSaveBody, 'designation' | 'content' | 'letterhead'>) => api.post<HrDocPreview>('/hr/offer-templates/preview', body),
+  upload: (body: { kind: 'SAMPLE' | 'LETTERHEAD'; fileName: string; mimeType: string; dataBase64: string }) => api.post<OfferTemplateFile>('/hr/offer-templates/files', body),
+  fileUrl: (id: string) => api.get<HrDocumentDownload>(`/hr/offer-templates/files/${id}/url`)
+};
+export interface OfferTemplateSaveBody {
+  designation: string; description?: string | null; content: OfferTemplateContent; letterhead: OfferLetterhead; sampleFileId?: string | null; baseVersion: number; note?: string | null;
+}

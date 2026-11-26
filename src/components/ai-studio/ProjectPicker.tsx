@@ -90,7 +90,7 @@ export const ProjectPicker: React.FC<{
             {leads.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
           </select>
           <span className="block mt-1 text-[11px] text-slate-500 font-normal">
-            {!loading && leads.length === 0 ? 'There is no Team Lead yet. You can create the Team Member now and assign a Team Lead later from Team Members.' : 'Leave it empty to assign a Team Lead later. Until then the Team Member\'s daily reports go straight to the Super Admin.'}
+            {!loading && leads.length === 0 ? 'There is no Team Lead yet. You can create the Team Member now and assign a Team Lead later from Team Members.' : 'Leave it empty to assign a Team Lead later. Until then the Team Member\'s daily reports go straight to the Managing Director.'}
           </span>
         </label>
       )}

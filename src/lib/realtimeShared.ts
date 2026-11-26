@@ -6,9 +6,41 @@ import { getSupabase } from '../services/supabaseClient';
  * Supabase checks Row Level Security once per subscription for every changed row, so ten components listening to the same table in
  * one tab used to cost ten checks per change. Each listener is still called on every change (and keeps its own delay); the channel
  * opens with the first listener and closes when the last one leaves. Without a configured Supabase client nothing happens, as before.
+ *
+ * Paced, so live updates never pile onto a struggling database: a burst of changes (e.g. the backlog delivered after a stall) makes one
+ * reload per channel after a short random delay (0.4-2 s, so the tabs of the whole office do not reload at the same instant), and a
+ * hidden tab does not reload at all until it is shown again.
  */
+type Pacing = {
+  delay: () => number;
+  setTimer: (fn: () => void, ms: number) => void;
+  isHidden: () => boolean;
+  /** Call fn whenever the tab is shown again; returns how to stop. */
+  onVisible: (fn: () => void) => () => void;
+};
+const visibleWaiters = new Set<() => void>();
+let visibilityHooked = false;
+let pacing: Pacing = {
+  delay: () => 400 + Math.floor(Math.random() * 1600),
+  setTimer: (fn, ms) => { setTimeout(fn, ms); },
+  isHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+  onVisible: fn => {
+    visibleWaiters.add(fn);
+    const stop = () => { visibleWaiters.delete(fn); };
+    if (visibilityHooked || typeof document === 'undefined') return stop;
+    visibilityHooked = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      for (const w of [...visibleWaiters]) w();
+    });
+    return stop;
+  }
+};
+/** Tests only: controllable timers and visibility. */
+export function setRealtimePacingForTests(p: Pacing) { pacing = p; }
+
 type Supabase = NonNullable<ReturnType<typeof getSupabase>>;
-type Shared = { sb: Supabase; channel: ReturnType<Supabase['channel']>; listeners: Set<() => void> };
+type Shared = { sb: Supabase; channel: ReturnType<Supabase['channel']>; listeners: Set<() => void>; stopVisible: () => void };
 const shared = new Map<string, Shared>();
 
 /** `client` is for tests only; the app always uses the browser's Supabase client. */
@@ -19,11 +51,27 @@ export function listenToTables(tables: readonly string[], listener: () => void, 
     const sb = client;
     if (!sb) return () => undefined;
     const listeners = new Set<() => void>();
-    const notify = () => listeners.forEach(l => l());
+    let pending = false;
+    let missed = false;
+    const deliver = () => { pending = false; listeners.forEach(l => l()); };
+    const schedule = () => {
+      if (pending) return;
+      pending = true;
+      pacing.setTimer(deliver, pacing.delay());
+    };
+    const notify = () => {
+      if (pacing.isHidden()) { missed = true; return; }
+      schedule();
+    };
+    const stopVisible = pacing.onVisible(() => {
+      if (!missed || !listeners.size) return;
+      missed = false;
+      schedule();
+    });
     let channel = sb.channel(`shared-${key.replace(/[^a-z0-9_,]/gi, '')}-${Math.random().toString(36).slice(2, 8)}`);
     for (const table of tables) channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, notify);
     channel.subscribe();
-    entry = { sb, channel, listeners };
+    entry = { sb, channel, listeners, stopVisible };
     shared.set(key, entry);
   }
   entry.listeners.add(listener);
@@ -32,6 +80,7 @@ export function listenToTables(tables: readonly string[], listener: () => void, 
     mine.listeners.delete(listener);
     if (!mine.listeners.size && shared.get(key) === mine) {
       shared.delete(key);
+      mine.stopVisible();
       void mine.sb.removeChannel(mine.channel);
     }
   };

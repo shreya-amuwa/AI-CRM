@@ -9,6 +9,8 @@ import { useDepartments } from '../../context/DepartmentContext';
 import { useTabs } from '../../context/TabContext';
 import { Department } from '../../types/crm';
 import { DEPARTMENTS as SEED_DEPARTMENTS } from '../../data/departments';
+import { AI_DESIGN_STUDIO_SLUG } from '../../../shared/contracts';
+import { confirmAction } from '../feedback/AppFeedback';
 
 const getFallbackIcon = (iconName: string) => {
   switch (iconName) {
@@ -36,7 +38,9 @@ const CARD_BASE =
  */
 export const DepartmentGrid: React.FC = () => {
   const { selectDepartment, user } = useAuth();
-  const { departments, addDepartment, deleteDepartment } = useDepartments();
+  const { departments: allListed, addDepartment, deleteDepartment } = useDepartments();
+  // AI Design Studio has no Super Admin workspace: it is a department of its own people (and stays in the Add Team Member lists)
+  const departments = allListed.filter(dep => dep.id !== AI_DESIGN_STUDIO_SLUG);
   const { openDepartment, tabs } = useTabs();
   const isSuperAdmin = user?.role === 'superadmin';
   const isAdminOrHR = user?.role === 'admin' || user?.role === 'hr';
@@ -98,9 +102,13 @@ export const DepartmentGrid: React.FC = () => {
               {/* Delete button for custom added departments */}
               {isCustom && isSuperAdmin && (
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    if (!window.confirm(`Delete ${dept.name}? This cannot be undone.`)) return;
+                    if (!(await confirmAction({
+                      title: `Delete the ${dept.name} department?`,
+                      description: 'The department is removed. This cannot be undone.',
+                      confirmLabel: 'Delete department', cancelLabel: 'Keep department', variant: 'destructive', requireText: dept.name
+                    }))) return;
                     void deleteDepartment(dept.id).then(r => !r.ok && showNotice(r.error || 'Could not delete department.'));
                   }}
                   title="Delete custom department"

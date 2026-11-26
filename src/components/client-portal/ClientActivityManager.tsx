@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { Empty, ErrorBanner, FormField, Loading, PageHeader, inputClass } from '../support-member/SupportParts';
 import { btn } from '../team-member/pipeline/shared';
+import { confirmAction } from '../feedback/AppFeedback';
 
 const KIND_LABEL: Record<ClientActivityKind, string> = {
   CAMPAIGN: 'Campaign', CALL_CAMPAIGN: 'Call campaign', POST: 'Post', AD: 'Ad', SETUP: 'Setup / configuration', REPORT: 'Report', MEETING: 'Meeting / call with the client', OTHER: 'Other update'
@@ -79,7 +80,11 @@ const CustomerActivity: React.FC<{ customer: { id: string; name: string }; onBac
   useEffect(load, [load]);
 
   const remove = async (e: ClientCalendarEvent) => {
-    if (!window.confirm(`Remove "${e.title}" from the client's calendar?`)) return;
+    if (!(await confirmAction({
+      title: `Remove "${e.title}"?`,
+      description: "It is taken off the client's calendar.",
+      confirmLabel: 'Remove', cancelLabel: 'Keep it', variant: 'destructive'
+    }))) return;
     try { await pipelineApi.deleteClientActivity(e.id); load(); } catch (err) { setError(errorMessage(err)); }
   };
 

@@ -15,10 +15,12 @@ import { AiStudioPeoplePage } from './AiStudioPeople';
 import { DepartmentTasks, ProjectManagement } from './AiStudioProjects';
 import { DepartmentReports } from './AiStudioReports';
 import { AI_STUDIO_CHANGED_EVENT, useOpenAiStudioRequest } from './aiStudioEvents';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 
-type Page = 'overview' | 'projects' | 'leads' | 'members' | 'tasks' | 'reports' | 'chat' | 'notifications';
+const AI_STUDIO_WORKSPACE_PAGES = ['overview', 'projects', 'leads', 'members', 'tasks', 'reports', 'chat', 'notifications'] as const;
+type Page = (typeof AI_STUDIO_WORKSPACE_PAGES)[number];
 
 /** Reports waiting for the Super Admin's final decision (the badge of Daily Reports). */
 function useAwaitingFinal(): number {
@@ -47,7 +49,7 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
   const awaiting = useAwaitingFinal();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useRememberedPage<Page>('ai-studio-workspace', 'overview', AI_STUDIO_WORKSPACE_PAGES);
   const [nonce, setNonce] = useState(0);
   const dept = departments.find(d => d.id === 'ai-studio');
   useOpenChatRequest(useCallback(() => setPage('chat'), []));
@@ -71,18 +73,18 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
   return (
     <DashboardShell
       title="AI Studio"
-      subtitle="Managed by the Super Admin"
+      subtitle="Managed by the Managing Director"
       ariaLabel="AI Studio navigation"
       groups={groups}
       active={page}
       meetingsLabel="Meeting Requests"
       attendanceView={<Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><AttendancePage hrView defaultDepartment={dept?.dbId ? { id: dept.dbId, name: dept.name } : undefined} /></Suspense>}
       onSelect={id => setPage(id as Page)}
-      user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
+      user={{ name: user?.name || 'Managing Director', role: 'Managing Director' }}
       onSignOut={() => void logout()}
       footerExtra={
         <button type="button" onClick={onExit} className="w-full flex items-center gap-[11px] px-2.5 py-2.5 rounded-[9px] text-sm font-semibold text-blue-700 hover:bg-blue-50">
-          <ArrowLeft className="w-[18px] h-[18px]" aria-hidden="true" /> Back to Super Admin
+          <ArrowLeft className="w-[18px] h-[18px]" aria-hidden="true" /> Back to Managing Director
         </button>
       }
       topLeft={<div className="hidden lg:block text-sm text-slate-500">AI Studio · Department Head workspace</div>}

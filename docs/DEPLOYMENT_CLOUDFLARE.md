@@ -124,6 +124,10 @@ dashboards, never into chat, files or commits.
 3. **Deploy** (Deployments → Retry / push to `main`). Open the `https://ai-crm.<your-subdomain>.workers.dev` address and check:
    `…/api/v1/health` shows `"status":"ok"`; sign in; open a few dashboards; generate one invoice PDF.
 4. Worker → **Settings → Triggers**: the two cron schedules from `wrangler.jsonc` are listed. **Settings → Observability**: logs are on.
+   `wrangler.jsonc` also sets `CRM_ENVIRONMENT=production` and the `CF_VERSION_METADATA` binding: Super Admin → Crocodial Integration →
+   Connection health then names this Worker and its deployment, and says (yes / no, never the value) whether it has each `CROCODIAL_TOKEN_*`
+   secret. If that page says a token is missing although it is set, check which server answered (see docs/CROCODIAL_INTEGRATION.md,
+   "Connection health"): a second deployment without the secret (an old Vercel one) is listed there too.
 
 ### Step C: switch the address (the cut-over)
 
@@ -188,3 +192,50 @@ npx wrangler dev          # the Worker on http://localhost:8787 (put local secre
 * Every request runs in a fresh or reused isolate; the in-memory rate limits (`RATE_LIMIT_*`) are per isolate, as they were per Vercel instance.
 * Cron Triggers can run more often than Vercel Hobby allowed (for example every 15 minutes for faster e-mail retries); the times were kept
   the same on purpose so behaviour does not change. Change `triggers.crons` in `wrangler.jsonc` to run more often.
+
+## Database load: Realtime tables and the Crocodial sync interval (19 Nov 2026)
+
+On 19 Nov 2026 the Supabase database ran out of CPU in the afternoon and evening: logins, attendance and the 5-minute jobs timed out and the Worker
+logged `[api] could not reach Supabase: TimeoutError`. Two contributions are reduced:
+
+* **Realtime.** 56% of all database time was Supabase Realtime working through every change of the 40 tables in the `supabase_realtime`
+  publication. Migration `20270116000200_realtime_publication_trim.sql` removes the 6 tables no screen listens to (`hr_attendance`,
+  `hr_leave_applications`, `team_assignments`, `department_operations_owner`, `onboarding_automation_runs`, `support_ticket_escalations`). Every table
+  a screen listens to stays (`supabase/tests/realtime_publication_trim_test.sql` lists them). A new screen that listens to a table must publish it
+  in its own migration (`alter publication supabase_realtime add table public.<name>;`).
+* **Crocodial sync.** It ran on every 5-minute tick (a large first read wrote all afternoon). It now runs every `CROCODIAL_SYNC_EVERY_MINUTES`
+  (Worker variable; 5, 10, 15, 20, 30 or 60 = default; `0` = only when the Super Admin starts one), on the ticks whose minute is a multiple of it.
+  Each run reads at most 10 pages per list, writes only the Crocodial records that changed, and never re-reads everything on its own (only the
+  Super Admin's **Sync now** does the weekly full re-read; migration `20270127000100_crocodial_sync_quiet.sql`).
+  The attendance reminders keep running every 5 minutes.
+* **One dispatcher only.** The scheduled jobs (the 5-minute reminders and Crocodial sync, the daily automations) must run from exactly one place:
+  the production Worker with `SCHEDULED_ENABLED=true` and `CRON_SECRET` set. Vercel's cron must be paused (`VERCEL_CRON_PAUSED=true`) and any
+  rehearsal or preview copy of the Worker must leave `SCHEDULED_ENABLED` unset. Two places with the switch on run every reminder and every sync
+  twice.
+
+If the database is still slow: Supabase → Reports → Database (CPU), and Project Settings → Compute and Disk (a larger compute size removes the
+CPU throttling of the smallest one).
+
+
+## Attendance reminders and push (migration 20270126000200)
+
+The reminders need all of these on the **production** Worker (`ai-crm`); none of them can be checked from GitHub:
+
+1. **Variables / secrets** (Worker → Settings → Variables and Secrets): `SCHEDULED_ENABLED=true`; `CRON_SECRET` (or `AUTOMATION_DISPATCH_SECRET`,
+   16+ characters); `VAPID_PRIVATE_KEY` (the private key as a JWK, secret), `VAPID_SUBJECT` (`mailto:` or `https:`), and `VAPID_PUBLIC_KEY`
+   if set must be the private key's own public key (otherwise push is switched off and the log says so). Optional `PUSH_MAX_PER_RUN`
+   (default 40; the Free plan allows 50 subrequests per invocation, raise it on the Paid plan, e.g. 400).
+2. **Cron**: Worker → Settings → Triggers lists `*/5 * * * *` (from `wrangler.jsonc`). Exactly one platform runs it: `VERCEL_CRON_PAUSED=true` on
+   Vercel if Vercel still exists, and no second Worker (e.g. a workers.dev rehearsal copy) with `SCHEDULED_ENABLED=true` against the same database.
+3. **Check** after deploying: Worker → Logs shows `[cron] attendance reminders: HTTP 200 {... "mode":"outbox" ...}` every 5 minutes, and
+   Super Admin → Notification Health shows the scheduler as **Healthy** and push as configured. "Not running" there means the cron, the
+   switch or the secret is wrong; "Push configuration unavailable" means the VAPID settings are missing or do not match.
+4. Run `supabase/migrations/20270126000200_notification_reliability.sql` in the Supabase SQL editor (before or after the deploy: the API falls
+   back to the previous reminder path until it exists).
+
+## E-mail: Resend first, SES later (migration 20270201000100)
+
+See `docs/EMAIL_MANAGEMENT.md` sections 8–10. In short, on the production Worker: `EMAIL_PROVIDER=resend`, secret `EMAIL_API_KEY` (sending-only
+Resend key), `EMAIL_FALLBACK=on` with the working `SMTP_*` mailbox, secret `RESEND_WEBHOOK_SECRET` (Resend webhook to
+`/api/v1/internal/email/resend-webhook`), `SES_REGION=ap-southeast-2`, and `EMAIL_SES_PRODUCTION_ENABLED=false` until AWS grants SES production
+access. Rollback: set `EMAIL_PROVIDER` back to the previous provider (no deploy needed).

@@ -31,7 +31,8 @@ export const ScopeBar: React.FC = () => {
             aria-label="Department"
             value={active?.id}
             onChange={e => {
-              if (e.target.value !== active?.id && confirmLeaveUnsaved()) chooseDepartment(e.target.value);
+              const id = e.target.value;
+              if (id !== active?.id) void confirmLeaveUnsaved().then(ok => { if (ok) chooseDepartment(id); });
             }}
             className="h-9 min-w-0 max-w-[60vw] rounded-lg border border-slate-300 bg-white px-2.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             data-testid="department-select"
@@ -54,7 +55,7 @@ export const ScopeBar: React.FC = () => {
                 role="radio"
                 aria-checked={scope.division === d}
                 onClick={() => {
-                  if (scope.division !== d && confirmLeaveUnsaved()) chooseDivision(d);
+                  if (scope.division !== d) void confirmLeaveUnsaved().then(ok => { if (ok) chooseDivision(d); });
                 }}
                 className={`h-8 px-4 rounded-md text-sm font-bold transition ${scope.division === d ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
                 data-testid={`view-${d.toLowerCase()}`}

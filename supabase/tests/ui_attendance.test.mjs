@@ -49,8 +49,24 @@ try {
   check(await page.getByTestId('punch-out').isDisabled() && await page.getByTestId('lunch-start').isDisabled() && !(await page.getByTestId('punch-in').isDisabled()),
     'Not Punched In: only Punch In is available');
   check((await calledRpc(page, 'attendance_punch_in')).length === 0, 'no Punch In is sent until the button is pressed');
+  // Task 02: a confirmation first; Cancel records nothing
   await page.getByTestId('punch-in').click();
+  await page.getByTestId('punch-in-confirm').waitFor();
+  const confirmText = await page.getByTestId('punch-in-confirm').innerText();
+  check(/Start your workday\?/.test(confirmText) && /Your working hours will start once you confirm/.test(confirmText) && /9 November 2026/.test(confirmText) && /Current time/.test(confirmText),
+    'Punch In asks "Start your workday?" with the date and the current time', confirmText);
+  check((await calledRpc(page, 'attendance_punch_in')).length === 0, 'nothing is recorded while the dialog is open');
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByTestId('punch-in-confirm').waitFor({ state: 'detached' });
+  check((await calledRpc(page, 'attendance_punch_in')).length === 0 && (await page.getByTestId('attendance-status').textContent()) === 'Not Punched In', 'Cancel records nothing');
+  await page.getByTestId('punch-in').click();
+  const clickedAt = Date.now();
+  await page.getByTestId('confirm-punch-in').click();
   await page.getByText(/^Punched in at/).waitFor();
+  check(!(await page.getByTestId('punch-in-confirm').count()), 'the dialog closes only after the server answered');
+  const tookMs = Date.now() - clickedAt;
+  check(tookMs < 2000, 'a 12 m reading: punched within 2 seconds of the click', tookMs);
+  check(!/low precision/.test(await page.getByTestId('attendance-notice').textContent()), 'a precise punch is not marked low precision');
   const sentIn = (await calledRpc(page, 'attendance_punch_in'))[0];
   check(sentIn.p_location_status === 'CAPTURED' && Math.abs(sentIn.p_lat - 18.5204) < 1e-6 && Math.abs(sentIn.p_lng - 73.8567) < 1e-6 && sentIn.p_accuracy === 12 && typeof sentIn.p_request === 'string',
     'Punch In sends the GPS position, its accuracy and a request id', sentIn);
@@ -66,14 +82,25 @@ try {
   check((await page.getByTestId('attendance-status').textContent()) === 'On Lunch' && await page.getByTestId('punch-out').isDisabled(), 'On Lunch: only Resume Work');
   const lunchText = await page.getByTestId('lunch-minutes').textContent();
   check(/^52 min \(on lunch\)$/.test(lunchText), 'the running lunch is counted from the server clock (52 min, though the device clock is 3 minutes behind)', lunchText);
-  check((await page.getByTestId('lunch-extra').textContent()) === '2 min' && (await page.getByTestId('lunch-remaining').textContent()) === '0 min', 'over the 50 minutes: 0 remaining, 2 min extra');
+  check((await page.getByTestId('lunch-extra').textContent()) === '7 min' && (await page.getByTestId('lunch-remaining').textContent()) === '0 min', 'over the 45 minutes: 0 remaining, 7 min extra');
   await page.getByTestId('lunch-end').click();
   await page.getByTestId('lunch-start').waitFor();
   check((await page.getByTestId('attendance-status').textContent()) === 'Resumed Work', 'Resume Work: state "Resumed Work"');
   await ctx.setGeolocation({ latitude: 18.559, longitude: 73.7868, accuracy: 9 });
   await page.getByTestId('punch-out').click();
+  await page.getByTestId('punch-out-confirm').getByText('7:00 PM IST').waitFor();
+  const outText = await page.getByTestId('punch-out-confirm').innerText();
+  check(/End your workday\?/.test(outText) && /8 h 05 min/.test(outText) && /0 h 52 min/.test(outText) && /7 h 13 min/.test(outText) && /7:00 PM IST/.test(outText)
+    && /Continue Working/.test(outText), 'Punch Out shows the Punch In, worked, break and net time and the shift end, with "Continue Working"', outText);
+  // before the shift end (the stand-in server even says a reason is required, as a database without 20270211000100 would): no warning,
+  // no reason box, Confirm Punch Out works at once
+  check(!/before your scheduled shift end/.test(outText) && await page.getByTestId('early-reason').count() === 0 && await page.getByTestId('confirm-punch-out').isEnabled(),
+    'before the shift end: no early-leave warning and no reason asked; Confirm Punch Out is ready', outText);
+  await page.getByTestId('confirm-punch-out').click();
   await page.getByText(/^Punched out at/).waitFor();
   const sentOut = (await calledRpc(page, 'attendance_punch_out'))[0];
+  check(sentOut && !('p_early_reason' in sentOut) && typeof sentOut.p_request === 'string' && (await calledRpc(page, 'attendance_punch_out_confirmed')).length === 0,
+    'the Punch Out is sent without a reason (the existing Punch Out, with its request id)', sentOut);
   check(Math.abs(sentOut.p_lat - 18.559) < 1e-6 && Math.abs(sentOut.p_lng - 73.7868) < 1e-6 && sentOut.p_accuracy === 9, 'Punch Out sends a fresh position (not the Punch In one)', sentOut);
   check((await page.getByTestId('punch-out-time').textContent()) === '6:10 PM IST', 'Punch Out time in IST (12:40 UTC = 6:10 PM IST)');
   check((await page.getByTestId('attendance-status').textContent()) === 'Punched Out' && await page.getByTestId('punch-in').isDisabled()
@@ -91,8 +118,9 @@ try {
     await pg.goto(base);
     await pg.evaluate(() => window.mount());
     await pg.getByTestId('punch-in').click();
-    await pg.getByTestId('attendance-notice').waitFor();
-    const msg = await pg.getByTestId('attendance-notice').textContent();
+    await pg.getByTestId('confirm-punch-in').click();
+    await pg.getByTestId('punch-dialog-error').waitFor();
+    const msg = await pg.getByTestId('punch-dialog-error').textContent();
     check(expect.test(msg) && (await calledRpc(pg, 'attendance_punch_in')).length === 0 && (await pg.getByTestId('attendance-status').textContent()) === 'Not Punched In'
       && !(await pg.getByTestId('punch-in').isDisabled()), label, msg);
     await c.close();
@@ -103,6 +131,41 @@ try {
     navigator.geolocation.clearWatch = () => {};
   }, /could not find its location.*Turn on location services/);
   await refused('an approximate 5 km (network / IP) position: not marked', { geolocation: { latitude: 18.5, longitude: 73.8, accuracy: 5000 }, permissions: ['geolocation'] }, null, /not precise enough \(within 5000 m; at most 1000 m/);
+  {
+    // a laptop on Wi-Fi: 350 m. Saved after a short wait (no 8-second wait any more) and marked "low precision".
+    const c = await browser.newContext({ geolocation: { latitude: 18.5204, longitude: 73.8567, accuracy: 350 }, permissions: ['geolocation'], viewport: { width: 1280, height: 900 } });
+    const pg = await c.newPage();
+    await pg.goto(base);
+    await pg.evaluate(() => window.mount());
+    const t0 = Date.now();
+    await pg.getByTestId('punch-in').click();
+    await pg.getByTestId('confirm-punch-in').click();
+    await pg.getByText(/^Punched in at/).waitFor({ timeout: 15000 });
+    const took = Date.now() - t0;
+    const note = await pg.getByTestId('attendance-notice').textContent();
+    check(took < 5000 && /within 350 m · low precision\)/.test(note), 'a 350 m reading: saved within 5 seconds, the notice says "low precision"', { took, note });
+    check(/low precision/.test(await pg.getByTestId('punch-in-location').textContent()), 'and the card marks the punch "low precision"');
+    await c.close();
+  }
+  // a phone whose first reading is the mobile network (1.4 km, over the limit) and whose GPS fix comes 4 s later: not refused at 3 s
+  const scripted = async (label, readings, expectRx, timeout = 25000) => {
+    const c = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await c.addInitScript(rs => {
+      navigator.geolocation.watchPosition = ok => { for (const [ms, acc] of rs) setTimeout(() => ok({ coords: { latitude: 18.5204, longitude: 73.8567, accuracy: acc } }), ms); return 7; };
+      navigator.geolocation.clearWatch = () => {};
+    }, readings);
+    const pg = await c.newPage();
+    await pg.goto(base);
+    await pg.evaluate(() => window.mount());
+    await pg.getByTestId('punch-in').click();
+    await pg.getByTestId('confirm-punch-in').click();
+    await pg.getByTestId('attendance-notice').waitFor({ timeout });
+    const note = await pg.getByTestId('attendance-notice').textContent();
+    check(expectRx.test(note), label, note);
+    await c.close();
+  };
+  await scripted('a first reading of 1.4 km and a GPS fix 4 s later: punched with the GPS fix (not refused at 3 s)', [[100, 1414], [4000, 30]], /^Punched in at .*within 30 m\)/);
+  await scripted('no reading for 12 s (a slow first fix or a long look at the permission prompt), then 40 m: punched', [[12000, 40]], /^Punched in at .*within 40 m\)/);
   await refused('a browser without geolocation: not marked', {}, () => { Object.defineProperty(Navigator.prototype, 'geolocation', { get: () => undefined }); }, /cannot share its location/);
 
   // 3. HR: the register of every employee for a day, CRM login / logout apart from punches, coordinates, maps, lunch, states
@@ -122,10 +185,11 @@ try {
   const ashaOut = await asha.getByTestId('hr-out-location').textContent();
   check(/18\.520431, 73\.856743/.test(ashaIn) && /within 113 m/.test(ashaIn) && /Near: Baner Road/.test(ashaIn) && /18\.559000, 73\.786800/.test(ashaOut) && /within 9 m/.test(ashaOut),
     'HR sees the Punch In and Punch Out coordinates and accuracy (and the nearest address when looked up)', { ashaIn, ashaOut });
+  check(/within 113 m · low precision/.test(ashaIn) && !/low precision/.test(ashaOut), 'HR\'s register marks a punch over 100 m "low precision" (and not a 9 m one)', { ashaIn, ashaOut });
   check((await asha.getByTestId('hr-location').getByRole('link', { name: 'Google Maps' }).getAttribute('href')) === 'https://www.google.com/maps?q=18.520431,73.856743', 'a Google Maps link for each punch');
   check((await asha.getByTestId('crm-login').textContent()) === '9:00 AM IST' && (await asha.getByTestId('crm-logout').textContent()) === 'Logout 6:15 PM IST'
-    && (await asha.getByTestId('register-in').textContent()) === '9:05 AM IST' && /55 min/.test(await asha.getByTestId('register-lunch').textContent()) && /\+5 min over/.test(await asha.getByTestId('register-lunch').textContent()),
-    'CRM login and logout, Punch In and lunch (55 min, 5 over) in IST on a device set to UTC');
+    && (await asha.getByTestId('register-in').textContent()) === '9:05 AM IST' && /55 min/.test(await asha.getByTestId('register-lunch').textContent()) && /\+10 min over/.test(await asha.getByTestId('register-lunch').textContent()),
+    'CRM login and logout, Punch In and lunch (55 min, 10 over) in IST on a device set to UTC');
   const ravi = p3.getByTestId('register-row').filter({ hasText: 'Ravi Staff' });
   check((await ravi.getByTestId('register-out').textContent()) === 'Missing' && (await ravi.getByTestId('register-status-badge').textContent()) === 'Incomplete Attendance'
     && (await ravi.getByTestId('crm-logout').textContent()) === 'Logout 1:00 PM IST', 'logged out of the CRM without punching out: Punch Out "Missing", "Incomplete Attendance"');
@@ -141,7 +205,7 @@ try {
   await detail.waitFor();
   const dtext = await detail.textContent();
   check(/9 November 2026 – 9:05 AM IST/.test(dtext) && /Latitude18\.520431/.test(dtext) && /Accuracy113 m/.test(dtext) && /9 November 2026 – 6:10 PM IST/.test(dtext)
-    && /Chrome on Windows/.test(dtext) && /1:00 PM IST → 1:20 PM IST · 20 min/.test(dtext) && /extra 5 min/.test(dtext), 'the detail: full IST stamps, coordinates, accuracy, CRM sessions with device, each lunch break', dtext);
+    && /Chrome on Windows/.test(dtext) && /1:00 PM IST → 1:20 PM IST · 20 min/.test(dtext) && /extra 10 min/.test(dtext), 'the detail: full IST stamps, coordinates, accuracy, CRM sessions with device, each lunch break', dtext);
   const maps = await detail.locator('iframe').evaluateAll(fs => fs.map(f => f.getAttribute('src')));
   check(maps.length === 2 && maps[0].includes('marker=18.520431,73.856743') && maps[1].includes('marker=18.559,73.7868'), 'the Punch In and Punch Out locations on a map', maps);
   await p3.getByTestId('register-date').fill('2026-11-08');

@@ -13,9 +13,15 @@ import { OrganizationRepository } from '../repositories/OrganizationRepository.j
 import { PipelineRepository } from '../repositories/PipelineRepository.js';
 import { ProfileRepository } from '../repositories/ProfileRepository.js';
 import { StorageRepository } from '../repositories/StorageRepository.js';
+import { PayoutRepository } from '../repositories/PayoutRepository.js';
+import { PayoutService } from './PayoutService.js';
 import { AccountsFinanceService } from './AccountsFinanceService.js';
 import { MeetingService } from './MeetingService.js';
 import { LeadWhatsAppService } from './LeadWhatsAppService.js';
+import { CrocodialService } from './CrocodialService.js';
+import { SearchService } from './SearchService.js';
+import { SearchRepository } from '../repositories/SearchRepository.js';
+import { CrocodialRepository } from '../repositories/CrocodialRepository.js';
 import { LeadWhatsAppRepository } from '../repositories/LeadWhatsAppRepository.js';
 import { MeetingRepository } from '../repositories/MeetingRepository.js';
 import { BusinessReportService } from './BusinessReportService.js';
@@ -29,6 +35,10 @@ import { CustomerService } from './CustomerService.js';
 import { HrService } from './HrService.js';
 import { GeneratedInvoiceService } from './GeneratedInvoiceService.js';
 import { NotificationService } from './NotificationService.js';
+import { EmailAdminService } from './EmailAdminService.js';
+import { EmailAdminRepository } from '../repositories/EmailAdminRepository.js';
+import { NotificationHealthService } from './NotificationHealthService.js';
+import { NotificationHealthRepository } from '../repositories/NotificationHealthRepository.js';
 import { OrganizationService } from './OrganizationService.js';
 import { PipelineService } from './PipelineService.js';
 import { WorkflowService } from './WorkflowService.js';
@@ -45,9 +55,17 @@ import { CustomerImportService } from './CustomerImportService.js';
 import { ChatService } from './ChatService.js';
 import { TicketAttachmentService } from './TicketAttachmentService.js';
 import { EmployeeCaseService } from './EmployeeCaseService.js';
+import { BugService } from './BugService.js';
+import { BugRepository } from '../repositories/BugRepository.js';
+import { NoticeService } from './NoticeService.js';
+import { NoticeRepository } from '../repositories/NoticeRepository.js';
+import { HrAwardService } from './HrAwardService.js';
+import { HrAwardRepository } from '../repositories/HrAwardRepository.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
 import { WorkReportService } from './WorkReportService.js';
+import { AiDesignStudioRepository } from '../repositories/AiDesignStudioRepository.js';
+import { AiDesignStudioService } from './AiDesignStudioService.js';
 import { HrReviewRepository } from '../repositories/HrReviewRepository.js';
 import { HrReviewService } from './HrReviewService.js';
 import { ReportAnalyticsRepository } from '../repositories/ReportAnalyticsRepository.js';
@@ -80,6 +98,8 @@ import { TrainingRepository } from '../repositories/TrainingRepository.js';
 import { RecruitmentRepository } from '../repositories/RecruitmentRepository.js';
 import { PerformanceRepository } from '../repositories/PerformanceRepository.js';
 import { PerformersRepository } from '../repositories/PerformersRepository.js';
+import { TaskReportRepository } from '../repositories/TaskReportRepository.js';
+import { TaskReportService } from './TaskReportService.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
@@ -88,6 +108,7 @@ export function createServices(db: SupabaseClient) {
     employees: new EmployeeApprovalService(new EmployeeApprovalRepository(db)),
     hr: new HrService(new HrRepository(db)),
     hrDocuments: new HrDocumentService(new HrDocumentRepository(db), new StorageRepository()),
+    payouts: new PayoutService(new PayoutRepository(db)),
     performance: new PerformanceService(new PerformanceRepository(db)),
     performers: new PerformersService(new PerformersRepository(db)),
     recruitment: new RecruitmentService(new RecruitmentRepository(db)),
@@ -99,8 +120,11 @@ export function createServices(db: SupabaseClient) {
     salesHead: new SalesHeadService(new SalesHeadRepository(db), new StorageRepository()),
     ba: new BusinessAssociateService(new BusinessAssociateRepository(db), new StorageRepository()),
     customers: new CustomerService(new CustomerRepository(db)),
+    search: new SearchService(new SearchRepository(db)),
     approvals: new ApprovalService(new ApprovalRepository(db)),
     notifications: new NotificationService(new NotificationRepository(db)),
+    emailAdmin: new EmailAdminService(new EmailAdminRepository(db)),
+    notificationHealth: new NotificationHealthService(new NotificationHealthRepository(db)),
     organization: new OrganizationService(new OrganizationRepository(db)),
     audit: new AuditService(new AuditRepository(db)),
     dashboards: new DashboardService(new DashboardRepository(db)),
@@ -116,8 +140,14 @@ export function createServices(db: SupabaseClient) {
     chat: new ChatService(new ChatRepository(db), new StorageRepository()),
     employeeCases: new EmployeeCaseService(new EmployeeCaseRepository(db), new StorageRepository()),
     meetings: new MeetingService(new MeetingRepository(db)),
+    bugs: new BugService(new BugRepository(db)),
+    notices: new NoticeService(new NoticeRepository(db)),
+    hrAwards: new HrAwardService(new HrAwardRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
+    crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),
+    taskReports: new TaskReportService(new TaskReportRepository(db)),
+    aiDesignStudio: new AiDesignStudioService(new AiDesignStudioRepository(db)),
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),
     welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),

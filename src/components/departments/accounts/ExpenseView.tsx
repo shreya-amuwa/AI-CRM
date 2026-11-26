@@ -10,6 +10,7 @@ import {
   accountsStore,
   CorporateExpense
 } from '../../../services/accountsStore';
+import { confirmAction } from '../../feedback/AppFeedback';
 
 export const ExpenseView: React.FC = () => {
   // Core Expenses state from accountsStore
@@ -326,8 +327,12 @@ export const ExpenseView: React.FC = () => {
   };
 
   // Reset to default demo data
-  const handleResetToDefault = () => {
-    if (window.confirm('Reset all expenses back to default initial records?')) {
+  const handleResetToDefault = async () => {
+    if (await confirmAction({
+      title: 'Reset all expenses to the default records?',
+      description: 'Every expense you changed or added on this page is replaced by the original records.',
+      confirmLabel: 'Reset expenses', cancelLabel: 'Keep my expenses', variant: 'destructive'
+    })) {
       accountsStore.resetExpensesToDefault();
       setExpenses(accountsStore.getExpenses());
       setSyncFeedback({

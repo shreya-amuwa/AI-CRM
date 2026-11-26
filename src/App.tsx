@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useState } from 'react';
+import { isUnifiedDepartment } from './lib/auth/departmentRoles';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DepartmentProvider, useDepartments } from './context/DepartmentContext';
 import { LeadStoreProvider } from './context/LeadStoreContext';
@@ -12,7 +13,11 @@ import { ClientNotices } from './components/notices/ClientNotices';
 import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
-import { useOpenHrCaseRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
+import { useOpenHrCaseRequest, useOpenIssuesRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
+import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
+import { useOpenNoticeRequest } from './components/notices/noticeEvents';
+import { useOpenWalletRequest } from './components/wallet/walletEvents';
+import { NoticePopupHost } from './components/notices/NoticePopupHost';
 import { TabBar } from './components/layout/TabBar';
 
 // Dedicated Department Panels
@@ -21,7 +26,9 @@ import { Sparkles } from 'lucide-react';
 
 // Team Member Dedicated Components & Routing
 import { TeamMemberLayout } from './components/team-member/TeamMemberLayout';
-import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole } from './utils/router';
+import { parseCurrentRoute, navigateTo, validateRouteAccess, getRedirectForRole, lastPathUnder, rememberPath } from './utils/router';
+import { clearPanelPage, readPanelPage, writePanelPage } from './lib/rememberedPage';
+import { isRestorableTab } from './components/layout/restorableTabs';
 
 // Dashboards and department panels are loaded on demand, so signing in only
 // downloads the code for the screen the user actually opens.
@@ -34,6 +41,7 @@ const ProbationConfirmations = lazy(() => import('./components/hr/ProbationConfi
 const RechargeReminderCalls = lazy(() => import('./components/hr/RechargeReminderCalls').then(m => ({ default: m.RechargeReminderCalls })));
 const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
 const EmployeeIssuesManagement = lazy(() => import('./components/hr/EmployeeIssuesManagement').then(m => ({ default: m.EmployeeIssuesManagement })));
+const HrRaiseIssuePage = lazy(() => import('./components/hr/HrRaiseIssuePage').then(m => ({ default: m.HrRaiseIssuePage })));
 const HrEmployeeRequestsPage = lazy(() => import('./components/employees/HrEmployeeRequestsPage').then(m => ({ default: m.HrEmployeeRequestsPage })));
 const MeetingRequestsManagement = lazy(() => import('./components/hr/MeetingRequestsManagement').then(m => ({ default: m.MeetingRequestsManagement })));
 const HrLettersPage = lazy(() => import('./components/departments/hr/HrLettersPage').then(m => ({ default: m.HrLettersPage })));
@@ -46,7 +54,12 @@ const PerformanceReviews = lazy(() => import('./components/hr/PerformanceReviews
 // Attendance from the department menu: the same Punch In / Out page as every other dashboard (HR also sees the register, as on its own panel)
 const AttendancePage = lazy(() => import('./components/attendance/AttendancePage'));
 const MeetingsPage = lazy(() => import('./components/meetings/MeetingsPage'));
+const NoticeBoard = lazy(() => import('./components/notices/NoticeBoard'));
+const WalletPage = lazy(() => import('./components/wallet/WalletPage'));
+const CeoAvailabilityPage = lazy(() => import('./components/meetings/CeoAvailabilityPage'));
+const UnifiedDepartmentMonitor = lazy(() => import('./components/unified/UnifiedOverview').then(m => ({ default: m.UnifiedDepartmentMonitor })));
 const ActiveFieldVisits = lazy(() => import('./components/field-visit/ActiveFieldVisits').then(m => ({ default: m.ActiveFieldVisits })));
+import { mainClassFor } from './components/layout/mainLayout';
 const HRDepartmentPanel = lazy(() => import('./components/departments/hr/HRDepartmentPanel').then(m => ({ default: m.HRDepartmentPanel })));
 const WhatsboxPanel = lazy(() => import('./components/departments/whatsbox/WhatsboxPanel').then(m => ({ default: m.WhatsboxPanel })));
 const SupportSuperAdminDashboard = lazy(() => import('./components/departments/wabastore/superadmin/SupportSuperAdminDashboard').then(m => ({ default: m.SupportSuperAdminDashboard })));
@@ -65,10 +78,13 @@ const AiStudioWorkspace = lazy(() => import('./components/ai-studio/AiStudioWork
 const TelecallerDashboard = lazy(() => import('./components/telecaller/TelecallerDashboard').then(m => ({ default: m.TelecallerDashboard })));
 const BusinessAssociateDashboard = lazy(() => import('./components/business-associate/BusinessAssociateDashboard').then(m => ({ default: m.BusinessAssociateDashboard })));
 import { DepartmentPicker } from './components/scope/DepartmentPicker';
+import { GlobalSearchProvider } from './components/search/GlobalSearch';
 const SalesHeadDashboard = lazy(() => import('./components/sales-head/SalesHeadDashboard').then(m => ({ default: m.SalesHeadDashboard })));
 const SalesRolePending = lazy(() => import('./components/telecaller/SalesRolePending').then(m => ({ default: m.SalesRolePending })));
 const SupportLeadDashboard = lazy(() => import('./components/support-lead/SupportLeadDashboard').then(m => ({ default: m.SupportLeadDashboard })));
 const AccountsDashboard = lazy(() => import('./components/accounts/AccountsDashboard').then(m => ({ default: m.AccountsDashboard })));
+const UnifiedDashboard = lazy(() => import('./components/unified/UnifiedDashboard').then(m => ({ default: m.UnifiedDashboard })));
+const AiDesignStudioDashboard = lazy(() => import('./components/ai-design-studio/AiDesignStudioDashboard').then(m => ({ default: m.AiDesignStudioDashboard })));
 const TeamLeadDashboard = lazy(() => import('./components/team-lead/TeamLeadDashboard').then(m => ({ default: m.TeamLeadDashboard })));
 const DepartmentHeadDashboard = lazy(() => import('./components/tasks/DepartmentHeadDashboard').then(m => ({ default: m.DepartmentHeadDashboard })));
 const TechnicalSupportDashboard = lazy(() => import('./components/support/TechnicalSupportDashboard').then(m => ({ default: m.TechnicalSupportDashboard })));
@@ -81,7 +97,7 @@ const ScreenLoader = () => (
 );
 
 const MainAppContent: React.FC = () => {
-  const { user, authLoading, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout, needsDepartmentChoice, scopeKey } = useAuth();
+  const { user, authLoading, connectionProblem, retryConnection, activeDepartmentId, activeDepartment, resetDepartmentSelection, selectDepartment, logout, needsDepartmentChoice, scopeKey } = useAuth();
   const { departments } = useDepartments();
   const { tabs, activeTabId, updateTabState, closeAllTabs } = useTabs();
   // a notification can ask for the Chat page of whichever dashboard layout is showing
@@ -90,6 +106,18 @@ const MainAppContent: React.FC = () => {
   // and HR's Employee Issues / Meeting Requests section on one case
   const showHrCase = React.useRef<((d: OpenHrCaseDetail) => void) | null>(null);
   useOpenHrCaseRequest(React.useCallback(d => showHrCase.current?.(d), []));
+  // HR's own issues to the Developer Team (a developer's reply or a status change): HR's Raise an Issue page
+  const showHrIssues = React.useRef<(() => void) | null>(null);
+  useOpenIssuesRequest(React.useCallback(() => showHrIssues.current?.(), []));
+  // a meeting notification opens Meetings in the department panel's side menu
+  const showMeetings = React.useRef<(() => void) | null>(null);
+  useOpenMeetingRequest(React.useCallback(() => showMeetings.current?.(), []));
+  // a notice notification in a department dashboard (the shell's dashboards handle their own): the Notice Board
+  const showNotices = React.useRef<(() => void) | null>(null);
+  useOpenNoticeRequest(React.useCallback(() => showNotices.current?.(), []));
+  // a wallet notification in a department dashboard: the Wallet
+  const showWallet = React.useRef<(() => void) | null>(null);
+  useOpenWalletRequest(React.useCallback(() => showWallet.current?.(), []));
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [subDept, setSubDept] = useState<'sales' | 'support' | 'education_training' | 'product_training' | null>(null);
@@ -111,6 +139,8 @@ const MainAppContent: React.FC = () => {
     // refresh to /login and loses the page the user was on.
     if (authLoading) return;
     if (!user) {
+      // signed in but the server could not be reached: stay on this address (the sign-in is kept), do not go to /login
+      if (connectionProblem) return;
       if (route.type !== 'login') {
         navigateTo('/login');
       }
@@ -147,49 +177,63 @@ const MainAppContent: React.FC = () => {
       // /support-member/dashboard/:id and its pages (…/tasks, …/tickets) stay where they are.
       const base = `/support-member/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'support-lead') {
       // /support-lead/dashboard/:id and its pages (…/tickets, …/tasks) stay where they are.
       const base = `/support-lead/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
+        setRoute(parseCurrentRoute());
+      }
+    } else if (user.role === 'design-studio') {
+      // /ai-design-studio/dashboard/:id and its pages stay where they are.
+      const base = `/ai-design-studio/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'hr-recruiter') {
       // /hr-recruiter/dashboard/:id and its pages (…/applications/:applicationId, …) stay where they are.
       const base = `/hr-recruiter/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'telecaller') {
       // /telecaller/dashboard/:id and its pages (…/tasks, …/leads) stay where they are.
       const base = `/telecaller/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'business-associate') {
       // /business-associate/dashboard/:id and its pages (…/tasks, …/quotation) stay where they are.
       const base = `/business-associate/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
+        setRoute(parseCurrentRoute());
+      }
+    } else if (user.role === 'unified') {
+      // /unified/dashboard/:id and its pages (…/sales/leads, …/support/tickets) stay where they are.
+      const base = `/unified/dashboard/${user.id}`;
+      if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'ai-studio') {
       // /ai-studio/dashboard/:id and its pages (…/projects, …/daily-report) stay where they are.
       const base = `/ai-studio/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'sales-head') {
       // /sales-head/dashboard/:id and its pages (…/leads/assign, …/tasks) stay where they are.
       const base = `/sales-head/dashboard/${user.id}`;
       if (window.location.pathname !== base && !window.location.pathname.startsWith(`${base}/`)) {
-        navigateTo(base);
+        navigateTo(lastPathUnder(base) ?? base);
         setRoute(parseCurrentRoute());
       }
     } else if (user.role === 'sales-role') {
@@ -220,12 +264,12 @@ const MainAppContent: React.FC = () => {
       }
     }
     // departments.length: department list arrives asynchronously from the API.
-  }, [authLoading, user, route.path, activeDepartmentId, departments.length]);
+  }, [authLoading, user, connectionProblem, route.path, activeDepartmentId, departments.length]);
 
   // Sync route for admin and superadmin when department changes
   React.useEffect(() => {
     if (user?.role === 'hr' && window.location.pathname.startsWith(`/hr-recruiter/dashboard/${user.id}`)) return; // the HR Assistant's Recruitment Portal
-    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'hr-recruiter' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head' && user.role !== 'ai-studio') {
+    if (user && user.role !== 'team-member' && user.role !== 'support-member' && user.role !== 'team-lead' && user.role !== 'support-lead' && user.role !== 'accounts-staff' && user.role !== 'technical-support' && user.role !== 'meta-verifier' && user.role !== 'telecaller' && user.role !== 'hr-recruiter' && user.role !== 'business-associate' && user.role !== 'sales-role' && user.role !== 'sales-head' && user.role !== 'ai-studio' && user.role !== 'design-studio' && user.role !== 'unified') {
       if (activeDepartmentId) {
         navigateTo(`/admin/dashboard/${activeDepartmentId}`);
       } else {
@@ -245,20 +289,45 @@ const MainAppContent: React.FC = () => {
   const prevDeptIdRef = React.useRef(activeDepartmentId);
   const prevUserIdRef = React.useRef(user?.id);
 
+  // A refresh (or opening the installed app again) returns to the page the person was on in that department, not to the dashboard.
+  const skipPanelSave = React.useRef(false);
   React.useEffect(() => {
     if (prevDeptIdRef.current !== activeDepartmentId || prevUserIdRef.current !== user?.id) {
       prevDeptIdRef.current = activeDepartmentId;
       prevUserIdRef.current = user?.id;
-      setActiveTab('dashboard');
-      setSubDept(null);
+      const saved = user && activeDepartmentId ? readPanelPage(user.id, activeDepartmentId) : null;
+      skipPanelSave.current = true; // this commit still holds the old page: do not store it over the remembered one
+      setActiveTab(saved && isRestorableTab(saved.tab) ? saved.tab : 'dashboard');
+      setSubDept((saved?.subDept as typeof subDept) ?? null);
     }
   }, [activeDepartmentId, user?.id]);
+  React.useEffect(() => {
+    if (skipPanelSave.current) { skipPanelSave.current = false; return; }
+    if (user && activeDepartmentId) writePanelPage(user.id, activeDepartmentId, { tab: activeTab, subDept });
+  }, [user?.id, activeDepartmentId, activeTab, subDept]);
+  // The last dashboard address, for the installed app (it always opens at "/")
+  React.useEffect(() => {
+    if (user) rememberPath(user.id);
+  }, [user?.id, route.path]);
 
   // Step 0: Restoring the Supabase session / loading the profile
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-sm text-slate-500 font-mono">
         Loading secure session…
+      </div>
+    );
+  }
+
+  // Signed in, but the server did not answer (busy or offline): the session is kept, so say so instead of asking to sign in again
+  if (!user && connectionProblem) {
+    return (
+      <div role="alert" className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-sm w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-center space-y-3">
+          <h1 className="text-base font-extrabold text-slate-900">The CRM is not answering right now</h1>
+          <p className="text-sm text-slate-600">You are still signed in. This is usually a busy server or a weak connection and passes in a moment.</p>
+          <button type="button" onClick={() => void retryConnection()} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Try again</button>
+        </div>
       </div>
     );
   }
@@ -304,6 +373,15 @@ const MainAppContent: React.FC = () => {
     );
   }
 
+  // Step 1.56: AI Design Studio (its own department): one dashboard shell for its Department Head, Team Leads and Team Members
+  if (user.role === 'design-studio') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <AiDesignStudioDashboard />
+      </Suspense>
+    );
+  }
+
   // Step 1.57: Sales Telecaller dashboard (own route and sidebar), or the notice page of a Sales role that has no dashboard yet
   // The HR Assistant's Recruitment Portal: the same Recruiter workspace, with a way back to the HR dashboard
   if (inRecruitmentPortal) {
@@ -339,6 +417,13 @@ const MainAppContent: React.FC = () => {
     return (
       <Suspense fallback={<ScreenLoader />}>
         <AiStudioDashboard />
+      </Suspense>
+    );
+  }
+  if (user.role === 'unified') {
+    return (
+      <Suspense fallback={<ScreenLoader />}>
+        <UnifiedDashboard />
       </Suspense>
     );
   }
@@ -405,6 +490,8 @@ const MainAppContent: React.FC = () => {
   // Step 2: Home / Department Selector Screen if no department is selected (Super Admin only)
   if ((!currentDeptId || !currentDept) && tabs.length === 0) {
     if (user.role !== 'superadmin') return <ScreenLoader />;
+    // the hub's own menu (DashboardShell) shows Meetings for a clicked meeting notification
+    showMeetings.current = null;
     return (
       <div className="bg-slate-50 text-slate-900 min-h-screen">
         <Suspense fallback={<ScreenLoader />}><SuperAdminDashboard /></Suspense>
@@ -424,6 +511,7 @@ const MainAppContent: React.FC = () => {
       closeAllTabs();
     } else {
       // In single mode: reset state
+      if (user && activeDepartmentId) clearPanelPage(user.id, activeDepartmentId); // the next visit starts at the dashboard
       setSubDept(null);
       setActiveTab('dashboard');
       resetDepartmentSelection();
@@ -457,7 +545,11 @@ const MainAppContent: React.FC = () => {
   };
 
   showChat.current = () => handleTabUpdate('chat');
+  showMeetings.current = () => { if (showSidebar) handleTabUpdate('my_meetings'); };
+  showNotices.current = () => { if (showSidebar) handleTabUpdate('my_notices'); };
+  showWallet.current = () => { if (showSidebar && user.role !== 'superadmin') handleTabUpdate('my_wallet'); };
   showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
+  showHrIssues.current = () => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate('hr_raise_issue'); };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -483,11 +575,17 @@ const MainAppContent: React.FC = () => {
         )}
 
         {/* Main Workspace Panel */}
-        <main className={currentActiveTab === 'chat' ? 'flex-1 min-w-0 w-full' : 'flex-1 min-w-0 p-3 sm:p-6 overflow-y-auto max-w-7xl mx-auto w-full'}>
+        <main className={mainClassFor(currentActiveTab, currentDeptId)}>
           {currentActiveTab === 'my_attendance' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><AttendancePage hrView={currentDeptId === 'hr'} /></Suspense>
           ) : currentActiveTab === 'my_meetings' && showSidebar ? (
             <Suspense fallback={<ScreenLoader />}><MeetingsPage /></Suspense>
+          ) : currentActiveTab === 'my_notices' && showSidebar ? (
+            <Suspense fallback={<ScreenLoader />}><NoticeBoard /></Suspense>
+          ) : currentActiveTab === 'my_wallet' && showSidebar && user.role !== 'superadmin' ? (
+            <Suspense fallback={<ScreenLoader />}><WalletPage /></Suspense>
+          ) : currentActiveTab === 'hr_ceo_availability' && showSidebar && currentDeptId === 'hr' ? (
+            <Suspense fallback={<ScreenLoader />}><CeoAvailabilityPage /></Suspense>
           ) : currentDept && currentDeptId ? (
             /* Sub-department selection screen: ALWAYS show choice cards when no sub-department is selected */
             hasSubDeptChoice && currentSubDept === null ? (
@@ -565,6 +663,8 @@ const MainAppContent: React.FC = () => {
               <Suspense fallback={<ScreenLoader />}><PaidLeaveManagement /></Suspense>
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><EmployeeIssuesManagement /></Suspense>
+            ) : currentActiveTab === 'hr_raise_issue' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><HrRaiseIssuePage canReport={user?.role !== 'superadmin'} /></Suspense>
             ) : currentActiveTab === 'hr_meetings' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><MeetingRequestsManagement /></Suspense>
             ) : (currentActiveTab === 'hr_letter_nda' || currentActiveTab === 'hr_letter_offer' || currentActiveTab === 'hr_letter_experience') && currentDeptId === 'hr' ? (
@@ -651,6 +751,9 @@ const MainAppContent: React.FC = () => {
                 subDept={currentSubDept}
                 onSelectSubDept={(dept: any) => handleTabUpdate('dashboard', dept)}
               />
+            ) : currentActiveTab === 'dashboard' && isUnifiedDepartment(currentDeptId) && currentDept.dbId ? (
+              /* International / Reseller (Sales + Support in one department): the Super Admin sees the real figures, not the lead-ingestion panel */
+              <Suspense fallback={<ScreenLoader />}><UnifiedDepartmentMonitor departmentId={currentDept.dbId} departmentName={currentDept.name} /></Suspense>
             ) : currentActiveTab === 'dashboard' ? (
               <DepartmentDashboard
                 departmentId={currentDeptId}
@@ -681,6 +784,12 @@ const MainAppContent: React.FC = () => {
 };
 
 /** Secure messaging starts for the signed-in employee as soon as they are in (their key is made on its own the first time). Always the same element, so nothing below it restarts when the profile arrives. */
+/** Global search (Ctrl / Cmd + K) for a signed-in, active employee; nothing for anyone else (signed out, pending, suspended). */
+const EmployeeSearch: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { profile } = useAuth();
+  return <GlobalSearchProvider userId={profile?.status === 'ACTIVE' ? profile.id : null}>{children}</GlobalSearchProvider>;
+};
+
 const EmployeeSecureChat: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { profile } = useAuth();
   return <SecureChatProvider userId={profile?.id ?? null}>{children}</SecureChatProvider>;
@@ -694,9 +803,13 @@ export function App() {
           <LeadStoreProvider>
             <NotificationProvider>
               <EmployeeSecureChat>
-                <Suspense fallback={<ScreenLoader />}>
-                  <MainAppContent />
-                </Suspense>
+                <EmployeeSearch>
+                  <Suspense fallback={<ScreenLoader />}>
+                    <MainAppContent />
+                  </Suspense>
+                </EmployeeSearch>
+                {/* company notices not yet acknowledged open here, on every employee dashboard (20270202000100) */}
+                <NoticePopupHost />
               </EmployeeSecureChat>
             </NotificationProvider>
           </LeadStoreProvider>

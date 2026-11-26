@@ -1,5 +1,7 @@
-import { SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
+import { ROLE_DISPLAY_NAMES } from '../../../shared/roleNames';
+import { AI_DESIGN_STUDIO_SLUG, SALES_SUB_ROLE_LABELS, type HeadDivision, type Profile, type Role, type SalesSubRole, type TeamDivision } from '../../../shared/contracts';
 import type { AuthUser } from '../../types/crm';
+import { isUnifiedDepartment } from './departmentRoles';
 
 /**
  * Maps the database profile to the legacy `AuthUser` shape the existing
@@ -21,6 +23,22 @@ export function toAuthUser(profile: Profile): AuthUser {
   if (isAiStudioStaff(profile)) {
     return {
       id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'ai-studio',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
+  // International / Reseller: Sales and Support in ONE dashboard for the Department Head, the Team Leads and the Team Members. The database decides it
+  // from the department (default_dashboard unified-head / -lead / -member, migration 20270127000100); the team's division never matters.
+  if (isUnifiedStaff(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'unified',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
+  // AI Design Studio is its own department with its own dashboard for its Department Head, Team Leads and Team Members. The department
+  // AND the role decide (never the role name alone), so AI Studio, Sales and Support staff keep their own dashboards.
+  if (isAiDesignStudio(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'design-studio',
       departmentId: departmentSlug, position: profile.position || undefined, profile
     };
   }
@@ -91,6 +109,24 @@ export function toAuthUser(profile: Profile): AuthUser {
 export function isSalesHead(p: Pick<Profile, 'role' | 'department' | 'headDivision' | 'defaultDashboard'>): boolean {
   if (p.role !== 'DEPARTMENT_HEAD' || p.department?.slug === 'hr' || p.department?.slug === 'accounts') return false;
   return p.defaultDashboard === 'sales-department-head' || p.headDivision === 'SALES';
+}
+
+/**
+ * The Department Head, Team Leads and Team Members of AI Design Studio (slug ai-design-studio) open the AI Design Studio dashboard. It is a
+ * different department from AI Studio and from Amuwa Design Studio (slug designstudio). The Super Admin has no workspace in it.
+ */
+export function isAiDesignStudio(p: Pick<Profile, 'role' | 'department'>): boolean {
+  return p.department?.slug === AI_DESIGN_STUDIO_SLUG && (p.role === 'DEPARTMENT_HEAD' || p.role === 'TEAM_HEAD' || p.role === 'TEAM_MEMBER');
+}
+
+const UNIFIED_DASHBOARDS = ['unified-head', 'unified-lead', 'unified-member'];
+
+/**
+ * A Department Head, Team Lead or Team Member of a department that does Sales and Support together (International, Reseller). Decided by the dashboard
+ * value the database computed from the department flag; the Super Admin has no workspace in these departments' own dashboard.
+ */
+export function isUnifiedStaff(p: Pick<Profile, 'role' | 'defaultDashboard'>): boolean {
+  return p.role !== 'SUPER_ADMIN' && UNIFIED_DASHBOARDS.includes(p.defaultDashboard as string);
 }
 
 const AI_STUDIO_DASHBOARDS = ['ai-studio-head', 'ai-studio-lead', 'ai-studio-member'];
@@ -186,7 +222,7 @@ export function staffRoleLabel(p: Pick<Profile, 'role' | 'isTechnicalConsultant'
   return isTechnicalConsultant(p) ? TECHNICAL_CONSULTANT_LABEL : ROLE_LABELS[p.role];
 }
 
-export const OPERATIONS_HEAD_LABEL = 'Operations Head';
+export const OPERATIONS_HEAD_LABEL = ROLE_DISPLAY_NAMES.OPERATIONS_HEAD;
 
 export const META_VERIFIER_LABEL = 'Meta Verifier';
 
@@ -207,10 +243,11 @@ export function creatableRoles(role: Role | undefined): Exclude<Role, 'SUPER_ADM
 }
 
 export const ROLE_LABELS: Record<Role, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  DEPARTMENT_HEAD: 'Department Head',
-  TEAM_HEAD: 'Team Lead',
-  TEAM_MEMBER: 'Team Member'
+  // the designations come from one place (shared/roleNames.ts); the role keys never change
+  SUPER_ADMIN: ROLE_DISPLAY_NAMES.SUPER_ADMIN,
+  DEPARTMENT_HEAD: ROLE_DISPLAY_NAMES.DEPARTMENT_HEAD,
+  TEAM_HEAD: ROLE_DISPLAY_NAMES.TEAM_HEAD,
+  TEAM_MEMBER: ROLE_DISPLAY_NAMES.TEAM_MEMBER
 };
 
 /** The dashboard a user lands on after signing in (same rules as toAuthUser). */
@@ -231,17 +268,21 @@ export function defaultDashboardLabel(
   if (departmentSlug === 'ai-studio' && role !== 'SUPER_ADMIN') {
     return `AI Studio ${role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'} Dashboard${dept}`;
   }
+  // International / Reseller: one dashboard with Sales and Support for the Department Head, the Team Lead and the Team Member
+  if (isUnifiedDepartment(departmentSlug) && role !== 'SUPER_ADMIN' && !operationsHead) return `Sales & Support ${ROLE_LABELS[role]} Dashboard${dept}`;
   // An Operations Head opens its own dashboard (the departments it oversees side by side), not the Department Head dashboard.
   if (role === 'DEPARTMENT_HEAD' && operationsHead) {
-    return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}Operations Head Dashboard${dept}`;
+    return `${headDivision === 'SALES' ? 'Sales ' : headDivision === 'SUPPORT' ? 'Support ' : ''}CEO Dashboard${dept}`;
   }
   // HR and Accounts staff open their department's own dashboard.
   if (departmentSlug === 'hr' && hrSubRole === 'HR_RECRUITER' && role !== 'SUPER_ADMIN') return `HR Recruiter Dashboard${dept}`;
   if (departmentSlug === 'hr' && role === 'DEPARTMENT_HEAD') return `HR Department Head Dashboard${dept}`;
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
+  // AI Design Studio staff open the AI Design Studio dashboard (its own sidebar, the same for its Team Lead and Team Member)
+  if (departmentSlug === AI_DESIGN_STUDIO_SLUG && role !== 'SUPER_ADMIN') return `AI Design Studio ${ROLE_LABELS[role]} Dashboard`;
   switch (role) {
     case 'SUPER_ADMIN':
-      return 'Super Admin Department Hub';
+      return 'Managing Director Department Hub';
     case 'DEPARTMENT_HEAD':
       if (headDivision === 'SALES') return `Sales Department Head Dashboard${dept}`;
       return `Department Head Dashboard${dept}`;

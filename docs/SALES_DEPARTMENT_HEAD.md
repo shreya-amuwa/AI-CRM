@@ -112,3 +112,62 @@ counts, and a status:
 * `supabase/tests/e2e/sales-head.e2e.mjs`: real `.xlsx`, `.xls` and `.csv` files uploaded to a Team Member and the Team Lead; the history and the
   failed rows; the leads in their own dashboards; tablet and phone widths
 
+
+## Role-wise sections: Telecaller and Business Associate (phase 1)
+
+Migrations: `20270117000200_crocodial_field_alignment.sql`, then `20270117000300_sales_role_dashboards.sql`. Both are read-only: they add
+functions only, with no table or column changes and no data changes.
+
+**Sidebar.** Two new groups, after Performance Management: **Telecaller → Telecaller List** and **Business Associate → Business Associate List**.
+Every other item of the Sales head sidebar is unchanged.
+
+**Who is listed.** Only the people of the head's active department who are in its Sales teams and have that Sales role
+(`profiles.sales_sub_role` `TELECALLER` / `BUSINESS_ASSOCIATE`), whatever their account status. Sales members without a Sales role, and Visit
+Sales people, belong to the Sales Executive section of phase 2.
+
+**List page:**
+- date range (default the last 30 days, at most 93 days, as Crocodial);
+- search by name, Employee ID, e-mail or phone;
+- filters for Team Lead and account status;
+- sort by name, Team Lead, status or any figure, highest first;
+- pages of 25, and a CSV export of every matching row (up to 500).
+
+Clicking a name opens the person's full-page dashboard at `/sales-head/dashboard/<head>/telecallers/<profile id>` (or
+`business-associates/...`).
+
+**Where each figure comes from** (see `docs/CROCODIAL_INTEGRATION.md`, "Field mapping and the Sales dashboards"):
+
+| Role | From Crocodial (marked "Crocodial") | From the CRM |
+| --- | --- | --- |
+| Telecaller | Total calls, Connected, Not connected, Unique numbers, Talk time (and connect rate); the call log: date and time, contact, masked number, type, status, duration | Leads created, Converted to a Business Associate; the leads list |
+| Business Associate | the same five call figures and the call log, when connected | Leads assigned; demos scheduled, completed, upcoming and cancelled (`ba_demos`, counted as in their own view); final quotations (once each, latest revision); deals closed and their value |
+
+- The call figures are exactly those of the person's own "My Crocodial Activity" view. Both use the same database helpers and the same
+  approved-mapping attribution.
+- A person not connected to Crocodial, or not synced yet, shows "Not connected to Crocodial" or "Crocodial not synced yet". Their call figures
+  are never shown as zeros.
+- No call figure is made from CRM fields.
+
+**Person dashboard:**
+- details;
+- the Crocodial call cards and the CRM cards;
+- a Daily / Weekly / Monthly table, where each column says its source;
+- the records: Calls (Crocodial) and Leads for a Telecaller; Calls, Leads assigned, Demos, Quotations and Deals for a Business Associate.
+
+**Permissions.**
+- `public.sales_role_list` and `public.sales_role_person` call `private.require_sales_head()`. Anyone else gets `FORBIDDEN`.
+- They only read the head's own Sales people. A person outside them, or under the wrong role, is `NOT_FOUND`.
+- The `private.*` helpers cannot be called by a signed-in user.
+
+**API.**
+- `GET /sales-head/roles/:role/people`, where `role` is `telecaller` or `business-associate`. Parameters: `from`, `to`, `search`, `teamLeadId`, `status`,
+  `sort`, `page`, and `pageSize` (at most 500).
+- `GET /sales-head/roles/:role/people/:id`, with `from` and `to`.
+- Types: `SalesRoleList` and `SalesRolePersonDashboard` (`shared/contracts.ts`).
+
+**Tests.**
+- `supabase/tests/sales_role_dashboards_test.sql`: the call figures against stored Crocodial calls, counting once across people,
+  permissions, scope, filters.
+- The "sales roles API" block of `api_integration.test.ts`.
+- `sales_role_dashboards.test.ts`: the field map against the sync and the tables, addresses, export, roll-ups.
+- `ui_sales_role_dashboards.test.mjs`: the screens.

@@ -16,9 +16,9 @@ import { longDate } from './render.js';
  */
 export { OFFER_FILE_PREFIX } from './constants.js';
 
-const BLACK = rgb(0, 0, 0);
-const SIZE = 10.5;
-const LEADING = 13.4;
+export const BLACK = rgb(0, 0, 0);
+export const SIZE = 10.5;
+export const LEADING = 13.4;
 const LEFT = 33.5;
 const RIGHT = 549;
 const BULLET_X = 44.6;
@@ -36,19 +36,19 @@ const RUPEE_PATH = 'M106 -1370 161 -1493H1199L1144 -1370H790Q869 -1292 890 -1163
 const RUPEE_ADVANCE = 1303 / 2048;
 const RUPEE = '₹';
 
-type Fonts = { regular: PDFFont; bold: PDFFont };
-interface Run { text: string; bold: boolean }
+export type Fonts = { regular: PDFFont; bold: PDFFont };
+export interface Run { text: string; bold: boolean }
 /** A word may change style part-way ("**2026**." is a bold 2026 and a plain full stop with no space between). */
-interface Word { parts: Run[]; width: number }
+export interface Word { parts: Run[]; width: number }
 
 /** Width of a piece of text, the rupee sign included. */
-function widthOf(text: string, font: PDFFont, size: number): number {
+export function widthOf(text: string, font: PDFFont, size: number): number {
   let w = 0;
   for (const part of text.split(RUPEE)) w += part ? font.widthOfTextAtSize(part, size) : 0;
   return w + (text.split(RUPEE).length - 1) * RUPEE_ADVANCE * size;
 }
 
-function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFont, size: number): number {
+export function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFont, size: number): number {
   let cx = x;
   text.split(RUPEE).forEach((part, i) => {
     if (i > 0) {
@@ -61,7 +61,7 @@ function drawText(page: PDFPage, text: string, x: number, y: number, font: PDFFo
 }
 
 /** A value the printing font cannot show is refused with a clear message (never replaced by a question mark). */
-function assertPrintable(fonts: Fonts, text: string, label: string): void {
+export function assertPrintable(fonts: Fonts, text: string, label: string): void {
   const plain = text.split(RUPEE).join('');
   try {
     fonts.regular.widthOfTextAtSize(plain, SIZE);
@@ -71,7 +71,7 @@ function assertPrintable(fonts: Fonts, text: string, label: string): void {
   }
 }
 
-function toWords(runs: Run[], fonts: Fonts): Word[] {
+export function toWords(runs: Run[], fonts: Fonts): Word[] {
   const out: Word[] = [];
   let joinNext = false; // the previous run ended inside a word (no space after it)
   for (const r of runs) {
@@ -88,7 +88,7 @@ function toWords(runs: Run[], fonts: Fonts): Word[] {
   }
   return out;
 }
-function wrap(list: Word[], fonts: Fonts, maxWidth: number): Word[][] {
+export function wrap(list: Word[], fonts: Fonts, maxWidth: number): Word[][] {
   const space = fonts.regular.widthOfTextAtSize(' ', SIZE);
   const lines: Word[][] = [];
   let line: Word[] = [];
@@ -101,7 +101,7 @@ function wrap(list: Word[], fonts: Fonts, maxWidth: number): Word[][] {
   if (line.length) lines.push(line);
   return lines;
 }
-const lineWidth = (l: Word[], fonts: Fonts) => l.reduce((s, w) => s + w.width, 0) + Math.max(0, l.length - 1) * fonts.regular.widthOfTextAtSize(' ', SIZE);
+export const lineWidth = (l: Word[], fonts: Fonts) => l.reduce((s, w) => s + w.width, 0) + Math.max(0, l.length - 1) * fonts.regular.widthOfTextAtSize(' ', SIZE);
 
 /** One thing on the page: a list of lines (each drawn at x, left- or centre-aligned), optionally with a bullet, kept together with what follows. */
 interface Block { lines: Word[][]; x: number; maxWidth: number; center?: boolean; bullet?: boolean; gapBefore: number; keepWithNext?: boolean; rule?: { label: Run[]; width: number } }
@@ -196,7 +196,7 @@ export async function renderOfferPdf(f: HrDocOfferFields): Promise<Uint8Array> {
   return doc.save({ useObjectStreams: false });
 }
 
-function drawWords(page: PDFPage, line: Word[], x: number, y: number, fonts: Fonts): void {
+export function drawWords(page: PDFPage, line: Word[], x: number, y: number, fonts: Fonts): void {
   const space = fonts.regular.widthOfTextAtSize(' ', SIZE);
   let cx = x;
   for (const w of line) {
@@ -205,7 +205,7 @@ function drawWords(page: PDFPage, line: Word[], x: number, y: number, fonts: Fon
     cx += w.width + space;
   }
 }
-function drawRuns(page: PDFPage, r: Run[], x: number, y: number, fonts: Fonts): number {
+export function drawRuns(page: PDFPage, r: Run[], x: number, y: number, fonts: Fonts): number {
   const ws = toWords(r, fonts);
   drawWords(page, ws, x, y, fonts);
   return x + lineWidth(ws, fonts);

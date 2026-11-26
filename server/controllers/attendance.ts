@@ -1,5 +1,7 @@
 import type { Handler } from '../http/types.js';
 import { resolveAttendancePlaces } from '../automations/attendancePlaces.js';
+import { sendTestPush } from '../automations/attendanceReminders.js';
+import { vapidConfig } from '../automations/webPush.js';
 
 const ok = <T>(data: T, status = 200) => ({ status, data });
 
@@ -9,5 +11,9 @@ const ok = <T>(data: T, status = 200) => ({ status, data });
  * HR opens the punch list; the scheduled dispatch does the rest.
  */
 export const attendanceController = {
-  resolvePlaces: (async () => ok(await resolveAttendancePlaces({ limit: 3, budgetMs: 5_000 }))) as Handler
+  resolvePlaces: (async () => ok(await resolveAttendancePlaces({ limit: 3, budgetMs: 5_000 }))) as Handler,
+  /** Reminders (20270109000200): the public VAPID key a browser needs to subscribe; null while push is not set up. */
+  pushKey: (async () => ok({ publicKey: vapidConfig()?.publicKey ?? null })) as Handler,
+  /** "Send test notification" to the caller's own devices: queued as the caller (rate limited in the database), then sent at once. */
+  pushTest: (async ({ actor, db }) => ok(await sendTestPush(actor.id, db))) as Handler
 };

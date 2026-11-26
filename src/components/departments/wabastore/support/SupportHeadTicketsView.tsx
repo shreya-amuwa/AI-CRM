@@ -4,6 +4,7 @@ import {
   AlertCircle, CheckCircle2, Clock, ShieldAlert, Eye, X, Send,
   User, ChevronRight, ArrowUpDown, Tag, Check, ArrowRight
 } from 'lucide-react';
+import { toast } from '../../../feedback/AppFeedback';
 
 export interface SupportTicket {
   id: string;
@@ -707,7 +708,7 @@ export const SupportHeadTicketsView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    alert(`Paging engineering tier-2 lead for ticket ${selectedTicket.id}`);
+                    toast.info(`Paging engineering is not connected yet: contact the tier-2 lead about ${selectedTicket.id} directly.`);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
                 >

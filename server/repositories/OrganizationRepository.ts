@@ -4,6 +4,9 @@ import { AppError } from '../http/errors.js';
 import { compact, unwrap, unwrapOne } from './base.js';
 
 const DEPARTMENT_COLUMNS = 'id, slug, name, description, category, icon_name, accent_color, logo_url, is_locked, facet_of, facet_division, created_at';
+// unified_sales_support (20270127000100) marks International / Reseller: read it, but never let a database that does not have it yet break the department list
+const DEPARTMENT_COLUMNS_UNIFIED = `${DEPARTMENT_COLUMNS}, unified_sales_support`;
+const missingColumn = (error: { code?: string; message?: string } | null) => !!error && (error.code === '42703' || /unified_sales_support/.test(error.message ?? ''));
 const TEAM_COLUMNS = 'id, department_id, name, division, created_at';
 
 function mapDepartment(row: any): Department {
@@ -19,6 +22,7 @@ function mapDepartment(row: any): Department {
     isLocked: row.is_locked,
     facetOf: row.facet_of ?? null,
     facetDivision: row.facet_division ?? null,
+    unifiedSalesSupport: row.unified_sales_support === true,
     createdAt: row.created_at
   };
 }
@@ -55,7 +59,9 @@ export class OrganizationRepository {
   constructor(private readonly db: SupabaseClient) {}
 
   async listDepartments(): Promise<Department[]> {
-    return unwrap(await this.db.from('departments').select(DEPARTMENT_COLUMNS).order('created_at').order('name')).map(mapDepartment);
+    const read = (columns: string) => this.db.from('departments').select(columns).order('created_at').order('name');
+    const first = await read(DEPARTMENT_COLUMNS_UNIFIED);
+    return unwrap(missingColumn(first.error) ? await read(DEPARTMENT_COLUMNS) : first).map(mapDepartment);
   }
 
   async createDepartment(d: DepartmentWrite): Promise<Department> {

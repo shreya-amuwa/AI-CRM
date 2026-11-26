@@ -1,7 +1,11 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { summarize, useWorkTasks, workTasksApi } from '../../lib/workTasks';
-import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
+import { summarize, useWorkTasks } from '../../lib/workTasks';
+import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
+import { MyUpdateRequests, TaskWorkUpdates } from './WorkUpdates';
+import { TaskTracker } from './TaskTracker';
+import { SubmitWorkUpdate } from './WorkUpdateForm';
+import { useTaskWorkspace } from './useTaskWorkspace';
 
 /** Team Member: tasks from the Team Lead; send updates back to the Team Lead. */
 export const MemberTasksView: React.FC = () => {
@@ -9,6 +13,7 @@ export const MemberTasksView: React.FC = () => {
   const data = useWorkTasks();
   const mine = data.tasks.filter(t => t.assigneeId === profile?.id);
   const s = summarize(mine);
+  const ws = useTaskWorkspace(() => void data.reload());
 
   return (
     <div className="space-y-5 max-w-5xl">
@@ -30,13 +35,17 @@ export const MemberTasksView: React.FC = () => {
           </div>
         ))}
       </div>
+      {/* update requests from the Team Lead / Department Head: the answer form never changes a task */}
+      <MyUpdateRequests />
+      <TaskTracker tasks={mine} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+        filters={['ALL', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING']} title="My task tracker" emptyHint="When your Team Lead assigns you a task it appears here." />
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
       ) : mine.length === 0 ? (
         <EmptyState title="No tasks yet" hint="When your Team Lead assigns you a task it appears here." />
       ) : (
         mine.map(task => (
-          <article key={task.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3" aria-label={task.title}>
+          <article key={task.id} className="bg-white rounded-2xl border border-slate-200/80 p-5 space-y-3 cursor-pointer transition-colors hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" aria-label={task.title} {...ws.cardProps(task.id)}>
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -53,22 +62,17 @@ export const MemberTasksView: React.FC = () => {
             </div>
             <ProgressBar value={task.progress} label={`Progress of ${task.title}`} />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <UpdateForm
-                task={task}
-                sendTo="Team Lead"
-                onSubmit={async input => {
-                  await workTasksApi.submitUpdate(task.id, input);
-                  await data.reload();
-                }}
-              />
+              <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/60"><SubmitWorkUpdate taskId={task.id} status={task.status} progress={task.progress} onSent={() => void data.reload()} /></div>
               <div className="p-3 rounded-xl border border-slate-200">
                 <div className="text-xs font-bold text-slate-800 mb-2">Updates you sent</div>
                 <UpdateTimeline updates={data.updates.filter(u => u.taskId === task.id)} people={data.people} />
               </div>
             </div>
+            <TaskWorkUpdates taskId={task.id} />
           </article>
         ))
       )}
+      {ws.node}
     </div>
   );
 };

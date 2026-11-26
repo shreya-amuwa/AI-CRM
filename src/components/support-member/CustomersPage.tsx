@@ -48,6 +48,7 @@ import { DeleteCustomerButton } from '../common/DeleteCustomer';
 import { CustomerForm, customerToInput } from './CustomerForm';
 import { DueLabel, PriorityPill, ProgressBar, StatusPill } from '../tasks/TaskParts';
 import { getSupabase } from '../../services/supabaseClient';
+import { ClientLoginCard } from './ClientLoginCard';
 
 const PAGE_SIZE = 10;
 
@@ -439,6 +440,7 @@ export const CustomerProfile: React.FC<{
                   ))}
                 </dl>
               </div>
+              <ClientLoginCard customerId={customerId} />
               <div className="md:col-span-2"><CustomerJourneyAdmin customerId={customerId} /></div>
               <div className="md:col-span-2"><SubscriptionPanel customerId={customerId} /></div>
               {customer.services.filter(x => isWhatsAppService(x.serviceCode)).map(x => (

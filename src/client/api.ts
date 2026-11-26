@@ -2,7 +2,7 @@ import type {
   ClientAnnouncement, ClientJourney, ClientSubscription, ClientCalendarEvent, ClientCampaign, ClientCatalogService, ClientDocumentUrl, ClientDocuments, CustomerDocument, DocumentUploadTicket, ClientInvoice, ClientNotifications, ClientOverview, ClientPlans, ClientProfile,
   ClientBilling, ClientService, ClientServiceProgress, ClientServiceRequest, ClientTicket, ClientTicketDetail, TicketAttachment, TicketUploadTicket
 } from '../../shared/contracts';
-import { api } from '../lib/api/client';
+import { api, apiRequest } from '../lib/api/client';
 
 /** Everything the client dashboard can ask the server. No customer id is ever sent: the server works it out from the login. */
 export const clientApi = {
@@ -17,7 +17,8 @@ export const clientApi = {
   serviceProgress: () => api.get<ClientServiceProgress[]>('/client/service-progress'),
   campaigns: () => api.get<ClientCampaign[]>('/client/campaigns'),
   /** No login needed; the answer is the same whatever the e-mail. */
-  forgotPassword: (email: string) => api.post<{ ok: true }>('/client-auth/forgot-password', { email }),
+  forgotPassword: (email: string, headers: Record<string, string> = {}) =>
+    apiRequest<{ ok: true }>('POST', '/client-auth/forgot-password', { body: { email }, headers }),
   catalog: () => api.get<ClientCatalogService[]>('/client/catalog'),
   serviceRequests: () => api.get<ClientServiceRequest[]>('/client/service-requests'),
   requestService: (serviceCode: string, note?: string) => api.post<ClientServiceRequest>('/client/service-requests', { serviceCode, note: note || undefined }),

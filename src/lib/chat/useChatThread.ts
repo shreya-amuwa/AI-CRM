@@ -16,6 +16,8 @@ export interface PendingMessage {
   body: string;
   attachments: ChatAttachment[];
   replyTo: ChatMessage['replyTo'];
+  /** Group members tagged with @. */
+  mentions?: string[];
   status: 'sending' | 'failed';
   error: string;
   createdAt: string;
@@ -25,6 +27,7 @@ export interface SendInput {
   body: string;
   attachments: ChatAttachment[];
   replyTo: ChatMessage['replyTo'];
+  mentions?: string[];
 }
 
 export function newId(): string {
@@ -67,6 +70,8 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
+  /** Something the person should know that is not a failure (a tag that could not be added). */
+  const [warning, setWarning] = useState('');
   const [denied, setDenied] = useState(false);
   const [visible, setVisible] = useState(() => document.visibilityState === 'visible');
 
@@ -192,6 +197,19 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
   }, [refreshConversation, setMsgs, unseal]);
 
   // ---- live: new messages, read receipts, losing access
+  /** The reactions of the messages on screen, as everybody sees them now (after a live event: someone reacted). */
+  const refreshReactions = useCallback(async () => {
+    if (!tp.current.reactions) return;
+    const ids = msgs.current.filter(m => m.kind === 'TEXT' && !m.deleted).slice(-300).map(m => m.id);
+    if (!ids.length) return;
+    try {
+      const byId = await tp.current.reactions(ids);
+      setMsgs(msgs.current.map(m => (ids.includes(m.id) ? { ...m, reactions: byId[m.id] ?? [] } : m)));
+    } catch {
+      // the next event or catch-up tries again
+    }
+  }, [setMsgs]);
+
   const convId = conversation?.id;
   useEffect(() => {
     const supabase = getSupabase();
@@ -199,6 +217,8 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     let timer: ReturnType<typeof setTimeout> | undefined;
     let subscribedBefore = false;
     const soon = (fn: () => void) => { clearTimeout(timer); timer = setTimeout(fn, 150); };
+    let reactionTimer: ReturnType<typeof setTimeout> | undefined;
+    const soonReactions = () => { clearTimeout(reactionTimer); reactionTimer = setTimeout(() => void refreshReactions(), 150); };
     const channel = supabase
       .channel(`chat-${convId}-${Math.random().toString(36).slice(2, 8)}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${convId}` }, payload => {
@@ -216,6 +236,8 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
       // second kind of event must never cancel the first one's work.
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_conversations', filter: `id=eq.${convId}` }, () => soon(() => void sync()))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_members', filter: `conversation_id=eq.${convId}` }, () => soon(() => void sync()))
+      // somebody reacted (or changed / removed a reaction): the reactions of the messages on screen are fetched again
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_message_reactions', filter: `conversation_id=eq.${convId}` }, () => soonReactions())
       .subscribe(status => {
         if (status !== 'SUBSCRIBED') return;
         // A connection made again after a drop: whatever happened in between has to be fetched.
@@ -228,12 +250,13 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     document.addEventListener('visibilitychange', wake);
     return () => {
       clearTimeout(timer);
+      clearTimeout(reactionTimer);
       window.removeEventListener('focus', wake);
       window.removeEventListener('online', wake);
       document.removeEventListener('visibilitychange', wake);
       void supabase.removeChannel(channel);
     };
-  }, [convId, sync, setMsgs]);
+  }, [convId, sync, setMsgs, refreshReactions]);
 
   useEffect(() => {
     const on = () => setVisible(document.visibilityState === 'visible');
@@ -278,10 +301,14 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
           ...(p.replyTo ? { r: { id: p.replyTo.id, seq: p.replyTo.seq, senderName: p.replyTo.senderName, text: (p.replyTo.body || '').slice(0, 140) } } : {}),
           ...(p.attachments.length ? { a: p.attachments.map(a => ({ id: a.id, name: a.name, mime: a.mime, size: a.size, k: a.secretKey ?? '' })) } : {})
         });
-        sent = await tp.current.sendSecure({ clientMsgId: p.clientMsgId, replyTo: p.replyTo?.id, attachmentIds: p.attachments.map(a => a.id), e2ee: sealed });
+        sent = await tp.current.sendSecure({ clientMsgId: p.clientMsgId, replyTo: p.replyTo?.id, attachmentIds: p.attachments.map(a => a.id), e2ee: sealed,
+          ...(p.mentions?.length ? { mentions: p.mentions } : {}) });
       } else {
-        sent = await tp.current.send({ body: p.body, clientMsgId: p.clientMsgId, replyTo: p.replyTo?.id, attachmentIds: p.attachments.map(a => a.id) });
+        sent = await tp.current.send({ body: p.body, clientMsgId: p.clientMsgId, replyTo: p.replyTo?.id, attachmentIds: p.attachments.map(a => a.id),
+          ...(p.mentions?.length ? { mentions: p.mentions } : {}) });
       }
+      // the message is sent; tags that were refused (e.g. someone left the group meanwhile) are said, not hidden
+      if (sent.mentionWarning) setWarning(sent.mentionWarning);
       const [saved] = await unseal(c, [sent]);
       if (run !== alive.current) return;
       setMsgs(merge(msgs.current, [saved]));
@@ -298,7 +325,8 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
   }, [setConv, setMsgs, unseal]);
 
   const send = useCallback((input: SendInput) => {
-    const p: PendingMessage = { clientMsgId: newId(), body: input.body.trim(), attachments: input.attachments, replyTo: input.replyTo, status: 'sending', error: '', createdAt: new Date().toISOString() };
+    const p: PendingMessage = { clientMsgId: newId(), body: input.body.trim(), attachments: input.attachments, replyTo: input.replyTo, mentions: input.mentions,
+      status: 'sending', error: '', createdAt: new Date().toISOString() };
     setPending(list => [...list, p]);
     return post(p);
   }, [post]);
@@ -307,6 +335,14 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     if (p && p.status === 'failed') void post(p);
   }, [post]);
   const discard = useCallback((clientMsgId: string) => setPending(list => list.filter(x => x.clientMsgId !== clientMsgId)), []);
+
+  // ---- reactions (one per person and message; the server decides who may)
+  /** Add / change / remove (null) my reaction; the answer carries the message's reactions as everybody sees them now. */
+  const react = useCallback(async (m: ChatMessage, emoji: string | null) => {
+    if (!tp.current.react) throw new Error('Reactions are not available here.');
+    const r = await tp.current.react(m.id, emoji);
+    setMsgs(msgs.current.map(x => (x.id === r.messageId ? { ...x, reactions: r.reactions } : x)));
+  }, [setMsgs]);
 
   // ---- deleting (the server decides; the screen follows)
   /** Hide a message for the signed-in person only. */
@@ -378,5 +414,6 @@ export function useChatThread(transport: ChatTransport, opts: { active?: boolean
     return () => clearTimeout(t);
   }, [conversation, lastSeq, firstSeq, hasMine, receiptTick]);
 
-  return { conversation, messages, pending, hasMore, loading, loadingOlder, error, denied, loadOlder, send, retry, discard, deleteForMe, deleteForEveryone, reload: load, refreshConversation, receipts };
+  return { conversation, messages, pending, hasMore, loading, loadingOlder, error, denied, loadOlder, send, retry, discard, deleteForMe, deleteForEveryone, reload: load, refreshConversation, receipts,
+    react, warning, clearWarning: () => setWarning('') };
 }

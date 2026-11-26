@@ -64,17 +64,11 @@ graph LR
 
 ---
 
-### 3. Automated Offer Letter Generation
+### 3. Offer Letter Generation (one template per designation)
 
-The HR workspace features an integrated **Legal Document Automation Engine**:
-
-1. In the HR panel, open the **Offer Letters & Agreements** sub-tab.
-2. Click **Generate Offer Letter**.
-3. In the generator modal, input parameters:
-   - Candidate Name and Contact Information.
-   - Position / Designation and Department.
-   - Annual CTC, Monthly Base Salary, and Allowances.
-   - Date of Joining and Probation Duration.
-4. Click **Preview Automated Letter**.
-5. The system renders the standardized corporate letterhead including statutory clauses and sign-off blocks.
-6. Export as an official PDF or dispatch directly to the candidate's email.
+1. In the HR panel, open **HR & Operations > Offer Letter Generation** (or press **Generate Offer** on the dashboard).
+2. In **Select Employee Designation / Offer Letter Template**, choose the designation: Technical Support, Customer Support, Business Development Executive, Sales Executive or AI Developer (and any designation added later). That designation's own offer letter loads, with its own fields.
+3. Choose the employee. Their name, department, joining date and monthly salary are filled in from the CRM ("from the CRM"); the other fields start with the values of the designation's sample letter. Change anything that needs changing (Customer Support asks for the title, Business Development Executive for the reference number).
+4. Check the **Live preview** on the right: it is the finished PDF, on the designation's letterhead, and updates a moment after each change.
+5. Press **Generate Offer Letter** to store it on the employee's record, then **Download as PDF**. **Regenerate Document** stores a new copy; earlier letters are kept and never change.
+6. **Templates by designation** shows each designation's template, its versions and the letters issued. The Super Admin and the HR Admin Head upload a designation's sample and letterhead, change its wording and fields, and save a new version (new letters use it; issued letters stay as they were).

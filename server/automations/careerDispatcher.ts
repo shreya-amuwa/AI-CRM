@@ -78,6 +78,8 @@ export async function runCareerAutomation() {
           text: 'There is an update to your recruitment journey. Sign in to the Amuwa candidate portal to review your applications and next steps.',
           html: '<p>There is an update to your recruitment journey.</p><p>Sign in to the Amuwa candidate portal to review your applications and next steps.</p>',
         },
+        undefined,
+        { category: 'RECRUITMENT', application: 'CANDIDATE_PORTAL', template: 'candidate-update', idempotencyKey: `career-mail:${job.id}` },
       );
       success = outcome.ok;
       if (success) sent++;

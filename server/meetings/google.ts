@@ -214,16 +214,23 @@ export interface CalendarMeeting {
   location: string | null;
   meetLink: string | null;
   hostEmail: string | null;
+  /** The host's name: a guest of the event when someone else organises it. */
+  hostName?: string | null;
+  /** Whose Google Calendar holds the event (the creator; the host when nobody created it): never a guest. Defaults to the host. */
+  organizerEmail?: string | null;
   version: number;
   attendees: { email: string | null; name: string | null; role: string; profileId: string | null }[];
 }
 
-/** The Google event of a CRM meeting: guests invited by Google, a Meet link created for "Google Meet" meetings. */
+/** The Google event of a CRM meeting, on the organiser's calendar: everyone else is a guest invited by Google, a Meet link is created for "Google Meet" meetings. */
 export function eventBody(m: CalendarMeeting, appUrl: string, withConference: boolean): Record<string, unknown> {
   const host = (m.hostEmail || '').toLowerCase();
+  const organizer = (m.organizerEmail || m.hostEmail || '').toLowerCase();
   const seen = new Set<string>();
-  const attendees = m.attendees
-    .filter(a => a.email && a.email.toLowerCase() !== host)
+  // the host is a guest when someone else organises the event (a request for the CEO's time sits on the calendar of the one asking)
+  const people = host && host !== organizer ? [{ email: m.hostEmail, name: m.hostName ?? null, role: 'REQUIRED', profileId: null }, ...m.attendees] : m.attendees;
+  const attendees = people
+    .filter(a => a.email && a.email.toLowerCase() !== organizer)
     .filter(a => {
       const k = a.email!.toLowerCase();
       if (seen.has(k)) return false;

@@ -7,6 +7,7 @@ import { enforce } from '../http/rateLimit.js';
 import { AppError } from '../http/errors.js';
 import { limitOf } from '../security/abuse.js';
 import type { RenderedEmail } from './templates.js';
+import { linkLifetimeText } from '../security/linkLifetime.js';
 
 /**
  * Supabase "Send Email" auth hook: Supabase does not send its sign-up / password-reset / invite e-mails itself, it POSTs them here and
@@ -129,7 +130,7 @@ function copyFor(type: string, audience: AuthAudience): Copy | null {
       return {
         subject: audience === 'CANDIDATE' ? 'Reset your password – Amuwa Careers' : 'Reset your password – Amuwa CRM',
         heading: 'Reset your password',
-        intro: `We received a request to reset the password of your account on ${place}. Use the button below to choose a new one. The link works once and for a limited time.`,
+        intro: `We received a request to reset the password of your account on ${place}. Use the button below to choose a new one. ${linkLifetimeText()}`,
         button: 'Choose a new password',
         outro: 'If you did not ask for this, ignore this email: your password stays as it is.'
       };
@@ -145,7 +146,7 @@ function copyFor(type: string, audience: AuthAudience): Copy | null {
       return {
         subject: audience === 'CANDIDATE' ? 'Your sign-in link – Amuwa Careers' : 'Your sign-in link – Amuwa CRM',
         heading: 'Sign in',
-        intro: `Use the button below to sign in to ${place}. The link works once and for a limited time.`,
+        intro: `Use the button below to sign in to ${place}. ${linkLifetimeText()}`,
         button: 'Sign in',
         outro: 'If you did not ask for this, you can ignore this email.'
       };
@@ -286,7 +287,12 @@ export async function handleAuthEmailHook(
   const settings: AutomationSettings = { ...base, email: { ...base.email, fromName: rendered.brand === 'Amuwa Careers' ? 'Amuwa Careers' : base.email.fromName, cc: [], bcc: [] } };
   let result: SendResult;
   try {
-    result = await d.send(settings, { email: payload.user.email, name: displayName(payload.user) }, rendered);
+    // AUTH: never copied (enforced again in providers.ts and the database), CRITICAL (never waits behind other mail). The webhook id makes a
+    // Supabase retry of the same request answer "already sent" instead of e-mailing a second link.
+    result = await d.send(settings, { email: payload.user.email, name: displayName(payload.user) }, rendered, undefined, {
+      category: 'AUTH', priority: 'CRITICAL', sensitive: true, application: audienceOf(payload.user) === 'CANDIDATE' ? 'CANDIDATE_PORTAL' : 'CRM',
+      template: `auth-${payload.email_data.email_action_type}`, ...(req.id && /^[A-Za-z0-9_.:-]{8,120}$/.test(req.id) ? { idempotencyKey: `auth-hook:${req.id}` } : {})
+    });
   } catch {
     result = { ok: false, retry: true, code: null, ref: null, detail: 'The mail provider call failed.' };
   }

@@ -1,5 +1,7 @@
 # Meetings: Google Calendar, booking links and CEO approval
 
+> **The CEO's time is decided by the Super Admin only.** See [CEO_MEETING_APPROVAL.md](CEO_MEETING_APPROVAL.md) (migration `20270114000100`): delegates, Admin, HR and every other role can ask, never approve, reject or reschedule. Where this guide still says "delegate", read that guide.
+
 One booking system for appointments, demos, interviews, meetings and meetings with the CEO (the Super Admin).
 Migration `20270101000500_meetings_google_calendar.sql`.
 
@@ -9,19 +11,21 @@ Migration `20270101000500_meetings_google_calendar.sql`.
 
 | Tab | What it does |
 | --- | --- |
-| Calendar | The week, day by day: your meetings, the ones you are invited to, and (for the CEO's delegates) the CEO's. Open one to join the Google Meet, reschedule, cancel, mark it done, or answer an invitation. |
-| Requests | Requests waiting for your decision (the CEO and their delegates): approve, propose another time, or decline. Also your own open requests. |
-| Google, hours & booking links | Connect your Google Calendar, set your working hours, create booking links, and (CEO) name delegates. |
+| Calendar | The week, day by day: your meetings, the ones you are invited to, (the CEO's meetings are the Super Admin's own). Open one to join the Google Meet, reschedule, cancel, mark it done, or answer an invitation. |
+| Requests | The Super Admin (CEO): every employee's request in Pending / Approved / Rejected / Rescheduled / History sections, with Approve, Reject and Reschedule. Everybody else: *My CEO requests*, their own requests with the status, the confirmed time and the reasons. A new request appears here as soon as its notification arrives, without a refresh. |
+| Google, hours & booking links | Connect your Google Calendar, set your working hours, create booking links, and (CEO) a note that decisions are not delegated. |
 
 The page also has two buttons:
 
 - **New meeting** books a meeting you host. You invite colleagues (their busy times for that day are shown, from the CRM and their Google Calendar) and guests outside the company by e-mail.
-- **Ask the CEO for time** sends a request. It holds the time until the CEO, or a delegate the CEO named, does one of three things:
+- **Ask the CEO for time** sends a request. It holds the time until the Super Admin (the CEO) does one of three things (nobody else can):
   - **Approve:** it is booked.
   - **Propose another time:** the person asking accepts or declines it.
   - **Decline:** with a reason.
 
-  A delegate can also book the CEO's time directly. When the person asking moves an approved meeting, it needs approval again.
+  Nobody books the CEO's time directly: everybody else sends a request. When the person asking asks for another time for an approved meeting, it goes back to "requested" and needs approval again.
+
+Clicking a meeting notification (the bell or the Notification Center) opens Meetings on that meeting.
 
 ### Booking links
 
@@ -54,9 +58,10 @@ Change or cancel them in their own page; Meetings follows. The Team Member's pri
 
 | Who | How |
 | --- | --- |
-| Colleagues | In the Notification Center: invited, request waiting (urgent), approved / declined / another time proposed, moved, cancelled, a guest booked or cancelled, someone cannot attend, reminders 24 hours and 1 hour before, Google sync failing, Google disconnected. |
+| Colleagues | By e-mail (`20270113000100`): when a meeting they take part in is scheduled or approved, moved or cancelled, and the one who asked when a request is declined. The e-mail comes from the CRM's mailbox **in the organiser's name** ("Priya Shah via Amuwa CRM", replies go to Priya) with a `.ics` file, and is skipped when Google already sent the invitation from the organiser's calendar. The organiser always gets it, because Google does not e-mail the organiser. |
+| Colleagues | In the Notification Center, and on their phones for the ones that need attention (only for meetings they take part in; `docs/NOTIFICATION_RELIABILITY.md`): invited, request waiting (urgent), approved / declined / another time proposed, moved, cancelled, a guest booked or cancelled, someone cannot attend, reminders 24 hours, 1 hour and 15 minutes before and at the start, Google sync failing, Google disconnected. |
 | Guests outside the company | By e-mail, from the client sender address: confirmation (with a `.ics` calendar file), request received, another time proposed, declined, moved, cancelled, reminders 24 hours and 1 hour before. |
-| Everyone invited, when the host connected Google | Google also sends its own calendar invitation, update and cancellation. For meetings booked by staff, the CRM then skips its own confirmation / change / cancellation e-mail so guests do not get two. Booking-link guests always get the CRM's, because it carries their private link. |
+| Everyone invited, when the organiser connected Google | Google also sends its own calendar invitation, update and cancellation. For meetings booked by staff, the CRM then skips its own confirmation / change / cancellation e-mail so guests do not get two. Booking-link guests always get the CRM's, because it carries their private link. |
 
 E-mails follow the same switches as every other client e-mail (`AUTOMATION_MODE`, `EMAIL_PROVIDER`, test recipients). Nothing is sent in a dry run.
 
@@ -68,10 +73,11 @@ E-mails follow the same switches as every other client e-mail (`AUTOMATION_MODE`
   - `calendar.freebusy`: when the person is busy, never what their other events are.
   - the account's e-mail address.
 - **Token storage:** the refresh token is encrypted (AES-256-GCM, `GOOGLE_TOKEN_KEY`) in `google_calendar_connections`. Only the server (service role) can read that table.
-- **Where events go:** the **host's** Google Calendar, with the guests and invited colleagues as attendees, and a Google Meet link for "Google Meet" meetings.
-  - Requests are not put on the CEO's calendar until approved.
+- **Where events go:** the **organiser's** Google Calendar (`20270113000100`): the person who created the meeting, so Google e-mails the invitation, every change and the cancellation from their Gmail to everyone else, the host included. Meetings nobody created (BA demos, interviews, HR meetings, booking-link bookings) use the host's calendar. Every other participant is a guest, and a Google Meet link is added for "Google Meet" meetings.
+  - A request for the CEO's time gets no event until it is approved. Then the event is created on the calendar of the one who asked, with the CEO as a guest. When the CEO moves or cancels it, that same event is updated or removed, and Google e-mails everyone again.
+  - Events created before `20270113000100` stay on the host's calendar and keep being updated there.
   - Cancelled or declined meetings are removed, and Google tells the guests.
-- **Sync timing:** right after every change, and again on every automation dispatch, which retries with back-off. Failures show on the meeting. After 5 failed tries the host is notified.
+- **Sync timing:** right after every change, and again on every automation dispatch, which retries with back-off. Failures show on the meeting. After 5 failed tries the organiser is notified.
 - **Revoked access:** if Google stops accepting the access, the connection is marked *needs reconnect* and the person is asked to connect again.
 - **Disconnecting:** revokes the access at Google and deletes the stored token. Events already created stay in the calendar.
 
@@ -106,14 +112,17 @@ Without the Google variables everything else still works: the calendar, booking 
 
 Run `supabase/migrations/20270101000500_meetings_google_calendar.sql` in the Supabase SQL editor. It is additive, safe to run twice, and uses no temp tables. It also brings already-planned future demos, interviews and confirmed HR meetings into the calendar once.
 
+Then run `supabase/migrations/20270113000100_meetings_creator_organiser.sql` (after every earlier migration). It adds who holds each Google event, the colleague e-mails and participant-only access. It is additive and safe to run twice.
+
 ### 4. Reminders
 
-Reminders and retries run with `/api/v1/internal/automations/dispatch`. With only the two daily Vercel crons, the "1 hour before" reminder can come late. Call the dispatch every 5 minutes from Supabase `pg_cron` + `pg_net` (the same `net.http_post` call as in `docs/HR_EMAIL_AUTOMATION.md`, with `*/5 * * * *`), so reminders are on time.
+Reminders and retries run with the 5-minute scheduled run (`/api/v1/internal/attendance/reminders`, Cloudflare cron `*/5 * * * *`) and with `/api/v1/internal/automations/dispatch`, so the 1-hour, 15-minute and at-start reminders are on time (20270208000100).
 
 ## Rules the database enforces
 
-- **Seeing a meeting:** only its host, the person who booked it, invited colleagues, the host's delegates and the Super Admin can see it. Anyone else gets "not found".
-- **Changing a meeting:** only the host, the person who booked it, the host's delegates and the Super Admin can move, cancel or complete it. Invited colleagues only answer.
+- **Seeing a meeting:** only its host, the person who booked it, invited colleagues and (for other hosts) the host's delegates can see it; a Super Admin also sees every request for the CEO's time. The Super Admin sees a meeting only when taking part (a meeting between employees stays with those employees). Anyone else gets "not found".
+- **Changing a meeting:** only the host, the person who booked it and the host's delegates can move, cancel or complete it. Invited colleagues only answer. **The CEO's meetings: only a Super Admin** (the one who asked can withdraw a pending request or ask for another time).
+- **Deciding a request:** a request for a colleague's booking link: the host and their delegates. **A request for the CEO's time: a Super Admin only.**
 - **No double booking.** A host cannot have two requested or scheduled meetings at the same time. Checks run under a lock, so two guests can never take the same slot. A host may book an overlap in their own calendar on purpose.
 - **Booking-link slots are re-checked when booked:**
   - inside working hours
@@ -149,3 +158,237 @@ Reminders and retries run with `/api/v1/internal/automations/dispatch`. With onl
   - `supabase/tests/meetings.test.ts` (unit, 73)
   - `supabase/tests/ui_meetings.test.mjs` (browser, 26)
   - the meetings block of `supabase/tests/api_integration.test.ts`
+
+## Employee availability: Enter / Exit Meeting
+
+Migration `supabase/migrations/20270122000100_meeting_presence_all_employees.sql` (run after `20270116000400`; additive, safe to run twice).
+
+> This replaces the CEO-only version of `20270116000400`. **The Super Admin no longer has Enter / Exit Meeting**, and requests for the CEO's
+> time no longer wait as "pending availability". Requests that were waiting become ordinary requests for the Super Admin to approve (nothing
+> is lost). Asking the CEO for time works as before: the Super Admin approves, proposes another time or declines.
+>
+> **Since `20270128000100`, the Super Admin has Enter / Exit again**, with a queue that confirms one request per Exit (see the next
+> section). What follows about the Super Admin describes `20270122000100` alone.
+
+### Who
+
+- **Every employee except the Super Admin** has Enter Meeting / Exit Meeting at the top of Meetings: Department Heads, Operations Heads,
+  Team Leads and Team Members, in every department.
+- **The Super Admin** sees no Enter / Exit controls. The database refuses the Super Admin even if the API is called directly
+  (`mtg_presence_enter` / `mtg_presence_exit` raise `FORBIDDEN`).
+
+### What it does
+
+- **Enter Meeting:** the employee becomes **BUSY**. Optionally they choose which of today's meetings they are entering. The entry time is
+  recorded in `meeting_presence_log`.
+- **Exit Meeting:** they become **AVAILABLE** again. The exit time is recorded.
+- **What colleagues see:**
+  - When booking a meeting (New meeting), each colleague offered or invited shows a **BUSY** badge while in a meeting.
+  - The badge changes at once (Supabase Realtime on `meeting_presence`), with no refresh.
+  - The person themself sees a "You: BUSY" reminder next to the bell on every dashboard.
+
+### Conflicts
+
+A meeting **starting within the next 30 minutes** cannot be booked with a colleague who is BUSY right now. The form says so, and the
+database refuses it ("X is in a meeting right now (Busy)").
+
+Later times can still be booked (nobody knows when they will exit). The usual rule also stays: no two meetings of a host at the same time.
+
+### Rules the database enforces
+
+- Enter and Exit are for oneself only, never for someone else.
+- The status is read through `mtg_presence(ids)`: one's own, or up to 100 colleagues, with no meeting details of anyone else.
+- Nobody writes `meeting_presence` directly.
+- Entering and exiting are audited (`MEETING_PRESENCE_ENTERED` / `_EXITED`). A second click changes nothing.
+
+### Tests
+
+- `supabase/tests/meeting_presence_employees_test.sql`
+- the "employee availability" block of `api_integration.test.ts`
+- `supabase/tests/ui_meeting_presence.test.mjs`
+
+## The Super Admin's meeting queue: one confirmed per Exit (20270128000100)
+
+Migration `supabase/migrations/20270128000100_ceo_meeting_queue.sql` (run after `20270126000100`; additive, safe to run twice). It brings
+back Enter / Exit Meeting for the Super Admin (everyone has it now) and connects it to the requests made while they are in a meeting.
+
+- **Enter Meeting (Super Admin):** BUSY. Everyone asking the CEO for time sees *"The CEO is in a meeting right now"*, and the button reads
+  **Join the queue**. The request is saved as **Queued (CEO in a meeting)** with the requested length; the one who asked gets a receipt with
+  their place in the queue. The Super Admin is not interrupted, and sees the queue, oldest first, on their availability panel.
+- **Exit Meeting (Super Admin):** AVAILABLE, and the server confirms **exactly one** request: the oldest still waiting (a withdrawn one is
+  skipped). It starts at the Exit and lasts as long as was asked. The rest keep waiting for the next Exit.
+  - **Room:** Google Meet when the meeting's organiser has Google Calendar connected (the calendar sync creates the Meet link); otherwise
+    the Super Admin's fixed **meeting room link** (Meetings → Google, hours & booking links → "Meeting room link for queued meetings",
+    https only); otherwise the mode the employee chose. No link is ever made up.
+  - **E-mail** (`QUEUE_CONFIRMED`, with the calendar file): "Your meeting is scheduled now" to the employee and to the Super Admin, once
+    each (the outbox's unique key). With Google Meet, the worker waits for the Meet link, at most about 15 minutes.
+  - **Notifications:** the employee (`MEETING_SCHEDULED`, urgent) and the Super Admin (`MEETING_QUEUE_SCHEDULED`).
+  - **History:** the meeting's `AUTO_SCHEDULED` event and the audit `MEETING_QUEUE_SCHEDULED`.
+- **No double confirmation:** confirming happens only on the BUSY → AVAILABLE change, under the Super Admin's booking lock, with
+  `for update skip locked`. A second Exit, a double click, an employee's Exit or an empty queue confirm nothing. It is all server-side;
+  nobody can write `meeting_presence` or a meeting's status directly.
+- **The Super Admin's week** (Calendar) lists the latest day first, and in each day the latest meeting first (by its date and time; the
+  creation time only breaks a tie). Everyone else keeps Monday first, earliest first.
+
+API: `GET /meetings/presence/ceo` (the CEOs' status), `GET` / `POST /meetings/settings/room-link` (`{ roomLink }`, Super Admin only);
+`POST /meetings/presence/exit` returns `scheduled` (at most one).
+
+Tests: `supabase/tests/meeting_ceo_queue_test.sql`, `supabase/tests/meeting_ceo_queue.test.ts` (the e-mail and when it is sent),
+`supabase/tests/ui_meeting_presence.test.mjs` and the "CEO queue" checks of `api_integration.test.ts`.
+
+## CEO office arrival (20270128000300)
+
+Migration `supabase/migrations/20270128000300_ceo_office_arrival.sql` (run after `20270128000200`; additive, safe to run twice).
+
+- **HR's button.** The HR dashboard has **CEO HAS ARRIVED** (HR staff and the Super Admin; recruiters and everyone else are refused by the database).
+  - Pressing it records today's arrival (India time) once, with the time and who pressed it. A second press, or two HR people at once, changes nothing.
+  - **Undo** fixes a mistaken press. The row is kept, marked undone with who undid it.
+  - Each new day starts as "not arrived".
+- **The banner** sits at the top of the CEO meeting request section ("Ask the CEO for time" and My CEO requests):
+  - Before the arrival: **🔴 CEO HAS NOT ARRIVED AT THE OFFICE YET**, "Sir has not arrived at the office yet. You can still schedule your meeting request. Meeting confirmation and availability will be subject to the CEO's arrival and approval."
+  - After the arrival: **🟢 CEO HAS ARRIVED AT THE OFFICE**, "Sir has arrived at the office. You can schedule meetings based on the available time slots."
+  - It changes at once on every screen (Supabase Realtime on `ceo_office_arrivals`).
+- **Information only.** The arrival never disables, hides or refuses meeting requests, and never confirms or rejects one.
+  - `mtg_create`, the approval and the queue do not read it.
+  - Requests made before the arrival stay as they are until the CEO (or an authorized person) decides.
+- **Busy and overlaps.**
+  - Enter / Exit Meeting still shows the CEO BUSY, and requests made while BUSY join the queue (previous section).
+  - A queued request confirmed on Exit now starts at the first free moment. If the CEO already has a confirmed meeting then, it starts right after it, never on top of it.
+  - Approvals keep refusing overlapping confirmed meetings, as before.
+
+API: `GET /meetings/ceo-office`; `POST /meetings/ceo-office/arrived` and `POST /meetings/ceo-office/undo` (`{ ceoId? }`, needed only when there is more than one CEO).
+
+Tests: `supabase/tests/ceo_office_arrival_test.sql`, the "CEO arrival API" checks of `api_integration.test.ts` and `supabase/tests/ui_meeting_presence.test.mjs`.
+
+## Client meetings
+
+Migration `supabase/migrations/20270122000200_client_meetings.sql` (run after `20270122000100`; additive, safe to run twice).
+
+### The option and the form
+
+**Client meeting** is a third button on Meetings, next to *Ask the CEO for time* and *New meeting*. It opens its own form:
+
+- client name, client e-mail address, company name;
+- meeting title, agenda;
+- date, start time, end time;
+- **Online** (meeting link, `https://` required) or **Offline** (physical location required);
+- the assigned employee / meeting host (default: the one creating it; never the Super Admin, whose time is asked for).
+
+Every field is checked before anything is sent, by the same schema as the server (`clientMeetingSchema`), and the database checks it again.
+
+### Saving and conflicts
+
+The meeting is saved as a meeting of kind `CLIENT_MEETING`:
+
+- the client is its outside guest;
+- the company is in `meetings.client_company`;
+- the agenda is the description.
+
+It is refused when the host already has a meeting at that time, or is BUSY now and the meeting starts within 30 minutes.
+
+### The e-mails to the client
+
+The e-mails are sent by the **server**, never the browser, through the existing meeting e-mail outbox (`meeting_mail_outbox`):
+
+| When | The client receives |
+| --- | --- |
+| Created | A professional **meeting invitation**: title, company, date and time, mode, meeting link or location, agenda, host name and e-mail, reference, and a calendar file |
+| Rescheduled | The **new time** |
+| Cancelled | The **cancellation**, with the reason |
+
+For a client meeting the client always gets the CRM's own e-mail, even when the organiser's Google Calendar also sends an invitation.
+
+### Duplicates, failures and the delivery log
+
+- **No duplicates.** The form carries a request id: sending it twice returns the first meeting. The outbox keeps one e-mail per meeting,
+  address, kind and meeting version.
+- **Failures** are retried with back-off by the worker. Each attempt and its error are kept.
+- **Delivery log.** The meeting's details show the host and the one who booked it every e-mail to the client: *Sent*, *Sending…*, or
+  *Failed* with the reason.
+- **Send again** re-queues a failed one. An e-mail replaced by a later new-time or cancellation e-mail is not sent again.
+
+### Managing client meetings
+
+The **Client meetings** tab lists one's client meetings, upcoming or past, by status: **Scheduled**, **Rescheduled**, **Completed** or
+**Cancelled**.
+
+The host and the one who booked it can view, reschedule, cancel and complete one with the existing actions. Every change is in the meeting's
+history and the audit log.
+
+### API
+
+- `POST /meetings/client` and `GET /meetings/client?scope=&status=`
+- `GET /meetings/:id/mails`
+- `POST /meetings/mails/:id/retry`
+
+### Tests
+
+- `supabase/tests/client_meetings_test.sql`
+- `supabase/tests/client_meetings.test.ts` (the e-mail content and the always-send rule)
+- `supabase/tests/ui_client_meetings.test.mjs`
+- the "client meetings API" block of `api_integration.test.ts`
+
+## The CEO-only availability (20270116000400, replaced)
+
+The rest of this section describes the earlier CEO-only version. It is kept for its history; `20270122000100` replaced it.
+
+### Live availability of the CEO: Enter / Exit Meeting
+
+
+Migration `supabase/migrations/20270116000400_meeting_live_availability.sql` (run after `20270116000300`; additive, safe to run twice).
+
+### What people see
+
+- **The CEO (Super Admin)**, at the top of Meetings: **Enter Meeting** when not in a meeting (optionally choosing which of today's meetings),
+  **Exit Meeting** while in one. The panel shows the live status, since when, the current meeting (with its Meet link), and the requests
+  waiting for the CEO to be free, oldest first.
+- **Everybody else**: the CEO's live **BUSY** / **AVAILABLE** status at the top of Meetings and as a small badge next to the bell on every
+  dashboard. It changes at once (Supabase Realtime on `meeting_presence`); nobody needs to refresh.
+- **Asking the CEO for time while BUSY**: the form says *"Superadmin is currently attending another meeting."* The time is not confirmed. The
+  request can still be sent (**Submit the request (pending availability)**). It is saved as **Pending availability** with the requested date,
+  time, length, purpose and who asked, and listed under Requests → Your requests. While the CEO is AVAILABLE, asking works as before (the CEO
+  approves, proposes another time or declines).
+
+### Exit Meeting schedules the waiting requests
+
+On Exit, in one transaction under the CEO's booking lock (the same lock every booking uses, so two people can never take the same slot):
+
+1. The status becomes AVAILABLE and the end time is recorded.
+2. Each person with a waiting request is told the CEO is available again.
+3. The waiting requests are taken in the order they were made. Each gets the first free slot at or after the time asked for (never in the
+   past), inside the CEO's working hours (default Monday–Saturday 10:00–18:00), not overlapping any requested, proposed or scheduled meeting
+   of the CEO (including the ones just booked), and not overlapping the CEO's Google Calendar busy times (the server reads them for the next
+   31 days and passes them in).
+4. Each becomes **Scheduled**. The Google event and guest e-mails follow through the existing sync.
+5. The one who asked is notified of the confirmed date and time, and separately when it is not the time they asked for. The CEO and invited
+   colleagues are told it was booked.
+
+A request with no free slot in the next 30 days keeps waiting. Every automation dispatch also schedules waiting requests of a CEO who is
+AVAILABLE (a safety net), so nothing is lost when a browser closes or the CEO signs out. A confirmed meeting is never moved by any of this. A
+waiting request can be cancelled like any request.
+
+### Rules the database enforces
+
+- Only a Super Admin can Enter or Exit, and only for themself (`mtg_presence_enter`, `mtg_presence_exit`). Team members can only read the
+  status, which holds no meeting details. Nobody writes `meeting_presence` directly.
+- A second Enter (or Exit) changes nothing.
+- History: `meeting_presence_log` (every Enter and Exit with both times and how many requests were scheduled), the meeting's own history
+  (`HOST_ENTERED`, `HOST_EXITED`, `REQUESTED_WHILE_BUSY`, `AUTO_SCHEDULED`), and the audit log (`MEETING_PRESENCE_ENTERED`,
+  `MEETING_PRESENCE_EXITED`, `MEETING_PENDING_AVAILABILITY`, `MEETING_AUTO_SCHEDULED`).
+
+### API
+
+`GET /meetings/presence`, `POST /meetings/presence/enter` (`{ meetingId? }`) and `POST /meetings/presence/exit`.
+
+### Tests
+
+`supabase/tests/ui_meeting_presence.test.mjs` (browser: Enter / Exit, the
+indicator, the busy message, the pending request and a Realtime update), and the "Live meeting availability" block of
+`supabase/tests/api_integration.test.ts`.
+
+## Post-meeting summaries and Meeting Decisions (migration 20270124000200)
+
+Internal team meetings (kind `MEETING`, booked by staff) are completed with a structured summary written by the most senior
+leader who attended, instead of "Mark done". The organiser confirms who attended, and the summary is due 24 hours after the
+meeting. The CEO (Super Admin) sees the outcomes in **Meetings → Meeting Decisions**; everyone sees theirs in **Meetings →
+Meeting summaries**. All other meeting kinds are unchanged. See [MEETING_SUMMARIES.md](MEETING_SUMMARIES.md).

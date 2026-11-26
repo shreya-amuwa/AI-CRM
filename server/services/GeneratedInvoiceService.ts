@@ -275,7 +275,8 @@ export class GeneratedInvoiceService {
             invoiceDate: invoiceDate(snap.invoiceDate),
             total,
             pdf,
-            fileName: fileNameOf(snap.number, stage)
+            fileName: fileNameOf(snap.number, stage),
+            customerId: snap.customerId
           });
           try {
             await this.repo.recordEmail(snap.invoiceId, stage, { outcome: sent.outcome, to: sent.to, messageId: sent.messageId, detail: sent.outcome === 'SENT' ? null : sent.detail });

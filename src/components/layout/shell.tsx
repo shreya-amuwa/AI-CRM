@@ -1,9 +1,20 @@
 import { ScopeBar } from '../scope/ScopeBar';
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, CalendarDays, ChevronDown, Clock3, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, Bug, CalendarDays, ChevronDown, Clock3, Crown, LogOut, Megaphone, Menu, Wallet, X } from 'lucide-react';
 import { DOCUMENTATION_ROUTE } from '../../lib/documentation';
 import { AmuwaLogo } from '../common/AmuwaLogo';
 import { closeMenu, toggleMenu, useMenu } from './menuState';
+import { attendanceRequested } from '../attendance/attendanceEvents';
+import { StaffReminderBanner, useStaffReminders } from '../attendance/StaffReminders';
+import { meetingRequestedFromUrl, useOpenMeetingRequest } from '../meetings/meetingEvents';
+import { useBugAccess } from '../bugs/bugUi';
+import { useRememberedOverlay } from '../../hooks/useRememberedOverlay';
+import { useOpenBugsRequest } from '../bugs/bugEvents';
+import { noticeRequested, useOpenNoticeRequest } from '../notices/noticeEvents';
+import { useNoticeUnread } from '../notices/useNoticeUnread';
+import { useOpenWalletRequest } from '../wallet/walletEvents';
+import { GlobalSearchTrigger, useSearchPages } from '../search/GlobalSearch';
+import type { SearchPage } from '../../lib/search/searchEngine';
 
 // The Attendance section (20261230000400) is part of every dashboard's side panel; loaded only when opened.
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
@@ -11,8 +22,23 @@ export const ATTENDANCE_NAV_ID = '__attendance';
 // Meetings (20270101000500): the one calendar with Google Calendar, booking links and CEO requests, also in every dashboard's menu
 const MeetingsPage = React.lazy(() => import('../meetings/MeetingsPage'));
 export const MEETINGS_NAV_ID = '__meetings';
+// Bugs (20270122000300): the Developers team's section, added to the menu ONLY of the developers the database names
+const BugsPage = React.lazy(() => import('../bugs/BugsPage'));
+export const BUGS_NAV_ID = '__bugs';
+// Notice Board (20270131000200): every dashboard, everyone reads; publishers also send
+const NoticeBoard = React.lazy(() => import('../notices/NoticeBoard'));
+export const NOTICES_NAV_ID = '__notices';
+// CEO Availability (20270201000100): the HR dashboards only, immediately below the Notice Board
+const CeoAvailabilityPage = React.lazy(() => import('../meetings/CeoAvailabilityPage'));
+export const CEO_AVAILABILITY_NAV_ID = '__ceo_availability';
+// Wallet (20270207000100): every employee dashboard, below the Notice Board; each person sees only their own
+const WalletPage = React.lazy(() => import('../wallet/WalletPage'));
+export const WALLET_NAV_ID = '__wallet';
+const OVERLAYS = [ATTENDANCE_NAV_ID, MEETINGS_NAV_ID, BUGS_NAV_ID, NOTICES_NAV_ID, CEO_AVAILABILITY_NAV_ID, WALLET_NAV_ID] as const;
 /** Google's sign-in comes back to /?tab=meetings&google=...: open Meetings at once so the outcome is shown. */
-export const meetingsRequested = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'meetings';
+// ?tab=meetings, or a tapped meeting push (/?open=meeting&id=...: Meetings opens on that meeting)
+export const meetingsRequested = () => typeof window !== 'undefined'
+  && (new URLSearchParams(window.location.search).get('tab') === 'meetings' || meetingRequestedFromUrl(window.location.search));
 
 /**
  * The shared dashboard shell (the Department Head design handoff): a white sidebar with an Amuwa brand block,
@@ -303,6 +329,8 @@ export const TopBar: React.FC<{
     <MenuButton />
     {left && <div className="flex-1 min-w-0 flex items-center">{left}</div>}
     <div className={`${left ? '' : 'ml-auto'} flex items-center gap-1 sm:gap-2 shrink-0`}>
+      {/* global search (Ctrl / Cmd + K): the same palette from the keyboard, this field, or the phone's search icon */}
+      <GlobalSearchTrigger />
       {actions}
       {user && <UserChip name={user.name} role={user.role} />}
       {onSignOut && <SignOutButton onClick={onSignOut} />}
@@ -344,6 +372,12 @@ interface DashboardShellProps {
   wide?: boolean;
   /** No padding or width limit: for a page that fills the whole content area (the Chat page). */
   flush?: boolean;
+  /** The "Turn on notifications" banner: true = attendance reminders; 'meetings' = meeting notices (the Managing Director, who does not punch). */
+  reminders?: boolean | 'meetings';
+  /** HR dashboards: adds CEO Availability below the Notice Board (the HR Recruiter's dashboard). */
+  ceoAvailability?: boolean;
+  /** The Wallet entry (every employee dashboard); off for the Super Admin, who has no wallet. */
+  wallet?: boolean;
   children: React.ReactNode;
 }
 
@@ -363,22 +397,44 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   attendanceView,
   wide = false,
   flush = false,
+  reminders = true,
+  ceoAvailability = false,
+  wallet = true,
   children
 }) => {
   // only sections marked collapsible use this; the others are always open as before
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => new Set());
   // Attendance (Punch In / Out, lunch) is added to every dashboard here; choosing any other page hands the content back to the dashboard
   // (Meetings works the same way)
-  const [overlay, setOverlay] = useState<null | typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID>(() => (meetingsRequested() ? MEETINGS_NAV_ID : null));
-  const shownActive = overlay ?? active;
+  // a tapped reminder opens the CRM on /?open=attendance
+  const bugAccess = useBugAccess();
+  // remembered across a refresh (per person and dashboard), so Meeting Request / Attendance / Bugs stay open instead of returning to the Overview
+  const [overlay, setOverlay] = useRememberedOverlay<typeof ATTENDANCE_NAV_ID | typeof MEETINGS_NAV_ID | typeof BUGS_NAV_ID | typeof NOTICES_NAV_ID | typeof CEO_AVAILABILITY_NAV_ID | typeof WALLET_NAV_ID>(OVERLAYS,
+    meetingsRequested() ? MEETINGS_NAV_ID : noticeRequested() ? NOTICES_NAV_ID : attendanceRequested() ? ATTENDANCE_NAV_ID : null);
+  const noticeUnread = useNoticeUnread();
+  // the HR page is only for a dashboard that asks for it (a remembered value from elsewhere is ignored)
+  const shownOverlay = (overlay === CEO_AVAILABILITY_NAV_ID && !ceoAvailability) || (overlay === WALLET_NAV_ID && !wallet) ? null : overlay;
+  const shownActive = shownOverlay ?? active;
+  // opening another section starts it at the top (the page used to stay scrolled where the previous section was)
+  useEffect(() => { window.scrollTo({ top: 0, left: 0 }); }, [shownActive]);
   // the dashboard opened a page by itself (a notification, a link): it takes the content area back
   const firstActive = useRef(true);
   useEffect(() => {
     if (firstActive.current) { firstActive.current = false; return; }
     setOverlay(null);
   }, [active]);
+  // attendance reminders: the service worker, and Attendance opening from a reminder (the bell or a tapped notification)
+  useStaffReminders(React.useCallback(() => setOverlay(ATTENDANCE_NAV_ID), []), React.useCallback(() => setOverlay(null), []));
+  // a meeting notification was clicked: show Meetings (the page opens the meeting)
+  useOpenMeetingRequest(React.useCallback(() => setOverlay(MEETINGS_NAV_ID), []));
+  // a bug notification was clicked by a developer: show Bugs
+  useOpenBugsRequest(React.useCallback(() => setOverlay(BUGS_NAV_ID), []));
+  // a notice notification was clicked: show the Notice Board (it opens the notice)
+  useOpenNoticeRequest(React.useCallback(() => setOverlay(NOTICES_NAV_ID), []));
+  // a wallet notification was clicked: show the Wallet
+  useOpenWalletRequest(React.useCallback(() => { if (wallet) setOverlay(WALLET_NAV_ID); }, [wallet]));
   const select = (id: string) => {
-    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID) { setOverlay(id); return; }
+    if (id === ATTENDANCE_NAV_ID || id === MEETINGS_NAV_ID || id === BUGS_NAV_ID || id === NOTICES_NAV_ID || id === CEO_AVAILABILITY_NAV_ID || id === WALLET_NAV_ID) { setOverlay(id); return; }
     setOverlay(null);
     onSelect(id);
   };
@@ -386,9 +442,18 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
   // unlabelled top section (the dashboard entry), or sits in its own section above a menu that starts with a labelled one
   const attendanceItem: ShellNavItem = { id: ATTENDANCE_NAV_ID, label: 'Attendance', icon: Clock3 };
   const meetingsItem: ShellNavItem = { id: MEETINGS_NAV_ID, label: meetingsLabel, icon: CalendarDays };
+  const noticesItem: ShellNavItem = { id: NOTICES_NAV_ID, label: 'Notice Board', icon: Megaphone, badge: noticeUnread };
+  const walletItem: ShellNavItem = { id: WALLET_NAV_ID, label: 'Wallet', icon: Wallet };
+  const ceoAvailabilityItem: ShellNavItem = { id: CEO_AVAILABILITY_NAV_ID, label: 'Managing Director Availability', icon: Crown };
+  const shared: ShellNavItem[] = [attendanceItem, meetingsItem, noticesItem, ...(ceoAvailability ? [ceoAvailabilityItem] : []), ...(wallet ? [walletItem] : []), ...(bugAccess?.isDeveloper ? [{ id: BUGS_NAV_ID, label: 'Bugs', icon: Bug }] : [])];
   const navGroups: ShellNavGroup[] = groups[0] && !groups[0].label
-    ? [{ ...groups[0], items: [attendanceItem, meetingsItem, ...groups[0].items] }, ...groups.slice(1)]
-    : [{ items: [attendanceItem, meetingsItem] }, ...groups];
+    ? [{ ...groups[0], items: [...shared, ...groups[0].items] }, ...groups.slice(1)]
+    : [{ items: shared }, ...groups];
+  // global search finds this dashboard's own pages (only what this person's menu has) and opens them through select()
+  const searchPages: SearchPage[] = navGroups.flatMap(g => g.items.flatMap(it => it.children?.length
+    ? it.children.map(c => ({ navId: c.id, label: c.label, group: g.label, parent: it.label }))
+    : [{ navId: it.id, label: it.label, group: g.label }]));
+  useSearchPages(searchPages, id => { select(id); closeMenu(); });
   const toggleGroup = (label: string) => setClosedGroups(prev => {
     const next = new Set(prev);
     if (next.has(label)) next.delete(label); else next.add(label);
@@ -449,7 +514,7 @@ export const DashboardShell: React.FC<DashboardShellProps> = ({
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar left={topLeft} actions={topActions} user={user} onSignOut={onSignOut} />
         <ScopeBar />
-        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}>{overlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{overlay === MEETINGS_NAV_ID ? <MeetingsPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
+        <main className={`flex-1 min-w-0 w-full ${flush ? '' : `px-4 sm:px-6 lg:px-8 py-5 sm:py-7 ${wide ? '' : 'max-w-[1304px]'}`}`}><StaffReminderBanner hidden={!reminders || flush} purpose={reminders === 'meetings' ? 'meetings' : 'attendance'} />{shownOverlay ? <React.Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}>{shownOverlay === MEETINGS_NAV_ID ? <MeetingsPage /> : shownOverlay === BUGS_NAV_ID ? <BugsPage /> : shownOverlay === NOTICES_NAV_ID ? <NoticeBoard /> : shownOverlay === WALLET_NAV_ID ? <WalletPage /> : shownOverlay === CEO_AVAILABILITY_NAV_ID ? <CeoAvailabilityPage /> : attendanceView ?? <AttendancePage />}</React.Suspense> : children}</main>
       </div>
     </div>
   );

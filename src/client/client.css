@@ -601,3 +601,20 @@ html[data-vshort='1'] .cd-chat-card .ch-head, html[data-vshort='1'] .cd-chat-tab
   .cd-jr-card { padding: 14px; }
   .cd-jr-mini small { display: none; }
 }
+
+/* Client Manual (Task 04): two columns from 860 px, one column on phones and small tablets; tighter padding on phones */
+.cd-manual-banner { padding: 28px 32px; }
+.cd-manual-search { flex: 1; min-width: 0; max-width: 360px; flex-basis: 260px; }
+.cd-manual-grid { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.cd-manual-article { padding: 28px 32px; min-width: 0; overflow-wrap: anywhere; }
+.cd-manual-article table { display: block; max-width: 100%; overflow-x: auto; }
+@media (max-width: 859px) {
+  .cd-manual-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}
+@media (max-width: 639px) {
+  .cd-manual-banner { padding: 20px 16px; }
+  .cd-manual-banner h1 { font-size: 22px !important; }
+  .cd-manual-search { max-width: none; flex-basis: 100%; }
+  .cd-manual-article { padding: 20px 16px; }
+  .cd-manual-article h2 { font-size: 20px !important; }
+}

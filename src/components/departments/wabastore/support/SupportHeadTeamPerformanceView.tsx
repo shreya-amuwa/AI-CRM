@@ -3,6 +3,7 @@ import {
   Award, Users, Clock, CheckCircle2, Star, ShieldCheck,
   Search, Filter, Bell, ArrowUpRight
 } from 'lucide-react';
+import { toast } from '../../../feedback/AppFeedback';
 
 interface SupportStaff {
   id: string;
@@ -233,7 +234,7 @@ export const SupportHeadTeamPerformanceView: React.FC = () => {
 
                   <td className="py-3.5 px-4 text-right">
                     <button
-                      onClick={() => alert(`Assigned ticket capacity adjusted for ${staff.name}`)}
+                      onClick={() => toast.info(`Adjusting ${staff.name}'s ticket capacity is not available on this view yet.`)}
                       className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
                     >
                       Manage Load

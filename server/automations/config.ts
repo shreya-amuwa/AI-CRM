@@ -4,6 +4,7 @@
  * server environment variables (never from the database, never sent to browsers).
  */
 import { STAGE_LABEL, type ClientStage } from './rules.js';
+import { providerRoute } from '../email/routing.js';
 
 export const COMPANY = {
   senderName: 'Amuwa Corporation',
@@ -118,7 +119,8 @@ export function automationSettings(): AutomationSettings {
       ses:
         env.SES_ACCESS_KEY_ID?.trim() && env.SES_SECRET_ACCESS_KEY?.trim()
           ? {
-              region: /^[a-z]{2}(-[a-z]+)+-\d$/.test(env.SES_REGION?.trim() || '') ? env.SES_REGION!.trim() : 'ap-south-1',
+              // Amuwa's SES identity is verified in Asia Pacific (Sydney); set SES_REGION explicitly in every deployment anyway
+              region: /^[a-z]{2}(-[a-z]+)+-\d$/.test(env.SES_REGION?.trim() || '') ? env.SES_REGION!.trim() : 'ap-southeast-2',
               accessKeyId: env.SES_ACCESS_KEY_ID.trim(),
               secretAccessKey: env.SES_SECRET_ACCESS_KEY.trim(),
               configurationSet: env.SES_CONFIGURATION_SET?.trim() || null
@@ -164,11 +166,9 @@ export function automationSettings(): AutomationSettings {
 /** Channels whose provider is configured (in live mode only these are claimed; the rest wait). */
 export function liveChannels(s: AutomationSettings): ('EMAIL' | 'WHATSAPP')[] {
   const out: ('EMAIL' | 'WHATSAPP')[] = [];
-  const e = s.email;
-  const primary = (e.provider === 'smtp' && !!e.smtp) || (e.provider === 'ses' && !!e.ses) || ((e.provider === 'resend' || e.provider === 'brevo') && !!e.apiKey);
-  // Resend / SES not configured yet but the SMTP mailbox is: providers.ts sends through the mailbox (the fallback), so e-mail is live.
-  const backup = (e.provider === 'resend' || e.provider === 'ses') && !!e.smtp && e.smtpFallback === true;
-  if (primary || backup) out.push('EMAIL');
+  // e-mail is live when at least one provider of the route can send (providers.ts uses the same route): the primary, or a backup such as
+  // the SMTP mailbox while Resend / SES is not configured yet
+  if (providerRoute(s).order.length > 0) out.push('EMAIL');
   if (s.whatsapp.webhookUrl) out.push('WHATSAPP');
   return out;
 }

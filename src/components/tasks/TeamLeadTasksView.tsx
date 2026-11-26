@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { summarize, useMyTeamMembers, useWorkTasks, workTasksApi, type TaskPriority, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
+import { summarize, useMyTeamMembers, useWorkTasks, workTasksApi, type WorkTask, type WorkTaskData } from '../../lib/workTasks';
 import { useCustomerOptions } from '../../lib/support';
-import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateForm, UpdateTimeline } from './TaskParts';
+import { DueLabel, EmptyState, fmtDate, nameOf, PriorityPill, ProgressBar, StatusPill, UpdateTimeline } from './TaskParts';
+import { TaskWorkUpdates, WorkUpdatesPanel } from './WorkUpdates';
+import { TaskTracker } from './TaskTracker';
+import { SubmitWorkUpdate } from './WorkUpdateForm';
+import { useTaskWorkspace } from './useTaskWorkspace';
+import { TaskAssignPanel, type AssignValues } from './TaskAssignPanel';
+import type { PickerPerson } from './PeoplePicker';
 
 /**
  * Team Lead: tasks from the Department Head. Assign each one to team members,
@@ -16,6 +22,7 @@ export const TeamLeadTasksView: React.FC = () => {
   const mine = data.tasks.filter(t => t.assigneeId === profile?.id);
   const direct = data.tasks.filter(t => t.parentId === null && t.assignedBy === profile?.id && t.assigneeId !== profile?.id);
   const s = summarize(mine);
+  const ws = useTaskWorkspace(() => void data.reload());
 
   return (
     <div className="space-y-5">
@@ -27,34 +34,28 @@ export const TeamLeadTasksView: React.FC = () => {
         </p>
       </div>
       {data.error && <p className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs" role="alert">{data.error}</p>}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Mini label="From Department Head" value={s.total} />
-        <Mini label="Completed" value={s.completed} tone="text-emerald-700" />
-        <Mini label="In progress" value={s.open} tone="text-blue-700" />
-        <Mini label="Overdue" value={s.overdue} tone="text-rose-700" />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">{s.total} from your Department Head · {s.completed} completed · {s.overdue} overdue</p>
+        <AssignDirectForm data={data} />
       </div>
-      <AssignDirectForm data={data} />
-      <DirectTasks tasks={direct} data={data} />
+      <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+        title="Task tracker" emptyHint="Tasks you assign, and tasks from your Department Head, appear here with their progress." />
+      <WorkUpdatesPanel hint="Ask your team members how the work is going. Their answers and the reminders you sent are kept here, and in each task below." />
+      <DirectTasks tasks={direct} data={data} ws={ws} />
       <h2 className="text-sm font-bold text-slate-900 pt-2">From your Department Head</h2>
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
       ) : mine.length === 0 ? (
         <EmptyState title="No tasks from your Department Head yet" hint="When the Department Head assigns you a task it appears here." />
       ) : (
-        mine.map(t => <LeadTask key={t.id} task={t} data={data} />)
+        mine.map(t => <LeadTask key={t.id} task={t} data={data} ws={ws} />)
       )}
+      {ws.node}
     </div>
   );
 };
 
-const Mini: React.FC<{ label: string; value: number; tone?: string }> = ({ label, value, tone }) => (
-  <div className="bg-white rounded-2xl border border-slate-200 p-3.5">
-    <div className="text-[11px] text-slate-500">{label}</div>
-    <div className={`text-xl font-bold ${tone || 'text-slate-900'}`}>{value}</div>
-  </div>
-);
-
-const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data }) => {
+const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData; ws: ReturnType<typeof useTaskWorkspace> }> = ({ task, data, ws }) => {
   const children = data.tasks.filter(c => c.parentId === task.id);
   const assigned = new Set(children.map(c => c.assigneeId));
   // the lead's OWN ordinary members from the database (not another lead's, no Technical Consultant, no Meta Verifier); the database checks it again on assign
@@ -86,7 +87,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
   };
 
   return (
-    <article className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4" aria-label={task.title}>
+    <article className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 cursor-pointer transition-colors hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" aria-label={task.title} {...ws.cardProps(task.id)}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -106,7 +107,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
       {task.handling === 'SELF' ? (
         <p className="text-xs font-semibold text-emerald-700" role="status" data-testid="tl-self">You are working on this task yourself. Send your updates below.</p>
       ) : children.length === 0 && task.status !== 'COMPLETED' ? (
-        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50/60">
+        <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 bg-slate-50/60" data-no-open>
           <span className="text-xs text-slate-700">Do it yourself, or assign it to your team members below.</span>
           <button type="button" data-testid="tl-take-myself" disabled={busy} className="px-3 py-1.5 rounded-lg border border-blue-300 bg-white text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
             onClick={async () => {
@@ -120,7 +121,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="space-y-3">
-          <div className="p-3 rounded-xl border border-slate-200">
+          <div className="p-3 rounded-xl border border-slate-200" data-no-open>
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 mb-2">
               <UserPlus className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" /> Assign to team members
             </div>
@@ -202,6 +203,7 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
                     <div className="mt-1">
                       <ProgressBar value={c.progress} label={`Progress of ${nameOf(data.people, c.assigneeId)}`} />
                     </div>
+                    <TaskWorkUpdates taskId={c.id} assigneeName={nameOf(data.people, c.assigneeId)} />
                   </li>
                 ))}
               </ul>
@@ -214,14 +216,10 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
             <div className="text-xs font-bold text-slate-800 mb-2">Updates from team members</div>
             <UpdateTimeline updates={memberUpdates} people={data.people} empty="No updates from your team yet." />
           </div>
-          <UpdateForm
-            task={task}
-            sendTo="Department Head"
-            onSubmit={async input => {
-              await workTasksApi.submitUpdate(task.id, input);
-              await data.reload();
-            }}
-          />
+          <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/60 space-y-1.5">
+            <div className="text-xs font-bold text-slate-800">Your update to the Department Head</div>
+            <SubmitWorkUpdate taskId={task.id} status={task.status} progress={task.progress} onSent={() => void data.reload()} />
+          </div>
           {myUpdates.length > 0 && (
             <div className="p-3 rounded-xl border border-slate-200">
               <div className="text-xs font-bold text-slate-800 mb-2">Your updates sent</div>
@@ -234,110 +232,29 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData }> = ({ task, data
   );
 };
 
-/** Team Lead → Team Members: your own task, optionally about a customer. */
+/** Team Lead → Team Members: your own task, optionally about a customer. The panel validates; the database checks the team again. */
 const AssignDirectForm: React.FC<{ data: WorkTaskData }> = ({ data }) => {
+  const { profile } = useAuth();
   const customers = useCustomerOptions();
   const roster = useMyTeamMembers();
-  const team = roster.members.filter(p => p.ordinary);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('MEDIUM');
-  const [due, setDue] = useState('');
-  const [customerId, setCustomerId] = useState('');
-  const [picked, setPicked] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setNotice(null);
-    try {
-      const n = await workTasksApi.assignTeamTask({ title: title.trim(), description, priority, dueDate: due || null, customerId: customerId || null, memberIds: picked });
-      setNotice({ ok: true, text: `Task assigned to ${n} team member${n === 1 ? '' : 's'}.` });
-      setTitle('');
-      setDescription('');
-      setDue('');
-      setCustomerId('');
-      setPicked([]);
-      await data.reload();
-    } catch (err) {
-      setNotice({ ok: false, text: err instanceof Error ? err.message : 'Could not assign the task.' });
-    } finally {
-      setBusy(false);
-    }
+  const teamName = data.teams.find(t => t.id === profile?.teamId)?.name ?? null;
+  const people: PickerPerson[] = roster.members.filter(p => p.ordinary).map(p => ({ id: p.id, name: p.fullName, designation: p.position, team: teamName }));
+  const submit = async (v: AssignValues) => {
+    const n = await workTasksApi.assignTeamTask({ title: v.title, description: v.description, priority: v.priority, dueDate: v.dueDate, customerId: v.customerId, memberIds: v.assigneeIds });
+    await data.reload();
+    return `Task assigned to ${n} team member${n === 1 ? '' : 's'}.`;
   };
-  const field = 'w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm';
   return (
-    <form onSubmit={submit} className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3" aria-label="Assign a task to team members">
-      <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-        <UserPlus className="w-4 h-4 text-blue-600" aria-hidden="true" /> Assign a task to your team
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label className="text-[11px] font-medium text-slate-600 md:col-span-2">
-          Task *
-          <input value={title} onChange={e => setTitle(e.target.value)} maxLength={200} required className={`${field} mt-1`} placeholder="e.g. Call back customers with open tickets" />
-        </label>
-        <label className="text-[11px] font-medium text-slate-600 md:col-span-2">
-          Details
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} maxLength={4000} className={`${field} mt-1`} />
-        </label>
-        <label className="text-[11px] font-medium text-slate-600">
-          Priority
-          <select value={priority} onChange={e => setPriority(e.target.value as TaskPriority)} className={`${field} mt-1`}>
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-          </select>
-        </label>
-        <label className="text-[11px] font-medium text-slate-600">
-          Due date
-          <input type="date" value={due} onChange={e => setDue(e.target.value)} className={`${field} mt-1`} />
-        </label>
-        <label className="text-[11px] font-medium text-slate-600 md:col-span-2">
-          Related customer (optional)
-          <select value={customerId} onChange={e => setCustomerId(e.target.value)} className={`${field} mt-1`}>
-            <option value="">No customer</option>
-            {customers.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.name} · {c.code}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <fieldset>
-        <legend className="text-[11px] font-medium text-slate-600 mb-1.5">Team members *</legend>
-        {team.length === 0 ? (
-          <p className="text-[11px] text-slate-400" role={roster.error ? 'alert' : undefined}>
-            {roster.loading ? 'Loading your team…' : roster.error ? `Your team could not be loaded: ${roster.error}` : 'No team members are assigned to you yet. Ask your Department Head to assign them.'}
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {team.map(p => {
-              const on = picked.includes(p.id);
-              return (
-                <label key={p.id} className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer ${on ? 'bg-blue-50 border-blue-300 text-blue-800' : 'bg-white border-slate-200 text-slate-700'}`}>
-                  <input type="checkbox" className="accent-blue-600" checked={on} onChange={() => setPicked(v => (on ? v.filter(x => x !== p.id) : [...v, p.id]))} />
-                  {p.fullName}
-                </label>
-              );
-            })}
-          </div>
-        )}
-      </fieldset>
-      {notice && <p className={`text-xs ${notice.ok ? 'text-emerald-700' : 'text-rose-700'}`} role={notice.ok ? 'status' : 'alert'}>{notice.text}</p>}
-      <div className="flex justify-end">
-        <button type="submit" disabled={busy || picked.length === 0 || title.trim().length < 2} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50">
-          {busy ? 'Assigning…' : `Assign to ${picked.length || ''} member${picked.length === 1 ? '' : 's'}`}
-        </button>
-      </div>
-    </form>
+    <TaskAssignPanel
+      multiple assigneeLabel="Assign to team members" people={people} customers={customers} onSubmit={submit}
+      loadingPeople={roster.loading} peopleError={roster.error ? `Your team could not be loaded: ${roster.error}` : null}
+      emptyPeople="No team members are assigned to you yet. Ask your Department Head to assign them."
+    />
   );
 };
 
 /** Tasks the lead gave straight to members: who is doing what, and how far they are. */
-const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ tasks, data }) => {
+const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData; ws: ReturnType<typeof useTaskWorkspace> }> = ({ tasks, data, ws }) => {
   if (tasks.length === 0) return null;
   const s = summarize(tasks);
   return (
@@ -352,7 +269,7 @@ const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ task
         {tasks.map(t => {
           const updates = data.updates.filter(u => u.taskId === t.id);
           return (
-            <li key={t.id} className="py-3 space-y-1.5">
+            <li key={t.id} className="py-3 space-y-1.5 px-2 -mx-2 rounded-xl cursor-pointer hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500" {...ws.cardProps(t.id)}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-semibold text-slate-800">{t.title}</span>
@@ -367,6 +284,7 @@ const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData }> = ({ task
                 <DueLabel task={t} />
                 {t.lastUpdateNote && <span className="text-slate-600">“{t.lastUpdateNote}”</span>}
               </div>
+              <TaskWorkUpdates taskId={t.id} assigneeName={nameOf(data.people, t.assigneeId)} />
               {updates.length > 0 && (
                 <details className="text-xs">
                   <summary className="cursor-pointer text-blue-700 font-semibold">History ({updates.length})</summary>

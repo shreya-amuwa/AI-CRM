@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Pager } from '../support-member/SupportParts';
 import { openChat } from '../chat/chatEvents';
 import { openFromNotification } from '../issues/issueEvents';
+import { toast } from '../feedback/AppFeedback';
 
 const PAGE_SIZE = 10;
 
@@ -75,13 +76,13 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
     });
 
     if (!result.ok) {
-      alert(result.message);
+      toast.error(result.message);
       return;
     }
     setShowComposeModal(false);
     setTitle('');
     setMessage('');
-    alert(result.message);
+    toast.success(result.message);
   };
 
   const filteredNotifications = userNotifications.filter(n => {
@@ -202,7 +203,7 @@ export const NotificationCenterPanel: React.FC<NotificationCenterPanelProps> = (
           pageItems.map(n => (
             <div
               key={n.id}
-              onClick={() => { markAsRead(n.id); if (n.entityType === 'chat' && n.entityId) openChat({ clientConversationId: n.entityId }); else openFromNotification(n); }}
+              onClick={() => { markAsRead(n.id); if (n.entityType === 'chat_mention' && n.entityId) openChat({ tab: 'messages', conversationId: n.entityId, messageId: n.messageId }); else if (n.entityType === 'chat' && n.entityId) openChat({ clientConversationId: n.entityId }); else openFromNotification(n); }}
               className={`p-5 rounded-3xl border transition-all cursor-pointer space-y-3 ${
                 !n.isRead
                   ? 'bg-white border-amber-300 shadow-md ring-2 ring-amber-400/20'

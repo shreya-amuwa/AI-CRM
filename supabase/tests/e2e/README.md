@@ -145,4 +145,24 @@ that the Super Admin gives the final approval (no stage after it), a notificatio
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest E2E_CHROMIUM=/path/to/chrome supabase/tests/e2e/run-ai-studio.sh ./ai-studio-screenshots
 ```
 
-`run-weekly-direct-hr.sh` drives the weekly department report in real browsers: a Department Head whose department has an Operations Head still sees *Submit to Operations Head*; one whose department has none is told the week goes directly to HR, sends it with *Send to HR*, and the week is `SENT_TO_HR` with no Operations Head decision recorded and visible to HR (9 checks).
+`run-weekly-direct-hr.sh` drives the weekly department report in real browsers: a Department Head whose department has an Operations Head still sees *Submit to CEO*; one whose department has none is told the week goes directly to HR, sends it with *Send to HR*, and the week is `SENT_TO_HR` with no Operations Head decision recorded and visible to HR (9 checks).
+
+`run-meeting-summaries.sh` (same throw-away stack and ports as `run-dashboards.sh`) checks post-meeting summaries and the CEO's
+Meeting Decisions (migration 20270124000200). A Team Lead confirms attendance and submits a summary from the meeting drawer, a member sees
+their action item, and the Super Admin reviews the report and asks for a clarification, also on a 390px phone:
+
+```bash
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-meeting-summaries.sh ./meeting-summary-screenshots
+```
+
+## Performance Management side panels
+
+`run-performance-nav.sh` (own ports) signs in through the login page as the Team Lead, the Department Head and the Team Member of AI Studio, International and
+Reseller (and a Sales Team Lead): Performance Management is a side-panel entry for the leads and heads and opens the page with real data (members, tasks, daily
+reports); the Team Lead edits and approves a report and rates the member, the Department Head rates the Team Lead; Daily Report(s) still works; the Team Member has
+no entry, the address does not open the page and the API refuses them. Screenshots of each side panel and page go to the directory you pass.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-performance-nav.sh ./performance-screenshots
+```
+

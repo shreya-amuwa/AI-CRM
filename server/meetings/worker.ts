@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { automationSettings, clientEmailSettings } from '../automations/config.js';
+import { automationSettings, clientEmailSettings, type AutomationSettings } from '../automations/config.js';
+import { processDeliveries } from '../automations/notificationDelivery.js';
 import { sendEmail } from '../automations/providers.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { sendBlocker } from '../invoices/mailer.js';
@@ -13,13 +14,17 @@ import { GOOGLE_SENDS, ICS_KINDS, linkSecret, manageToken, meetingIcs, renderMee
  * The meetings worker (server only, service role): runs with every automation dispatch (pg_cron, every few minutes) and right after a
  * meeting changes in the CRM, so Google and the guests hear about it at once.
  *   1. reminders that are due (24 h and 1 h before) are recorded once;
- *   2. meetings waiting for Google are created / changed / removed on the HOST's Google Calendar (with a Meet link when asked);
- *   3. e-mails to guests outside the company are sent (skipped when Google already sent its own invitation).
+ *   2. meetings waiting for Google are created / changed / removed on the ORGANISER's Google Calendar (the creator; the host when nobody
+ *      created it), with a Meet link when asked, so Google e-mails everyone else from the organiser's Gmail;
+ *   3. the meeting e-mails are sent: to guests outside the company and to the colleagues taking part (a colleague's is skipped when Google
+ *      already sent the invitation; the organiser's never is, Google does not e-mail the organiser).
  * Everything is idempotent and retried with back-off; nothing here can block a meeting from being booked.
  */
 
 export interface MeetingsRunSummary {
   reminders: number;
+  /** Post-meeting summary notices sent by this run (attendance to confirm, owners told, overdue). */
+  summaryNotices?: number;
   synced: number;
   syncFailed: number;
   mailed: number;
@@ -67,11 +72,16 @@ async function lost(db: SupabaseClient, profileId: string, err: Error) {
 // ---------------------------------------------------------------------------
 // Google sync
 // ---------------------------------------------------------------------------
-type ClaimedMeeting = CalendarMeeting & { hostId: string; status: string; googleEventId: string | null; googleCalendarId: string | null };
+type ClaimedMeeting = CalendarMeeting & {
+  hostId: string; createdBy: string | null; googleOwnerId: string | null; status: string; googleEventId: string | null; googleCalendarId: string | null;
+};
+/** Whose Google Calendar holds the event: the one the database names (the creator, or the host for meetings nobody created). */
+export const organiserOf = (m: Pick<ClaimedMeeting, 'googleOwnerId' | 'createdBy' | 'hostId'>): string => m.googleOwnerId ?? m.createdBy ?? m.hostId;
 
 async function syncOne(db: SupabaseClient, cache: TokenCache, m: ClaimedMeeting): Promise<boolean> {
   const result = (p: Record<string, unknown>) => db.rpc('mtg_sync_result', { p_id: m.id, p_version: m.version, ...p });
-  const c = await cache.connection(m.hostId);
+  const owner = organiserOf(m);
+  const c = await cache.connection(owner);
   if (!c) {
     await result({ p_ok: true, p_skipped: true });
     return true;
@@ -96,7 +106,7 @@ async function syncOne(db: SupabaseClient, cache: TokenCache, m: ClaimedMeeting)
     await result({ p_ok: true, p_event_id: ev.eventId, p_calendar_id: calendarId, p_meet_link: ev.meetLink });
     return true;
   } catch (err) {
-    if (err instanceof GoogleAuthLostError) await lost(db, m.hostId, err);
+    if (err instanceof GoogleAuthLostError) await lost(db, owner, err);
     await result({ p_ok: false, p_error: (err as Error).message.slice(0, 500) });
     return false;
   }
@@ -105,32 +115,63 @@ async function syncOne(db: SupabaseClient, cache: TokenCache, m: ClaimedMeeting)
 // ---------------------------------------------------------------------------
 // E-mails to guests
 // ---------------------------------------------------------------------------
-interface ClaimedMail {
+export interface ClaimedMail {
   id: number;
   toEmail: string;
   toName: string | null;
   kind: MeetingMailKind;
   meetingVersion: number;
+  /** Set for a colleague taking part (null for a guest outside the company). */
+  toProfileId?: string | null;
+  /** The person whose Google Calendar holds the event (the creator, or the host). */
+  organizerEmail?: string | null;
+  organizerName?: string | null;
   meeting: MailMeeting & { googleSyncStatus: string; createdAt: string; updatedAt: string };
+}
+
+/**
+ * Whether the CRM sends this e-mail: SKIP when Google already sent the invitation / change / cancellation from the organiser's calendar,
+ * DEFER while that sync is still running (at most ~15 minutes after the change), SEND otherwise. Google never e-mails the organiser, so
+ * the organiser's own copy is always sent; a guest who booked through a link always gets ours (it carries their private link).
+ */
+export function mailDecision(o: ClaimedMail, now = Date.now()): 'SEND' | 'SKIP' | 'DEFER' {
+  const m = o.meeting;
+  const toOrganiser = !!o.organizerEmail && o.toEmail.trim().toLowerCase() === o.organizerEmail.trim().toLowerCase();
+  // a queued meeting confirmed on Exit: always our e-mail (it says "join now"); with Google Meet, wait (at most ~15 minutes) for the sync to
+  // add the Meet link so the e-mail carries it
+  if (o.kind === 'QUEUE_CONFIRMED') {
+    return m.mode === 'GOOGLE_MEET' && !m.meetLink && m.googleSyncStatus === 'PENDING' && now - new Date(m.updatedAt).getTime() < 15 * 60_000 ? 'DEFER' : 'SEND';
+  }
+  // a client meeting: the client always gets the CRM's own invitation / change / cancellation (agenda, company, host details), Google or not
+  const clientGuest = m.kind === 'CLIENT_MEETING' && !o.toProfileId;
+  if (!GOOGLE_SENDS.includes(o.kind) || m.bookedVia === 'BOOKING_LINK' || toOrganiser || clientGuest) return 'SEND';
+  if (m.googleSyncStatus === 'SYNCED') return 'SKIP';
+  if (m.googleSyncStatus === 'PENDING' && now - new Date(m.updatedAt).getTime() < 15 * 60_000) return 'DEFER';
+  return 'SEND';
+}
+
+/** The meeting e-mail to a colleague comes from the CRM's mailbox in the organiser's name, and replies go to the organiser. */
+export function meetingSender(s: AutomationSettings, organizerName: string | null | undefined, organizerEmail: string | null | undefined): AutomationSettings {
+  const name = (organizerName ?? '').trim();
+  if (!name) return s;
+  const replyTo = (organizerEmail ?? '').trim();
+  return { ...s, email: { ...s.email, fromName: `${name} via Amuwa CRM`, ...(replyTo ? { replyTo } : {}) } };
 }
 
 async function mailOne(db: SupabaseClient, o: ClaimedMail): Promise<'SENT' | 'SKIPPED' | 'FAILED' | 'DEFER'> {
   const done = (status: string, error?: string) => db.rpc('mtg_mail_result', { p_id: o.id, p_status: status, p_error: error ?? null });
   const m = o.meeting;
-  // the invitation, its change and its cancellation come from Google when the meeting is on the host's Google Calendar
-  // (a guest who booked through a link still gets ours: it carries their private link)
-  if (GOOGLE_SENDS.includes(o.kind) && m.bookedVia !== 'BOOKING_LINK') {
-    if (m.googleSyncStatus === 'SYNCED') {
-      await done('SKIPPED', 'Google sent the invitation.');
-      return 'SKIPPED';
-    }
-    // still syncing: wait a little (at most ~15 minutes after the change), then send ours anyway
-    if (m.googleSyncStatus === 'PENDING' && Date.now() - new Date(m.updatedAt).getTime() < 15 * 60_000) {
-      await done('DEFER');
-      return 'DEFER';
-    }
+  const decision = mailDecision(o);
+  if (decision === 'SKIP') {
+    await done('SKIPPED', 'Google sent the invitation.');
+    return 'SKIPPED';
   }
-  const settings = clientEmailSettings(automationSettings());
+  if (decision === 'DEFER') {
+    await done('DEFER');
+    return 'DEFER';
+  }
+  const base = clientEmailSettings(automationSettings());
+  const settings = o.toProfileId ? meetingSender(base, o.organizerName, o.organizerEmail) : base;
   const blocked = sendBlocker(settings, o.toEmail);
   if (blocked) {
     await done('SKIPPED', blocked);
@@ -139,11 +180,12 @@ async function mailOne(db: SupabaseClient, o: ClaimedMail): Promise<'SENT' | 'SK
   const secret = linkSecret();
   const manageUrl = m.bookedVia === 'BOOKING_LINK' && secret && !['CANCELLED', 'DECLINED'].includes(o.kind)
     ? `${appUrl()}/book/manage/${manageToken(m.id, secret)}` : null;
-  const mail = renderMeetingEmail(o.kind, m, o.toName, manageUrl);
+  const mail = renderMeetingEmail(o.kind, m, o.toName, manageUrl, o.toProfileId ? o.organizerName : null);
   const attachments = ICS_KINDS.includes(o.kind)
     ? [{ filename: 'meeting.ics', content: new TextEncoder().encode(meetingIcs(m, o.kind === 'CANCELLED')), contentType: 'text/calendar; charset=utf-8' }]
     : undefined;
-  const r = await sendEmail(settings, { email: o.toEmail, name: o.toName || o.toEmail, display: true }, mail, attachments);
+  const r = await sendEmail(settings, { email: o.toEmail, name: o.toName || o.toEmail, display: true }, mail, attachments,
+    { category: 'MEETING', template: `meeting-${String(o.kind).toLowerCase()}`, idempotencyKey: `meeting-mail:${o.id}`, ...(o.toProfileId ? { context: { profileId: o.toProfileId } } : {}) });
   if (r.ok) {
     await done('SENT');
     return 'SENT';
@@ -155,7 +197,11 @@ async function mailOne(db: SupabaseClient, o: ClaimedMail): Promise<'SENT' | 'SK
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
-export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: number; db?: SupabaseClient } = {}): Promise<MeetingsRunSummary> {
+/**
+ * remindersOnly: just the reminders and summary notices (two database calls), for the 5-minute scheduled run, which shares its request
+ * budget with the attendance reminders; Google sync and e-mails stay with the dispatch and the run after a change.
+ */
+export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: number; db?: SupabaseClient; remindersOnly?: boolean } = {}): Promise<MeetingsRunSummary> {
   const summary: MeetingsRunSummary = { reminders: 0, synced: 0, syncFailed: 0, mailed: 0, mailSkipped: 0, mailFailed: 0 };
   if (!opts.db && !hasServiceClient()) return { ...summary, error: 'The service role is not configured.' };
   const db = opts.db ?? getServiceClient();
@@ -164,9 +210,14 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
   try {
     const rem = await db.rpc('mtg_enqueue_reminders');
     summary.reminders = Number(rem.data) || 0;
+    // post-meeting summaries: "confirm attendance" once a meeting ended, "overdue" once (20270124000200; absent before it runs)
+    const sweep = await db.rpc('mms_sweep');
+    if (!sweep.error && sweep.data) summary.summaryNotices = Object.values(sweep.data as Record<string, number>).reduce((n, v) => n + (Number(v) || 0), 0);
+    if (opts.remindersOnly) return summary;
 
     const cfg = googleConfig(process.env, appUrl());
-    if (cfg) {
+    // a claim counts an attempt: nothing is claimed once the time is up (it would be given up without being tried)
+    if (cfg && Date.now() < deadline) {
       const cache = new TokenCache(db, cfg);
       const { data } = await db.rpc('mtg_sync_claim', { p_limit: limit });
       for (const m of (data ?? []) as ClaimedMeeting[]) {
@@ -176,6 +227,7 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
       }
     }
 
+    if (Date.now() >= deadline) return summary;
     const { data: mails } = await db.rpc('mtg_mail_claim', { p_limit: limit });
     for (const o of (mails ?? []) as ClaimedMail[]) {
       if (Date.now() > deadline) break;
@@ -193,6 +245,8 @@ export async function runMeetingsDispatch(opts: { budgetMs?: number; limit?: num
 /** Right after a change in the CRM: a short run, never failing the request that triggered it. */
 export async function meetingsQuietly(): Promise<void> {
   await runMeetingsDispatch({ budgetMs: 8_000, limit: 10 }).catch(() => undefined);
+  // the change's notifications reach phones now, not at the next 5-minute run (20270208000100; a no-op without push keys)
+  await processDeliveries({ budgetMs: 6_000, limit: 20 }).catch(() => undefined);
 }
 
 // ---------------------------------------------------------------------------

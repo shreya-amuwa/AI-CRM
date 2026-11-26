@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowLeft, Ban, Check, CheckCheck, CornerUpLeft, Eye, FileText, Loader2, Lock, MoreVertical, Paperclip, RefreshCw, Send, ShieldAlert, ShieldCheck, Smile, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, Ban, Check, CheckCheck, CornerUpLeft, Eye, FileText, Loader2, Lock, MoreVertical, Paperclip, RefreshCw, Send, ShieldAlert, ShieldCheck, Smile, SmilePlus, Trash2, Users, X } from 'lucide-react';
 import type { ChatAttachment, ChatConversation, ChatMessage, ChatReceipt } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
 import type { ChatTransport } from '../../lib/chat/api';
@@ -10,6 +10,8 @@ import { uploadToTicket } from '../../lib/uploadToTicket';
 import { looksLike } from '../../lib/checklistUpload';
 import { ChatModal } from './ChatBits';
 import { EmojiPicker } from './EmojiPicker';
+import { CHAT_REACTIONS } from '../../../shared/validation';
+import { activeMentions, applyMention, mentionQuery, mentionSuggestions, splitMentions, type MentionPerson } from '../../lib/chat/mentions';
 import { NewKeyDialog, SecureSetupDialog, SecureStateNotice, SecurityDialog, type SecureDialogMode } from './SecureDialogs';
 import './chat.css';
 
@@ -78,6 +80,8 @@ export interface ChatThreadProps {
   readOnlyText?: (c: ChatConversation) => string | null;
   /** Whether sender names show on every incoming message (groups, and client chats where Team Member and Team Lead share it). */
   showNames?: boolean;
+  /** Open on this message (a notification about an @mention): earlier pages are loaded until it is found, then it is shown highlighted. */
+  focusMessageId?: string | null;
 }
 
 const FAILED_TEXT: Record<string, string> = {
@@ -108,8 +112,19 @@ const Bubble: React.FC<{
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   onDelete: (mode: 'me' | 'all') => void;
-}> = ({ m, showName, seen, receipt, canReply, onReply, onOpen, opening, canDelete, secureKind, menuOpen, onMenu, onDelete }) => (
-  <div className={`ch-row ${m.mine ? 'mine' : 'theirs'}`} data-seq={m.seq} data-testid="chat-message" data-deleted={m.deleted ? 'true' : undefined}>
+  /** Direct messages and groups: reactions (one per person). */
+  canReact?: boolean;
+  reactOpen?: boolean;
+  onReactOpen?: (open: boolean) => void;
+  onReact?: (emoji: string | null) => void;
+  onWho?: () => void;
+  /** The message a notification pointed at (highlighted for a moment). */
+  focused?: boolean;
+}> = ({ m, showName, seen, receipt, canReply, onReply, onOpen, opening, canDelete, secureKind, menuOpen, onMenu, onDelete, canReact, reactOpen, onReactOpen, onReact, onWho, focused }) => {
+  const mine = (m.reactions ?? []).find(r => r.mine)?.emoji ?? null;
+  const reactable = Boolean(canReact) && !m.deleted && m.kind === 'TEXT' && m.secure?.state !== 'failed';
+  return (
+  <div className={`ch-row ${m.mine ? 'mine' : 'theirs'}${focused ? ' ch-focus' : ''}`} data-seq={m.seq} data-id={m.id} data-testid="chat-message" data-deleted={m.deleted ? 'true' : undefined}>
     <div className="ch-bubble">
       {!m.mine && showName && (
         <p className="ch-sender">
@@ -129,7 +144,15 @@ const Bubble: React.FC<{
               <span>{m.replyTo.deleted ? 'This message was deleted' : m.replyTo.body || 'Attachment'}</span>
             </div>
           )}
-          {m.body && <p className="ch-text">{m.body}</p>}
+          {m.body && (
+            <p className="ch-text">
+              {m.mentions?.length
+                ? splitMentions(m.body, m.mentions.map(x => x.name)).map((part, i) => (part.mention
+                  ? <mark key={i} className={`ch-mention${m.mentions!.some(x => x.me && part.text === `@${x.name}`) ? ' me' : ''}`} data-testid="chat-mention">{part.text}</mark>
+                  : <React.Fragment key={i}>{part.text}</React.Fragment>))
+                : m.body}
+            </p>
+          )}
           {m.attachments.length > 0 && (
             <ul className="ch-files">
               {m.attachments.map(a => (
@@ -151,7 +174,37 @@ const Bubble: React.FC<{
         {m.mine && !m.deleted && receipt ? <ReceiptTick r={receipt} />
           : m.mine && !m.deleted && seen !== null ? (seen ? <CheckCheck size={14} className="ch-seen" aria-label="Seen" /> : <Check size={14} aria-label="Sent" />) : null}
       </span>
+      {!m.deleted && (m.reactions?.length ?? 0) > 0 && (
+        <div className="ch-reactions" data-testid="chat-reactions">
+          {m.reactions!.map(r => (
+            <button key={r.emoji} type="button" className={`ch-reaction${r.mine ? ' mine' : ''}`} disabled={!reactable}
+              onClick={() => onReact?.(r.mine ? null : r.emoji)} data-testid="chat-reaction" data-emoji={r.emoji}
+              title={`${r.people.map(x => (x.me ? 'You' : x.name)).join(', ')} reacted ${r.emoji}`}
+              aria-label={`${r.emoji} ${r.count}: ${r.people.map(x => (x.me ? 'you' : x.name)).join(', ')}${r.mine ? '. Press to remove your reaction' : ''}`}>
+              <span aria-hidden>{r.emoji}</span> <span>{r.count}</span>
+            </button>
+          ))}
+          <button type="button" className="ch-reaction who" onClick={onWho} aria-label="See who reacted" title="See who reacted" data-testid="chat-reactions-who"><Users size={12} aria-hidden /></button>
+        </div>
+      )}
     </div>
+    {reactable && (
+      <span className="ch-react-wrap">
+        <button type="button" className="ch-react-btn" onClick={() => onReactOpen?.(!reactOpen)} aria-label="React to this message" aria-haspopup="menu" aria-expanded={reactOpen} title="React" data-testid="react-button">
+          <SmilePlus size={14} aria-hidden />
+        </button>
+        {reactOpen && (
+          <div className="ch-react-menu" role="menu" aria-label="Reactions" data-testid="react-menu">
+            {CHAT_REACTIONS.map(e => (
+              <button key={e} type="button" role="menuitemradio" aria-checked={mine === e} className={mine === e ? 'on' : undefined}
+                onClick={() => { onReactOpen?.(false); onReact?.(mine === e ? null : e); }} aria-label={`${REACTION_LABEL[e]}${mine === e ? ' (remove)' : ''}`} title={REACTION_LABEL[e]} data-emoji={e}>
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
+      </span>
+    )}
     {canReply && !m.deleted && m.secure?.state !== 'failed' && (
       <button type="button" className="ch-reply-btn" onClick={onReply} aria-label={`Reply to ${m.senderName || 'message'}`} title="Reply">
         <CornerUpLeft size={14} aria-hidden />
@@ -171,9 +224,12 @@ const Bubble: React.FC<{
       </span>
     )}
   </div>
-);
+  );
+};
 
-export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true, header, onBack, onConversation, emptyTitle, emptyText, readOnlyText, showNames }) => {
+const REACTION_LABEL: Record<string, string> = { '👍': 'Like', '❤️': 'Love', '😂': 'Laugh', '😮': 'Surprised', '😢': 'Sad', '🙏': 'Thanks' };
+
+export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true, header, onBack, onConversation, emptyTitle, emptyText, readOnlyText, showNames, focusMessageId }) => {
   const t = useChatThread(transport, { active, onChange: onConversation });
   const { conversation: c, messages, pending, hasMore, loading, loadingOlder, error, denied } = t;
   const [text, setText] = useState('');
@@ -189,6 +245,13 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
   const [confirm, setConfirm] = useState<{ m: ChatMessage; mode: 'me' | 'all' } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  // reactions and @mentions
+  const [reactId, setReactId] = useState<string | null>(null);
+  const [reactError, setReactError] = useState('');
+  const [whoFor, setWhoFor] = useState<ChatMessage | null>(null);
+  const [picked, setPicked] = useState<MentionPerson[]>([]);
+  const [suggest, setSuggest] = useState<{ start: number; query: string; index: number } | null>(null);
+  const [focused, setFocused] = useState<string | null>(null);
   // secure messaging (direct messages and groups)
   const secure = useSecureChat();
   const secureState = useSecureSnapshot(secure);
@@ -203,7 +266,7 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
   const lastCount = useRef(0);
 
   // a different conversation starts clean
-  useEffect(() => { setText(''); setStaged([]); setReplyTo(null); setFileError(''); setFresh(0); setEmojiOpen(false); setMenuId(null); stick.current = true; lastCount.current = 0; }, [transport.key]);
+  useEffect(() => { setText(''); setStaged([]); setReplyTo(null); setFileError(''); setFresh(0); setEmojiOpen(false); setMenuId(null); setReactId(null); setPicked([]); setSuggest(null); stick.current = true; lastCount.current = 0; }, [transport.key]);
 
   const secureKind = c?.kind === 'DIRECT' || c?.kind === 'GROUP';
   // end-to-end mode only (20261224000200): in the company-readable mode direct and group chats need no key, no passphrase and no set-up
@@ -235,6 +298,59 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
       t.style.height = `${Math.min(t.scrollHeight, 140)}px`;
     });
   };
+
+  // ---- @mentions (groups): the members of this group, without me
+  const groupPeople = useMemo<MentionPerson[]>(() => (c?.kind === 'GROUP' ? (c.members ?? []).filter(x => !x.me).map(x => ({ id: x.id, name: x.name })) : []), [c?.kind, c?.members]);
+  const options = suggest && groupPeople.length ? mentionSuggestions(groupPeople, suggest.query, picked.filter(p => text.includes(`@${p.name}`)).map(p => p.id)) : [];
+  const watchMention = (value: string, caret: number) => {
+    if (!groupPeople.length) return setSuggest(null);
+    const q = mentionQuery(value, caret);
+    setSuggest(q ? { ...q, index: 0 } : null);
+  };
+  const pickMention = (person: MentionPerson) => {
+    const el = box.current;
+    const caret = el?.selectionStart ?? text.length;
+    const start = suggest?.start ?? caret;
+    const next = applyMention(text, start, caret, person.name);
+    setText(next.text);
+    setPicked(list => (list.some(p => p.id === person.id) ? list : [...list, person]));
+    setSuggest(null);
+    requestAnimationFrame(() => { const t2 = box.current; if (t2) { t2.focus(); t2.setSelectionRange(next.caret, next.caret); grow(t2); } });
+  };
+
+  // ---- reactions
+  const runReact = async (m: ChatMessage, emoji: string | null) => {
+    setReactError('');
+    try {
+      await t.react(m, emoji);
+    } catch (e) {
+      setReactError(errorMessage(e));
+    }
+  };
+
+  // ---- a notification pointed at a message: find it (loading earlier pages if needed), show it and highlight it for a moment
+  const focusTries = useRef(0);
+  useEffect(() => { focusTries.current = 0; }, [focusMessageId, transport.key]);
+  useEffect(() => {
+    if (!focusMessageId || loading || !c) return undefined;
+    if (messages.some(m => m.id === focusMessageId)) {
+      const el = body.current?.querySelector<HTMLElement>(`[data-id="${focusMessageId}"]`);
+      if (el && focused !== focusMessageId) {
+        stick.current = false;
+        el.scrollIntoView({ block: 'center' });
+        setFocused(focusMessageId);
+        const tm = setTimeout(() => setFocused(f => (f === focusMessageId ? null : f)), 4000);
+        return () => clearTimeout(tm);
+      }
+      return undefined;
+    }
+    if (hasMore && !loadingOlder && focusTries.current < 25) {
+      focusTries.current += 1;
+      stick.current = false;
+      void t.loadOlder();
+    }
+    return undefined;
+  }, [focusMessageId, messages, hasMore, loadingOlder, loading, c]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const runDelete = async () => {
     if (!confirm || deleting) return;
@@ -334,12 +450,20 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
     if ((!value && staged.length === 0) || sending || busy || !c?.canWrite) return;
     if (value.length > CHAT_MAX_BODY) { setFileError(`A message can have at most ${CHAT_MAX_BODY} characters.`); return; }
     const reply = replyTo ? { id: replyTo.id, seq: replyTo.seq, senderName: replyTo.senderName, body: replyTo.body } : null;
-    void t.send({ body: value, attachments: staged, replyTo: reply });
-    setText(''); setStaged([]); setReplyTo(null); setFileError('');
+    const mentions = c?.kind === 'GROUP' ? activeMentions(value, picked) : [];
+    void t.send({ body: value, attachments: staged, replyTo: reply, mentions });
+    setText(''); setStaged([]); setReplyTo(null); setFileError(''); setPicked([]); setSuggest(null);
     requestAnimationFrame(() => { if (box.current) box.current.style.height = 'auto'; box.current?.focus(); });
   };
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // the @ list is open: arrows move, Enter / Tab pick, Escape closes
+    if (suggest && options.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSuggest({ ...suggest, index: (suggest.index + 1) % options.length }); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSuggest({ ...suggest, index: (suggest.index - 1 + options.length) % options.length }); return; }
+      if ((e.key === 'Enter' || e.key === 'Tab') && !e.nativeEvent.isComposing) { e.preventDefault(); pickMention(options[Math.min(suggest.index, options.length - 1)]); return; }
+      if (e.key === 'Escape') { e.preventDefault(); setSuggest(null); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
   };
   const grow = (el: HTMLTextAreaElement) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 140)}px`; };
@@ -516,6 +640,12 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
                   menuOpen={menuId === m.id}
                   onMenu={open => setMenuId(open ? m.id : null)}
                   onDelete={mode => { setDeleteError(''); setConfirm({ m, mode }); }}
+                  canReact={secureKind && c?.access === 'MEMBER' && Boolean(transport.react)}
+                  reactOpen={reactId === m.id}
+                  onReactOpen={open => setReactId(open ? m.id : null)}
+                  onReact={emoji => void runReact(m, emoji)}
+                  onWho={() => setWhoFor(m)}
+                  focused={focused === m.id}
                 />
               );
             })}
@@ -547,6 +677,21 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
                 </ul>
               )}
               {fileError && <p className="ch-error" role="alert">{fileError}</p>}
+              {(reactError || t.warning) && (
+                <p className="ch-error" role="alert">{reactError || t.warning}
+                  <button type="button" className="ch-link" onClick={() => { setReactError(''); t.clearWarning(); }}>Dismiss</button></p>
+              )}
+              {suggest && options.length > 0 && (
+                <ul className="ch-mentions" role="listbox" aria-label="Tag a member of this group" data-testid="mention-list">
+                  {options.map((p, i) => (
+                    <li key={p.id} role="option" aria-selected={i === suggest.index}>
+                      <button type="button" className={i === suggest.index ? 'on' : undefined} onMouseDown={e => e.preventDefault()} onClick={() => pickMention(p)} data-testid="mention-option">
+                        @{p.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <div className="ch-input">
                 <input ref={picker} type="file" accept={ACCEPT} multiple hidden onChange={e => void addFiles(e.target.files)} />
                 <button type="button" className="ch-icon" data-emoji-toggle onClick={() => setEmojiOpen(o => !o)} aria-label="Insert emoji" aria-expanded={emojiOpen} title="Emoji" data-testid="emoji-button"><Smile size={20} /></button>
@@ -557,10 +702,12 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
                   value={text}
                   rows={1}
                   maxLength={CHAT_MAX_BODY + 200}
-                  placeholder="Write a message"
+                  placeholder={groupPeople.length ? 'Write a message (type @ to tag someone)' : 'Write a message'}
                   aria-label="Message"
-                  onChange={e => { setText(e.target.value); grow(e.target); }}
+                  aria-autocomplete={groupPeople.length ? 'list' : undefined}
+                  onChange={e => { setText(e.target.value); grow(e.target); watchMention(e.target.value, e.target.selectionStart ?? e.target.value.length); }}
                   onKeyDown={onKey}
+                  onClick={e => watchMention(e.currentTarget.value, e.currentTarget.selectionStart ?? 0)}
                 />
                 <button type="submit" className="ch-send" disabled={(!text.trim() && staged.length === 0) || sending || busy} aria-label="Send message"><Send size={18} /></button>
               </div>
@@ -586,6 +733,16 @@ export const ChatThread: React.FC<ChatThreadProps> = ({ transport, active = true
             </>
           )}
           {deleteError && <p className="ch-note" role="alert" style={{ color: 'var(--ch-danger)' }}>{deleteError}</p>}
+        </ChatModal>
+      )}
+      {whoFor && (
+        <ChatModal title="Reactions" onClose={() => setWhoFor(null)} footer={<button type="button" className="ch-btn" onClick={() => setWhoFor(null)}>Close</button>}>
+          <ul className="ch-who" data-testid="reactions-who">
+            {(messages.find(x => x.id === whoFor.id)?.reactions ?? []).map(r => (
+              <li key={r.emoji}><span className="ch-who-emoji" aria-hidden>{r.emoji}</span> <span className="sr-only">{REACTION_LABEL[r.emoji]}: </span>{r.people.map(x => (x.me ? 'You' : x.name)).join(', ')}</li>
+            ))}
+            {!(messages.find(x => x.id === whoFor.id)?.reactions ?? []).length && <li>No reactions any more.</li>}
+          </ul>
         </ChatModal>
       )}
       {secureDialog === 'new-key' && secure && <NewKeyDialog client={secure} onClose={() => setSecureDialog(null)} />}

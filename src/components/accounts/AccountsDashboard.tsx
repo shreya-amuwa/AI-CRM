@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BadgeCheck, BarChart3, Bell, Building2, Crown, MailCheck, FileText, KeyRound, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, TrendingUp, Wallet, WalletCards } from 'lucide-react';
+import { BadgeCheck, BarChart3, Bell, Building2, Crown, MailCheck, FileText, KeyRound, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, PiggyBank, TrendingUp, Wallet, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
@@ -22,6 +22,10 @@ import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
 import { AccountsExpenses } from './finance/AccountsExpenses';
+import { PayoutRequests } from './finance/PayoutRequests';
+import { WalletAdmin } from '../wallet/WalletAdmin';
+import { useOpenWalletAdminRequest } from '../wallet/walletEvents';
+import { payoutsApi } from '../../lib/payouts';
 import { CustomerRevenue } from './finance/CustomerRevenue';
 import { FinanceMails } from './finance/FinanceMails';
 import { BusinessReports } from '../reports/BusinessReports';
@@ -29,8 +33,10 @@ import { DepartmentIncome } from '../reports/DepartmentIncome';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
-type Page = 'overview' | 'income' | 'confirmations' | 'client-logins' | 'business-verification' | 'invoices' | 'plans' | 'part-payments' | 'department-income' | 'income-attribution' | 'customer-revenue' | 'finance-mails' | 'business-reports' | 'expenses' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+const ACCOUNTS_PAGES = ['overview', 'wallet-admin', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'payouts', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+type Page = (typeof ACCOUNTS_PAGES)[number];
 
 /**
  * Accounts department staff (members and leads): company finance overview, income,
@@ -41,22 +47,26 @@ export const AccountsDashboard: React.FC = () => {
   const { user, profile, logout } = useAuth();
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useRememberedPage<Page>('accounts', 'overview', ACCOUNTS_PAGES);
   // choosing the page you are already on starts it afresh (Department Income goes back to its department cards)
   const [pageKey, setPageKey] = useState(0);
   const [counts, setCounts] = useState<AccountsPaymentCounts | null>(null);
   // Add-on requests that wait for Accounts: to verify, or approved and waiting for the invoice.
   const [addonsWaiting, setAddonsWaiting] = useState(0);
+  // incentive withdrawals waiting for Accounts (20270123000100)
+  const [payoutsWaiting, setPayoutsWaiting] = useState(0);
   const refreshCounts = () => {
     pipelineApi.accountsCounts().then(setCounts, () => setCounts(null));
     addonsApi.list({ pageSize: 1 }).then(
       r => setAddonsWaiting((r.counts.PENDING_VERIFICATION ?? 0) + (r.counts.APPROVED ?? 0)),
       () => setAddonsWaiting(0)
     );
+    payoutsApi.counts().then(c => setPayoutsWaiting(c.requested), () => setPayoutsWaiting(0));
   };
   useEffect(refreshCounts, []);
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
+  useOpenWalletAdminRequest(React.useCallback(() => setPage('wallet-admin'), []));
   const reportsBadge = useReportsBadge();
   useOpenReportsRequest(React.useCallback(() => setPage('work-reports'), []));
   usePipelineRealtime(refreshCounts);
@@ -84,6 +94,9 @@ export const AccountsDashboard: React.FC = () => {
         { id: 'customer-revenue', label: 'Customer-wise Revenue', icon: Crown },
         { id: 'finance-mails', label: 'Finance e-mails', icon: MailCheck },
         { id: 'expenses', label: 'Expenses', icon: WalletCards },
+        { id: 'payouts', label: 'Payout requests', icon: Wallet, badge: payoutsWaiting },
+        // bonuses, adjustments and refunds for employees' wallets (a second Accounts person approves), and the wallet report (20270207000100)
+        { id: 'wallet-admin', label: 'Wallet credits & report', icon: PiggyBank },
         { id: 'business-reports', label: 'Business Reports', icon: BarChart3 }
       ]
     },
@@ -135,6 +148,8 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'finance-mails' && <FinanceMails />}
       {page === 'business-reports' && <BusinessReports />}
       {page === 'expenses' && <AccountsExpenses />}
+      {page === 'payouts' && <PayoutRequests key={pageKey} />}
+      {page === 'wallet-admin' && <WalletAdmin title="Wallet credits & report" />}
       {page === 'chat' && <ChatRoute />}
       {page === 'raise-issue' && <IssuesRoute />}
       {page === 'work-reports' && <ReportsRoute />}

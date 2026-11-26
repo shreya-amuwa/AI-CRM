@@ -16,10 +16,11 @@ import { useSupportInvoices, useTickets } from '../../lib/support';
 import { TeamMemberManagement } from '../common/TeamMemberManagement';
 import { TeamLeaderDashboard } from '../team-lead/dashboard/TeamLeaderDashboard';
 import { TeamLeadTasksView } from '../tasks/TeamLeadTasksView';
+import { useOpenWorkUpdateRequest } from '../tasks/workUpdateEvents';
 import { HandoverBoard } from '../handover/HandoverBoard';
 import { SupportLeadCustomers } from '../support-member/SupportLeadViews';
 import { CustomerProfile } from '../support-member/CustomersPage';
-import { TicketsPage } from '../support-member/TicketsPage';
+import { TicketsWithDesk } from '../support-member/DeskTickets';
 import { InvoicesPage } from '../support-member/InvoicesPage';
 import { InvoiceRequests } from '../support-member/InvoiceRequests';
 import { NotificationsPage } from '../notifications/NotificationsPage';
@@ -30,7 +31,7 @@ import { PipelineWorkspace } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
-import { PerformanceManagement } from '../performance/PerformanceManagement';
+import { PerformanceHub } from '../performance/PerformanceHub';
 
 /** The team's leads: a team lead sees every lead of their team's members (the database decides), without the inbound enquiries strip. */
 const SupportTeamLeads: React.FC = () => {
@@ -53,7 +54,7 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'delivery', label: 'Delivery Queue', icon: PackageCheck },
   { id: 'client-documents', label: 'Client documents', icon: FolderCheck },
   { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
-  { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
+  { id: 'tasks', label: 'Assign Task', icon: ClipboardList },
   { id: 'performance', label: 'Performance Management', icon: LineChart },
   { id: 'work-reports', label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
   { id: 'tickets', label: 'Tickets', icon: Headset },
@@ -81,7 +82,7 @@ const LeadTickets: React.FC = () => {
   if (customerId) {
     return <CustomerProfile customerId={customerId} tickets={tickets} tasks={tasks} invoices={invoices.invoices} people={tasks.people} onBack={() => setCustomerId(null)} />;
   }
-  return <TicketsPage mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />;
+  return <TicketsWithDesk mode="manager" data={tickets} people={tasks.people} teams={tasks.teams} onOpenCustomer={setCustomerId} />;
 };
 
 /** Invoices of the Support team's customers (read-only) and the team's invoice requests. */
@@ -129,6 +130,7 @@ export const SupportLeadDashboard: React.FC = () => {
   const { unreadCount } = useNotifications();
   const chatUnread = useChatNavBadge();
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
+  useOpenWorkUpdateRequest(React.useCallback(() => setPage('tasks'), []));
   useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
   const reportsBadge = useReportsBadge();
   useOpenReportsRequest(React.useCallback(() => setPage('work-reports'), []));
@@ -175,7 +177,7 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'client-documents' && <ClientDocumentsReview />}
       {page === 'client-calendar' && <ClientActivityManager />}
       {page === 'tasks' && <TeamLeadTasksView />}
-      {page === 'performance' && <PerformanceManagement mode="TEAM_LEAD" />}
+      {page === 'performance' && <PerformanceHub mode="TEAM_LEAD" />}
       {page === 'tickets' && <LeadTickets />}
       {page === 'invoices' && <LeadInvoices />}
       {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}

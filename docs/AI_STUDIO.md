@@ -1,7 +1,7 @@
 # AI Studio department
 
 A project-based department inside the existing CRM: **AI CRM, AI Website, AIQR** and any project the Department Head adds. Migrations
-`supabase/migrations/20270105000100_ai_studio.sql`, `20270106000100_ai_studio_superadmin_head.sql` and `20270107000100_ai_studio_members_without_team_lead.sql` and `20270108000100_ai_studio_dashboard_routing.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
+`supabase/migrations/20270105000100_ai_studio.sql`, `20270106000100_ai_studio_superadmin_head.sql` and `20270107000100_ai_studio_members_without_team_lead.sql`, `20270108000100_ai_studio_dashboard_routing.sql` and `20270120000100_ai_studio_project_deadlines.sql` (run in this order; safe to run twice; nothing is deleted, no other department is touched).
 Tests: `supabase/tests/ai_studio_test.sql` (database, permission-denied cases included), the *AI Studio* block of `api_integration.test.ts`,
 `supabase/tests/ai_studio.test.ts` (routing, form rules) and the browser test `supabase/tests/e2e/run-ai-studio.sh` (the Super Admin, two Team Leads and two Team Members in real browsers: the unchanged Super Admin dashboard, the workspace, creating a Team Lead and a Team Member through the forms, tasks, the Team Member -> Team Lead -> Super Admin approval, phone and tablet widths).
 
@@ -116,6 +116,28 @@ account exists and the account is removed again if assigning fails. On a databas
 `POST people/:id/lead`, `POST tasks`, `PATCH tasks/:id`, `POST tasks/:id/update`, `POST reports`, `PATCH reports/:id`, `DELETE reports/:id` (draft), `POST reports/:id/review`.
 Schemas: `shared/validation.ts` (AI Studio block), types: `shared/contracts.ts`.
 
+## Project deadlines and the clock (migration 20270119000100)
+
+Every project can have a **deadline**, and the people who work on it see a **clock counting down to it** on their dashboard so they can follow it strictly.
+
+* **Who sets it.** Only the Super Admin / the AI Studio Department Head: *Project Management > Add project / Edit* has *Deadline (optional, Indian time)* with a **Clear** button
+  (`POST` / `PATCH /ai-studio/projects`, field `deadlineAt`; left out = unchanged, `null` = none). A Team Lead and a Team Member are refused by the database. A deadline must be in the future (a project whose
+  deadline already passed can still be renamed, put on hold or completed with it unchanged) and within five years. A refused deadline saves nothing, not even the project.
+* **Who sees it.** `GET /ai-studio/deadlines` (`ai_studio_deadlines()`): the Super Admin / Department Head see every running project that has a deadline; a Team Lead and a Team Member only the projects
+  they are on (the rule of the project list). Completed and archived projects are off the clock (their deadline stays on the record).
+* **The clock** (`DeadlineClock.tsx`, on the **Overview** of every AI Studio dashboard: Team Member, Team Lead and the Super Admin's workspace). The nearest deadline is a large clock of days, hours, minutes and seconds that
+  ticks every second; the other projects are listed below with the time left and their open tasks. Green = three days or more, amber = under three days, red = under a day, solid red = **overdue** (the clock then counts
+  how long ago it passed). A small ticking chip also shows on every project card (*Projects* and *Project Management*), a finished project's chip shows the date only.
+* **Correct time on any computer.** The list comes with the server's own time and every browser counts to it, so a computer with a wrong clock shows the right time left. One timer serves the whole page.
+* **Who is told.** Setting, changing or clearing a deadline notifies the Team Leads and Team Members already on the project (`AI_STUDIO_PROJECT_DEADLINE`, opens *Projects*) and is audited with the old and new moment
+  (`AI_STUDIO_PROJECT_DEADLINE`). Saving a project without touching the deadline changes and tells nobody.
+* **The remote developer.** The developers of AI Studio, wherever they work from, are its Team Members (and Team Leads) and open the same dashboard, so they get the clock there. There is no separate remote-developer role in the CRM.
+* **Database.** `ai_studio_projects.deadline_at` (nullable); `ai_studio_projects_list()` adds `deadlineAt`; new `ai_studio_project_save_with_deadline()` (checks the deadline, calls the unchanged `ai_studio_project_save()`, then sets
+  and announces the deadline, all in one transaction) and `ai_studio_deadlines()`. Before the migration is run the app still saves projects as before; only the deadline field and the clock need it.
+* **Not included:** reminders at fixed times (for example one day before); the clock is shown, and the people are told when a deadline changes.
+* Tests: `ai_studio_deadlines_test.sql` (permissions, who sees what, refusals, notifications, audit), the *AI Studio deadline* block of `api_integration.test.ts`, `ai_studio_deadline.test.ts` (the arithmetic, Indian time, the form
+  rule) and `ui_ai_studio_deadlines.test.mjs` (a real browser: ticking, the server's clock, tones, overdue, phone width).
+
 ## Rollout
 
 1. Run `20270105000100_ai_studio.sql`, then `20270106000100_ai_studio_superadmin_head.sql`, in the Supabase SQL editor (each one script; each ends with `notify pgrst, 'reload schema'`).
@@ -128,3 +150,9 @@ Schemas: `shared/validation.ts` (AI Studio block), types: `shared/contracts.ts`.
 * Offboarding an AI Studio employee does not reassign their open AI Studio tasks automatically; the Head changes them with *Edit task* / re-assigns in Project Management.
 * Report attachments are not supported (reports are text); task attachments are links, as in the work reports of other departments.
 * Live push (Realtime) is not used (no timers either): a page reads again after the person's own action, and a page opened from a notification reads fresh. Someone else's change shows after the next action or reload.
+
+## A shorter daily report
+
+The daily report form asks three things: **Work Completed Today** (required), **Pending Work** and **Challenges / Blockers**. *Work In Progress* (the same as pending
+work) and *Remarks or Additional Updates* were removed from the form. Nothing changed in the database or the API (the two parts were already optional): an older report
+that has text in them still shows it, in the report and in the form when it is edited, so nothing written earlier is lost.

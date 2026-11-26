@@ -42,6 +42,19 @@ export interface RegisterRow {
   punchIn: PunchInfo | null; punchOut: PunchInfo | null; punchOutHistory: PunchInfo[];
   workedMinutes: number | null; lunch: LunchInfo;
 }
+/** Today's Attendance Overview (20270131000100): HR and the Super Admin; the absent employees come first. */
+export type OverviewCategory = 'PRESENT' | 'ABSENT' | 'ON_LEAVE' | 'NOT_MARKED';
+export interface OverviewCounts { total: number; present: number; absent: number; onLeave: number; notMarked: number; late: number }
+export interface OverviewRow {
+  profileId: string; name: string; designation: string | null; departmentId: string | null; department: string | null; category: OverviewCategory;
+  late: boolean; lateMinutes: number; punchInAt: string | null; dayStart: string; leave: 'FULL_DAY' | 'MORNING' | 'AFTERNOON' | null;
+}
+export interface AttendanceOverview {
+  date: string; today: string; workingDay: boolean; timeZone: string; absentAfterMinutes: number; generatedAt: string; totals: OverviewCounts;
+  /** The company-wide late rule (20270212000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
+  reportingTime?: string; lateAfter?: string; graceMinutes?: number;
+  departments: (OverviewCounts & { id: string | null; name: string })[]; rows: OverviewRow[];
+}
 export interface AttendanceRegister {
   date: string; today: string; serverTime: string; timeZone: string; allowanceMinutes: number; maxAccuracyM: number; retentionDays: number;
   geofence: null | Record<string, unknown>; rows: RegisterRow[];
@@ -50,15 +63,26 @@ export interface LunchRow { profileId: string; name: string; department: string 
 
 export interface CapturedLocation { status: LocationStatus; latitude: number | null; longitude: number | null; accuracy: number | null }
 
+/** A punch location this precise (metres) is saved at once; a less precise one is still accepted (up to the server's limit) but marked. */
+export const PRECISE_M = 100;
+/** "low precision": a punch location less precise than PRECISE_M (shown to the employee and to HR). */
+export const isLowPrecision = (accuracy: number | null | undefined) => accuracy != null && accuracy > PRECISE_M;
+
 /**
  * Asks the browser for the device's current position (only when the person presses Punch In / Punch Out; never reused, never cached:
- * maximumAge 0). High accuracy is requested and readings are watched for a few seconds, keeping the most precise one, so a phone has time
- * to get a GPS fix. Never invents a position and never falls back to an address-based one.
+ * maximumAge 0). High accuracy is requested. A reading within PRECISE_M (100 m) is used at once; otherwise the readings are watched for at
+ * most 3 seconds after the first acceptable one and the most precise is kept (the server accepts up to its limit; HR sees it marked "low
+ * precision"). A reading over the limit keeps the watch going (up to 20 s in all).
+ * Never invents a position and never falls back to an address-based one.
  */
-export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number; settleMs?: number } = {}): Promise<CapturedLocation> {
+export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number; settleMs?: number; maxM?: number } = {}): Promise<CapturedLocation> {
+  // the overall limit also covers the permission prompt and a slow first fix (a GPS cold start), so it stays as before; the fast paths
+  // above finish long before it
   const timeoutMs = opts.timeoutMs ?? 20000;
-  const goodEnough = opts.goodEnoughM ?? 50;
-  const settleMs = opts.settleMs ?? 8000;
+  const goodEnough = opts.goodEnoughM ?? PRECISE_M;
+  const settleMs = opts.settleMs ?? 3000;
+  // the server's limit: a reading worse than this is never settled for early (it would be refused); keep listening for a better one
+  const maxM = opts.maxM ?? 1000;
   return new Promise(resolve => {
     const none = (status: LocationStatus): CapturedLocation => ({ status, latitude: null, longitude: null, accuracy: null });
     if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(none('UNSUPPORTED'));
@@ -82,8 +106,9 @@ export function captureLocation(opts: { timeoutMs?: number; goodEnoughM?: number
         p => {
           if (!best || p.coords.accuracy < best.coords.accuracy) best = p;
           if (p.coords.accuracy <= goodEnough) finish(fromBest());
-          // a first reading arrived: wait a little for a better one, then take the best
-          else if (!settling) { settling = true; timers.push(setTimeout(() => finish(fromBest()), settleMs)); }
+          // an acceptable reading arrived: wait a little for a better one, then take the best. A reading over the server's limit (a phone's
+          // first coarse fix from the mobile network) does not start the wait: the GPS fix usually follows within seconds.
+          else if (!settling && best.coords.accuracy <= maxM) { settling = true; timers.push(setTimeout(() => finish(fromBest()), settleMs)); }
         },
         e => { if (best) finish(fromBest()); else finish(none(e.code === 1 ? 'DENIED' : e.code === 3 ? 'TIMEOUT' : 'UNAVAILABLE')); },
         { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 }
@@ -107,6 +132,14 @@ export function locationHelp(status: LocationStatus, accuracy?: number | null, m
   }
 }
 
+/** The Managing Director's meeting notices (migration 20270208000200). */
+export type MeetingNoticeSettings = { enabled: boolean; pushEnabled: boolean; remindMinutes: number[]; updatedAt: string | null };
+export const MEETING_REMINDER_CHOICES: { minutes: number; label: string }[] = [
+  { minutes: 120, label: '2 hours before' }, { minutes: 60, label: '1 hour before' }, { minutes: 30, label: '30 minutes before' },
+  { minutes: 15, label: '15 minutes before' }, { minutes: 10, label: '10 minutes before' }, { minutes: 5, label: '5 minutes before' },
+  { minutes: 0, label: 'At the start' }
+];
+
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const db = getSupabase();
   if (!db) throw new Error('The CRM is not connected to its database.');
@@ -126,12 +159,143 @@ export const attendanceApi = {
   mine: (from: string, to: string) => rpc<AttendanceDayData[]>('my_attendance', { p_from: from, p_to: to }),
   /** HR / Super Admin: every employee of one office day (each read is audited). */
   register: (date: string) => rpc<AttendanceRegister>('hr_attendance_register', { p_date: date, p_department: null, p_profile: null, p_status: null }),
+  /** HR / Super Admin: Present, Absent, On leave, Not yet marked, Late, per department (each read is audited). */
+  todayOverview: (date?: string) => rpc<AttendanceOverview>('attendance_today_overview', { p_date: date ?? null }),
   hrPunches: (from: string, to: string, departmentId?: string | null) =>
     rpc<{ allowanceMinutes: number; retentionDays: number; rows: HrPunchRow[] }>('hr_attendance_punches', { p_from: from, p_to: to, p_department: departmentId || null, p_profile: null }),
   /** Ask the server to look up the place names still missing (a few at a time); harmless to call often. */
   resolvePlaces: () => api.post<{ looked: number; named: number; failed: number }>('/attendance/resolve-places', {}),
-  lunchOverview: (from: string, to: string) => rpc<{ allowanceMinutes: number; rows: LunchRow[] }>('attendance_lunch_overview', { p_from: from, p_to: to })
+  lunchOverview: (from: string, to: string) => rpc<{ allowanceMinutes: number; rows: LunchRow[] }>('attendance_lunch_overview', { p_from: from, p_to: to }),
+
+  // --- reminders (20270109000200): times, devices, the push key and a test notification
+  /** The public key a browser needs to subscribe; null while push is not set up on the server. */
+  pushKey: async () => (await api.get<{ publicKey: string | null }>('/attendance/push-key')).publicKey,
+  saveDevice: (endpoint: string, p256dh: string, auth: string, label: string) =>
+    rpc<string>('push_subscription_save', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
+  removeDevice: (endpoint: string) => rpc<null>('push_subscription_remove', { p_endpoint: endpoint }),
+  /** An already-subscribed browser, for whoever is signed in now; false = the device was removed from the list (never re-created). */
+  claimDevice: (endpoint: string, p256dh: string, auth: string, label: string) =>
+    rpc<boolean>('push_subscription_claim', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth, p_label: label }),
+  removeDeviceById: (id: string) => rpc<null>('push_subscription_remove_by_id', { p_id: id }),
+  devices: () => rpc<PushDevice[]>('my_push_devices'),
+  /** `sent` = devices whose push service ACCEPTED the test; whether it appeared is for the person to confirm (testConfirm). */
+  testPush: () => api.post<{ sent: number; gone: number; failed: number; devices?: number; retry?: number; pushConfigured?: boolean }>('/attendance/push-test', {}),
+  reminderSettings: () => rpc<ReminderSettings>('attendance_reminder_settings'),
+  saveMyReminders: (enabled: boolean, punchIn: string | null, lunch: string | null, punchOut: string | null) =>
+    rpc<ReminderSettings>('attendance_reminder_save_mine', { p_enabled: enabled, p_punch_in: punchIn, p_lunch: lunch, p_punch_out: punchOut }),
+  saveCompanyReminders: (c: ReminderCompany) =>
+    rpc<ReminderSettings>('hr_attendance_reminder_defaults_save', { p_enabled: c.enabled, p_punch_in: c.punchIn, p_lunch: c.lunch, p_punch_out: c.punchOut,
+      p_follow_up: c.followUpMinutes, p_warning: c.lunchWarningMinutes, p_days: c.days }),
+  pauseToday: (paused: boolean) => rpc<ReminderSettings>('hr_attendance_reminders_pause_today', { p_paused: paused }),
+  /** Chat notifications on this person's devices (20270111000100). */
+  setChatPush: (enabled: boolean) => rpc<ReminderSettings>('push_chat_set', { p_enabled: enabled }),
+  // Managing Director only (the database checks): notices about team meetings and their reminders
+  meetingNotices: () => rpc<MeetingNoticeSettings>('mtg_oversight_settings_get'),
+  saveMeetingNotices: (s: Pick<MeetingNoticeSettings, 'enabled' | 'pushEnabled' | 'remindMinutes'>) =>
+    rpc<MeetingNoticeSettings>('mtg_oversight_settings_set', { p_enabled: s.enabled, p_push_enabled: s.pushEnabled, p_remind_minutes: s.remindMinutes }),
+  // Notification reliability (20270126000200)
+  saveSound: (attendance: boolean, chat: boolean, general: boolean) =>
+    rpc<ReminderSettings>('notification_sound_save', { p_attendance: attendance, p_chat: chat, p_general: general }),
+  /** "I heard the test sound". */
+  soundConfirm: () => rpc<null>('notification_sound_confirm'),
+  /** "Did the test notification appear / make a sound?", for this browser's own device. */
+  testConfirm: (appeared: boolean, sound: boolean | null, endpoint: string | null) =>
+    rpc<null>('push_test_confirm', { p_appeared: appeared, p_sound: sound, p_endpoint: endpoint }),
+  /** What this browser reports about itself (permission, subscribed, audio) for Notification Health. */
+  clientCheck: (c: { clientId: string; label: string; permission: string; pushState: string; audioState: string; standalone: boolean }) =>
+    rpc<null>('notification_client_check', { p_client_id: c.clientId, p_label: c.label, p_permission: c.permission, p_push_state: c.pushState,
+      p_audio_state: c.audioState, p_standalone: c.standalone }),
+  saveResumeFollowUp: (minutes: number) => rpc<ReminderSettings>('hr_attendance_resume_follow_up_save', { p_minutes: minutes }),
+
+  // ---- Team attendance, confirmed Punch Out and corrections (20270205000200)
+  /** Managers and HR: one status per employee of the people they may see (the database decides who). */
+  teamOverview: (q: { date?: string | null; departmentId?: string | null; teamId?: string | null; status?: string | null; search?: string | null } = {}) =>
+    rpc<TeamAttendance>('attendance_team_overview', { p_date: q.date || null, p_department: q.departmentId || null, p_team: q.teamId || null,
+      p_status: q.status || null, p_search: q.search || null }),
+  /** The Punch Out dialog's figures, from the server's clock. */
+  punchOutPreview: () => rpc<PunchOutPreview>('attendance_punch_out_preview'),
+  requestCorrection: (b: { date: string; kind: CorrectionKind; time: string | null; reason: string; details: string | null }, request: string) =>
+    rpc<AttendanceCorrection>('attendance_correction_request', { p_date: b.date, p_kind: b.kind, p_time: b.time, p_reason: b.reason, p_details: b.details, p_request: request }),
+  cancelCorrection: (id: string) => rpc<AttendanceCorrection>('attendance_correction_cancel', { p_id: id }),
+  corrections: (scope: 'MINE' | 'DECIDE', status?: string | null) =>
+    rpc<{ items: AttendanceCorrection[]; pending: number }>('attendance_corrections', { p_scope: scope, p_status: status || null, p_limit: 100, p_offset: 0 }),
+  decideCorrection: (id: string, approve: boolean, note: string | null) =>
+    rpc<AttendanceCorrection>('attendance_correction_decide', { p_id: id, p_approve: approve, p_note: note })
 };
+
+/** One request id per confirmation dialog: pressing Confirm twice, or a retry after a slow network, is the same punch. */
+export const newPunchRequestId = newRequestId;
+
+export type TeamStatus = 'SHIFT_NOT_STARTED' | 'PRESENT' | 'LATE' | 'NOT_PUNCHED_IN' | 'ABSENT' | 'APPROVED_LEAVE' | 'HALF_DAY' | 'ON_BREAK'
+  | 'SHIFT_COMPLETED' | 'WEEKLY_OFF' | 'HOLIDAY';
+export const TEAM_STATUS_LABEL: Record<TeamStatus, string> = {
+  SHIFT_NOT_STARTED: 'Shift not started', PRESENT: 'Present', LATE: 'Late', NOT_PUNCHED_IN: 'Not punched in', ABSENT: 'Absent',
+  APPROVED_LEAVE: 'Approved leave', HALF_DAY: 'Half day', ON_BREAK: 'On break', SHIFT_COMPLETED: 'Shift completed', WEEKLY_OFF: 'Weekly off', HOLIDAY: 'Holiday'
+};
+export const TEAM_STATUS_TONE: Record<TeamStatus, string> = {
+  SHIFT_NOT_STARTED: 'bg-slate-100 text-slate-600', PRESENT: 'bg-emerald-50 text-emerald-800', LATE: 'bg-amber-50 text-amber-800',
+  NOT_PUNCHED_IN: 'bg-orange-50 text-orange-800', ABSENT: 'bg-rose-50 text-rose-700', APPROVED_LEAVE: 'bg-sky-50 text-sky-800', HALF_DAY: 'bg-sky-50 text-sky-800',
+  ON_BREAK: 'bg-amber-50 text-amber-800', SHIFT_COMPLETED: 'bg-slate-100 text-slate-700', WEEKLY_OFF: 'bg-slate-100 text-slate-500', HOLIDAY: 'bg-slate-100 text-slate-500'
+};
+export interface TeamAttendanceRow {
+  profileId: string; name: string; avatarUrl: string | null; designation: string | null; role: string; departmentId: string | null; department: string | null;
+  teamId: string | null; team: string | null; teamLead: string | null; status: TeamStatus; late: boolean; lateMinutes: number;
+  punchInAt: string | null; punchOutAt: string | null; dayStart: string | null; dayEnd: string | null; leave: 'FULL_DAY' | 'MORNING' | 'AFTERNOON' | null;
+  onBreak: boolean; workedMinutes: number | null; earlyOutReason: string | null; correctionPending: boolean; available: boolean;
+}
+export interface TeamAttendance {
+  date: string; today: string; serverTime: string; workingDay: boolean; graceMinutes: number; absentAfterMinutes: number;
+  /** The company-wide late rule (20270212000100): reporting time 10:00, Late only after 10:30. Optional until the migration runs. */
+  reportingTime?: string; lateAfter?: string;
+  totals: { total: number; scheduled: number; present: number; absent: number; notPunchedIn: number; shiftNotStarted: number; late: number;
+    onLeave: number; halfDay: number; onBreak: number; shiftCompleted: number; offToday: number };
+  departments: { id: string | null; name: string; total: number; available: number; present: number; unavailable: number; late: number }[];
+  teams: { id: string; name: string; departmentId: string }[];
+  departmentOptions: { id: string; name: string }[];
+  rows: TeamAttendanceRow[];
+  shown: number;
+}
+export interface PunchOutPreview {
+  serverTime: string; punchInAt: string | null; punchedOut: boolean; workedMinutes: number | null; breakMinutes: number; netMinutes: number;
+  shiftEnd: string | null; early: boolean; reasonRequired: boolean;
+}
+export type CorrectionKind = 'RESUME_DAY' | 'SET_PUNCH_OUT' | 'SET_PUNCH_IN';
+export const CORRECTION_KIND_LABEL: Record<CorrectionKind, string> = {
+  RESUME_DAY: 'I punched out by mistake: resume my day', SET_PUNCH_OUT: 'Correct my Punch Out time', SET_PUNCH_IN: 'I missed my Punch In'
+};
+export interface AttendanceCorrection {
+  id: string; profileId: string; employee: string; department: string | null; date: string; kind: CorrectionKind; requestedTime: string | null;
+  reason: string; details: string | null; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  original: { punchInAt: string | null; punchOutAt: string | null; punchOuts: number };
+  applied: { punchInAt: string | null; punchOutAt: string | null; punchOuts: number } | null;
+  decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; createdAt: string; canDecide: boolean; canCancel: boolean;
+}
+
+export interface PushDevice {
+  id: string; label: string | null; createdAt: string; lastSuccessAt: string | null; active: boolean;
+  lastFailureAt?: string | null; lastFailureCode?: string | null; deactivatedReason?: string | null; testConfirmedAt?: string | null;
+}
+/** Reminder times are "HH:MM" (India time). Days are ISO weekdays: 1 = Monday ... 7 = Sunday. */
+export interface ReminderCompany {
+  enabled: boolean; punchIn: string; lunch: string; punchOut: string; followUpMinutes: number; lunchWarningMinutes: number; days: number[];
+  /** Resume Work follow-up in minutes, 0 = none (20270126000200; absent before the migration) */
+  resumeFollowUpMinutes?: number;
+  lunchAllowanceMinutes?: number;
+}
+export interface ReminderTimes { enabled: boolean; punchIn: string | null; lunch: string | null; punchOut: string | null }
+export interface ReminderSettings {
+  company: ReminderCompany;
+  /** null for the Super Admin, who does not punch */
+  mine: ReminderTimes | null;
+  effective: ReminderTimes | null;
+  pausedToday: boolean;
+  canManage: boolean;
+  /** chat messages pushed to this person's devices (default on) */
+  chatPush?: boolean;
+  /** in-app sounds (20270126000200; absent before the migration) */
+  sound?: { attendance: boolean; chat: boolean; general: boolean; confirmedAt: string | null };
+  testConfirmedAt?: string | null;
+}
 
 const IST_TIME = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });
 const IST_LONG_DATE = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' });

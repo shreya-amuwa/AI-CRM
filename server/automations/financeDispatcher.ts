@@ -29,7 +29,7 @@ export async function processFinanceEvent(s: AutomationSettings, ev: ClaimedEven
   const mail = renderFinanceMail({ kind: ev.kind, toName: ev.toName || '', payload: ev.payload, link: s.appUrl ? `${s.appUrl}/department-hub` : '' });
   if (s.mode !== 'live') return { outcome: 'SKIPPED', detail: `Dry run - not sent: "${mail.subject}" to ${maskEmail(to)}` };
   if (s.testRecipients && !s.testRecipients.emails.has(to)) return { outcome: 'SKIPPED', detail: `Test mode - ${maskEmail(to)} is not a test recipient` };
-  const r = await sendEmail(s, { email: to, name: ev.toName || to }, mail);
+  const r = await sendEmail(s, { email: to, name: ev.toName || to }, mail, undefined, { category: 'ACCOUNTS', template: `finance-${String(ev.kind).toLowerCase()}`, idempotencyKey: `finance-mail:${ev.id}` });
   if (r.ok) return { outcome: 'SENT', detail: `Sent to ${maskEmail(to)}`, code: r.code, ref: r.ref };
   return { outcome: r.retry ? 'RETRY' : 'FAILED', detail: r.detail, code: r.code };
 }

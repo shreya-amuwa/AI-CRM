@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Search } from 'lucide-react';
+import { MessageSquareWarning, RefreshCw, Search } from 'lucide-react';
 import type { CaseDepartment, EmployeeIssue, EmployeeIssueDetail, EmployeeIssueList, EmployeeIssueOverview, HrAssignee, IssueStatus } from '../../../shared/contracts';
 import { ISSUE_CATEGORIES, ISSUE_CATEGORY_LABELS, ISSUE_PRIORITIES, ISSUE_PRIORITY_LABELS, ISSUE_STATUSES, ISSUE_STATUS_LABELS } from '../../../shared/contracts';
+import { DEV_ISSUE_CATEGORIES, DEV_ISSUE_CATEGORY_LABELS } from '../../../shared/validation';
+import { BUG_STATUS_LABEL, BugHistory, BugStatusPill } from '../bugs/bugUi';
 import { ApiError } from '../../lib/api/client';
 import { employeeCasesApi } from '../../lib/api/employeeCases';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pager, selectCls, Spinner, useDebounced } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 import { MessageFiles } from '../tickets/TicketFiles';
 import { issueFileTransport } from '../issues/issueFiles';
 import { takePendingHrCase } from '../issues/issueEvents';
@@ -17,6 +20,8 @@ import { CaseTimeline, dayEndExclusiveIso, dayStartIso, Detail, EmployeeBlock, I
  */
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 const PAGE_SIZES = [10, 20, 50];
+const SORTS: [string, string][] = [['NEWEST', 'Newest first'], ['OLDEST', 'Oldest first'], ['PRIORITY', 'Priority (urgent first)'], ['STATUS', 'Status'], ['DEPARTMENT', 'Department'], ['EMPLOYEE', 'Employee']];
+const ROUTINGS: [string, string][] = [['', 'With HR or escalated'], ['WITH_HR', 'With HR'], ['ESCALATED_TO_DEVELOPERS', 'Escalated to Developer Team']];
 const TABS: [string, string][] = [['ALL', 'All Issues'], ['NEW', 'New'], ['IN_PROGRESS', 'In Progress'], ['AWAITING_EMPLOYEE', 'Awaiting Employee Response'], ['RESOLVED', 'Resolved'], ['CLOSED', 'Closed']];
 
 const IssueDetail: React.FC<{ id: string; assignees: HrAssignee[]; onClose: () => void; onChanged: () => void }> = ({ id, assignees, onClose, onChanged }) => {
@@ -29,8 +34,16 @@ const IssueDetail: React.FC<{ id: string; assignees: HrAssignee[]; onClose: () =
   const [response, setResponse] = useState('');
   const [note, setNote] = useState('');
   const [confirm, setConfirm] = useState<IssueStatus | null>(null);
+  const [escCategory, setEscCategory] = useState<(typeof DEV_ISSUE_CATEGORIES)[number]>('BUG');
+  const [escNote, setEscNote] = useState('');
+  const [escConfirm, setEscConfirm] = useState(false);
+  const [escDone, setEscDone] = useState('');
 
-  const apply = useCallback((d: EmployeeIssueDetail) => { setData(d); setAssignTo(d.issue.assignedHr?.id ?? ''); setStatus(d.issue.status === 'NEW' ? 'IN_PROGRESS' : d.issue.status); }, []);
+  const apply = useCallback((d: EmployeeIssueDetail) => {
+    // the HR actions answer without the developers' history: keep the one already shown
+    setData(prev => ({ ...d, escalationHistory: d.escalationHistory ?? prev?.escalationHistory }));
+    setAssignTo(d.issue.assignedHr?.id ?? ''); setStatus(d.issue.status === 'NEW' ? 'IN_PROGRESS' : d.issue.status);
+  }, []);
   const load = useCallback(async () => {
     setError('');
     try { apply(await employeeCasesApi.hrIssue(id)); } catch (e) { setError(errText(e)); }
@@ -71,6 +84,12 @@ const IssueDetail: React.FC<{ id: string; assignees: HrAssignee[]; onClose: () =
               <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">Activity and status history</h3>
               <CaseTimeline events={data.events} />
             </div>
+            {i.escalation ? (
+              <div data-testid="escalation-history">
+                <h3 className="text-xs font-bold uppercase tracking-wide text-violet-700 mb-2">The Developer Team&apos;s answers ({i.escalation.reference})</h3>
+                {data.escalationHistory?.length ? <BugHistory history={data.escalationHistory} /> : <p className="text-xs text-slate-500">Nothing from the developers yet.</p>}
+              </div>
+            ) : null}
           </div>
 
           <div className="lg:col-span-2 space-y-4">
@@ -104,6 +123,29 @@ const IssueDetail: React.FC<{ id: string; assignees: HrAssignee[]; onClose: () =
               </div>
             </Card>
 
+            <Card className="p-4 space-y-3 border-violet-200 bg-violet-50/40">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-violet-800" data-testid="escalate-card">Developer Team</h3>
+              {escDone ? <p role="status" className="text-xs text-emerald-700">{escDone}</p> : null}
+              {i.escalation ? (
+                <div className="space-y-1 text-xs text-slate-700" data-testid="escalation-status">
+                  <p>Escalated as <b className="font-mono">{i.escalation.reference}</b>{i.escalation.escalatedBy ? ` by ${i.escalation.escalatedBy}` : ''}{i.escalation.escalatedAt ? ` · ${shortWhen(i.escalation.escalatedAt)}` : ''}.</p>
+                  <p className="flex flex-wrap items-center gap-1.5">Status: <BugStatusPill status={i.escalation.status} />{i.escalation.assigneeName ? <span>· Developer: {i.escalation.assigneeName}</span> : null}</p>
+                  {i.escalation.resolutionNote ? <p className="whitespace-pre-wrap rounded-lg bg-white p-2">{i.escalation.resolutionNote}</p> : null}
+                </div>
+              ) : closed ? (
+                <p className="text-[11px] text-slate-500">A closed issue cannot be escalated.</p>
+              ) : (
+                <>
+                  <p className="text-[11px] text-violet-900/80">A problem with the CRM itself? Send it to the Developer Team, linked to this issue. The employee is told, the developers see the employee&apos;s files, and their answers appear here.</p>
+                  <select aria-label="Developer Team category" className={`${selectCls} w-full`} value={escCategory} onChange={e => setEscCategory(e.target.value as typeof escCategory)} disabled={busy} data-testid="escalate-category">
+                    {DEV_ISSUE_CATEGORIES.map(c => <option key={c} value={c}>{DEV_ISSUE_CATEGORY_LABELS[c]}</option>)}
+                  </select>
+                  <textarea aria-label="Note to the developers" rows={2} className={inputCls} value={escNote} maxLength={2000} onChange={e => setEscNote(e.target.value)} disabled={busy} placeholder="What the developers should know (optional)" data-testid="escalate-note" />
+                  <button type="button" className={btn.primary} disabled={busy} onClick={() => setEscConfirm(true)} data-testid="escalate-button">Escalate to Developer Team</button>
+                </>
+              )}
+            </Card>
+
             <Card className="p-4 space-y-3 border-amber-200 bg-amber-50/40">
               <h3 className="text-xs font-bold uppercase tracking-wide text-amber-800">Internal note (HR only)</h3>
               <p className="text-[11px] text-amber-800/80">Never shown to the employee.</p>
@@ -114,6 +156,17 @@ const IssueDetail: React.FC<{ id: string; assignees: HrAssignee[]; onClose: () =
         </div>
       ) : null}
       <div className="flex justify-end"><button type="button" className={btn.secondary} onClick={onClose}>Close</button></div>
+      {escConfirm && i ? (
+        <Dialog title="Escalate this issue to the Developer Team?" description={`A Developer Team issue linked to ${i.reference} is created with the ${ISSUE_PRIORITY_LABELS[i.priority].toLowerCase()} priority. ${i.employee.name} is told. This is done once.`} onClose={() => setEscConfirm(false)} persistent>
+          <div className="flex justify-end gap-2">
+            <button type="button" className={btn.secondary} onClick={() => setEscConfirm(false)}>Not yet</button>
+            <button type="button" className={btn.primary} disabled={busy} data-testid="confirm-escalate"
+              onClick={() => { setEscConfirm(false); void run(() => employeeCasesApi.escalateIssue(id, { note: escNote.trim() || undefined, category: escCategory }), () => {
+                setEscNote(''); setEscDone('Escalated. The employee is told; the developers\' answers will appear here.');
+              }); }}>Yes, escalate</button>
+          </div>
+        </Dialog>
+      ) : null}
       {confirm ? (
         <Dialog title={confirm === 'CLOSED' ? 'Close this issue?' : 'Mark this issue as resolved?'} description={confirm === 'CLOSED' ? 'A closed issue cannot be reopened or answered. The employee will be told.' : 'The employee will be told. They can still reply, which reopens it.'} onClose={() => setConfirm(null)} persistent>
           <div className="flex justify-end gap-2">
@@ -126,7 +179,8 @@ const IssueDetail: React.FC<{ id: string; assignees: HrAssignee[]; onClose: () =
   );
 };
 
-export const EmployeeIssuesManagement: React.FC = () => {
+/** embedded: inside HR's Raise an Issue page (section B), under its own heading */
+export const EmployeeIssuesManagement: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const [overview, setOverview] = useState<EmployeeIssueOverview | null>(null);
   const [list, setList] = useState<EmployeeIssueList | null>(null);
   const [departments, setDepartments] = useState<CaseDepartment[]>([]);
@@ -141,6 +195,8 @@ export const EmployeeIssuesManagement: React.FC = () => {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('NEWEST');
+  const [routing, setRouting] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [open, setOpen] = useState<string | null>(null);
@@ -155,10 +211,10 @@ export const EmployeeIssuesManagement: React.FC = () => {
       setList(await employeeCasesApi.hrIssues({
         status: tab, departmentId: department || undefined, priority: priority || undefined, category: category || undefined,
         assigneeId: assignee && assignee !== 'NONE' ? assignee : undefined, unassigned: assignee === 'NONE', from: from ? dayStartIso(from) : undefined, to: to ? dayEndExclusiveIso(to) : undefined,
-        search: q || undefined, limit: pageSize, offset: (page - 1) * pageSize
+        search: q || undefined, sort: sort === 'NEWEST' ? undefined : sort, routing: routing || undefined, limit: pageSize, offset: (page - 1) * pageSize
       }));
     } catch (e) { setError(errText(e)); } finally { setLoading(false); }
-  }, [tab, department, priority, category, assignee, from, to, q, page, pageSize]);
+  }, [tab, department, priority, category, assignee, from, to, q, sort, routing, page, pageSize]);
 
   useEffect(() => { loadOverview(); employeeCasesApi.departments().then(setDepartments).catch(() => undefined); employeeCasesApi.assignees().then(setAssignees).catch(() => undefined); }, [loadOverview]);
   useEffect(() => { void load(); }, [load]);
@@ -167,20 +223,18 @@ export const EmployeeIssuesManagement: React.FC = () => {
 
   return (
     <div className="space-y-5" data-testid="employee-issues-page">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900">Employee Issues</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Issues raised by Team Members, Team Leads and Department Heads, across all departments.</p>
-        </div>
-        <button type="button" className={btn.secondary} onClick={changed} aria-label="Refresh"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden /> Refresh</button>
-      </div>
+      <HrPageHeader as={embedded ? 'h2' : 'h1'} icon={embedded ? undefined : MessageSquareWarning}
+        title={embedded ? 'Employee Issues – Received by HR' : 'Employee Issues'}
+        subtitle="Issues raised by Team Members, Team Leads and Department Heads, across all departments."
+        actions={<button type="button" className={hrBtn.secondary} onClick={changed} aria-label="Refresh"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden /> Refresh</button>} />
 
-      <section aria-label="Summary" className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <section aria-label="Summary" className="grid grid-cols-2 md:grid-cols-6 gap-3">
         <Stat label="Total Issues" value={overview?.total ?? null} />
         <Stat label="New Issues" value={overview?.new ?? null} />
         <Stat label="In Progress" value={overview?.inProgress ?? null} />
         <Stat label="Resolved" value={overview?.resolved ?? null} />
         <Stat label="Urgent Issues" value={overview?.urgent ?? null} alert />
+        <Stat label="Escalated" value={overview ? overview.escalated ?? 0 : null} />
       </section>
 
       <Card className="p-4 space-y-3">
@@ -199,8 +253,10 @@ export const EmployeeIssuesManagement: React.FC = () => {
           <select className={selectCls} aria-label="Priority" value={priority} onChange={e => reset(() => setPriority(e.target.value))} data-testid="filter-priority"><option value="">All priorities</option>{ISSUE_PRIORITIES.map(p => <option key={p} value={p}>{ISSUE_PRIORITY_LABELS[p]}</option>)}</select>
           <select className={selectCls} aria-label="Issue category" value={category} onChange={e => reset(() => setCategory(e.target.value))} data-testid="filter-category"><option value="">All categories</option>{ISSUE_CATEGORIES.map(c => <option key={c} value={c}>{ISSUE_CATEGORY_LABELS[c]}</option>)}</select>
           <select className={selectCls} aria-label="Assigned HR employee" value={assignee} onChange={e => reset(() => setAssignee(e.target.value))} data-testid="filter-assignee"><option value="">Any HR employee</option><option value="NONE">Not assigned</option>{assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-500 col-span-1">From<input type="date" className={`${inputCls} !py-1.5`} aria-label="From date" value={from} max={to || undefined} onChange={e => reset(() => setFrom(e.target.value))} data-testid="filter-from" /></label>
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-500 col-span-1">To<input type="date" className={`${inputCls} !py-1.5`} aria-label="To date" value={to} min={from || undefined} onChange={e => reset(() => setTo(e.target.value))} data-testid="filter-to" /></label>
+          <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-500 col-span-1">From<input type="date" className={`${inputCls} !py-1.5 min-w-0`} aria-label="From date" value={from} max={to || undefined} onChange={e => reset(() => setFrom(e.target.value))} data-testid="filter-from" /></label>
+          <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-500 col-span-1">To<input type="date" className={`${inputCls} !py-1.5 min-w-0`} aria-label="To date" value={to} min={from || undefined} onChange={e => reset(() => setTo(e.target.value))} data-testid="filter-to" /></label>
+          <select className={selectCls} aria-label="Routing" value={routing} onChange={e => reset(() => setRouting(e.target.value))} data-testid="filter-routing">{ROUTINGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <select className={selectCls} aria-label="Sort by" value={sort} onChange={e => reset(() => setSort(e.target.value))} data-testid="filter-sort">{SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
         </div>
       </Card>
 
@@ -220,7 +276,10 @@ export const EmployeeIssuesManagement: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {list.items.map(i => (
-                  <tr key={i.id} className="hover:bg-slate-50/70" data-testid="issue-row">
+                  // the whole row opens the issue (Enter or Space too); the Open button stays for clarity
+                  <tr key={i.id} className="hover:bg-slate-50/70 cursor-pointer focus-visible:outline-none focus-visible:bg-indigo-50/60" data-testid="issue-row" tabIndex={0}
+                    aria-label={`${i.reference}: ${i.title}, ${i.employee.name}`} onClick={() => setOpen(i.id)}
+                    onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setOpen(i.id); } }}>
                     <td className="px-2.5 py-2.5 font-mono text-[11px] whitespace-nowrap">{i.reference}</td>
                     <td className="px-2.5 py-2.5 font-semibold text-slate-800 whitespace-nowrap">{i.employee.name}</td>
                     <td className="px-2.5 py-2.5 whitespace-nowrap">{i.employee.department ?? '–'}</td>
@@ -230,8 +289,11 @@ export const EmployeeIssuesManagement: React.FC = () => {
                     <td className="px-2.5 py-2.5"><PriorityPill priority={i.priority} /></td>
                     <td className="px-2.5 py-2.5 whitespace-nowrap">{shortWhen(i.createdAt)}</td>
                     <td className="px-2.5 py-2.5 whitespace-nowrap">{i.assignedHr?.name ?? <span className="text-slate-400">Not assigned</span>}</td>
-                    <td className="px-2.5 py-2.5"><IssueStatusPill status={i.status} /></td>
-                    <td className="px-2.5 py-2.5"><button type="button" className={btn.secondary} onClick={() => setOpen(i.id)} aria-label={`Open ${i.reference}`} data-testid="open-issue">Open</button></td>
+                    <td className="px-2.5 py-2.5">
+                      <IssueStatusPill status={i.status} />
+                      {i.escalation ? <span className="mt-1 block whitespace-nowrap text-[10px] font-semibold text-violet-700" data-testid="row-escalated">Developers: {BUG_STATUS_LABEL[i.escalation.status]}</span> : null}
+                    </td>
+                    <td className="px-2.5 py-2.5"><button type="button" className={btn.secondary} onClick={e => { e.stopPropagation(); setOpen(i.id); }} aria-label={`Open ${i.reference}`} data-testid="open-issue">Open</button></td>
                   </tr>
                 ))}
               </tbody>

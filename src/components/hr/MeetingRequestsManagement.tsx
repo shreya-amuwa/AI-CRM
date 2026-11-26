@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, RefreshCw, Search } from 'lucide-react';
+import { CalendarClock, ExternalLink, RefreshCw, Search } from 'lucide-react';
 import type { CaseDepartment, EmployeeMeeting, EmployeeMeetingDetail, EmployeeMeetingList, EmployeeMeetingOverview, HrAssignee, MeetingAction, MeetingMode } from '../../../shared/contracts';
 import { MEETING_CATEGORIES, MEETING_CATEGORY_LABELS, MEETING_MODES, MEETING_MODE_LABELS } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { employeeCasesApi } from '../../lib/api/employeeCases';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pager, selectCls, Spinner, useDebounced } from '../team-member/pipeline/shared';
+import { HrPageHeader, hrBtn } from './hrUi';
 import { takePendingHrCase } from '../issues/issueEvents';
 import { CaseTimeline, dayLabel, Detail, EmployeeBlock, MeetingStatusPill, Stat, timeLabel, todayLocalIso, shortWhen, whenLabel } from '../issues/caseUi';
 
@@ -233,13 +234,9 @@ export const MeetingRequestsManagement: React.FC = () => {
 
   return (
     <div className="space-y-5" data-testid="meeting-requests-page">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900">Meeting Requests</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Meetings employees asked for. A request is only a meeting once you schedule it.</p>
-        </div>
-        <button type="button" className={btn.secondary} onClick={changed} aria-label="Refresh"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} aria-hidden /> Refresh</button>
-      </div>
+      <HrPageHeader icon={CalendarClock} title="Meeting Requests"
+        subtitle="Meetings employees asked for. A request is only a meeting once you schedule it."
+        actions={<button type="button" className={hrBtn.secondary} onClick={changed} aria-label="Refresh"><RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden /> Refresh</button>} />
 
       <section aria-label="Summary" className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <Stat label="Total Requests" value={overview?.total ?? null} />
@@ -265,7 +262,7 @@ export const MeetingRequestsManagement: React.FC = () => {
           <select className={selectCls} aria-label="Meeting category" value={category} onChange={e => reset(() => setCategory(e.target.value))} data-testid="filter-category"><option value="">All categories</option>{MEETING_CATEGORIES.map(c => <option key={c} value={c}>{MEETING_CATEGORY_LABELS[c]}</option>)}</select>
           <select className={selectCls} aria-label="Assigned HR employee" value={assignee} onChange={e => reset(() => setAssignee(e.target.value))} data-testid="filter-assignee"><option value="">Any HR employee</option><option value="NONE">Not assigned</option>{assignees.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
           <label className="flex items-center gap-1.5 text-[11px] text-slate-500">Meeting from<input type="date" className={`${inputCls} !py-1.5`} aria-label="Meeting date from" value={from} max={to || undefined} onChange={e => reset(() => setFrom(e.target.value))} data-testid="filter-from" /></label>
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-500">to<input type="date" className={`${inputCls} !py-1.5`} aria-label="Meeting date to" value={to} min={from || undefined} onChange={e => reset(() => setTo(e.target.value))} data-testid="filter-to" /></label>
+          <label className="flex min-w-0 items-center gap-1.5 text-[11px] text-slate-500">to<input type="date" className={`${inputCls} !py-1.5 min-w-0`} aria-label="Meeting date to" value={to} min={from || undefined} onChange={e => reset(() => setTo(e.target.value))} data-testid="filter-to" /></label>
         </div>
       </Card>
 

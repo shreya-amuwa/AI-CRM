@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Settings, Clock, FileText, Radio, ShieldCheck, CheckCircle2, Save, Sparkles, Building2, Bell, Lock } from 'lucide-react';
+import { DevTeamPanel } from '../../bugs/DevTeamPanel';
 
 export const AmuwaSettingsPanel: React.FC = () => {
   const [isSaved, setIsSaved] = useState(false);
@@ -115,6 +116,8 @@ export const AmuwaSettingsPanel: React.FC = () => {
         </form>
       </div>
 
+      {/* who gets the Bugs section (20270122000300) */}
+      <DevTeamPanel />
     </div>
   );
 };

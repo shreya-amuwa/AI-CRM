@@ -18,7 +18,7 @@ export const OperationsDepartmentsField: React.FC<{
   const names = selected.map(id => departments.find(d => d.id === id)?.name).filter(Boolean) as string[];
   return (
     <fieldset className="block" data-testid="operations-departments">
-      <legend className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" /> {legend ?? 'Departments this Operations Head supervises *'}</legend>
+      <legend className="text-xs font-semibold text-slate-700 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5 text-blue-600" aria-hidden="true" /> {legend ?? 'Departments this CEO supervises *'}</legend>
       <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto p-2 rounded-xl border border-slate-200 bg-white">
         {departments.map(d => (
           <label key={d.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer border ${selected.includes(d.id) ? 'bg-blue-50 border-blue-200 text-blue-900 font-semibold' : 'border-transparent hover:bg-slate-50 text-slate-700'}`}>
@@ -30,7 +30,7 @@ export const OperationsDepartmentsField: React.FC<{
       <p className="mt-1.5 text-[11px] text-slate-600" role="status" data-testid="operations-departments-summary">
         {names.length ? <>Selected ({names.length}): <strong>{names.join(', ')}</strong></> : allowEmpty ? 'No extra department: the home department only.' : 'Tick at least one department.'}
       </p>
-      <p className="mt-0.5 text-[11px] text-slate-500">{hint ?? 'One account and one dashboard for all of them. Each department keeps its own Department Head, Team Leads and Team Members. You can add or remove departments later under Operations Heads.'}</p>
+      <p className="mt-0.5 text-[11px] text-slate-500">{hint ?? 'One account and one dashboard for all of them. Each department keeps its own Department Head, Team Leads and Team Members. You can add or remove departments later under CEOs.'}</p>
     </fieldset>
   );
 };

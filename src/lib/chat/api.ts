@@ -1,7 +1,8 @@
 import type { ChatReceipt, ClientSupportGroup } from '../../../shared/contracts';
 import type {
   ChatAttachment, ChatChannel, ChatClientView, ChatConversation, ChatDeleteResult, ChatDirectoryPerson, ChatE2eeWrap, ChatKeyBackup, ChatKeyBackupBlob, ChatKeyStatus, ChatMemberKey, ChatMessage,
-  ChatMessagePage, ChatMyClient, ChatPublicKey, ChatReviewList, ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl
+  ChatMessagePage, ChatMyClient, ChatDeskClient, ChatHandler, ChatPublicKey, ChatReviewList, ChatUnreadSummary, ChatUploadTicket, ClientDocumentUrl,
+  ChatInboxDeleteResult, ChatReaction, ChatReactResult
 } from '../../../shared/contracts';
 import { api } from '../api/client';
 
@@ -10,6 +11,8 @@ export interface SendInput {
   clientMsgId: string;
   replyTo?: string;
   attachmentIds: string[];
+  /** Group members tagged with @ (the server refuses anyone outside the group). */
+  mentions?: string[];
 }
 /** The envelope of an end-to-end encrypted message (what the server stores). */
 export interface SecureSendInput {
@@ -17,6 +20,7 @@ export interface SecureSendInput {
   replyTo?: string;
   attachmentIds: string[];
   e2ee: { v: 1; sv: number; iv: string; ct: string; wraps: ChatE2eeWrap[] };
+  mentions?: string[];
 }
 export interface UploadInput {
   fileName: string;
@@ -40,6 +44,9 @@ export interface ChatTransport {
   /** Internal chats only: hide a message for the signed-in person / remove it for everybody (sender only). */
   deleteForMe?(messageId: string): Promise<ChatDeleteResult>;
   deleteForEveryone?(messageId: string): Promise<ChatDeleteResult>;
+  /** Internal chats only: add / change / remove (null) my reaction, and the reactions of the messages on screen. */
+  react?(messageId: string, emoji: string | null): Promise<ChatReactResult>;
+  reactions?(messageIds: string[]): Promise<Record<string, ChatReaction[]>>;
   markRead(seq: number): Promise<unknown>;
   /** 20261230000500: this device has received everything up to seq (Delivered), and the status of my own messages. Optional: older servers. */
   ackDelivered?(seq: number): Promise<unknown>;
@@ -95,6 +102,8 @@ export function staffTransport(conversationId: string, opts: { review?: boolean 
     sendSecure: i => api.post<ChatMessage>(`${base}/secure-messages`, i),
     deleteForMe: id => api.delete<ChatDeleteResult>(`/chat/messages/${id}/for-me`),
     deleteForEveryone: id => api.delete<ChatDeleteResult>(`/chat/messages/${id}/for-everyone`),
+    react: (id, emoji) => api.post<ChatReactResult>(`/chat/messages/${id}/reaction`, { emoji }),
+    reactions: ids => api.get<Record<string, ChatReaction[]>>(`${base}/reactions`, { ids: ids.join(',') }),
     markRead: seq => api.post(`${base}/read`, { seq }),
     ackDelivered: seq => api.post(`${base}/delivered`, { seq }),
     receipts: after => api.get<ChatReceipt[]>(`${base}/receipts`, { after }),
@@ -122,6 +131,10 @@ export const chatKeysApi = {
 export const chatApi = {
   internal: (q?: string) => api.get<ChatConversation[]>('/chat/internal', { q }),
   myClients: (q?: string) => api.get<ChatMyClient[]>('/chat/my-clients', { q }),
+  /** The shared Support desk (20270129000100): the department's client conversations for Support employees covering for a colleague. */
+  deskClients: (q?: string) => api.get<ChatDeskClient[]>('/chat/desk-clients', { q }),
+  /** Take over or release "currently handling" on a client conversation (information only; the Relationship Manager is never changed). */
+  setHandling: (conversationId: string, action: 'TAKE' | 'RELEASE') => api.post<ChatHandler | null>(`/chat/conversations/${conversationId}/handling`, { action }),
   /** The customer's support group (20261230000500): who is in it, and (for the Team Lead / Department Head) who can be added. */
   supportGroup: (customerId: string) => api.get<ClientSupportGroup>(`/chat/customers/${customerId}/support-group`),
   saveSupportGroup: (customerId: string, b: { name?: string | null; add?: string[]; remove?: string[] }) => api.post<ClientSupportGroup>(`/chat/customers/${customerId}/support-group`, b),
@@ -142,5 +155,9 @@ export const chatApi = {
   addMembers: (id: string, profileIds: string[]) => api.post<ChatConversation>(`/chat/groups/${id}/members`, { profileIds }),
   removeMember: (id: string, profileId: string) => api.delete<ChatConversation>(`/chat/groups/${id}/members/${profileId}`),
   setAdmin: (id: string, profileId: string, admin: boolean) => api.post<ChatConversation>(`/chat/groups/${id}/admins`, { profileId, admin }),
-  leave: (id: string) => api.post<null>(`/chat/groups/${id}/leave`, {})
+  leave: (id: string) => api.post<null>(`/chat/groups/${id}/leave`, {}),
+  /** Delete Inbox: my own direct chats and groups, for me only. */
+  inboxClear: () => api.post<ChatInboxDeleteResult>('/chat/inbox/clear', {}),
+  /** The Super Admin: every internal chat message for everybody (the confirmation text is checked by the server). */
+  inboxPurge: (confirm: string) => api.post<ChatInboxDeleteResult>('/chat/inbox/purge', { confirm })
 };

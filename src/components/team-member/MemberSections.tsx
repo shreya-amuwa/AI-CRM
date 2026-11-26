@@ -15,6 +15,9 @@ import { MemberInvoicesDashboard } from './MemberInvoicesDashboard';
 import { MemberSettingsDashboard } from './MemberSettingsDashboard';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
+import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
+import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
+import { showDetails } from '../feedback/AppFeedback';
 
 /** The member pages that are not the lead pipeline: one implementation, used by the Team Member dashboard and by the unified Business Associate dashboard. */
 export type MemberSection = 'home' | 'work-tasks' | 'tasks' | 'customers' | 'calendar' | 'invoices' | 'settings' | 'delivery' | 'notifications';
@@ -184,6 +187,10 @@ export const MemberSections: React.FC<Props> = ({ section, currentUserId, userNa
               <HomeClock />
             </div>
 
+            {/* Crocodial calling activity: only for a person with an approved mapping (the database decides) */}
+            <CrocodialActivityPanel />
+            <CrocodialLeadsPanel />
+
             {/* The member's own numbers */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
@@ -243,7 +250,10 @@ export const MemberSections: React.FC<Props> = ({ section, currentUserId, userNa
                 setActionModalType('message');
               }}
               onViewDetails={(task) => {
-                alert(`Follow-up Details:\n${task.leadName} (${task.company})\nTime: ${task.dateTimeStr}\nNotes: ${task.notes}`);
+                void showDetails({
+                  title: `Follow-up: ${task.leadName}`,
+                  details: [`Company: ${task.company || '—'}`, `Time: ${task.dateTimeStr}`, `Notes: ${task.notes || '—'}`]
+                });
               }}
               onToggleComplete={(taskId) => {
                 void run(() => teamMemberStore.toggleFollowUpStatus(taskId), 'Follow-up status updated');

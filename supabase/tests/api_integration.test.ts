@@ -78,8 +78,10 @@ r = await api('sa', 'GET', '/me');
 check(r.status === 200 && r.json.success && r.json.data.role === 'SUPER_ADMIN', 'GET /me returns profile from database', r);
 
 r = await api('sa', 'GET', '/departments');
-// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before
-check(r.status === 200 && r.json.data.length === 13 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio'), 'departments come from the database');
+// 13 since AI Studio (migration 20270105000100) joined the twelve departments that existed before; 14 with AI Design Studio (20270110000100);
+// 16 with International and Reseller (20270127000100)
+check(r.status === 200 && r.json.data.length === 16 && r.json.data.some((d: any) => d.slug === 'wabatalk') && r.json.data.some((d: any) => d.slug === 'ai-studio') && r.json.data.some((d: any) => d.slug === 'ai-design-studio')
+  && r.json.data.some((d: any) => d.slug === 'international') && r.json.data.some((d: any) => d.slug === 'reseller'), 'departments come from the database');
 const wab = r.json.data.find((d: any) => d.slug === 'wabastore');
 const wbx = r.json.data.find((d: any) => d.slug === 'whatsbox');
 r = await api('sa', 'GET', `/teams?departmentId=${wab.id}`);
@@ -1528,6 +1530,12 @@ check(normal.headers.get('ratelimit-limit') === '5000' && normal.headers.get('x-
 
 const health = await fetch(base + '/health').then(x => x.json()) as any;
 check(health.success && health.data.checks.database.startsWith('ok'), 'public health check reports database ok', health);
+{
+  const dbHealth = await fetch(base + '/health/database');
+  const dbBody = await dbHealth.json() as any;
+  check(dbHealth.status === 200 && dbBody.data?.database === 'ok' && typeof dbBody.data?.latencyMs === 'number' && dbHealth.headers.get('cache-control') === 'no-store',
+    'uptime check: /health/database answers 200 with the time the database took, without signing in', dbBody);
+}
 const viaRewrite = await fetch(base.replace('/api/v1', '') + '/api/crm?__path=approval-requests/' + orphanReq.id + '/approve', {
   method: 'POST', headers: { authorization: `Bearer ${tokens.get('sa')}`, 'content-type': 'application/json' }, body: '{}'
 });
@@ -1607,6 +1615,35 @@ async function autoCustomer(fields: Record<string, unknown>, website: string | n
 // The dispatch endpoint is protected
 check((await dispatch()).status === 401, 'dispatch needs the secret');
 check((await dispatch('wrong-secret-0123456789')).status === 401, 'a wrong secret is refused');
+
+// Attendance reminders: the scheduled run (same secret as the dispatch) and the staff's push settings
+{
+  const reminders = (secret?: string) =>
+    fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: secret ? { authorization: `Bearer ${secret}` } : {} }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+  check((await reminders()).status === 401 && (await reminders('wrong-secret-0123456789')).status === 401, 'internal reminders: 401 without the secret');
+  const run = await reminders('dispatch-secret-0123456789');
+  check(run.status === 200 && typeof run.json.data.due === 'number' && run.json.data.push === 'off' && run.json.data.pushed === 0,
+    'internal reminders: 200 with the secret and returns counts (push off without VAPID keys: the bell only)', run);
+  check((await api(null, 'GET', '/attendance/push-key')).status === 401, 'push-key: 401 signed out');
+  const key = await api('a', 'GET', '/attendance/push-key');
+  check(key.status === 200 && key.json.data.publicKey === null, 'push-key: no key while push is not set up', key);
+  const test = await api('a', 'POST', '/attendance/push-test', {});
+  check(test.status === 200 && test.json.data.sent === 0, 'push-test: nothing to send without devices or keys', test);
+  // a browser renewing its subscription (the service worker, nobody signed in): only an existing active device is moved to the new address
+  const bad = await api(null, 'POST', '/attendance/push-resubscribe', { oldEndpoint: 'https://push.example.com/a' });
+  check(bad.status === 422 && bad.json.error.code === 'VALIDATION_ERROR', 'push-resubscribe: an incomplete request is refused', bad);
+  const unknown = await api(null, 'POST', '/attendance/push-resubscribe',
+    { oldEndpoint: 'https://push.example.com/never-saved', endpoint: 'https://push.example.com/b', keys: { p256dh: 'BPk-b', auth: 'auth-b' } });
+  check(unknown.status === 200 && unknown.json.data.replaced === false, 'push-resubscribe: an unknown device changes nothing (and needs no sign-in)', unknown);
+  await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) select id, 'https://push.example.com/api-old', 'BPk-o', 'auth-o', 'Test'
+                    from public.profiles where status = 'ACTIVE' and role <> 'SUPER_ADMIN' limit 1 on conflict (endpoint) do nothing`);
+  const moved = await api(null, 'POST', '/attendance/push-resubscribe',
+    { oldEndpoint: 'https://push.example.com/api-old', endpoint: 'https://push.example.com/api-new', keys: { p256dh: 'BPk-n', auth: 'auth-n' } });
+  check(moved.status === 200 && moved.json.data.replaced === true
+        && (await db.query(`select 1 from public.push_subscriptions where endpoint = 'https://push.example.com/api-new' and p256dh = 'BPk-n'`)).rowCount === 1,
+    'push-resubscribe: a saved device moves to its new address', moved);
+  await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/api-%'`);
+}
 
 // Dry run: prepared and logged, nothing sent
 const autoB = await autoCustomer({ name: 'Dry Run', company: 'Dry Traders', email: 'dry.client@example.com', whatsapp: '9819900011', phone: '9819900022' }, 'https://dry-traders.example');
@@ -2543,6 +2580,13 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
   check(r.status === 404, 'import: someone else cannot send the set-password e-mail', r);
   r = await api('sm', 'POST', `/customers/${impCustomer}/client-password-email`);
   check(r.status === 200 && r.json.data.sent === true && r.json.data.email === 'imp.client@example.com', 'import: the member sends the set-password e-mail again', r);
+  r = await api('sm', 'POST', `/customers/${impCustomer}/client-password-email`);
+  check(r.status === 409, 'client links: a second link within 2 minutes is refused (no flooding the client\'s inbox)', r);
+  r = await api('sm', 'GET', `/customers/${impCustomer}/client-login`);
+  check(r.status === 200 && r.json.data.hasLogin === true && !!r.json.data.lastLinkSentAt && !!r.json.data.linkExpiresAt && r.json.data.canSend === false && r.json.data.sendsToday === 1,
+    'client links: the card shows the link sent, until when it works, and that the next must wait', r);
+  r = await api('a', 'GET', `/customers/${impCustomer}/client-login`);
+  check(r.status === 404, 'client links: someone else does not see the card', r);
   const n0 = outbox.filter(o => o.path === '/emails').length;
   const forgot = (email: string) => fetch(`${base}/client-auth/forgot-password`, { method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' }, body: JSON.stringify({ email }) })
     .then(async x => ({ status: x.status, json: (await x.json()) as any }));
@@ -2587,6 +2631,22 @@ check(un.status === 409 || un.status === 404, 'not for customers that are not au
     check(r.status === 200 && mails().length === m0, 'staff forgot password: never for a client login', r);
     r = await staffForgot('not-an-email');
     check(r.status === 422, 'staff forgot password: a wrong e-mail is refused', r);
+    {
+      // "confirm you are not a robot" on the CRM's forms (TURNSTILE_CRM_MODE): without a token, refused before anything is looked up or sent
+      const was = { m: process.env.TURNSTILE_CRM_MODE, k: process.env.TURNSTILE_SECRET_KEY };
+      process.env.TURNSTILE_CRM_MODE = 'enforce';
+      process.env.TURNSTILE_SECRET_KEY = 'ts-test-secret';
+      try {
+        const before = mails().length;
+        const a = await staffForgot('SM@amuwa.com');
+        const b = await forgot('imp.client@example.com');
+        check(a.status === 403 && JSON.stringify(a.json).includes('BOT_CHECK_FAILED') && b.status === 403 && JSON.stringify(b.json).includes('BOT_CHECK_FAILED') && mails().length === before,
+          'with the robot check on, a staff or client "Forgot password" without it is refused and nothing is sent', { a, b });
+      } finally {
+        if (was.m === undefined) delete process.env.TURNSTILE_CRM_MODE; else process.env.TURNSTILE_CRM_MODE = was.m;
+        if (was.k === undefined) delete process.env.TURNSTILE_SECRET_KEY; else process.env.TURNSTILE_SECRET_KEY = was.k;
+      }
+    }
     m0 = mails().length;
     r = await forgot('imp.client@example.com');
     const clientMail = mails().slice(m0).find(o => o.body.to?.[0] === 'imp.client@example.com');
@@ -3177,6 +3237,19 @@ provider.close();
       'subscription: the e-mail has the plan, the duration, the real start and expiry dates, the message limit and a secure way in (no password)', act?.body?.html);
     check((await db.query(`select status from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC])).rows[0].status === 'SENT', 'subscription: its delivery status is recorded');
 
+    // a job wrongly marked failed after the provider really accepted its e-mail: a retry of the same event sends no duplicate (email_messages)
+    {
+      const { rows: [job] } = await db.query(`select id from public.automation_jobs where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
+      await db.query(`update public.automation_jobs set status = 'QUEUED', next_attempt_at = '2000-01-01' where id = $1`, [job.id]);
+      const before = mailbox.length;
+      process.env.AUTOMATION_MODE = 'live';
+      await dispatch('dispatch-secret-0123456789');
+      process.env.AUTOMATION_MODE = 'off';
+      const { rows: [again] } = await db.query(`select status, detail from public.automation_jobs where id = $1`, [job.id]);
+      check(mailbox.length === before && again.status === 'SENT', 'subscription: the same accepted e-mail queued again is not sent twice (one send per business event)', again);
+      // a real failure: the provider refused it, so the e-mail record says FAILED too
+      await db.query(`update public.email_messages set status = 'FAILED' where idempotency_key = $1`, [`automation-job:${job.id}`]);
+    }
     // a failure is recorded and can be retried
     await db.query(`update public.automation_jobs set status = 'FAILED', detail = 'Provider refused' where customer_id = $1 and stage = 'SUBSCRIPTION_ACTIVATED'`, [subC]);
     r = await api('tc', 'GET', `/pipeline/customers/${subC}/subscriptions`);
@@ -5523,6 +5596,11 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   await addRecord('HRBD-3', 'Probation Person', 'hrbd.prob@example.com', await joinForProbationEnd(7), '1992-01-01');
 
   const before = emails().length;
+  // Today's HR e-mails go out at 09:00 Indian time. Before that hour (CI runs at any time of day) a run would queue them but send none, so for this
+  // section 09:00 of today (or an earlier day) is "now" at the latest, later days keep their 09:00; the real time is restored at the end of the section.
+  const nineAm = (kind: string, body: string) => db.query(`create or replace function private.hr_nine_am(p_date date) returns timestamptz language sql ${kind} set search_path = '' as $$ ${body} $$`);
+  await nineAm('stable', `select case when p_date <= private.hr_today() then least((p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata', now())
+                                       else (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata' end`);
   let hr = await hrRun();
   check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
   const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
@@ -5672,6 +5750,7 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   check(unauth.status === 401, 'HR automation: the scheduler endpoint needs its secret', unauth.status);
 
   if (hrBack > 0) await setHrClock(0);
+  await nineAm('immutable', `select (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata'`);
   mailMock.close();
   for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 }
@@ -7318,7 +7397,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const multiId = r.json.data.id as string;
   r = await api('sa', 'POST', '/users', { email: 'multi.plain@amuwa.com', fullName: 'Plain Head', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastar').id, headDivision: 'SALES',
     additionalAccess: [{ departmentId: dep('whatsbox').id, division: 'SALES' }] });
-  check(r.status === 422 && /Operations Head/.test(r.json.error.message) && (await headCount('multi.plain@amuwa.com')) === 0, 'create: a Department Head created with other departments but not as an Operations Head is refused and no account is made', r);
+  check(r.status === 422 && /CEO/.test(r.json.error.message) && (await headCount('multi.plain@amuwa.com')) === 0, 'create: a Department Head created with other departments but not as an Operations Head is refused and no account is made', r);
   r = await api('dh', 'POST', '/users', { email: 'multi.dhop@amuwa.com', fullName: 'Not Allowed Op', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: dep('wabastore').id, operationsHead: true });
   check(r.status === 403 && (await headCount('multi.dhop@amuwa.com')) === 0, 'create: only the Super Admin makes an Operations Head', r);
   r = await api('sa', 'POST', '/users', { email: 'multi.tmop@amuwa.com', fullName: 'Member Op', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: await teamId('mpillar', 'Sales'), operationsHead: true });
@@ -7425,9 +7504,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const dsId = await mk('combined.ds.acx@amuwa.com', 'Design Studio Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('designstudio').id });
   tokens.set('acds', tokenFor(dsId));
   r = await apply(dsId, [{ departmentId: dep('designstudio').id, division: 'SALES' }, { departmentId: dep('designstudio').id, division: 'SUPPORT' }]);
-  check(r.status === 200, 'access: Amuwa Design Studio can be given both functions (it has Sales and Support teams now)', r);
-  r = await api('acds', 'GET', '/me/department-scopes');
-  check(r.json.data.departments.length === 1 && r.json.data.departments[0].divisions.join() === 'SALES,SUPPORT', 'access: one department with the Sales | Support selector', r);
+  // Amuwa Design Studio has no Sales or Support function to give (migration 20270112000200); for both departments
+  check(r.status === 422 && /no Sales or Support function/.test(r.json.error.message), 'access: Amuwa Design Studio cannot be given Sales or Support', r);
+  const adsDep = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'ai-design-studio');
+  r = await apply(dsId, [{ departmentId: adsDep.id, division: 'SALES' }]);
+  check(r.status === 422 && /no Sales or Support function/.test(r.json.error.message), 'access: nor can Amuwa Design Studio', r);
   const dtId = await mk('combined.dt.acx@amuwa.com', 'D Talk Combined Head ACX', { role: 'DEPARTMENT_HEAD', departmentId: dep('dtalk').id });
   tokens.set('acdt', tokenFor(dtId));
   r = await apply(dtId, [{ departmentId: dep('dtalk').id, division: 'SALES' }, { departmentId: wabatalkId, division: 'SUPPORT' }]);
@@ -10359,7 +10440,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(m.status === 200 && m.json.data.some((x: any) => x.id === mid), 'meetings: it is in the calendar', m);
   m = await api('sh', 'GET', `/meetings/${mid}`);
   check(m.status === 404, 'meetings: a colleague who is not invited cannot open it', m);
-  m = await api('tm2', 'POST', '/meetings', { title: 'Ask the CEO', hostId: sa.id, startsAt: at(4, 6), endsAt: at(4, 7) });
+  m = await api('sa', 'GET', `/meetings/${mid}`);
+  check(m.status === 404, 'meetings: nor can the Super Admin (only the people taking part see a meeting)', m);
+  m = await api('tm2', 'POST', '/meetings', { title: 'Ask the CEO', hostId: sa.id, description: 'Budget for the new office', message: 'Any slot works', startsAt: at(4, 6), endsAt: at(4, 7) });
   check(m.status === 201 && m.json.data.status === 'REQUESTED' && m.json.data.kind === 'CEO_MEETING', 'meetings: asking the CEO for time makes a request', m);
   const ceo = m.json.data;
   m = await api('tm2', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'APPROVE' });
@@ -10370,6 +10453,65 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(m.status === 422, 'meetings: proposing needs a time', m);
   m = await api('sa', 'POST', `/meetings/${ceo.id}/decision`, { decision: 'APPROVE', note: 'Fine' });
   check(m.status === 200 && m.json.data.status === 'SCHEDULED', 'meetings: the CEO approves', m);
+
+  // ---- 20270114000100: ONLY the Super Admin decides; every other role is refused with HTTP 403 (HTTP -> PostgREST -> Postgres)
+  m = await api('tm2', 'POST', '/meetings', { title: 'No agenda', hostId: sa.id, startsAt: at(5, 6), endsAt: at(5, 7) });
+  check(m.status === 422, 'meetings: a request for the CEO needs an agenda', m);
+  m = await api('tm2', 'POST', '/meetings', { title: 'Sneaky', hostId: sa.id, description: 'Agenda here', status: 'SCHEDULED', startsAt: at(5, 6), endsAt: at(5, 7) });
+  check(m.status === 422, 'meetings: a request cannot set its own status', m);
+  const target = (await api('tm2', 'POST', '/meetings', { title: 'Role matrix', hostId: sa.id, description: 'Agenda for the role matrix', startsAt: at(19, 6), endsAt: at(19, 7) })).json.data;
+  const roles = ['hr', 'hrmember', 'dh', 'th', 'a', 'accm', 'tc'];
+  let slotDay = 20;
+  for (const who of roles) {
+    m = await api(who, 'POST', '/meetings', { title: `Own request ${who}`, hostId: sa.id, description: `Agenda from ${who}`, startsAt: at(slotDay, 6), endsAt: at(slotDay, 7) });
+    slotDay++;
+    check(m.status === 201 && m.json.data.status === 'REQUESTED', `meetings: ${who} can ask the CEO for time (and is active)`, m);
+    const own = m.json.data;
+    const refused = [
+      await api(who, 'POST', `/meetings/${target.id}/decision`, { decision: 'APPROVE' }),
+      await api(who, 'POST', `/meetings/${own.id}/decision`, { decision: 'APPROVE' }),
+      await api(who, 'POST', `/meetings/${target.id}/decision`, { decision: 'DECLINE', note: 'No' }),
+      await api(who, 'POST', `/meetings/${target.id}/decision`, { decision: 'PROPOSE', startsAt: at(30, 6), endsAt: at(30, 7) }),
+      await api(who, 'POST', `/meetings/${target.id}/reschedule`, { startsAt: at(31, 6), endsAt: at(31, 7), note: 'Moved' }),
+      await api(who, 'POST', `/meetings/${target.id}/cancel`, { reason: 'No' }),
+      await api(who, 'POST', `/meetings/${own.id}/complete`, {})
+    ];
+    check(refused.every(x => x.status === 403), `meetings: ${who} gets HTTP 403 on approve, reject, propose, reschedule, cancel and complete`, refused.map(x => x.status));
+    m = await api(who, 'GET', '/meetings/ceo-requests?section=ALL');
+    check(m.status === 200 && m.json.data.isSuperAdmin === false && m.json.data.items.length === 1 && m.json.data.items[0].id === own.id, `meetings: ${who} sees only their own request`, m);
+    m = await api(who, 'GET', '/meetings/approvals');
+    check(m.status === 200 && m.json.data.length === 0, `meetings: ${who} has nothing to decide`, m);
+  }
+  m = await api('sa', 'POST', '/meetings/settings/delegates', { delegateIds: ['00000000-0000-4000-8000-000000000001'] });
+  check(m.status === 403, 'meetings: the Super Admin cannot delegate the CEO\'s decisions', m);
+  m = await api('tm2', 'POST', `/meetings/${target.id}/decision`, { decision: 'APPROVE', role: 'SUPER_ADMIN' });
+  check(m.status === 422, 'meetings: a role sent in the request is refused (the role comes from the database, never the caller)', m);
+  m = await api('tm2', 'POST', `/meetings/${target.id}/decision`, { decision: 'APPROVE', decidedBy: sa.id });
+  check(m.status === 422, 'meetings: an approver id sent in the request is refused', m);
+  // the Super Admin: sees everyone's requests, rejects only with a reason, reschedules with a reason
+  m = await api('sa', 'GET', '/meetings/ceo-requests?section=PENDING&limit=100');
+  check(m.status === 200 && m.json.data.isSuperAdmin === true && m.json.data.items.some((x: any) => x.id === target.id) && m.json.data.items.length >= roles.length, 'meetings: the Super Admin sees every employee\'s pending request', m);
+  check(m.json.data.items.every((x: any) => x.createdByName && x.description), 'meetings: with the employee and the agenda', m.json.data.items[0]);
+  m = await api('sa', 'POST', `/meetings/${target.id}/decision`, { decision: 'DECLINE' });
+  check(m.status === 422, 'meetings: rejecting without a reason is refused', m);
+  m = await api('sa', 'POST', `/meetings/${target.id}/reschedule`, { startsAt: at(31, 6), endsAt: at(31, 7) });
+  check(m.status === 422, 'meetings: rescheduling without a reason is refused', m);
+  m = await api('sa', 'POST', `/meetings/${target.id}/reschedule`, { startsAt: at(31, 6), endsAt: at(31, 7), note: 'The board meets that morning' });
+  check(m.status === 200 && m.json.data.status === 'SCHEDULED' && m.json.data.rescheduleCount === 1 && m.json.data.rescheduleReason === 'The board meets that morning' && !!m.json.data.previousStartsAt && !!m.json.data.rescheduledByName, 'meetings: the Super Admin reschedules with a reason (previous time, reason and who are saved)', m);
+  m = await api('tm2', 'GET', '/meetings/ceo-requests?section=RESCHEDULED');
+  check(m.status === 200 && m.json.data.items.some((x: any) => x.id === target.id && x.rescheduleReason === 'The board meets that morning'), 'meetings: the employee sees the new schedule and the reason', m);
+  const rej = (await api('a', 'POST', '/meetings', { title: 'To be rejected', hostId: sa.id, description: 'Agenda to reject', startsAt: at(40, 6), endsAt: at(40, 7) })).json.data;
+  m = await api('sa', 'POST', `/meetings/${rej.id}/decision`, { decision: 'DECLINE', note: 'Please ask your Department Head first' });
+  check(m.status === 200 && m.json.data.status === 'DECLINED' && m.json.data.rejectionReason === 'Please ask your Department Head first', 'meetings: the Super Admin rejects with a reason', m);
+  m = await api('a', 'GET', '/meetings/ceo-requests?section=REJECTED');
+  check(m.status === 200 && m.json.data.items.some((x: any) => x.id === rej.id && x.rejectionReason === 'Please ask your Department Head first'), 'meetings: the employee reads the rejection reason', m);
+  m = await api('a', 'POST', `/meetings/${rej.id}/cancel`, { reason: 'x' });
+  check(m.status === 409 || m.status === 403, 'meetings: a rejected request cannot be reopened by the employee', m);
+  const w = (await api('a', 'POST', '/meetings', { title: 'To withdraw', hostId: sa.id, description: 'Agenda to withdraw', startsAt: at(41, 6), endsAt: at(41, 7) })).json.data;
+  m = await api('a', 'POST', `/meetings/${w.id}/cancel`, { reason: 'No longer needed' });
+  check(m.status === 200 && m.json.data.status === 'CANCELLED', 'meetings: an employee can withdraw their own pending request', m);
+  m = await api('a', 'POST', `/meetings/${target.id}/cancel`, { reason: 'x' });
+  check(m.status === 403, 'meetings: but never somebody else\'s, or an approved meeting', m);
   m = await api('tm2', 'POST', `/meetings/${mid}/cancel`, { reason: 'Moved to email' });
   check(m.status === 200 && m.json.data.status === 'CANCELLED', 'meetings: the host cancels', m);
 
@@ -10737,6 +10879,128 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   if (modeBefore === undefined) delete process.env.AUTOMATION_MODE_LEAD_WHATSAPP; else process.env.AUTOMATION_MODE_LEAD_WHATSAPP = modeBefore;
 }
 
+// --- AI Design Studio: its own department; Department Head -> Team Lead -> Team Member through the real routes ---
+{
+  const adsDept = (await db.query(`select id from public.departments where slug = 'ai-design-studio'`)).rows[0].id as string;
+  const adsTeam = (await db.query(`select id from public.teams where department_id = $1 order by created_at limit 1`, [adsDept])).rows[0].id as string;
+  const other = (await db.query(`insert into public.departments (slug, name) values ('ads-api-other', 'ADS API Other') returning id`)).rows[0].id as string;
+  const otherTeam = (await db.query(`insert into public.teams (department_id, name, division) values ($1, 'General', 'GENERAL') returning id`, [other])).rows[0].id as string;
+  const mk = async (name: string, body: Record<string, unknown>) => {
+    const res = await api('sa', 'POST', '/users', { email: `ads.${name}@amuwa.com`, fullName: `ADS ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `AI Design Studio: ${name} account created`, res);
+    tokens.set(`ads_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  await mk('dh', { role: 'DEPARTMENT_HEAD', departmentId: adsDept });
+  // a Team Member is created BEFORE any Team Lead exists
+  const m0Id = await mk('m0', { role: 'TEAM_MEMBER', teamId: adsTeam });
+  const tl1Id = await mk('tl1', { role: 'TEAM_HEAD', teamId: adsTeam });
+  await mk('tl2', { role: 'TEAM_HEAD', teamId: adsTeam });
+  const m1Id = await mk('m1', { role: 'TEAM_MEMBER', teamId: adsTeam });
+  const m2Id = await mk('m2', { role: 'TEAM_MEMBER', teamId: adsTeam });
+  await mk('x', { role: 'TEAM_MEMBER', teamId: otherTeam });
+  // name each member's Team Lead (the Department Head does this in the Team Members screen)
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [tl1Id, m1Id]);
+  await db.query(`update public.profiles set manager_id = (select id from public.profiles where email = 'ads.tl2@amuwa.com') where id = $1`, [m2Id]);
+
+  r = await api(null, 'GET', '/ai-design-studio/context');
+  check(r.status === 401, 'AI Design Studio: sign-in is needed', r);
+  r = await api('sa', 'GET', '/ai-design-studio/context');
+  check(r.status === 403, 'AI Design Studio: the Super Admin has no workspace in it', r);
+  r = await api('ads_x', 'GET', '/ai-design-studio/clients');
+  check(r.status === 403, 'AI Design Studio: another department\'s employee is refused', r);
+  r = await api('ads_m0', 'GET', '/ai-design-studio/context');
+  check(r.status === 200 && r.json.data.unassigned === true && r.json.data.role === 'TEAM_MEMBER', 'AI Design Studio: a member created before any Team Lead works without one', r.json);
+  r = await api('ads_m1', 'GET', '/ai-design-studio/context');
+  check(r.status === 200 && r.json.data.unassigned === false && r.json.data.leadId === tl1Id, 'AI Design Studio: a member with a Team Lead sees them', r.json);
+
+  // ---- clients
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', {});
+  check(r.status === 422, 'AI Design Studio: a client needs a name', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', { clientName: 'Acme', createdBy: m2Id });
+  check(r.status === 422, 'AI Design Studio: a request that names the creator is refused', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', { clientName: 'Acme Foods', companyName: 'Acme Pvt Ltd', email: 'ravi@acme.com', designService: 'Packaging' });
+  check(r.status === 201 && r.json.data.createdBy === m1Id, 'AI Design Studio: a member adds a client', r);
+  const clientId = r.json.data.id as string;
+  r = await api('ads_m1', 'POST', '/ai-design-studio/clients', { clientName: 'acme foods', companyName: 'ACME PVT LTD', email: 'ravi@acme.com' });
+  check(r.status === 409, 'AI Design Studio: the same client is not saved twice', r);
+  r = await api('ads_m2', 'GET', `/ai-design-studio/clients/${clientId}`);
+  check(r.status === 404, 'AI Design Studio: another Team Lead\'s member cannot open the client by id', r);
+  r = await api('ads_tl2', 'GET', '/ai-design-studio/clients');
+  check(r.status === 200 && r.json.data.length === 0, 'AI Design Studio: another Team Lead does not see it', r);
+  r = await api('ads_dh', 'GET', '/ai-design-studio/clients');
+  check(r.status === 200 && r.json.data.length === 1, 'AI Design Studio: the Department Head sees every client', r);
+
+  // ---- assignments: Department Head -> Team Lead -> Team Member
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Brand kit', assigneeId: m1Id });
+  check(r.status === 422, 'AI Design Studio: work for a member who has a Team Lead goes to the lead', r);
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Brand kit', assigneeId: tl1Id, assignedBy: m1Id });
+  check(r.status === 422, 'AI Design Studio: an assignment cannot name who assigns it', r);
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Brand kit', priority: 'HIGH', assigneeId: tl1Id });
+  check(r.status === 201 && r.json.data.assigneeId === tl1Id, 'AI Design Studio: the Department Head assigns work to a Team Lead', r);
+  const asgId = r.json.data.id as string;
+  r = await api('ads_dh', 'POST', '/ai-design-studio/assignments', { clientId, title: 'Poster', assigneeId: m0Id });
+  check(r.status === 201, 'AI Design Studio: and directly to a member who has no Team Lead', r);
+  r = await api('ads_tl2', 'GET', `/ai-design-studio/assignments/${asgId}`);
+  check(r.status === 404, 'AI Design Studio: another Team Lead cannot open it', r);
+  r = await api('ads_tl1', 'POST', '/ai-design-studio/assignments', { parentId: asgId, assigneeId: m2Id });
+  check(r.status === 422, 'AI Design Studio: a Team Lead cannot give work to another lead\'s member', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/assignments', { clientId, title: 'x', assigneeId: m2Id });
+  check(r.status === 403, 'AI Design Studio: a Team Member cannot assign work', r);
+  r = await api('ads_tl1', 'POST', '/ai-design-studio/assignments', { parentId: asgId, assigneeId: m1Id, instructions: 'Three logos' });
+  check(r.status === 201 && r.json.data.assigneeId === m1Id, 'AI Design Studio: the Team Lead assigns it to their own member', r);
+  const partId = r.json.data.id as string;
+  r = await api('ads_tl1', 'POST', '/ai-design-studio/assignments', { parentId: asgId, assigneeId: m1Id });
+  check(r.status === 409, 'AI Design Studio: a retry does not make a second copy', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'IN_PROGRESS', progress: 40, note: 'started' });
+  check(r.status === 200 && r.json.data.status === 'IN_PROGRESS' && r.json.data.progress === 40, 'AI Design Studio: the member updates their progress', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'COMPLETED' });
+  check(r.status === 403, 'AI Design Studio: a member does not complete their own work', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'DONE' });
+  check(r.status === 422, 'AI Design Studio: an unknown status is refused', r);
+  r = await api('ads_m2', 'GET', `/ai-design-studio/assignments/${partId}`);
+  check(r.status === 404, 'AI Design Studio: another member cannot open it', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/assignments/${partId}/status`, { status: 'COMPLETED' });
+  check(r.status === 200 && r.json.data.status === 'COMPLETED', 'AI Design Studio: the Team Lead completes the member\'s part', r);
+
+  // ---- daily reports
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, status: 'APPROVED' });
+  check(r.status === 422, 'AI Design Studio: a report cannot set its own status', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_TL', 'AI Design Studio: a member\'s report waits for their Team Lead', r);
+  const repId = r.json.data.id as string;
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
+  check(r.status === 201 && r.json.data.id === repId, 'AI Design Studio: a double click returns the first report', r);
+  r = await api('ads_m0', 'POST', '/ai-design-studio/reports', { workCompleted: 'Poster draft' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_DH', 'AI Design Studio: an unassigned member\'s report goes straight to the Department Head', r);
+  r = await api('ads_tl2', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
+  check(r.status === 403 || r.status === 404, 'AI Design Studio: another Team Lead cannot approve it', r);
+  r = await api('ads_dh', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
+  check(r.status === 403, 'AI Design Studio: the Department Head cannot skip the Team Lead', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'RETURN' });
+  check(r.status === 422, 'AI Design Studio: returning a report needs remarks', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_DH', 'AI Design Studio: the Team Lead approves; it moves to the Department Head', r);
+  r = await api('ads_dh', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE', remarks: 'Good' });
+  check(r.status === 200 && r.json.data.status === 'APPROVED', 'AI Design Studio: the Department Head gives the final approval', r);
+  r = await api('ads_m2', 'GET', `/ai-design-studio/reports/${repId}`);
+  check(r.status === 404, 'AI Design Studio: another member cannot read the report', r);
+
+  // ---- issues
+  r = await api('ads_m1', 'POST', '/ai-design-studio/issues', { title: 'Font licence', category: 'DESIGN_BLOCKER', description: 'Need a licensed font' });
+  check(r.status === 201 && r.json.data.handlerLevel === 'TEAM_LEAD' && /^ADS-/.test(r.json.data.reference), 'AI Design Studio: an issue goes to the member\'s Team Lead', r);
+  const issueId = r.json.data.id as string;
+  r = await api('ads_tl2', 'GET', `/ai-design-studio/issues/${issueId}`);
+  check(r.status === 404, 'AI Design Studio: another Team Lead cannot open it', r);
+  r = await api('ads_m1', 'POST', `/ai-design-studio/issues/${issueId}/update`, { status: 'RESOLVED' });
+  check(r.status === 403, 'AI Design Studio: the raiser cannot work their own issue', r);
+  r = await api('ads_tl1', 'POST', `/ai-design-studio/issues/${issueId}/escalate`, { note: 'Needs a budget' });
+  check(r.status === 200 && r.json.data.handlerLevel === 'DEPARTMENT_HEAD', 'AI Design Studio: the Team Lead escalates it', r);
+  r = await api('ads_dh', 'POST', `/ai-design-studio/issues/${issueId}/update`, { status: 'RESOLVED', note: 'Approved' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED', 'AI Design Studio: the Department Head resolves it', r);
+  r = await api('ads_dh', 'GET', '/ai-design-studio/overview');
+  check(r.status === 200 && r.json.data.assignments.total >= 2, 'AI Design Studio: the overview is built from the records', r);
+}
 
 // 20270105000100: AI Studio (projects, tasks, daily reports: Team Member -> Team Lead -> Department Head)
 {
@@ -10962,6 +11226,1816 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(['AI_STUDIO_TASK_ASSIGNED', 'AI_STUDIO_REPORT_RETURNED', 'AI_STUDIO_REPORT_TL_APPROVED', 'AI_STUDIO_REPORT_APPROVED'].every(t => types.includes(t)), 'AI Studio: the member was notified of the task and of every report decision', types);
   q = await api('aim1', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2099-03-01', reason: 'Family function' });
   check([200, 201, 404].includes(q.status), 'AI Studio: the leave module is reachable for AI Studio people', q);
+}
+
+// Chat push notifications (20270111000100): a sent message is handed to the push right after the answer; push off never slows or breaks sending.
+{
+  const logged = async (id: string) => (await db.query(`select 1 from public.chat_push_log where message_id = $1`, [id])).rowCount === 1;
+  const smId = (await db.query(`select id from public.profiles where email = 'sm@amuwa.com'`)).rows[0]?.id as string;
+  let r = await api('tm2', 'POST', '/chat/direct', { profileId: smId });
+  check(r.status === 200 || r.status === 201, 'chat push: a colleague chat to send in', r);
+  const dm = r.json.data.id as string;
+  r = await api('tm2', 'POST', `/chat/conversations/${dm}/messages`, { body: 'push me', clientMsgId: crypto.randomUUID() });
+  check(r.status === 201 && typeof r.json.data.id === 'string', 'chat push: sending a colleague message still answers 201 with push not set up', r);
+  check(await logged(r.json.data.id), 'chat push: the message is recorded as pushed (chat_push_log has its id)');
+  const before = (await db.query(`select count(*)::int n from public.chat_push_log`)).rows[0].n as number;
+  r = await api('tm2', 'POST', `/chat/conversations/${dm}/messages`, { body: '   ', clientMsgId: crypto.randomUUID() });
+  check(r.status >= 400 && (await db.query(`select count(*)::int n from public.chat_push_log`)).rows[0].n === before, 'chat push: a failed send (empty body) logs nothing', r);
+  r = await api('imp', 'POST', '/client/chat/messages', { body: 'client push me', clientMsgId: crypto.randomUUID() });
+  check(r.status === 201 && await logged(r.json.data.id), 'chat push: a client message is logged too', r);
+}
+
+// --- Amuwa Design Studio: Department Head, Team Lead and Team Member only (migrations 20270112000100, 20270112000200) -------
+{
+  const ds = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'designstudio');
+  const dsTeams = (await api('sa', 'GET', `/teams?departmentId=${ds.id}`)).json.data as any[];
+  const general = dsTeams.find(t => t.division === 'GENERAL');
+  const sales = dsTeams.find(t => t.division === 'SALES');
+  const support = dsTeams.find(t => t.division === 'SUPPORT');
+  check(!!general && !!sales && !!support, 'design studio roles: (setup) the General, Sales and Support teams', dsTeams);
+  const users = async (email: string) => (await db.query(`select count(*)::int n from public.profiles where email = $1`, [email])).rows[0].n as number;
+  let r = await api('sa', 'POST', '/users', { email: 'dsr.sales.api@amuwa.com', fullName: 'DSR Sales API', role: 'TEAM_MEMBER', teamId: sales.id });
+  check(r.status === 422 && /no Sales or Support roles/.test(r.json.error?.message) && (await users('dsr.sales.api@amuwa.com')) === 0, 'design studio roles: a Sales Team Member is refused and nothing is saved', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.sales.api@amuwa.com', fullName: 'DSR Sales API', role: 'TEAM_MEMBER', teamId: sales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 422 && (await users('dsr.sales.api@amuwa.com')) === 0, 'design studio roles: a Telecaller is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.support.api@amuwa.com', fullName: 'DSR Support API', role: 'TEAM_HEAD', teamId: support.id });
+  check(r.status === 422 && /no Sales or Support roles/.test(r.json.error?.message) && (await users('dsr.support.api@amuwa.com')) === 0, 'design studio roles: a Support Team Lead is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.tc.api@amuwa.com', fullName: 'DSR Consultant API', role: 'TEAM_MEMBER', teamId: support.id, technicalConsultant: true });
+  check(r.status === 422 && (await users('dsr.tc.api@amuwa.com')) === 0, 'design studio roles: a Technical Consultant is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.head.api@amuwa.com', fullName: 'DSR Head API', role: 'DEPARTMENT_HEAD', departmentId: ds.id, headDivision: 'SALES' });
+  check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.head.api@amuwa.com')) === 0, 'design studio roles: a Sales Department Head is refused', r);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.member.api@amuwa.com', fullName: 'DSR Member API', role: 'TEAM_MEMBER', teamId: general.id });
+  check(r.status === 201 && r.json.data.role === 'TEAM_MEMBER' && r.json.data.department?.slug === 'designstudio' && r.json.data.teamId === general.id,
+    'design studio roles: a Team Member of the General team is created in Amuwa Design Studio', r);
+  const memberId = r.json.data.id as string;
+  r = await api('sa', 'POST', '/users', { email: 'dsr.lead.api@amuwa.com', fullName: 'DSR Lead API', role: 'TEAM_HEAD', teamId: general.id });
+  check(r.status === 201 && r.json.data.role === 'TEAM_HEAD' && r.json.data.department?.slug === 'designstudio', 'design studio roles: a Team Lead of the General team is created', r);
+  r = await api('sa', 'PATCH', `/users/${memberId}`, { role: 'TEAM_MEMBER', teamId: sales.id });
+  const after = (await db.query(`select team_id from public.profiles where id = $1`, [memberId])).rows[0].team_id;
+  check(r.status >= 400 && after === general.id, 'design studio roles: moving the member into the Sales team is refused and they stay in General', r);
+  const ws = (await api('sa', 'GET', '/departments')).json.data.find((d: any) => d.slug === 'wabastore');
+  const wsSales = (await api('sa', 'GET', `/teams?departmentId=${ws.id}`)).json.data.find((t: any) => t.division === 'SALES');
+  r = await api('sa', 'POST', '/users', { email: 'dsr.ws.sales.api@amuwa.com', fullName: 'DSR Wabastore Sales', role: 'TEAM_MEMBER', teamId: wsSales.id, salesSubRole: 'TELECALLER' });
+  check(r.status === 201 && r.json.data.salesSubRole === 'TELECALLER', 'design studio roles: another department still gets its Sales roles', r);
+  // Amuwa Design Studio is active (migration 20270118000100); AI Design Studio is its own department with the same rule
+  const deps = (await api('sa', 'GET', '/departments')).json.data as any[];
+  const ads = deps.find(d => d.slug === 'ai-design-studio');
+  check(ads.name === 'AI Design Studio' && ds.name === 'Amuwa Design Studio' && !deps.some(d => /retired/i.test(d.name)), 'design studio roles: Amuwa Design Studio is active (not Retired) and AI Design Studio is its own department', { ads: ads.name, old: ds.name });
+  const directory = await api('sa', 'GET', `/users?departmentId=${ds.id}&pageSize=100`);
+  const listed = (directory.json.data?.items ?? directory.json.data ?? []) as any[];
+  check(directory.status === 200 && listed.some(u => u.id === memberId) && (await db.query(`select count(*)::int n from public.profiles where email = 'dsr.member.api@amuwa.com'`)).rows[0].n === 1,
+    'design studio roles: the new Team Member appears once in the Amuwa Design Studio directory', directory);
+  r = await api('sa', 'POST', '/users', { email: 'dsr.ads.head.api@amuwa.com', fullName: 'DSR ADS Head', role: 'DEPARTMENT_HEAD', departmentId: ads.id, headDivision: 'SUPPORT' });
+  check(r.status === 422 && /no Sales or Support Department Head/.test(r.json.error?.message) && (await users('dsr.ads.head.api@amuwa.com')) === 0, 'design studio roles: Amuwa Design Studio refuses a Support Department Head', r);
+}
+
+// --- AI Website client onboarding details on a lead (migration 20270113000200) ------------------------------------------------
+{
+  const details = { clientName: 'Kavya Nair', mobile: '+91 98470 12345', email: 'Kavya@NairBakes.example', businessName: 'AIW Nair Bakes', onGoogleMaps: true,
+    googleMapsLink: 'https://maps.app.goo.gl/nairbakes', city: 'Kochi', businessType: 'Restaurant / Food' };
+  const lead = { name: 'Kavya Nair', company: 'AIW Nair Bakes', phone: '9847012345', leadSource: 'Walk-in', services: ['AI_WEBSITE'] };
+  const records = async (company: string) =>
+    (await db.query(`select count(*)::int n from public.ai_website_onboarding a join public.customers c on c.id = a.customer_id where c.company = $1`, [company])).rows[0].n as number;
+  const leads = async (company: string) => (await db.query(`select count(*)::int n from public.customers where company = $1`, [company])).rows[0].n as number;
+
+  let r = await api('a', 'POST', '/pipeline/leads', lead);
+  check(r.status === 422 && /AI Website client onboarding/.test(r.json.error?.message) && (await leads('AIW Nair Bakes')) === 0, 'ai website: an AI Website lead needs the onboarding details, and nothing is saved without them', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, mobile: '12345' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: a wrong mobile number is refused before the lead exists', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, email: '' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: the email is required', r);
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: { ...details, businessType: 'Other' } });
+  check(r.status === 422 && (await leads('AIW Nair Bakes')) === 0, 'ai website: "Other" needs the type typed in', r);
+  const requestId = crypto.randomUUID();
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: details, clientRequestId: requestId });
+  check(r.status === 201, 'ai website: the lead is created with its details', r);
+  const id = r.json.data.id as string;
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, aiWebsiteOnboarding: details, clientRequestId: requestId });
+  check(r.status === 201 && r.json.data.id === id && (await leads('AIW Nair Bakes')) === 1 && (await records('AIW Nair Bakes')) === 1, 'ai website: a retry returns the same lead and one record', r);
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  const got = r.json.data?.aiWebsiteOnboarding;
+  check(r.status === 200 && got?.clientName === 'Kavya Nair' && got.mobile === '9847012345' && got.email === 'kavya@nairbakes.example' && got.onGoogleMaps === true
+    && got.googleMapsLink === 'https://maps.app.goo.gl/nairbakes' && got.city === 'Kochi' && got.businessType === 'Restaurant / Food', 'ai website: the lead details page reads them back', r);
+
+  // edit: with the lead (PATCH) and on their own (POST)
+  r = await api('a', 'PATCH', `/pipeline/leads/${id}`, { notes: 'Wants online orders', aiWebsiteOnboarding: { ...details, onGoogleMaps: false, city: 'Thrissur' } });
+  check(r.status === 200, 'ai website: editing the lead saves the changed details', r);
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  check(r.json.data.aiWebsiteOnboarding.city === 'Thrissur' && r.json.data.aiWebsiteOnboarding.onGoogleMaps === false && r.json.data.aiWebsiteOnboarding.googleMapsLink === null
+    && r.json.data.notes === 'Wants online orders' && (await records('AIW Nair Bakes')) === 1, 'ai website: the edit is kept in the one record ("No" drops the link)', r);
+  r = await api('a', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, { ...details, businessType: 'Other', businessTypeOther: 'Home bakery' });
+  check(r.status === 200 && r.json.data.businessType === 'Other' && r.json.data.businessTypeOther === 'Home bakery', 'ai website: the details can be saved on their own', r);
+  r = await api('a', 'PATCH', `/pipeline/leads/${id}`, { services: ['AI_WEBSITE', 'AI_CALLING'] });
+  r = await api('a', 'GET', `/pipeline/customers/${id}`);
+  check(r.json.data.aiWebsiteOnboarding?.businessTypeOther === 'Home bakery', 'ai website: changing the services keeps the details', r);
+  r = await api('a', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, { ...details, email: 'nope' });
+  check(r.status === 422, 'ai website: the API validates an edit too', r);
+
+  // who: another Sales member and another department get nothing
+  r = await api('b', 'GET', `/pipeline/customers/${id}`);
+  check(r.status === 404, 'ai website: a colleague who does not own the lead cannot open it', r);
+  r = await api('b', 'POST', `/pipeline/customers/${id}/ai-website-onboarding`, details);
+  check(r.status === 404, 'ai website: nor save its details', r);
+  r = await api('sa', 'GET', `/pipeline/customers/${id}`);
+  check(r.status === 200 && r.json.data.aiWebsiteOnboarding?.clientName === 'Kavya Nair', 'ai website: the Super Admin sees them', r);
+
+  // another service: nothing is asked or stored
+  r = await api('a', 'POST', '/pipeline/leads', { ...lead, company: 'AIW Other Service', phone: '9847012346', services: ['AI_CALLING'] });
+  check(r.status === 201 && (await records('AIW Other Service')) === 0, 'ai website: a lead for another service needs no AI Website details', r);
+  r = await api('a', 'GET', `/pipeline/customers/${r.json.data.id}`);
+  check(r.status === 200 && r.json.data.aiWebsiteOnboarding === null, 'ai website: and has none', r);
+}
+
+// --- Crocodial integration: configuration by the Super Admin only; the token never passes through the API ---
+{
+  let r = await api(null, 'GET', '/crocodial/admin');
+  check(r.status === 401, 'crocodial: the configuration needs a login', r);
+  r = await api('a', 'GET', '/crocodial/admin');
+  check(r.status === 403, 'crocodial: an employee cannot read the configuration', r);
+  r = await api('sa', 'GET', '/crocodial/admin');
+  check(r.status === 200 && r.json.data.rollout.length === 1 && r.json.data.rollout[0].departmentSlug === 'mpillar' && r.json.data.rollout[0].allowed,
+    'crocodial: only M Pillar Sales is rolled out', r);
+  r = await api('sa', 'POST', '/crocodial/connections', { name: 'API test', credentialRef: 'rmd_thisLooksLikeAToken123' });
+  check(r.status === 422, 'crocodial: a pasted token is refused as the credential', r);
+  r = await api('sa', 'POST', '/crocodial/connections', { name: 'API test', credentialRef: 'crocodial_token_apitest' });
+  check(r.status === 200 && r.json.data.credentialRef === 'CROCODIAL_TOKEN_APITEST' && r.json.data.credentialConfigured === false && r.json.data.enabled === false,
+    'crocodial: a connection stores the setting name, disabled, and says the server has no such setting', r);
+  const cid = r.json.data.id;
+  r = await api('a', 'POST', `/crocodial/connections/${cid}/test`);
+  check(r.status === 403, 'crocodial: an employee cannot test a connection', r);
+  r = await api('sa', 'POST', `/crocodial/connections/${cid}/test`);
+  check(r.status === 200 && r.json.data.ok === false && r.json.data.health === 'NO_CREDENTIAL' && r.json.data.requests === 0,
+    'crocodial: without the server setting the test calls nothing and says so', r);
+  const dt = (await db.query(`select id from public.departments where slug = 'dtalk'`)).rows[0].id;
+  r = await api('sa', 'POST', '/crocodial/department-links', { connectionId: cid, departmentId: dt, division: 'SALES', enabled: true });
+  check(r.status === 403, 'crocodial: a department that is not rolled out cannot be linked', r);
+  r = await api('a', 'GET', '/crocodial/me');
+  check(r.status === 200 && r.json.data.enabled === false, 'crocodial: an employee without an approved mapping has Crocodial off', r);
+  r = await api('a', 'GET', '/crocodial/sync');
+  check(r.status === 403, 'crocodial: an employee cannot read the sync status', r);
+  r = await api('sa', 'GET', '/crocodial/sync');
+  check(r.status === 200 && Array.isArray(r.json.data) && r.json.data.some((x: any) => x.connectionId === cid && x.syncable === false), 'crocodial: the Super Admin sees the sync status (off: not syncable)', r);
+  r = await api('a', 'POST', `/crocodial/connections/${cid}/sync`);
+  check(r.status === 403, 'crocodial: an employee cannot start a sync', r);
+  r = await api('sa', 'POST', `/crocodial/connections/${cid}/sync`);
+  check(r.status === 422, 'crocodial: a connection that is off is never synced', r);
+  r = await api('a', 'GET', '/crocodial/activity');
+  check(r.status === 200 && r.json.data.enabled === false, 'crocodial: without an approved mapping the activity is switched off (not zeros)', r);
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' limit 1`)).rows[0].id;
+  r = await api('a', 'GET', `/crocodial/activity?profileId=${saId}`);
+  check(r.status === 404, 'crocodial: nobody reads another person\'s activity by sending their id', r);
+  r = await api('a', 'GET', '/crocodial/activity?from=yesterday');
+  check(r.status === 422, 'crocodial: the period is validated', r);
+  r = await api(null, 'GET', '/crocodial/activity');
+  check(r.status === 401, 'crocodial: the activity needs a login', r);
+  r = await api('a', 'GET', '/crocodial/team-activity');
+  check(r.status === 200 && r.json.data.connectedEmployees === 0 && Array.isArray(r.json.data.people), 'crocodial: an employee sees nobody else in the management view', r);
+  r = await api('sa', 'GET', '/crocodial/team-activity?from=2026-11-01&to=2026-11-07');
+  check(r.status === 200 && typeof r.json.data.label === 'string' && /connected employee/.test(r.json.data.label), 'crocodial: the management view is labelled with the number of connected employees', r);
+  r = await api('sa', 'GET', '/crocodial/team-activity?teamId=nope');
+  check(r.status === 422, 'crocodial: the management view validates its filters', r);
+  await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
+}
+
+// --- Enter / Exit Meeting for every employee (20270122000100) and the Super Admin's queue, one confirmed per Exit (20270128000100) ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0]?.id as string;
+  const soon = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
+
+  let r = await api('sa', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0]?.hostId === saId && r.json.data[0].status === 'AVAILABLE' && r.json.data[0].isCeo === true,
+    'CEO queue: the Super Admin has a status of their own again', r);
+
+  r = await api('a', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0]?.hostId === memberId && r.json.data[0].status === 'AVAILABLE', 'employee availability: a member sees their own status', r);
+  r = await api('a', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'employee availability: a member enters a meeting: BUSY', r);
+  r = await api('tl2', 'GET', `/meetings/presence?ids=${memberId},${saId}`);
+  check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === memberId)?.status === 'BUSY'
+    && r.json.data.find((x: { hostId: string }) => x.hostId === memberId)?.meeting === null,
+    'employee availability: a colleague sees them BUSY (no meeting details)', r);
+  r = await api('tl2', 'GET', '/meetings/presence?ids=not-an-id');
+  check(r.status === 422, 'employee availability: ids must be ids', r);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
+  check(r.status === 409 && /in a meeting right now/.test(r.json.error?.message ?? ''), 'employee availability: booking a BUSY colleague into a meeting starting soon is refused', r);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX later', startsAt: soon(240), endsAt: soon(270), mode: 'PHONE', attendeeIds: [memberId] });
+  check(r.status === 201 && r.json.data.status === 'SCHEDULED', 'employee availability: a later meeting can still be booked', r);
+  r = await api('a', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE', 'employee availability: Exit Meeting: AVAILABLE', r);
+  const log = (await db.query(`select entered_at, exited_at from public.meeting_presence_log where host_id = $1 order by entered_at desc limit 1`, [memberId])).rows[0];
+  check(!!log?.entered_at && !!log?.exited_at && new Date(log.exited_at) >= new Date(log.entered_at), 'employee availability: entry and exit times are recorded', log);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX soon after', startsAt: soon(10), endsAt: soon(40), mode: 'PHONE', attendeeIds: [memberId] });
+  check(r.status === 201, 'employee availability: after the exit the same booking works', r);
+  r = await api('a', 'POST', '/meetings', { title: 'EPX ask the CEO', description: 'Pune office budget', hostId: saId, startsAt: soon(3 * 24 * 60), endsAt: soon(3 * 24 * 60 + 30), mode: 'GOOGLE_MEET' });
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'employee availability: asking the CEO while they are AVAILABLE is a request, as before', r);
+
+  // the Super Admin's queue: Enter, requests queue up, each Exit confirms exactly one (the oldest), with the room link and the e-mail
+  r = await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: 'http://insecure.example' });
+  check(r.status === 422 || r.status === 400, 'CEO queue: the room link must be https', r);
+  r = await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: 'https://meet.example.com/ceo-api-room' });
+  check(r.status === 200 && r.json.data.roomLink === 'https://meet.example.com/ceo-api-room', 'CEO queue: the Super Admin saves the meeting-room link', r);
+  r = await api('a', 'POST', '/meetings/settings/room-link', { roomLink: 'https://meet.example.com/not-mine' });
+  check(r.status === 403, 'CEO queue: only a CEO sets the room link', r);
+  r = await api('sa', 'POST', '/meetings/presence/enter', {});
+  check(r.status === 200 && r.json.data.status === 'BUSY', 'CEO queue: the Super Admin enters a meeting: BUSY', r);
+  r = await api('a', 'GET', '/meetings/presence/ceo');
+  check(r.status === 200 && r.json.data.find((x: { hostId: string }) => x.hostId === saId)?.status === 'BUSY', 'CEO queue: employees see the CEO BUSY', r);
+  // start and end from one clock reading: two Date.now() calls a millisecond apart made the request 30 min + 1 ms long, and the
+  // "as long as asked" check below then failed now and then
+  const queuedAt = (min: number) => { const t0 = Date.now(); return { startsAt: new Date(t0 + 2 * 24 * 60 * 60_000).toISOString(), endsAt: new Date(t0 + (2 * 24 * 60 + min) * 60_000).toISOString() }; };
+  r = await api('a', 'POST', '/meetings', { title: 'EPX queued first', description: 'Pune office budget', hostId: saId, ...queuedAt(30), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: a request while the CEO is BUSY joins the queue', r);
+  const first = r.json.data.id as string;
+  await db.query(`update public.meetings set created_at = now() - interval '5 minutes' where id = $1`, [first]);
+  r = await api('tl2', 'POST', '/meetings', { title: 'EPX queued second', description: 'Hiring plan review', hostId: saId, ...queuedAt(20), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'PENDING_AVAILABILITY', 'CEO queue: and another', r);
+  const second = r.json.data.id as string;
+  r = await api('sa', 'GET', '/meetings/presence');
+  check(r.status === 200 && r.json.data[0].pending?.length === 2 && r.json.data[0].pending[0].id === first, 'CEO queue: the Super Admin sees the queue, oldest first', r);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.status === 'AVAILABLE' && r.json.data.scheduled?.length === 1 && r.json.data.scheduled[0].id === first,
+    'CEO queue: Exit confirms exactly one, the oldest', r);
+  const conf = (await db.query(`select status, mode, meet_link, starts_at, ends_at from public.meetings where id = $1`, [first])).rows[0];
+  check(conf?.status === 'SCHEDULED' && conf.meet_link === 'https://meet.example.com/ceo-api-room' && Math.abs(new Date(conf.starts_at).getTime() - Date.now()) < 120_000
+    && new Date(conf.ends_at).getTime() - new Date(conf.starts_at).getTime() === 30 * 60_000, 'CEO queue: it starts now, as long as asked, in the room', conf);
+  const outbox = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'QUEUE_CONFIRMED'`, [first])).rows[0].n;
+  check(outbox === 2, 'CEO queue: the "join now" e-mail is queued once each to the employee and the Super Admin', outbox);
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.scheduled?.length === 0, 'CEO queue: a second Exit confirms nothing', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [second])).rows[0]?.status === 'PENDING_AVAILABILITY', 'CEO queue: the next waits for the next Exit');
+  await api('sa', 'POST', '/meetings/presence/enter', {});
+  r = await api('sa', 'POST', '/meetings/presence/exit', {});
+  check(r.status === 200 && r.json.data.scheduled?.[0]?.id === second, 'CEO queue: the next Exit confirms the next one', r);
+  await api('sa', 'POST', '/meetings/settings/room-link', { roomLink: null });
+  await db.query(`delete from public.meetings where title like 'EPX %'`);
+}
+
+// --- Chat: @mentions in groups, reactions, Delete Inbox (migration 20270116000300) -------------------------------------------
+{
+  const idOf = async (email: string) => (await db.query(`select id from public.profiles where email = $1`, [email])).rows[0]?.id as string;
+  const smId = await idOf('sm@amuwa.com');
+  const outsiderId = await idOf('a@amuwa.com');
+  let r = await api('tm2', 'POST', '/chat/groups', { title: 'CX API group', memberIds: [smId] });
+  check(r.status === 201 || r.status === 200, 'chat extras: a group to work in', r);
+  const group = r.json.data.id as string;
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'Please review @Support Member', clientMsgId: crypto.randomUUID(), mentions: [smId] });
+  check(r.status === 201 && r.json.data.mentions?.length === 1 && r.json.data.mentions[0].id === smId, 'chat extras: a message tags a member of the group', r);
+  const msg = r.json.data.id as string;
+  const note = (await db.query(`select entity_type, entity_id, data from public.notifications where recipient_id = $1 and type = 'CHAT_MENTION' and data ->> 'messageId' = $2`, [smId, msg])).rows[0];
+  check(note && note.entity_type === 'chat_mention' && note.entity_id === group, 'chat extras: the tagged member is notified, with the group and the message', note);
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'And @Outsider', clientMsgId: crypto.randomUUID(), mentions: [outsiderId] });
+  check(r.status === 201 && !r.json.data.mentions?.length && /only tag members of this group/.test(r.json.data.mentionWarning ?? ''), 'chat extras: someone outside the group is not tagged (the message stays sent and says why)', r);
+  r = await api('tm2', 'POST', `/chat/conversations/${group}/messages`, { body: 'x', clientMsgId: crypto.randomUUID(), mentions: ['nope'] });
+  check(r.status === 422, 'chat extras: tags must be member ids', r);
+
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '👍' });
+  check(r.status === 200 && r.json.data.reactions[0]?.emoji === '👍' && r.json.data.reactions[0].count === 1, 'chat extras: a member reacts', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '😂' });
+  check(r.status === 200 && r.json.data.reactions.length === 1 && r.json.data.reactions[0].emoji === '😂', 'chat extras: changing the reaction replaces it (no duplicate)', r);
+  r = await api('tm2', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '😂' });
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/reactions?ids=${msg}`);
+  check(r.status === 200 && r.json.data[msg]?.[0]?.count === 2 && r.json.data[msg][0].people.length === 2, 'chat extras: the counts and who reacted', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: null });
+  check(r.status === 200 && r.json.data.reactions[0]?.count === 1, 'chat extras: removing a reaction', r);
+  r = await api('sm', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '🔥' });
+  check(r.status === 422, 'chat extras: only the six offered reactions', r);
+  r = await api('a', 'POST', `/chat/messages/${msg}/reaction`, { emoji: '👍' });
+  check(r.status === 404, 'chat extras: an outsider cannot react', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/messages`);
+  check(r.status === 200 && r.json.data.messages.some((m: any) => m.id === msg && m.reactions?.[0]?.emoji === '😂' && m.mentions?.length === 1), 'chat extras: the history carries reactions and tags', r);
+
+  r = await api('sm', 'POST', '/chat/inbox/clear', {});
+  check(r.status === 200 && r.json.data.scope === 'MINE' && r.json.data.conversations >= 1, 'chat extras: a member deletes their own inbox', r);
+  r = await api('sm', 'GET', '/chat/internal');
+  check(r.status === 200 && !r.json.data.some((c: any) => c.id === group), 'chat extras: the group leaves their list', r);
+  r = await api('tm2', 'GET', `/chat/conversations/${group}/messages`);
+  check(r.json.data.messages.some((m: any) => m.id === msg), 'chat extras: the other member keeps the history', r);
+  r = await api('tm2', 'POST', '/chat/inbox/purge', { confirm: 'DELETE ALL CHATS' });
+  check(r.status === 403, 'chat extras: only the Super Admin can delete everybody\'s chats', r);
+  r = await api('sa', 'POST', '/chat/inbox/purge', { confirm: 'yes' });
+  check(r.status === 422, 'chat extras: the Super Admin must type the confirmation', r);
+  const clientBefore = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind = 'CLIENT'`)).rows[0].n;
+  r = await api('sa', 'POST', '/chat/inbox/purge', { confirm: 'DELETE ALL CHATS' });
+  check(r.status === 200 && r.json.data.scope === 'ALL_INTERNAL' && r.json.data.messages >= 2, 'chat extras: the Super Admin deletes all internal chat history', r);
+  const left = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind in ('DIRECT', 'GROUP') and m.kind = 'TEXT'`)).rows[0].n;
+  const clientAfter = (await db.query(`select count(*)::int n from public.chat_messages m join public.chat_conversations c on c.id = m.conversation_id where c.kind = 'CLIENT'`)).rows[0].n;
+  check(left === 0 && clientAfter === clientBefore, 'chat extras: no internal message is left, client chats are untouched', { left, clientBefore, clientAfter });
+}
+
+// ---------------------------------------------------------------------------
+// Sales Department Head: role-wise sections, phase 1 (migration 20270117000300)
+// ---------------------------------------------------------------------------
+{
+  tokens.set('sh', tokenFor(salesHeadId));
+  const scope = `select p.id from profiles p join teams t on t.id = p.team_id and t.division = 'SALES'
+                  where p.department_id = (select department_id from profiles where id = $1) and p.role = 'TEAM_MEMBER' and p.sales_sub_role = $2 order by p.created_at limit 1`;
+  const tc = (await db.query(scope, [salesHeadId, 'TELECALLER'])).rows[0]?.id as string | undefined;
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people?sort=calls&pageSize=50');
+  check(r.status === 200 && r.json.data.role === 'TELECALLER' && Array.isArray(r.json.data.items) && Array.isArray(r.json.data.teamLeads)
+    && (!tc || r.json.data.items.some((x: any) => x.id === tc && ['ON', 'OFF', 'NOT_SYNCED'].includes(x.metrics.crocodial) && typeof x.metrics.leadsCreated === 'number' && x.employeeCode)),
+    'sales roles API: the head lists their Telecallers with figures', r);
+  check(r.json.data.items.every((x: any) => x.metrics.demosScheduled === undefined && x.metrics.totalCalls === undefined && (x.metrics.crocodial === 'ON' || x.metrics.calls === null)),
+    'sales roles API: a Telecaller row has Telecaller figures only; no call figures without Crocodial', r);
+  r = await api('sh', 'GET', '/sales-head/roles/business-associate/people?search=a&status=ACTIVE');
+  check(r.status === 200 && r.json.data.role === 'BUSINESS_ASSOCIATE' && r.json.data.items.every((x: any) => x.status === 'ACTIVE'), 'sales roles API: the Business Associate list, filtered', r);
+  if (tc) {
+    r = await api('sh', 'GET', `/sales-head/roles/telecaller/people/${tc}?from=2026-01-01&to=2026-01-31`);
+    check(r.status === 200 && r.json.data.person.id === tc && r.json.data.daily.length === 31 && Array.isArray(r.json.data.records.calls) && r.json.data.crocodial?.state,
+      'sales roles API: one Telecaller\'s dashboard for January', r);
+    r = await api('sh', 'GET', `/sales-head/roles/business-associate/people/${tc}`);
+    check(r.status === 404, 'sales roles API: a Telecaller is not found under Business Associate', r);
+    for (const who of ['dh', 'th', 'a', 'sa']) {
+      r = await api(who, 'GET', `/sales-head/roles/telecaller/people/${tc}`);
+      check(r.status === 403, `sales roles API: ${who} cannot open a Telecaller's dashboard`, r);
+    }
+  }
+  r = await api('dh', 'GET', '/sales-head/roles/telecaller/people');
+  check(r.status === 403, 'sales roles API: the Support head cannot open the lists', r);
+  r = await api(null, 'GET', '/sales-head/roles/telecaller/people');
+  check(r.status === 401, 'sales roles API: nor a visitor', r);
+  r = await api('sh', 'GET', `/sales-head/roles/telecaller/people/${crypto.randomUUID()}`);
+  check(r.status === 404, 'sales roles API: someone outside the head\'s Sales teams is not found', r);
+  r = await api('sh', 'GET', '/sales-head/roles/influencer/people');
+  check(r.status === 422, 'sales roles API: an unknown role is refused', r);
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people?from=2026-11-20&to=2026-11-01');
+  check(r.status === 422, 'sales roles API: a start after the end is refused', r);
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people/not-an-id');
+  check(r.status === 422, 'sales roles API: a person id must be an id', r);
+  r = await api('sh', 'GET', '/sales-head/roles/telecaller/people?pageSize=501');
+  check(r.status === 422, 'sales roles API: at most 500 rows at once', r);
+}
+
+// 20270119000100: AI Studio project deadlines (the clock; who sets it; who sees it)
+{
+  let q = await api('sa', 'GET', '/ai-studio/projects');
+  const crm = q.json.data.find((p: any) => p.name === 'AI CRM');
+  const due = new Date(Date.now() + 4 * 86400000).toISOString();
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', description: crm.description ?? undefined, deadlineAt: due });
+  check(q.status === 200 && Date.parse(q.json.data.deadlineAt) === Date.parse(due), 'AI Studio deadline: the Super Admin sets a project deadline', q);
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(Date.parse(q.json.data.find((p: any) => p.id === crm.id).deadlineAt) === Date.parse(due), 'AI Studio deadline: the project list carries it', q);
+  q = await api('sa', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && Math.abs(Date.parse(q.json.data.serverNow) - Date.now()) < 60000 && q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: the clock lists it with the server time', q);
+  q = await api('ail1', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && q.json.data.items.some((i: any) => i.projectId === crm.id && i.mine), 'AI Studio deadline: a Team Lead on the project sees its clock', q);
+  q = await api('aim1', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: so does a Team Member on it', q);
+  q = await api('ail2', 'GET', '/ai-studio/deadlines');
+  check(q.status === 200 && !q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: a Team Lead who is not on the project does not', q);
+  q = await api(null, 'GET', '/ai-studio/deadlines');
+  check(q.status === 401, 'AI Studio deadline: signed-out visitors are refused', q);
+
+  q = await api('ail1', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: new Date(Date.now() + 9 * 86400000).toISOString() });
+  check(q.status === 403, 'AI Studio deadline: a Team Lead cannot change it', q);
+  q = await api('aim1', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: null });
+  check(q.status === 403, 'AI Studio deadline: nor can a Team Member clear it', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: new Date(Date.now() - 3600000).toISOString() });
+  check(q.status === 422, 'AI Studio deadline: a time in the past is refused', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: 'tomorrow' });
+  check(q.status === 422, 'AI Studio deadline: and so is text', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: '2030-01-01T10:00:00' });
+  check(q.status === 422, 'AI Studio deadline: a time without its offset is refused', q);
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(Date.parse(q.json.data.find((p: any) => p.id === crm.id).deadlineAt) === Date.parse(due), 'AI Studio deadline: every refusal left the deadline as it was', q);
+
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', description: 'Edited without touching the deadline' });
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(Date.parse(q.json.data.find((p: any) => p.id === crm.id).deadlineAt) === Date.parse(due), 'AI Studio deadline: an edit that does not mention the deadline keeps it', q);
+  q = await api('sa', 'PATCH', `/ai-studio/projects/${crm.id}`, { name: 'AI CRM', deadlineAt: null });
+  check(q.status === 200 && q.json.data.deadlineAt === null, 'AI Studio deadline: the Super Admin clears it', q);
+  q = await api('sa', 'GET', '/ai-studio/deadlines');
+  check(!q.json.data.items.some((i: any) => i.projectId === crm.id), 'AI Studio deadline: and the clock stops', q);
+  q = await api('sa', 'POST', '/ai-studio/projects', { name: 'AI Deadline Project', deadlineAt: new Date(Date.now() + 2 * 86400000).toISOString() });
+  check(q.status === 201 && q.json.data.deadlineAt, 'AI Studio deadline: a new project can be added with a deadline', q);
+  q = await api('sa', 'POST', '/ai-studio/projects', { name: 'AI Past Project', deadlineAt: new Date(Date.now() - 3600000).toISOString() });
+  q = await api('sa', 'GET', '/ai-studio/projects');
+  check(q.status === 200 && !q.json.data.some((p: any) => p.name === 'AI Past Project'), 'AI Studio deadline: a refused deadline saves no project', q);
+}
+
+// ---------------------------------------------------------------------------
+// Client meetings (migration 20270122000200)
+// ---------------------------------------------------------------------------
+{
+  const inDays = (d: number, h = 0) => new Date(Date.now() + d * 86_400_000 + h * 3_600_000).toISOString();
+  const form = (over: Record<string, unknown> = {}) => ({
+    clientName: 'Meera Shah', clientEmail: 'Meera@Shah.example', companyName: 'Shah Traders', title: 'CMX Walkthrough', agenda: 'Demo and pricing',
+    startsAt: inDays(6), endsAt: inDays(6, 1), mode: 'ONLINE', meetLink: 'https://meet.example.com/abc', clientRequestId: 'cmx-key-0001', ...over
+  });
+  let r = await api('a', 'POST', '/meetings/client', form());
+  check(r.status === 201 && r.json.data.kind === 'CLIENT_MEETING' && r.json.data.clientCompany === 'Shah Traders' && r.json.data.client?.email === 'meera@shah.example'
+    && r.json.data.duplicate === false, 'client meetings API: an employee creates a client meeting', r);
+  const id = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings/client', form());
+  check(r.status === 201 && r.json.data.id === id && r.json.data.duplicate === true, 'client meetings API: the same form again returns the first meeting', r);
+  const queued = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'CONFIRMED' and to_profile_id is null`, [id])).rows[0].n;
+  check(queued === 1, 'client meetings API: one invitation to the client in the e-mail outbox', queued);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0002', meetLink: null }));
+  check(r.status === 422, 'client meetings API: online without a link is refused', r);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0003', mode: 'OFFLINE', meetLink: null }));
+  check(r.status === 422, 'client meetings API: offline without a place is refused', r);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0004', clientEmail: 'nope' }));
+  check(r.status === 422, 'client meetings API: a bad client e-mail is refused', r);
+  r = await api('a', 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0005', extra: true }));
+  check(r.status === 422, 'client meetings API: unknown fields are refused', r);
+  r = await api(null, 'POST', '/meetings/client', form({ clientRequestId: 'cmx-key-0006' }));
+  check(r.status === 401, 'client meetings API: not for visitors', r);
+  r = await api('a', 'GET', '/meetings/client?scope=UPCOMING');
+  check(r.status === 200 && r.json.data.some((m: any) => m.id === id), 'client meetings API: listed for the one who booked it', r);
+  r = await api('tl2', 'GET', '/meetings/client?scope=ALL');
+  check(r.status === 200 && !r.json.data.some((m: any) => m.id === id), 'client meetings API: not for someone else', r);
+  r = await api('a', 'GET', `/meetings/${id}/mails`);
+  check(r.status === 200 && r.json.data.some((x: any) => x.external && x.kind === 'CONFIRMED' && x.toEmail === 'meera@shah.example'), 'client meetings API: the delivery log', r);
+  r = await api('tl2', 'GET', `/meetings/${id}/mails`);
+  check(r.status === 404, 'client meetings API: an outsider cannot read the e-mails', r);
+  const mailId = (await db.query(`select id from public.meeting_mail_outbox where meeting_id = $1 and kind = 'CONFIRMED' and to_profile_id is null`, [id])).rows[0].id;
+  await db.query(`update public.meeting_mail_outbox set status = 'FAILED', attempts = 5, last_error = 'mailbox unavailable' where id = $1`, [mailId]);
+  r = await api('tl2', 'POST', `/meetings/mails/${mailId}/retry`, {});
+  check(r.status === 404, 'client meetings API: an outsider cannot send it again', r);
+  r = await api('a', 'POST', `/meetings/mails/${mailId}/retry`, {});
+  check(r.status === 200, 'client meetings API: the one who booked it sends a failed invitation again', r);
+  const after = (await db.query(`select status, attempts from public.meeting_mail_outbox where id = $1`, [mailId])).rows[0];
+  check(after.status !== 'FAILED' || after.attempts < 5, 'client meetings API: the e-mail is queued again', after);
+  r = await api('a', 'POST', `/meetings/${id}/cancel`, { reason: 'Client postponed' });
+  check(r.status === 200 && r.json.data.status === 'CANCELLED', 'client meetings API: cancelled', r);
+  const cancelMail = (await db.query(`select count(*)::int n from public.meeting_mail_outbox where meeting_id = $1 and kind = 'CANCELLED' and to_profile_id is null`, [id])).rows[0].n;
+  check(cancelMail === 1, 'client meetings API: the cancellation e-mail to the client is queued', cancelMail);
+  await db.query(`delete from public.meetings where title like 'CMX %'`);
+}
+
+// ---------------------------------------------------------------------------
+// Bugs for the Developers team (migrations 20270122000300, 20270122000400): every new bug seen by the whole team; the Team Lead assigns;
+// after assignment only the lead and the assigned developer see it. Each of the three accounts is checked on its own.
+// ---------------------------------------------------------------------------
+{
+  // the API database has nobody named like the three developers: a Team Lead and two developers for this block
+  const leadId = deliveryLead as string, dev1 = deliveryMember as string, dev2 = salesTeamLeadId as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, true), ($2, false), ($3, false)
+                  on conflict (profile_id) do update set is_lead = excluded.is_lead`, [leadId, dev1, dev2]);
+  tokens.set('bd1', tokenFor(dev1));
+  tokens.set('bd2', tokenFor(dev2));
+  let r = await api('tl2', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isLead === true && r.json.data.developers.length === 2 && !r.json.data.developers.some((d: any) => d.id === leadId),
+    'bugs API: the Team Lead has the Bugs section and assigns to the two developers', r);
+  r = await api('bd1', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === true && r.json.data.isLead === false && r.json.data.developers.length === 0, 'bugs API: developer 1 has it (no assignment control)', r);
+  r = await api('bd2', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === true && r.json.data.isLead === false, 'bugs API: developer 2 has it too', r);
+  r = await api('a', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === false && r.json.data.developers.length === 0, 'bugs API: an employee does not', r);
+  r = await api('sa', 'GET', '/bugs/access');
+  check(r.status === 200 && r.json.data.isDeveloper === false, 'bugs API: nor the Super Admin', r);
+
+  const form = { title: 'BGX Report page is blank', description: 'The monthly report page shows nothing after login.', steps: '1. Open Reports', attachmentIds: [], clientRequestId: 'bgx-key-0001' };
+  r = await api('a', 'POST', '/bugs', form);
+  check(r.status === 201 && r.json.data.status === 'PENDING' && r.json.data.assignmentStatus === 'UNASSIGNED' && r.json.data.reference.startsWith('BUG-') && r.json.data.duplicate === false,
+    'bugs API: an employee reports a bug: PENDING, UNASSIGNED', r);
+  const bugA = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', form);
+  check(r.status === 201 && r.json.data.id === bugA && r.json.data.duplicate === true, 'bugs API: the same form again is the same bug', r);
+  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0002', title: 'BGX Second bug' });
+  const bugB = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0003', description: 'short' });
+  check(r.status === 422, 'bugs API: a description is required', r);
+  r = await api(null, 'POST', '/bugs', { ...form, clientRequestId: 'bgx-key-0004' });
+  check(r.status === 401, 'bugs API: not for visitors', r);
+
+  for (const who of ['tl2', 'bd1', 'bd2']) {
+    r = await api(who, 'GET', '/bugs?status=OPEN&assignee=UNASSIGNED');
+    check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && r.json.data.items.some((b: any) => b.id === bugB),
+      `bugs API: ${who} sees both new, unassigned bugs`, r);
+    r = await api(who, 'GET', `/bugs/${bugA}`);
+    check(r.status === 200 && r.json.data.description.startsWith('The monthly report'), `bugs API: ${who} opens the new bug`, r);
+  }
+  r = await api('a', 'GET', '/bugs');
+  check(r.status === 403, 'bugs API: an employee cannot open the Bugs section', r);
+  r = await api('sa', 'GET', '/bugs');
+  check(r.status === 403, 'bugs API: nor the Super Admin', r);
+
+  r = await api('bd1', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 403, 'bugs API: a developer cannot assign, not even to themself', r);
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: leadId });
+  check(r.status === 422, 'bugs API: the lead assigns to a developer, not to herself', r);
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 200 && r.json.data.assigneeId === dev1 && r.json.data.assignmentStatus === 'ASSIGNED' && r.json.data.assignedById === leadId && !!r.json.data.assignedAt,
+    'bugs API: the lead assigns bug A to developer 1 (assigned_to, assigned_by, assigned_at)', r);
+  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: dev2 });
+  check(r.status === 200 && r.json.data.assigneeId === dev2, 'bugs API: and bug B to developer 2', r);
+
+  r = await api('tl2', 'GET', '/bugs');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && r.json.data.items.some((b: any) => b.id === bugB)
+    && r.json.data.byDeveloper.some((d: any) => d.id === dev1 && d.open >= 1), 'bugs API: the lead still sees both, and each developer\'s workload', r);
+  r = await api('bd1', 'GET', '/bugs');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && !r.json.data.items.some((b: any) => b.id === bugB), 'bugs API: developer 1 sees A, not B', r);
+  r = await api('bd1', 'GET', `/bugs/${bugB}`);
+  check(r.status === 404, 'bugs API: developer 1 cannot open B', r);
+  r = await api('bd2', 'GET', '/bugs');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugB) && !r.json.data.items.some((b: any) => b.id === bugA)
+    && r.json.data.counts.MINE >= 1, 'bugs API: developer 2 sees B, not A, and the counts follow', r);
+  r = await api('bd2', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed it myself' });
+  check(r.status === 404, 'bugs API: developer 2 cannot change A', r);
+  r = await api('bd2', 'POST', `/bugs/${bugA}/comment`, { note: 'x' });
+  check(r.status === 404, 'bugs API: nor comment on it', r);
+
+  r = await api('bd1', 'POST', `/bugs/${bugA}/comment`, { note: 'Reproduced on staging' });
+  check(r.status === 201 && r.json.data.history.some((h: any) => h.internal && h.note === 'Reproduced on staging'), 'bugs API: developer 1 comments (internal)', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED' });
+  check(r.status === 422, 'bugs API: resolving needs a note', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed in release 2.4' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED' && r.json.data.resolutionNote === 'Fixed in release 2.4', 'bugs API: developer 1 resolves A', r);
+  r = await api('tl2', 'GET', '/bugs?status=RESOLVED');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA), 'bugs API: the lead sees it resolved', r);
+
+  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: dev1 });
+  check(r.status === 200 && r.json.data.assigneeId === dev1 && r.json.data.assignments.length === 2, 'bugs API: B re-assigned to developer 1; two assignments in the history', r);
+  r = await api('bd2', 'GET', `/bugs/${bugB}`);
+  check(r.status === 404, 'bugs API: developer 2 no longer sees B', r);
+  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: null });
+  check(r.status === 200 && r.json.data.assignmentStatus === 'UNASSIGNED', 'bugs API: un-assigned', r);
+  r = await api('bd2', 'GET', `/bugs/${bugB}`);
+  check(r.status === 200, 'bugs API: every developer sees it again', r);
+  const copies = (await db.query(`select count(*)::int n from public.dev_bugs where title in ('BGX Report page is blank', 'BGX Second bug')`)).rows[0].n;
+  check(copies === 2, 'bugs API: assignments never duplicate a bug', copies);
+
+  r = await api('a', 'GET', '/bugs/mine');
+  check(r.status === 200 && r.json.data.some((b: any) => b.id === bugA && b.status === 'RESOLVED' && b.resolutionNote === 'Fixed in release 2.4'), 'bugs API: the reporter sees the resolution', r);
+  r = await api('a', 'GET', `/bugs/mine/${bugA}`);
+  check(r.status === 200 && !r.json.data.history.some((h: any) => h.internal) && r.json.data.assignments.length === 0, 'bugs API: but never internal comments or the team\'s assignment history', r);
+  r = await api('th', 'GET', `/bugs/mine/${bugA}`);
+  check(r.status === 404, 'bugs API: someone else\'s bug is not found', r);
+  r = await api('sa', 'GET', '/bugs/team');
+  check(r.status === 200 && r.json.data.some((m: any) => m.id === leadId && m.isLead), 'bugs API: the Super Admin sees the team and its lead', r);
+  r = await api('tl2', 'GET', '/bugs/team');
+  check(r.status === 403, 'bugs API: the lead does not manage the list', r);
+  await db.query(`delete from public.dev_bugs where title like 'BGX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = any($1::uuid[])`, [[leadId, dev1, dev2]]);
+}
+
+// ---------------------------------------------------------------------------
+// Incentive payouts (20270123000100): the payout slip PDF, for the person and Accounts only, only once paid
+{
+  const { rows: [m] } = await db.query(`select id, department_id from public.profiles where email = 'a@amuwa.com'`);
+  const memberId = m.id as string;
+  const { rows: [rq] } = await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot, status, channel, reference, paid_on, tds_amount, net_amount, decided_at)
+     values ($1, 1234.50, '{"full":{"kind":"UPI","holderName":"Api Member","upiId":"api.member@okhdfcbank"},"masked":{"kind":"UPI","holderName":"Api Member","upiId":"••••bank"}}',
+             'PAID', 'MANUAL', 'UTR-API-1', current_date, 50.25, 1184.25, now()) returning id`, [memberId]);
+  const { rows: [open] } = await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot) values ($1, 600, '{"full":{},"masked":{}}') returning id`, [memberId]);
+  r = await api('a', 'GET', `/payouts/${rq.id}/slip`);
+  const pdf = r.status === 200 ? Buffer.from(r.json.data.contentBase64, 'base64') : Buffer.alloc(0);
+  check(r.status === 200 && r.json.data.fileName.startsWith('Payout-PO-') && r.json.data.fileName.endsWith('.pdf') && pdf.subarray(0, 4).toString() === '%PDF',
+    'payouts API: the person downloads their payout slip (a PDF)', r.status);
+  r = await api('accm', 'GET', `/payouts/${rq.id}/slip`);
+  check(r.status === 200, 'payouts API: Accounts downloads it too', r.status);
+  r = await api('b', 'GET', `/payouts/${rq.id}/slip`);
+  check(r.status === 403, 'payouts API: a colleague cannot', r);
+  r = await api('a', 'GET', `/payouts/${open.id}/slip`);
+  check(r.status === 409, 'payouts API: no slip before it is paid', r);
+  const { rows: [aud] } = await db.query(`select count(*)::int as n from public.audit_logs where action = 'PAYOUT_SLIP_DOWNLOADED' and entity_id = $1`, [rq.id]);
+  check(aud.n === 2, 'payouts API: every slip download is audited', aud);
+  await db.query(`delete from public.payout_requests where id in ($1, $2)`, [rq.id, open.id]);
+}
+
+// ---------------------------------------------------------------------------
+// Incentive payouts through RazorpayX (20270125000100): a local stand-in for RazorpayX; no real Razorpay is called and no real keys exist
+{
+  const { createHmac } = await import('node:crypto');
+  const rzp = { contacts: 0, funds: 0, payouts: new Map<string, any>(), keys: new Map<string, string>(), fail: null as null | { status: number; description: string }, auth: [] as string[], lose: false };
+  const rzpSrv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      rzp.auth.push(String(req.headers.authorization || ''));
+      const send = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+      const b = raw ? JSON.parse(raw) : {};
+      if (rzp.fail) return send(rzp.fail.status, { error: { code: 'BAD_REQUEST_ERROR', description: rzp.fail.description } });
+      if (req.method === 'POST' && req.url === '/v1/contacts') { rzp.contacts++; return send(201, { id: `cont_${rzp.contacts}`, name: b.name }); }
+      if (req.method === 'POST' && req.url === '/v1/fund_accounts') { rzp.funds++; return send(201, { id: `fa_${rzp.funds}`, account_type: b.account_type }); }
+      if (req.method === 'POST' && req.url === '/v1/payouts') {
+        const key = String(req.headers['x-payout-idempotency'] || '');
+        const known = rzp.keys.get(key);
+        if (known) return send(200, rzp.payouts.get(known));
+        const p = { id: `pout_${rzp.payouts.size + 1}`, status: 'processing', utr: null, amount: b.amount, mode: b.mode, fund_account_id: b.fund_account_id, reference_id: b.reference_id };
+        rzp.payouts.set(p.id, p); rzp.keys.set(key, p.id);
+        // Razorpay took it, but the answer is lost on the way back
+        if (rzp.lose) return send(504, { error: { description: 'Gateway timeout' } });
+        return send(200, p);
+      }
+      const m = req.url?.match(/^\/v1\/payouts\/([^/?]+)$/);
+      if (req.method === 'GET' && m && rzp.payouts.has(m[1])) return send(200, rzp.payouts.get(m[1]));
+      send(404, { error: { description: 'not found' } });
+    });
+  });
+  await new Promise<void>(r => rzpSrv.listen(0, r));
+  const { rows: [m] } = await db.query(`select id, department_id from public.profiles where email = 'a@amuwa.com'`);
+  const memberId = m.id as string;
+  await db.query(`update public.payout_requests set status = 'REJECTED', reason = 'api test cleanup' where profile_id = $1 and status in ('REQUESTED','PROCESSING')`, [memberId]);
+  await db.query(`insert into public.payout_methods (profile_id, kind, holder_name, upi_id) values ($1, 'UPI', 'Api Member', 'api.member@okhdfcbank')
+                  on conflict (profile_id) do update set kind = 'UPI', upi_id = 'api.member@okhdfcbank', rzp_contact_id = null, rzp_fund_account_id = null`, [memberId]);
+  const newRequest = async (amount: number) => (await db.query(
+    `insert into public.payout_requests (profile_id, amount, method_snapshot) values ($1, $2,
+       '{"full":{"kind":"UPI","holderName":"Api Member","upiId":"api.member@okhdfcbank"},"masked":{"kind":"UPI","holderName":"Api Member","upiId":"••••bank"}}') returning id`,
+    [memberId, amount])).rows[0].id as string;
+
+  // not set up: the status says so and paying is refused
+  for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
+  const r1 = await newRequest(1234.50);
+  r = await api('accm', 'GET', '/payouts/razorpay/status');
+  check(r.status === 200 && r.json.data.configured === false, 'razorpay API: not set up without the four settings', r);
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 0 });
+  check(r.status === 409, 'razorpay API: paying through Razorpay is refused until it is set up', r);
+
+  process.env.RAZORPAYX_KEY_ID = 'rzp_test_key';
+  process.env.RAZORPAYX_KEY_SECRET = 'rzp_test_secret';
+  process.env.RAZORPAYX_ACCOUNT_NUMBER = '7878780080316316';
+  process.env.RAZORPAYX_WEBHOOK_SECRET = 'whsec_test_0123456789abcdef';
+  process.env.RAZORPAYX_BASE_URL = `http://127.0.0.1:${(rzpSrv.address() as any).port}/v1`;
+  r = await api('accm', 'GET', '/payouts/razorpay/status');
+  check(r.status === 200 && r.json.data.configured === true, 'razorpay API: set up once the settings exist', r);
+  r = await api('a', 'POST', `/payouts/${r1}/razorpay`, { tds: 0 });
+  check(r.status === 403, 'razorpay API: only Accounts sends a payout', r);
+
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 50.25 });
+  const sent = [...rzp.payouts.values()][0];
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && sent?.amount === 118425 && sent?.mode === 'UPI' && rzp.contacts === 1 && rzp.funds === 1,
+    'razorpay API: Accounts sends 1,234.50 - TDS 50.25 = 118425 paise by UPI; contact and fund account made once', { r, sent });
+  check(rzp.auth.every(a => a === `Basic ${Buffer.from('rzp_test_key:rzp_test_secret').toString('base64')}`), 'razorpay API: every call carries the key (Basic auth)');
+  r = await api('accm', 'POST', `/payouts/${r1}/razorpay`, { tds: 50.25 });
+  check(r.status === 409 && rzp.payouts.size === 1, 'razorpay API: pressing again sends nothing more', r);
+
+  // the webhook: a bad signature, then processed, then the same event again
+  const hook = async (body: unknown, eventId: string, secret = process.env.RAZORPAYX_WEBHOOK_SECRET!) => {
+    const raw = JSON.stringify(body);
+    const sig = createHmac('sha256', secret).update(raw).digest('hex');
+    return api(null, 'POST', '/internal/razorpay/payouts', undefined, raw, { 'x-razorpay-signature': sig, 'x-razorpay-event-id': eventId });
+  };
+  const processed = { event: 'payout.processed', payload: { payout: { entity: { id: sent.id, status: 'processed', utr: 'UTR-RZP-1' } } } };
+  r = await hook(processed, 'evt_api_1', 'wrong-secret-0123456789');
+  check(r.status === 401, 'razorpay API: a webhook with a bad signature is refused', r);
+  r = await hook(processed, 'evt_api_1');
+  const { rows: [paid] } = await db.query(`select status, reference, net_amount, expense_id from public.payout_requests where id = $1`, [r1]);
+  check(r.status === 200 && paid.status === 'PAID' && paid.reference === 'UTR-RZP-1' && Number(paid.net_amount) === 1184.25 && paid.expense_id,
+    'razorpay API: payout.processed marks it paid with the UTR and records the expense', { r, paid });
+  r = await hook(processed, 'evt_api_1');
+  check(r.status === 200 && r.json.data.ignored === true, 'razorpay API: the same event twice changes nothing', r);
+  r = await hook({ event: 'payout.reversed', payload: { payout: { entity: { id: sent.id, status: 'reversed', utr: 'UTR-RZP-1', status_details: { description: 'Account closed' } } } } }, 'evt_api_2');
+  const { rows: [rev] } = await db.query(`select status, reason, expense_id from public.payout_requests where id = $1`, [r1]);
+  check(rev.status === 'REVERSED' && rev.reason === 'Account closed' && rev.expense_id === null, 'razorpay API: payout.reversed after it was paid: REVERSED, the expense removed', rev);
+
+  // Razorpay refuses before a payout exists: back to waiting with Razorpay's message; a retry later reuses the same contact
+  const r2 = await newRequest(700);
+  rzp.fail = { status: 400, description: 'Insufficient balance' };
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay`, { tds: 0 });
+  const { rows: [back] } = await db.query(`select status from public.payout_requests where id = $1`, [r2]);
+  check(r.status === 422 && /Insufficient balance/.test(r.json.error.message) && back.status === 'REQUESTED', 'razorpay API: refused by Razorpay: back to waiting, with the reason', { r, back });
+  rzp.fail = null;
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay`, { tds: 0 });
+  check(r.status === 200 && rzp.contacts === 1, 'razorpay API: the second try reuses the Razorpay contact', { r, contacts: rzp.contacts });
+
+  // a missed webhook: Check status asks Razorpay
+  const p2 = [...rzp.payouts.values()].find((p: any) => p.amount === 70000);
+  p2.status = 'processed'; p2.utr = 'UTR-RZP-2';
+  r = await api('accm', 'POST', `/payouts/${r2}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: Check status settles a payout whose webhook was missed', r);
+  r = await api('a', 'POST', `/payouts/${r2}/razorpay/check`);
+  check(r.status === 403, 'razorpay API: only Accounts checks', r);
+
+  // Razorpay accepted the payout but its answer was lost: the request stays being sent (never back to waiting, never payable by hand);
+  // Check status sends it again with the same idempotency key, which gives back the same payout - one payout in all
+  const r3 = await newRequest(600);
+  rzp.lose = true;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay`, { tds: 0 });
+  const { rows: [lost] } = await db.query(`select status, rzp_status from public.payout_requests where id = $1`, [r3]);
+  check(r.status === 200 && r.json.data.status === 'PROCESSING' && lost.status === 'PROCESSING' && lost.rzp_status === 'sending',
+    'razorpay API: an answer lost after Razorpay took it leaves the withdrawal being sent, not waiting', { r, lost });
+  rzp.lose = false;
+  const before = rzp.payouts.size;
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && rzp.payouts.size === before, 'razorpay API: Check status sends it again with the same key: still one payout', { r, size: rzp.payouts.size, before });
+  const p3 = [...rzp.payouts.values()].find((p: any) => p.amount === 60000);
+  p3.status = 'processed'; p3.utr = 'UTR-RZP-3';
+  r = await api('accm', 'POST', `/payouts/${r3}/razorpay/check`);
+  check(r.status === 200 && r.json.data.status === 'PAID', 'razorpay API: and settles it once Razorpay has paid it', r);
+
+  await db.query(`delete from public.department_expenses where id in (select expense_id from public.payout_requests where id = any($1::uuid[]))`, [[r1, r2, r3]]);
+  await db.query(`delete from public.payout_requests where id = any($1::uuid[])`, [[r1, r2, r3]]);
+  await db.query(`delete from public.razorpay_events where event_id like 'evt_api_%'`);
+  for (const k of ['RAZORPAYX_KEY_ID', 'RAZORPAYX_KEY_SECRET', 'RAZORPAYX_ACCOUNT_NUMBER', 'RAZORPAYX_WEBHOOK_SECRET', 'RAZORPAYX_BASE_URL']) delete process.env[k];
+  rzpSrv.close();
+}
+
+{
+  console.log('--- meeting summaries (20270124000200): attendance, the responsible leader, submission, the CEO reports');
+  const idOf = async (who: string) => (await api(who, 'GET', '/me')).json.data.id as string;
+  const [thId, aId] = [await idOf('th'), await idOf('a')];
+  // a team meeting that took place two hours ago: the Team Lead hosts, member A attends
+  const mk = async (title: string, kind = 'MEETING') => {
+    const id = (await db.query(`insert into public.meetings (kind, title, description, host_id, created_by, starts_at, ends_at, status, booked_via, google_sync_status)
+      values ($1, $2, 'Weekly review', $3, $3, now() - interval '2 hours', now() - interval '1 hour', 'SCHEDULED', 'STAFF', 'SKIPPED') returning id`, [kind, title, thId])).rows[0].id as string;
+    await db.query(`insert into public.meeting_attendees (meeting_id, profile_id, role, response) values ($1, $2, 'REQUIRED', 'ACCEPTED')`, [id, aId]);
+    return id;
+  };
+  const mid = await mk('API MS weekly review');
+  let rs = await api(null, 'GET', `/meetings/${mid}/summary`);
+  check(rs.status === 401, 'summaries: a sign-in is needed', rs);
+  rs = await api('th', 'GET', `/meetings/${mid}/summary`);
+  check(rs.status === 200 && rs.json.data.eligible === true && rs.json.data.summary.status === 'PENDING' && rs.json.data.can.confirmAttendance === true,
+    'summaries: the host sees a pending summary and may confirm attendance', rs);
+  rs = await api('a', 'POST', `/meetings/${mid}/summary/attendance`, { attendedIds: [aId] });
+  check(rs.status === 403, 'summaries: an attendee cannot confirm attendance', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/attendance`, { attendedIds: [] });
+  check(rs.status === 422, 'summaries: attendance needs at least one person (validated before the database)', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/attendance`, { attendedIds: [thId, aId] });
+  check(rs.status === 200 && rs.json.data.summary.owner?.id === thId && rs.json.data.summary.ownerMethod === 'SENIORITY',
+    'summaries: the Team Lead who attended with their member is responsible', rs);
+  const version = rs.json.data.summary.version as number;
+  const body = (extra: Record<string, unknown> = {}) => ({
+    version,
+    summary: {
+      executiveSummary: 'Reviewed weekly follow-ups and agreed on a daily morning check of pending leads.',
+      discussionPoints: ['Follow-ups'],
+      decisions: [{ key: '11111111-1111-4111-8111-111111111111', title: 'Daily morning check' }],
+      actions: [{ key: '22222222-2222-4222-8222-222222222222', title: 'Check pending leads', assigneeId: aId, priority: 'HIGH' }],
+      noBlockers: true,
+      ...extra
+    }
+  });
+  rs = await api('a', 'POST', `/meetings/${mid}/summary/submit`, body());
+  check(rs.status === 403, 'summaries: a member cannot submit the Team Lead\'s summary', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body({ executiveSummary: '   ' }));
+  check(rs.status === 422, 'summaries: a blank executive summary is refused', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body({ decisions: [] }));
+  check(rs.status === 422, 'summaries: no decisions without "No decisions were made"', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/complete`, {});
+  check(rs.status === 409, 'summaries: "Mark done" does not complete a team meeting without its summary', rs);
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body());
+  check(rs.status === 200 && rs.json.data.summary.status === 'SUBMITTED' && rs.json.data.summary.revisionNo === 1, 'summaries: the Team Lead submits the summary', rs);
+  check((await db.query(`select status from public.meetings where id = $1`, [mid])).rows[0].status === 'COMPLETED', 'summaries: the meeting is completed with it');
+  rs = await api('th', 'POST', `/meetings/${mid}/summary/submit`, body());
+  check(rs.status === 409, 'summaries: the same submission again (old version) is a conflict', rs);
+  check(Number((await db.query(`select count(*) from public.meeting_summary_decisions d join public.meeting_summaries s on s.id = d.summary_id where s.meeting_id = $1`, [mid])).rows[0].count) === 1,
+    'summaries: and created nothing twice');
+  rs = await api('a', 'GET', `/meetings/${mid}/summary`);
+  check(rs.status === 200 && rs.json.data.summary.content?.decisions?.[0]?.title === 'Daily morning check', 'summaries: the attendee reads the submitted summary', rs);
+  rs = await api('a', 'GET', `/meetings/${crypto.randomUUID()}/summary`);
+  check(rs.status === 404, 'summaries: a guessed id finds nothing', rs);
+  rs = await api('a', 'GET', '/meetings/summaries/actions');
+  check(rs.status === 200 && rs.json.data.some((x: any) => x.title === 'Check pending leads'), 'summaries: the assignee sees the action item', rs);
+  rs = await api('th', 'GET', '/meetings/summaries?scope=MINE&tab=SUBMITTED');
+  check(rs.status === 200 && rs.json.data.items.some((x: any) => x.meetingId === mid), 'summaries: the Team Lead\'s submitted list has it', rs);
+
+  console.log('--- meeting summaries: the CEO reports are the Super Admin\'s only');
+  for (const who of ['th', 'dh', 'a']) {
+    rs = await api(who, 'GET', '/meetings/reports');
+    check(rs.status === 403, `summaries: ${who} cannot list the CEO reports`, rs);
+    rs = await api(who, 'GET', `/meetings/reports/${mid}`);
+    check(rs.status === 403, `summaries: ${who} cannot open a CEO report`, rs);
+    rs = await api(who, 'POST', `/meetings/${mid}/summary/clarifications`, { message: 'Why this way?' });
+    check(rs.status === 403, `summaries: ${who} cannot ask for a clarification`, rs);
+  }
+  rs = await api('sa', 'GET', '/meetings/reports?status=SUBMITTED');
+  check(rs.status === 200 && rs.json.data.items.some((x: any) => x.meetingId === mid && x.decisions === 1), 'summaries: the CEO lists the submitted report', rs);
+  rs = await api('sa', 'GET', '/meetings/reports?from=2026-02-10&to=2026-02-01');
+  check(rs.status === 422, 'summaries: a period that ends before it starts is refused', rs);
+  rs = await api('sa', 'GET', '/meetings/reports/overview');
+  check(rs.status === 200 && rs.json.data.submitted >= 1 && rs.json.data.decisions >= 1, 'summaries: the CEO overview counts it', rs);
+  rs = await api('sa', 'GET', `/meetings/reports/${mid}`);
+  check(rs.status === 200 && rs.json.data.summary.content.actions[0].assigneeName && !JSON.stringify(rs.json.data).includes('meetLink'),
+    'summaries: the CEO opens the report (outcome fields only)', rs);
+  rs = await api('sa', 'POST', `/meetings/${mid}/summary/clarifications`, { message: 'Who checks the weekend leads?' });
+  check(rs.status === 201 && rs.json.data.summary.status === 'REVISION_REQUESTED', 'summaries: the CEO asks for a clarification', rs);
+  rs = await api('sa', 'GET', '/meetings/reports/actions?status=OPEN');
+  check(rs.status === 200 && rs.json.data.items.some((x: any) => x.title === 'Check pending leads'), 'summaries: the CEO follows the action items', rs);
+
+  console.log('--- meeting summaries: other meetings are unchanged');
+  const appt = await mk('API MS appointment', 'APPOINTMENT');
+  rs = await api('th', 'POST', `/meetings/${appt}/complete`, {});
+  check(rs.status === 200 && rs.json.data.status === 'COMPLETED', 'summaries: an appointment is still marked done as before', rs);
+  rs = await api('th', 'GET', `/meetings/${appt}/summary`);
+  check(rs.status === 200 && rs.json.data.eligible === false && rs.json.data.summary === null, 'summaries: and has no summary', rs);
+}
+// --- Issue routing (migration 20270128000200): HR or the Developer Team, the conversation, HR's escalation (once), HR's sort / routing filter ---
+{
+  const leadId = deliveryLead as string, dev1 = deliveryMember as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, true), ($2, false)
+                  on conflict (profile_id) do update set is_lead = excluded.is_lead`, [leadId, dev1]);
+  tokens.set('rd1', tokenFor(dev1));
+  const key = () => `irx-${crypto.randomUUID().slice(0, 18)}`;
+  const deptId = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  const memberId = (await db.query(`select id from public.profiles where email = 'a@amuwa.com'`)).rows[0].id as string;
+
+  // an employee's issue to the Developer Team: category and priority; checked by the schema
+  let r = await api('a', 'POST', '/bugs', { title: 'IRX Export is slow', description: 'The customer export takes ten minutes.', clientRequestId: key(), category: 'PERFORMANCE', priority: 'HIGH' });
+  check(r.status === 201 && r.json.data.category === 'PERFORMANCE' && r.json.data.priority === 'HIGH' && r.json.data.source === 'EMPLOYEE', 'issue routing API: an issue to the Developer Team, with category and priority', r);
+  const bugA = r.json.data.id as string;
+  r = await api('a', 'POST', '/bugs', { title: 'IRX Bad', description: 'The customer export takes ten minutes.', clientRequestId: key(), category: 'COFFEE' });
+  check(r.status === 422, 'issue routing API: an unknown category is refused', r);
+  r = await api('a', 'POST', '/bugs', { title: 'IRX Old form', description: 'An old browser sends no category or priority.', clientRequestId: key() });
+  check(r.status === 201 && r.json.data.category === 'BUG' && r.json.data.priority === 'MEDIUM', 'issue routing API: an older form without them still works (Bug, Medium)', r);
+  check((await db.query(`select count(*)::int n from public.employee_issues where title like 'IRX %'`)).rows[0].n === 0, 'issue routing API: nothing reached HR');
+  r = await api('a', 'GET', '/bugs/mine?status=OPEN&search=IRX%20Export');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === bugA, 'issue routing API: the reporter\'s list is filtered in the database', r);
+  r = await api('a', 'GET', '/bugs/mine?status=SOMETIMES');
+  check(r.status === 422, 'issue routing API: the list filter is checked', r);
+
+  // HR reports one, with the affected department and employee
+  r = await api('hrmember', 'POST', '/bugs', { title: 'IRX Payslips missing', description: 'The payslip export has no rows this month.', clientRequestId: key(), category: 'DATA_ISSUE',
+    priority: 'URGENT', affectedDepartmentId: deptId, affectedEmployeeId: memberId });
+  check(r.status === 201 && r.json.data.source === 'HR_REPORT' && r.json.data.affectedEmployeeId === memberId && r.json.data.affectedDepartment, 'issue routing API: HR reports one, about a department and an employee', r);
+  r = await api('hrmember', 'POST', '/bugs', { title: 'IRX Bad', description: 'The payslip export has no rows this month.', clientRequestId: key(), affectedEmployeeId: 'nobody' });
+  check(r.status === 422, 'issue routing API: the affected employee must be an id', r);
+
+  // the conversation: the assigned developer asks, the reporter answers
+  r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
+  check(r.status === 200, 'issue routing API: assigned', r);
+  r = await api('rd1', 'POST', `/bugs/${bugA}/reply`, { message: 'Which export: customers or leads?', requestInfo: true });
+  check(r.status === 201 && r.json.data.status === 'NEEDS_INFO', 'issue routing API: the developer asks for information: Pending Information', r);
+  r = await api('a', 'POST', `/bugs/${bugA}/reply`, { message: 'Hello' });
+  check(r.status === 403, 'issue routing API: an employee never replies as a developer', r);
+  r = await api('th', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'Me too' });
+  check(r.status === 404, 'issue routing API: nobody follows up on someone else\'s issue', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'The customers export.' });
+  check(r.status === 201 && r.json.data.status === 'IN_PROGRESS' && r.json.data.history.some((h: any) => h.kind === 'MESSAGE' && h.data.from === 'REPORTER'), 'issue routing API: the reporter answers: back to the developer', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: '' });
+  check(r.status === 422, 'issue routing API: a follow-up needs words', r);
+  r = await api('rd1', 'POST', `/bugs/${bugA}/status`, { status: 'CLOSED' });
+  check(r.status === 200 && r.json.data.status === 'CLOSED', 'issue routing API: Closed is a status', r);
+  r = await api('a', 'POST', `/bugs/mine/${bugA}/follow-up`, { message: 'Still slow' });
+  check(r.status === 409, 'issue routing API: a closed issue takes no more messages', r);
+
+  // HR escalates an employee issue, once
+  r = await api('a', 'POST', '/employee/issues', { clientRequestId: crypto.randomUUID(), title: 'IRX CRM logs me out', category: 'TECHNICAL_SYSTEM', description: 'The CRM logs me out every ten minutes.', priority: 'HIGH' });
+  check(r.status === 201 && r.json.data.recipient === 'HR' && r.json.data.routing === 'WITH_HR', 'issue routing API: an issue to HR says so', r);
+  const issueId = r.json.data.id as string;
+  r = await api('a', 'POST', `/hr/issues/${issueId}/escalate`, {});
+  check(r.status === 403, 'issue routing API: an employee cannot escalate', r);
+  r = await api('hr', 'POST', `/hr/issues/${issueId}/escalate`, { category: 'NOPE' });
+  check(r.status === 422, 'issue routing API: the escalation is checked', r);
+  r = await api('hr', 'POST', `/hr/issues/${issueId}/escalate`, { note: 'Seen on two laptops.', category: 'ACCESS_LOGIN' });
+  check(r.status === 200 && r.json.data.duplicate === false && r.json.data.issue.routing === 'ESCALATED_TO_DEVELOPERS' && /^BUG-/.test(r.json.data.issue.escalation?.reference ?? ''),
+    'issue routing API: HR escalates it to the Developer Team', r);
+  const escBug = r.json.data.issue.escalation.bugId as string;
+  r = await api('hrmember', 'POST', `/hr/issues/${issueId}/escalate`, {});
+  check(r.status === 200 && r.json.data.duplicate === true && r.json.data.issue.escalation.bugId === escBug, 'issue routing API: another HR person (or a retry) gets the same one', r);
+  check((await db.query(`select count(*)::int n from public.dev_bugs where source_issue_id = $1`, [issueId])).rows[0].n === 1, 'issue routing API: one Developer Team issue only');
+  r = await api('rd1', 'GET', `/bugs/${escBug}`);
+  check(r.status === 200 && r.json.data.source === 'HR_ESCALATION' && r.json.data.affectedEmployeeId === memberId && r.json.data.priority === 'HIGH', 'issue routing API: the developers see where it came from and whom it affects', r);
+  r = await api('rd1', 'POST', `/bugs/${escBug}/status`, { status: 'UNDER_REVIEW' });
+  check(r.status === 403, 'issue routing API: only the developer it is assigned to (or the lead) changes its status', r);
+  r = await api('tl2', 'POST', `/bugs/${escBug}/status`, { status: 'RESOLVED', note: 'Sessions now last 8 hours.' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED', 'issue routing API: the lead resolves it', r);
+  r = await api('a', 'GET', `/employee/issues/${issueId}`);
+  check(r.status === 200 && r.json.data.issue.escalation?.status === 'RESOLVED' && r.json.data.events.some((e: any) => e.kind === 'DEV_UPDATE' && /8 hours/.test(e.body ?? '')),
+    'issue routing API: the employee follows the developers\' progress on their issue', r);
+  r = await api('hrmember', 'GET', `/hr/issues/${issueId}`);
+  check(r.status === 200 && r.json.data.escalationHistory.some((h: any) => h.kind === 'STATUS' && h.data.to === 'RESOLVED'), 'issue routing API: every HR person sees the developers\' answers', r);
+
+  // HR's list: sort and routing
+  r = await api('hr', 'GET', '/hr/issues?routing=ESCALATED_TO_DEVELOPERS&search=IRX&sort=PRIORITY');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === issueId, 'issue routing API: HR lists the escalated issues', r);
+  r = await api('hr', 'GET', '/hr/issues?routing=WITH_HR&search=IRX');
+  check(r.status === 200 && r.json.data.items.length === 0, '... and the ones still with HR', r);
+  r = await api('hr', 'GET', '/hr/issues?sort=RANDOM');
+  check(r.status === 422, 'issue routing API: the sort order is checked', r);
+  r = await api('hr', 'GET', '/hr/issues/overview');
+  check(r.status === 200 && r.json.data.escalated >= 1, 'issue routing API: the overview counts the escalated issues', r);
+
+  await db.query(`delete from public.dev_bugs where title like 'IRX %'`);
+  await db.query(`delete from public.employee_issues where title like 'IRX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = any($1::uuid[])`, [[leadId, dev1]]);
+}
+
+// Notification reliability (20270126000200): the outbox end to end through the real API (fake push service, real VAPID + aes128gcm),
+// retries, a 410 switching a device off, the self and admin test notifications, the scheduler run record and Notification Health.
+{
+  console.log('--- notification reliability: outbox, retries, tests, Notification Health');
+  const { rows: [emp] } = await db.query(`select id from public.profiles where status = 'ACTIVE' and role = 'TEAM_MEMBER' order by created_at limit 1`);
+  tokens.set('nr', tokenFor(emp.id));
+  let rn = await api(null, 'GET', '/notifications/health');
+  check(rn.status === 401, 'health: 401 signed out', rn);
+  rn = await api('nr', 'GET', '/notifications/health');
+  check(rn.status === 403, 'health: a team member is refused (FORBIDDEN from the database)', rn);
+  rn = await api('sa', 'GET', '/notifications/health?issue=NOPE');
+  check(rn.status === 422, 'health: an unknown issue is a validation error', rn);
+  rn = await api('sa', 'GET', '/notifications/health');
+  check(rn.status === 200 && rn.json.data.pushConfigured === false && Array.isArray(rn.json.data.employees) && rn.json.data.employees.length > 0
+        && rn.json.data.employees.every((e: any) => e.status === 'PUSH_UNAVAILABLE' || e.status === 'REMINDERS_DISABLED' || e.status === 'COMPANY_PAUSED'),
+    'health: without VAPID keys nobody is shown as ready (PUSH_UNAVAILABLE)', rn.json?.data?.summary);
+  rn = await api('hr', 'GET', '/notifications/health?role=TEAM_MEMBER');
+  check(rn.status === 200 && rn.json.data.employees.every((e: any) => e.role === 'TEAM_MEMBER'), 'health: HR opens it with a role filter', rn.status);
+
+  // push switched on for this block: a generated VAPID key and a fake push service that answers what `plan` says
+  const subtle = globalThis.crypto.subtle;
+  const vk = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  process.env.VAPID_PRIVATE_KEY = JSON.stringify(await subtle.exportKey('jwk', vk.privateKey));
+  process.env.VAPID_SUBJECT = 'mailto:hr@example.com';
+  const savedPublic = process.env.VAPID_PUBLIC_KEY;
+  delete process.env.VAPID_PUBLIC_KEY;
+  const b64u = (b: ArrayBuffer | Uint8Array) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString('base64url');
+  const dev = async () => b64u(await subtle.exportKey('raw', (await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey));
+  const realFetch = globalThis.fetch;
+  const pushed: string[] = [];
+  const plan: number[] = [];
+  // answers for one device (the pushes run concurrently, so they reach the push service in any order)
+  const planFor: Record<string, number[]> = {};
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://push.example.com/')) {
+      pushed.push(url);
+      const device = url.split('/').pop() ?? '';
+      return new Response(null, { status: planFor[device]?.shift() ?? plan.shift() ?? 201 });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  // no real reminder may be due during this block (it would take answers from the plan)
+  const { rows: [saved] } = await db.query(`select reminders_paused_on from public.attendance_settings where id`);
+  await db.query(`update public.attendance_settings set reminders_paused_on = private.office_today() where id`);
+  try {
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
+    await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) values
+                      ($1, 'https://push.example.com/nr-phone', $2, $3, 'Chrome on Android'), ($1, 'https://push.example.com/nr-laptop', $4, $5, 'Edge on Windows')`,
+      [emp.id, await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16))), await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16)))]);
+    rn = await api('nr', 'GET', '/attendance/push-key');
+    check(rn.status === 200 && typeof rn.json.data.publicKey === 'string' && rn.json.data.publicKey.length > 80, 'push-key: the public key once VAPID is configured');
+    plan.push(201, 201);
+    rn = await api('nr', 'POST', '/attendance/push-test', {});
+    check(rn.status === 200 && rn.json.data.sent === 2 && rn.json.data.devices === 2 && pushed.length === 2, 'self test: both devices accepted by the push service', rn);
+    check((await db.query(`select 1 from public.notification_deliveries where profile_id = $1 and kind = 'TEST' and status = 'ACCEPTED_BY_PUSH_SERVICE'`, [emp.id])).rowCount === 2,
+      'self test: two deliveries ACCEPTED_BY_PUSH_SERVICE');
+
+    // a queued delivery per device: one push service is busy (503), the other says the device is gone (410)
+    await db.query(`insert into public.notification_deliveries (kind, profile_id, subscription_id, device_label, title, body, tag, url, expires_at)
+                    select 'TEST', profile_id, id, label, 'Queued', 'x', 'crm-test', '/?open=attendance', now() + interval '1 hour'
+                      from public.push_subscriptions where endpoint in ('https://push.example.com/nr-phone', 'https://push.example.com/nr-laptop') order by endpoint desc`);
+    pushed.length = 0;
+    planFor['nr-phone'] = [503];
+    planFor['nr-laptop'] = [410];
+    const reminders = () => fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: { authorization: 'Bearer dispatch-secret-0123456789' } })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    let run = await reminders();
+    check(run.status === 200 && run.json.data.mode === 'outbox' && run.json.data.push === 'on' && run.json.data.deliveries.attempted === 2
+          && run.json.data.deliveries.retry === 1 && run.json.data.deliveries.gone === 1, 'scheduled run: the outbox is sent (one retry, one gone)', run.json);
+    const states = async () => Object.fromEntries((await db.query(`select s.endpoint, n.status, s.active, s.deactivated_reason from public.notification_deliveries n
+      join public.push_subscriptions s on s.id = n.subscription_id where n.title = 'Queued' and n.profile_id = $1`, [emp.id])).rows.map((x: any) => [x.endpoint.split('/').pop(), x]));
+    let st = await states();
+    check(st['nr-phone'].status === 'RETRY_PENDING' && st['nr-laptop'].status === 'FAILED' && st['nr-laptop'].active === false
+          && st['nr-laptop'].deactivated_reason === 'EXPIRED_AT_PUSH_SERVICE', 'scheduled run: 503 waits for a retry, 410 switches the device off', st);
+    run = await reminders();
+    check(run.status === 200 && run.json.data.deliveries.attempted === 0, 'scheduled run: a retry is not sent before its time (no hammering)', run.json);
+    await db.query(`update public.notification_deliveries set next_attempt_at = now() - interval '1 second' where status = 'RETRY_PENDING' and profile_id = $1`, [emp.id]);
+    run = await reminders();
+    st = await states();
+    check(run.json.data.deliveries.accepted === 1 && st['nr-phone'].status === 'ACCEPTED_BY_PUSH_SERVICE', 'scheduled run: the retry is accepted on the next run', run.json);
+    const { rows: runs } = await db.query(`select ok, push_configured, attempted, accepted, retry, gone from public.notification_scheduler_runs order by id desc limit 3`);
+    check(runs.length === 3 && runs.every((x: any) => x.ok && x.push_configured) && runs[2].retry === 1 && runs[2].gone === 1 && runs[0].accepted === 1,
+      'every scheduled run is recorded with its counts', runs);
+
+    // HR / the Super Admin: a controlled test to one employee, and the health report now that push works
+    rn = await api('nr', 'POST', `/notifications/health/${emp.id}/test`, {});
+    check(rn.status === 403, 'admin test: an employee cannot test someone else (or themselves this way)', rn);
+    pushed.length = 0;
+    plan.push(201);
+    rn = await api('sa', 'POST', `/notifications/health/${emp.id}/test`, {});
+    check(rn.status === 200 && rn.json.data.devices === 1 && rn.json.data.sent === 1 && rn.json.data.pushConfigured === true && pushed.length === 1,
+      'admin test: sent to the one active device and accepted', rn);
+    check((await db.query(`select 1 from public.audit_logs where action = 'NOTIFICATION_TEST_SENT' and entity_id = $1`, [emp.id])).rowCount >= 1, 'admin test: audited');
+    // (the company pause of this block would rightly show everyone as COMPANY_PAUSED)
+    await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
+    rn = await api('sa', 'GET', '/notifications/health');
+    const me = rn.json.data.employees.find((e: any) => e.profileId === emp.id);
+    check(rn.status === 200 && rn.json.data.pushConfigured === true && me && me.status === 'READY' && me.activeDevices === 1 && me.expiredDevices === 1 && me.lastAcceptedAt,
+      'health: the employee is READY (a recent push-service acceptance), with the expired device counted', me);
+    check(rn.json.data.scheduler.health === 'HEALTHY' && rn.json.data.scheduler.lastSuccessAt, 'health: the scheduler is HEALTHY', rn.json.data.scheduler);
+    check(!JSON.stringify(rn.json).includes('push.example.com') && !/p256dh/.test(JSON.stringify(rn.json)), 'health: no device address or key in the answer');
+    rn = await api('hr', 'GET', `/notifications/health/${emp.id}`);
+    check(rn.status === 200 && rn.json.data.devices.length === 2 && rn.json.data.deliveries.length >= 5 && !JSON.stringify(rn.json).includes('push.example.com'),
+      'health detail: devices and deliveries without addresses', rn.status);
+    rn = await api('sa', 'GET', '/notifications/health/not-a-uuid');
+    check(rn.status === 422, 'health detail: an invalid id is a validation error', rn);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.VAPID_PRIVATE_KEY;
+    delete process.env.VAPID_SUBJECT;
+    if (savedPublic !== undefined) process.env.VAPID_PUBLIC_KEY = savedPublic;
+    await db.query(`update public.attendance_settings set reminders_paused_on = $1 where id`, [saved.reminders_paused_on]);
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/nr-%'`);
+  }
+}
+// Email management (20270201000100): the real router and the shared record through PostgREST: CC rules resolved from the database, one
+// send per business event, no copies of authentication e-mail, the signed Resend webhook, shared suppression, the Super Admin's API.
+{
+  console.log('--- email management: router, rules, idempotency, auth privacy, webhook, suppression, admin API');
+  const { sendEmail } = await import('../../server/automations/providers.js');
+  const { automationSettings } = await import('../../server/automations/config.js');
+  const mails: { path: string; headers: http.IncomingHttpHeaders; body: any }[] = [];
+  let n = 0;
+  const mailSrv = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      mails.push({ path: (req.url || '').split('?')[0], headers: req.headers, body: raw ? JSON.parse(raw) : null });
+      res.writeHead(200, { 'content-type': 'application/json', 'x-resend-daily-quota': '5', 'x-resend-monthly-quota': '41' });
+      res.end(JSON.stringify({ id: `re_api_${++n}` }));
+    });
+  });
+  await new Promise<void>(rs => mailSrv.listen(0, rs));
+  const saved = Object.fromEntries(['EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_CC', 'EMAIL_BCC', 'EMAIL_FROM', 'RESEND_WEBHOOK_SECRET', 'SMTP_HOST'].map(k => [k, process.env[k]]));
+  Object.assign(process.env, { EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_api_key', EMAIL_API_BASE_URL: `http://127.0.0.1:${(mailSrv.address() as any).port}`,
+    EMAIL_FROM: 'Amuwa Corporation <no-reply@amuwa.com>', EMAIL_CC: '', EMAIL_BCC: '' });
+  delete process.env.SMTP_HOST;
+  await db.query(`delete from public.email_recipient_rules; delete from public.email_suppressions where email like '%@email-api.example'`);
+  const { rows: [cust] } = await db.query(`select id from public.customers order by created_at limit 1`);
+  try {
+    // the Super Admin's API (and nobody else's)
+    let r = await api('hr', 'GET', '/email/admin/overview');
+    check(r.status === 403, 'email admin: HR cannot open Email Management', r);
+    r = await api('sa', 'GET', '/email/admin/overview');
+    check(r.status === 200 && r.json.data.diagnostics.route.join() === 'resend' && r.json.data.diagnostics.configured.resend === true
+          && !JSON.stringify(r.json).includes('re_api_key'), 'email admin: the overview shows the route and never the key', r.json?.data?.diagnostics);
+    r = await api('sa', 'POST', '/email/admin/settings', { providerOrder: ['resend', 'gmail'] });
+    check(r.status === 422, 'email admin: an unknown provider is a validation error', r);
+    r = await api('sa', 'POST', '/email/admin/rules', { name: 'Invoices → Accounts mailbox', category: 'INVOICE', mode: 'CC', target: 'ADDRESS', addresses: ['accounts@amuwa.com'], enabled: true });
+    check(r.status === 200 && r.json.data.rules.some((x: any) => x.name === 'Invoices → Accounts mailbox'), 'email admin: the Super Admin adds a CC rule', r);
+    const ruleId = r.json.data.rules.find((x: any) => x.name === 'Invoices → Accounts mailbox').id;
+    r = await api('sa', 'POST', '/email/admin/rules', { name: 'x', category: 'AUTH', mode: 'BCC', target: 'ADDRESS', addresses: ['audit@amuwa.com'] });
+    check(r.status === 422, 'email admin: no rule may copy authentication e-mail', r);
+    r = await api('sa', 'POST', `/email/admin/rules/${ruleId}/preview`, { customerId: cust.id });
+    check(r.status === 200 && r.json.data.recipients.length === 1 && r.json.data.recipients[0].email === 'accounts@amuwa.com', 'email admin: the preview resolves for a real customer', r);
+    r = await api('hr', 'POST', '/email/admin/providers/resend/check', {});
+    check(r.status === 403, 'email admin: only the Super Admin checks providers', r);
+
+    // the router + the shared record
+    const invoice = { subject: 'Invoice AC-1', html: '<p>Invoice</p>', text: 'Invoice' };
+    let sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined,
+      { category: 'INVOICE', idempotencyKey: 'api-email-invoice-1', context: { customerId: cust.id } });
+    check(sent.ok && mails.length === 1 && JSON.stringify(mails[0].body.cc) === '["accounts@amuwa.com"]' && mails[0].headers['idempotency-key'] === 'api-email-invoice-1',
+      'email: sent by Resend, with the rule\'s CC and the Idempotency-Key', mails[0]?.body);
+    const { rows: [row] } = await db.query(`select status, provider, provider_message_id, cc, customer_id from public.email_messages where idempotency_key = 'api-email-invoice-1'`);
+    check(row.status === 'ACCEPTED' && row.provider === 'resend' && row.provider_message_id === 're_api_1' && row.customer_id === cust.id, 'email: recorded as ACCEPTED (not delivered) with the provider id', row);
+    sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined,
+      { category: 'INVOICE', idempotencyKey: 'api-email-invoice-1', context: { customerId: cust.id } });
+    check(sent.ok && mails.length === 1, 'email: the same business event again sends nothing (another Worker or a retry)');
+    const { rows: [state] } = await db.query(`select reported_daily, reported_monthly, last_success_at from public.email_provider_state where provider = 'resend'`);
+    check(state.reported_daily === '5' && state.reported_monthly === '41' && state.last_success_at, 'email: Resend\'s reported usage is kept', state);
+
+    // authentication: no copy, even with EMAIL_CC / EMAIL_BCC set
+    process.env.EMAIL_CC = 'ops@amuwa.com';
+    process.env.EMAIL_BCC = 'audit@amuwa.com';
+    sent = await sendEmail(automationSettings(), { email: 'staff@email-api.example', name: 'Staff' }, { subject: 'Reset', html: '<p>link</p>', text: 'link' }, undefined,
+      { category: 'AUTH', template: 'staff-password-reset' });
+    check(sent.ok && mails[1].body.cc === undefined && mails[1].body.bcc === undefined, 'email: a password reset goes to the account holder only (EMAIL_CC / EMAIL_BCC ignored)', mails[1]?.body);
+    const { rows: [authRow] } = await db.query(`select recipient, cc, bcc, priority from public.email_messages where category = 'AUTH' order by created_at desc limit 1`);
+    check(authRow.recipient === 's***@email-api.example' && authRow.cc.length === 0 && authRow.bcc.length === 0 && authRow.priority === 'CRITICAL',
+      'email: its log keeps only a masked address, no copies, CRITICAL', authRow);
+    sent = await sendEmail(automationSettings(), { email: 'staff@email-api.example', name: 'Staff' }, { subject: 'Reset', html: '<p>link</p>', text: 'link' }, undefined,
+      { category: 'AUTH', cc: ['hr@amuwa.com'] });
+    check(!sent.ok && mails.length === 2, 'email: an explicit CC on an authentication e-mail is refused');
+    process.env.EMAIL_CC = '';
+    process.env.EMAIL_BCC = '';
+
+    // the signed Resend webhook: delivered, then a hard bounce suppresses the address for every provider
+    const whKey = Buffer.from('0123456789abcdef0123456789abcdef');
+    process.env.RESEND_WEBHOOK_SECRET = `whsec_${whKey.toString('base64')}`;
+    const hook = (id: string, payload: unknown, sign = true) => {
+      const body = JSON.stringify(payload);
+      const ts = String(Math.floor(Date.now() / 1000));
+      const sig = crypto.createHmac('sha256', whKey).update(`${id}.${ts}.${body}`).digest('base64');
+      return fetch(`${base}/internal/email/resend-webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'svix-id': id, 'svix-timestamp': ts,
+        'svix-signature': sign ? `v1,${sig}` : 'v1,forged' }, body }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    };
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } }, false);
+    check(r.status === 401, 'email webhook: an unsigned / forged request is refused', r);
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } });
+    check(r.status === 200 && (await db.query(`select status from public.email_messages where provider_message_id = 're_api_1'`)).rows[0].status === 'DELIVERY_CONFIRMED',
+      'email webhook: a signed delivered event confirms delivery', r);
+    r = await hook('msg_api_1', { type: 'email.delivered', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'] } });
+    check(r.status === 200 && r.json.duplicate === true, 'email webhook: the same event delivered again is a no-op', r);
+    r = await hook('msg_api_2', { type: 'email.bounced', created_at: new Date().toISOString(), data: { email_id: 're_api_1', to: ['client@email-api.example'], bounce: { type: 'Permanent' } } });
+    check(r.status === 200 && (await db.query(`select 1 from public.email_suppressions where email = 'client@email-api.example' and active`)).rowCount === 1,
+      'email webhook: a hard bounce suppresses the address', r);
+    sent = await sendEmail(automationSettings(), { email: 'client@email-api.example', name: 'Client' }, invoice, undefined, { category: 'INVOICE', context: { customerId: cust.id } });
+    check(!sent.ok && !sent.retry && mails.length === 2, 'email: a suppressed address is not sent to (no provider can bypass it)', sent);
+
+    // history: scoped by the database
+    r = await api('sa', 'GET', '/email/history?category=INVOICE');
+    check(r.status === 200 && r.json.data.items.some((x: any) => x.status === 'BOUNCED'), 'email history: the Super Admin sees the invoice e-mail and its bounce', r.status);
+    r = await api('sa', 'GET', '/email/history?status=NOPE');
+    check(r.status === 422, 'email history: an unknown status is a validation error', r);
+    r = await api('hr', 'GET', '/email/history?category=AUTH');
+    check(r.status === 200 && r.json.data.items.length === 0, 'email history: HR never sees authentication e-mails', r.json?.data);
+    r = await api('sa', 'POST', '/email/admin/suppressions', { email: 'client@email-api.example', active: false, note: 'address fixed' });
+    check(r.status === 200 && r.json.data.some((x: any) => x.email === 'client@email-api.example' && !x.active), 'email admin: the Super Admin lifts a suppression (audited)', r);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    await db.query(`delete from public.email_recipient_rules; delete from public.email_suppressions where email like '%@email-api.example'`);
+    mailSrv.close();
+  }
+}
+// --- CEO office arrival (migration 20270128000300): HR's button; information only, meeting requests work before and after ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false && r.json.data.canMark === false, 'CEO arrival API: an employee sees "not arrived" and has no button', r);
+  // a fixed time on a day no other block books (now + 23 days + 37 min collided with the Super Admin's 06:00 UTC role-request slots when the suite ran around 05:30 UTC)
+  const caxAt = (min: number) => { const d = new Date(Date.now() + 77 * 86400e3); d.setUTCHours(14, min, 0, 0); return d.toISOString(); };
+  r = await api('a', 'POST', '/meetings', { title: 'CAX Before arrival', description: 'Budget for the new office', hostId: saId, startsAt: caxAt(7),
+    endsAt: caxAt(37), mode: 'PHONE' });
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO arrival API: a meeting request before the arrival is saved as usual', r);
+  const reqId = r.json.data.id as string;
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO arrival API: an employee cannot mark it', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO arrival API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.arrived === true && !!ceoOf(r.json.data)?.arrivedAt, 'CEO arrival API: HR marks it, with the time', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO arrival API: a second press (another HR person) changes nothing', r);
+  check((await db.query(`select count(*)::int n from public.ceo_office_arrivals where ceo_id = $1 and undone_at is null`, [saId])).rows[0].n === 1, 'CEO arrival API: one arrival today');
+  r = await api('tl2', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === true, 'CEO arrival API: everyone sees it', r);
+  check((await db.query(`select status from public.meetings where id = $1`, [reqId])).rows[0].status === 'REQUESTED', 'CEO arrival API: the earlier request is neither confirmed nor rejected by it');
+  r = await api('hr', 'POST', '/meetings/ceo-office/undo', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.arrived === false, 'CEO arrival API: HR undoes a mistaken press', r);
+  r = await api(null, 'GET', '/meetings/ceo-office');
+  check(r.status === 401, 'CEO arrival API: not for visitors', r);
+  await db.query(`delete from public.meetings where title like 'CAX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
+// --- Company Notice Board (migration 20270131000200): everyone reads; only the Super Admin, Operations Heads, HR and Developers publish ---
+{
+  const devId = deliveryMember as string;
+  await db.query(`insert into public.dev_team_members (profile_id, is_lead) values ($1, false) on conflict (profile_id) do nothing`, [devId]);
+  tokens.set('nbdev', tokenFor(devId));
+  const key = () => `nbx-${crypto.randomUUID().slice(0, 18)}`;
+  const wabastore = (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id as string;
+  let r = await api('a', 'GET', '/notices/audience');
+  check(r.status === 200 && r.json.data.canPublish === false, 'notice board API: a Team Member has no Send Notice', r);
+  r = await api('a', 'POST', '/notices', { title: 'NBX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: key() });
+  check(r.status === 403, 'notice board API: a Team Member cannot publish (refused by the server)', r);
+  r = await api('th', 'POST', '/notices', { title: 'NBX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: key() });
+  check(r.status === 403, 'notice board API: nor a Team Lead', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Bad', body: 'x', category: 'GENERAL', audienceType: 'DEPARTMENT', clientRequestId: key() });
+  check(r.status === 422, 'notice board API: a department notice needs departments', r);
+  const k1 = key();
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Town hall at 5 pm', body: 'Everyone joins the town hall.', category: 'EVENT', priority: 'IMPORTANT', audienceType: 'COMPANY', clientRequestId: k1 });
+  check(r.status === 201 && r.json.data.status === 'PUBLISHED' && r.json.data.recipientCount >= 3 && r.json.data.publisherRole === 'SUPER_ADMIN' && !('deliveryIds' in r.json.data),
+    'notice board API: the Super Admin publishes to the entire company', r);
+  const n1 = r.json.data.id as string;
+  r = await api('sa', 'POST', '/notices', { title: 'NBX Town hall at 5 pm', body: 'Everyone joins the town hall.', category: 'EVENT', audienceType: 'COMPANY', clientRequestId: k1 });
+  check(r.status === 201 && r.json.data.duplicate === true && r.json.data.id === n1, 'notice board API: the same form again is the same notice', r);
+  r = await api('hr', 'POST', '/notices', { title: 'NBX Wabastore leave rules', body: 'New leave rules for Wabastore.', category: 'HR', audienceType: 'DEPARTMENT', departmentIds: [wabastore], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'HR', 'notice board API: HR publishes to a department', r);
+  // 20270202000100: being in the Developers team is not the permission; the CRM team is a list of named accounts (notice_board_managers)
+  r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
+  check(r.status === 403, 'notice board API: a developer who is not on the CRM team list is refused (403)', r);
+  r = await api('nbdev', 'GET', '/notices/managers');
+  check(r.status === 403, 'notice board API: nor can they see who the managers are (403)', r);
+  r = await api('a', 'POST', `/notices/managers/${devId}`, { enabled: true });
+  check(r.status === 403, 'notice board API: a Team Member cannot add a manager (403)', r);
+  r = await api('sa', 'POST', `/notices/managers/${devId}`, { enabled: true });
+  check(r.status === 200 && r.json.data.manager === true, 'notice board API: the Super Admin adds a person to the CRM team', r);
+  r = await api('sa', 'GET', '/notices/managers');
+  check(r.status === 200 && r.json.data.managers.some((m: any) => m.profileId === devId), 'notice board API: the list shows them', r);
+  r = await api('nbdev', 'POST', '/notices', { title: 'NBX CRM maintenance tonight', body: 'The CRM is down from 11 pm to midnight.', category: 'IT_SYSTEM', audienceType: 'ROLE', roles: ['TEAM_MEMBER', 'TEAM_HEAD'], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.publisherRole === 'CRM_TEAM', 'notice board API: a CRM team member publishes to designations', r);
+  const bell = (await db.query(`select count(*)::int n from public.notifications where type = 'COMPANY_NOTICE' and entity_id = $1`, [n1])).rows[0].n;
+  check(bell === r.json.data.recipientCount || bell >= 3, 'notice board API: the targeted employees are notified in the bell');
+
+  r = await api('a', 'GET', '/notices/unread-count');
+  check(r.status === 200 && r.json.data.unread >= 1, 'notice board API: the employee has unread notices', r);
+  const before = r.json.data.unread as number;
+  r = await api('a', 'GET', '/notices?unread=true');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === n1 && n.read === false), 'notice board API: the employee sees it, unread', r);
+  r = await api('a', 'GET', `/notices/${n1}`);
+  check(r.status === 200 && r.json.data.read === true && r.json.data.body === 'Everyone joins the town hall.', 'notice board API: opening it marks it read', r);
+  r = await api('a', 'GET', '/notices/unread-count');
+  check(r.status === 200 && r.json.data.unread === before - 1, 'notice board API: the unread count goes down', r);
+  // the popup queue and the acknowledgement (20270202000100)
+  r = await api('a', 'GET', '/notices/pending');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === n1 && n.body === 'Everyone joins the town hall.') && r.json.data.pending === r.json.data.items.length,
+    'notice board API: the popup queue lists the notices not yet acknowledged, with their text', r);
+  r = await api(null, 'GET', '/notices/pending');
+  check(r.status === 401, 'notice board API: the queue is not for visitors', r);
+  r = await api('a', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice board API: the employee acknowledges it', r);
+  r = await api('a', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice board API: acknowledging twice is harmless', r);
+  r = await api('a', 'GET', '/notices/pending');
+  check(r.status === 200 && !r.json.data.items.some((n: any) => n.id === n1), 'notice board API: an acknowledged notice leaves the queue', r);
+  r = await api('sa', 'POST', `/notices/${n1}/acknowledge`, {});
+  check(r.status === 404, 'notice board API: the publisher is not a recipient: nothing to acknowledge', r);
+  r = await api('a', 'GET', '/notices/managers');
+  check(r.status === 403, 'notice board API: an employee gets 403 from the managers list', r);
+  r = await api('a', 'GET', `/notices/${n1}/receipts`);
+  check(r.status === 404, 'notice board API: an employee does not see the read receipts', r);
+  r = await api('a', 'POST', `/notices/${n1}/update`, { title: 'NBX Hacked' });
+  check(r.status === 404, 'notice board API: nor edit the notice', r);
+  r = await api('sa', 'GET', `/notices/${n1}/receipts`);
+  check(r.status === 200 && r.json.data.read >= 1 && r.json.data.total === r.json.data.read + r.json.data.unread && r.json.data.acknowledged >= 1
+    && r.json.data.rows.some((x: any) => x.acknowledgedAt), 'notice board API: the publisher sees who read and acknowledged it', r);
+  r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Everyone joins the town hall at 5:30 pm.', version: 1 });
+  check(r.status === 200 && r.json.data.version === 2, 'notice board API: the publisher edits it', r);
+  r = await api('sa', 'POST', `/notices/${n1}/update`, { body: 'Stale', version: 1 });
+  check(r.status === 409, 'notice board API: a stale edit is refused', r);
+  r = await api('sa', 'POST', `/notices/${n1}/archive`, {});
+  check(r.status === 200 && r.json.data.status === 'ARCHIVED', 'notice board API: and archives it', r);
+  r = await api('a', 'GET', '/notices');
+  check(r.status === 200 && !r.json.data.items.some((n: any) => n.id === n1), 'notice board API: an archived notice leaves the board', r);
+  r = await api('a', 'GET', '/notices?scope=MINE');
+  check(r.status === 403, 'notice board API: an employee has no "my published notices"', r);
+  r = await api(null, 'GET', '/notices');
+  check(r.status === 401, 'notice board API: not for visitors', r);
+  // the chat and the other notifications keep working alongside
+  r = await api('a', 'GET', '/chat/internal');
+  check(r.status === 200, 'notice board API: the chat still answers', r);
+  await db.query(`delete from public.company_notices where title like 'NBX %'`);
+  await db.query(`delete from public.dev_team_members where profile_id = $1`, [devId]);
+  await db.query(`delete from public.notice_board_managers where profile_id = $1`, [devId]);
+}
+// --- CEO Availability (migration 20270201000100): HR sets CEO Arrived / CEO Not Arrived; stored; the same for everyone; never blocks a request ---
+{
+  const saId = (await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+  const ceoOf = (d: any) => d.ceos.find((c: any) => c.ceoId === saId);
+  // a fixed time of day (10:41 UTC) clear of the 06:00-07:00 UTC slots earlier blocks book for the Managing Director ("now + 41 minutes"
+  // collided with them when the suite ran between about 05:20 and 06:20 UTC)
+  const when = (n: number) => { const d = new Date(Date.now() + n * 86400e3); d.setUTCHours(10, 41, 0, 0); return d.toISOString(); };
+  const ask = (title: string, days: number) => api('a', 'POST', '/meetings', { title, description: 'Review of the quarterly plan', hostId: saId, startsAt: when(days),
+    endsAt: new Date(new Date(when(days)).getTime() + 30 * 60e3).toISOString(), mode: 'PHONE' });
+  let r = await api('a', 'GET', '/meetings/ceo-office');
+  check(r.status === 200 && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.updatedAt === null && r.json.data.canMark === false, 'CEO availability API: nothing recorded: not arrived, no update, no buttons for an employee', r);
+  r = await ask('CVX Not arrived', 31);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: a meeting request is saved while the CEO has not arrived', r);
+  r = await api('a', 'POST', '/meetings/ceo-office/not-arrived', {});
+  check(r.status === 403, 'CEO availability API: an employee cannot press CEO Not Arrived', r);
+  r = await api('a', 'POST', '/meetings/ceo-office/arrived', {});
+  check(r.status === 403, 'CEO availability API: an employee cannot press CEO Arrived', r);
+  r = await api(null, 'POST', '/meetings/ceo-office/not-arrived', {});
+  check(r.status === 401, 'CEO availability API: not for visitors', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: 'nobody' });
+  check(r.status === 422, 'CEO availability API: the CEO id is checked', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.updatedStatus === 'NOT_ARRIVED' && !!ceoOf(r.json.data)?.updatedAt && !!ceoOf(r.json.data)?.updatedBy, 'CEO availability API: HR sets Not Arrived with the time and who', r);
+  r = await api('hrmember', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === true, 'CEO availability API: a second press (another HR person) changes nothing', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/arrived', { ceoId: saId });
+  check(r.status === 200 && ceoOf(r.json.data)?.status === 'ARRIVED' && ceoOf(r.json.data)?.updatedStatus === 'ARRIVED' && ceoOf(r.json.data)?.updatedToday === true, 'CEO availability API: HR sets Arrived', r);
+  // every dashboard (every role) reads the same latest status, from the database
+  for (const who of ['a', 'tl2', 'hr', 'hrmember', 'hrlead']) {
+    r = await api(who, 'GET', '/meetings/ceo-office');
+    check(r.status === 200 && ceoOf(r.json.data)?.status === 'ARRIVED' && ceoOf(r.json.data)?.updatedBy === ceoOf((await api('hr', 'GET', '/meetings/ceo-office')).json.data)?.updatedBy, `CEO availability API: ${who} reads the same latest status`, r);
+  }
+  r = await ask('CVX Arrived', 32);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: a meeting request is saved while the CEO has arrived', r);
+  r = await api('hr', 'POST', '/meetings/ceo-office/not-arrived', { ceoId: saId });
+  check(r.status === 200 && r.json.data.duplicate === false && ceoOf(r.json.data)?.status === 'NOT_ARRIVED' && ceoOf(r.json.data)?.arrived === false, 'CEO availability API: Not Arrived after an arrival sets it back', r);
+  r = await ask('CVX Not arrived again', 33);
+  check(r.status === 201 && r.json.data.status === 'REQUESTED', 'CEO availability API: Not Arrived never blocks a request', r);
+  r = await api('a', 'GET', '/meetings/ceo-requests?section=ALL');
+  check(r.status === 200 && ['CVX Not arrived', 'CVX Arrived', 'CVX Not arrived again'].every(t => r.json.data.items.some((m: any) => m.title === t && m.createdByName && m.startsAt && m.description)), 'CEO availability API: the requests are saved with who, when and the purpose', r);
+  r = await api('sa', 'GET', '/meetings/ceo-requests?section=ALL');
+  check(r.status === 200 && r.json.data.items.some((m: any) => m.title === 'CVX Arrived' && m.createdByName && m.createdByDepartment), 'CEO availability API: the CEO reviews them with the employee and department', r);
+  await db.query(`delete from public.meetings where title like 'CVX %'`);
+  await db.query(`delete from public.ceo_office_arrivals where ceo_id = $1`, [saId]);
+}
+// --- HR Awards (migration 20270203000100): seven monthly awards, many nominees, one or more winners, month-wise history; HR only ---
+{
+  await db.query(`delete from public.hr_award_winners; delete from public.hr_award_nominees; delete from public.hr_award_periods`);
+  const M = '2026-10';
+  let r = await api('a', 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 403, 'awards API: an employee cannot open Awards', r);
+  r = await api(null, 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 401, 'awards API: not for visitors', r);
+  r = await api('hr', 'GET', '/hr/awards?month=October');
+  check(r.status === 422, 'awards API: the month is checked (YYYY-MM)', r);
+  r = await api('hr', 'GET', `/hr/awards?month=${M}`);
+  check(r.status === 200 && r.json.data.awards.length === 7 && r.json.data.awards.every((a: any) => a.nominees === 0 && a.status === 'NO_NOMINEES')
+    && r.json.data.awards.map((a: any) => a.name).join('|') === ['Professionalism Excellence of the Month', 'Rising Star of the Month', 'Player of the Month',
+      'Emerging Leader of the Month', 'Department of the Month', 'Team of the Month', 'Business Icon of the Month'].join('|'), 'awards API: HR sees all seven awards for the month', r);
+  r = await api('hr', 'GET', '/hr/awards/options');
+  const opts = r.json.data;
+  check(r.status === 200 && opts.employees.length >= 3 && opts.teams.length >= 1 && opts.departments.length >= 1, 'awards API: employees, teams and departments come from the CRM', r);
+  const people = opts.employees.slice(0, 3) as { id: string; name: string }[];
+  for (const [i, p] of people.entries()) {
+    r = await api(i === 2 ? 'hrmember' : 'hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: p.id, reason: `Great month number ${i + 1}`, remarks: i === 0 ? 'Supporting note' : null });
+    check(r.status === 201 && r.json.data.totalNominees === i + 1, `awards API: nominee ${i + 1} added under the same award`, r);
+  }
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[0].id, reason: 'Again' });
+  check(r.status === 409, 'awards API: the same person twice for the same award and month is a conflict', r);
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[1].id, reason: 'x' });
+  check(r.status === 422, 'awards API: the reason is validated', r);
+  r = await api('a', 'POST', '/hr/awards/RISING_STAR/nominees', { month: M, nomineeType: 'INDIVIDUAL', entityId: people[1].id, reason: 'I want it' });
+  check(r.status === 403, 'awards API: an employee cannot nominate', r);
+  r = await api('hr', 'POST', '/hr/awards/TEAM/nominees', { month: M, nomineeType: 'TEAM', entityId: opts.teams[0].id, reason: 'Delivered together' });
+  check(r.status === 201 && r.json.data.nominees[0].nomineeType === 'TEAM' && r.json.data.nominees[0].name === opts.teams[0].name, 'awards API: a team for Team of the Month', r);
+  r = await api('hr', 'POST', '/hr/awards/DEPARTMENT/nominees', { month: M, nomineeType: 'DEPARTMENT', entityId: opts.departments[0].id, reason: 'Best results' });
+  check(r.status === 201 && r.json.data.nominees[0].nomineeType === 'DEPARTMENT', 'awards API: a department for Department of the Month', r);
+  r = await api('hr', 'GET', `/hr/awards/RISING_STAR?month=${M}`);
+  const nominees = r.json.data.nominees as { id: string; name: string; status: string }[];
+  check(r.status === 200 && nominees.length === 3 && nominees.every(n => n.status === 'NOMINATED'), 'awards API: the detail lists the three nominees (saved: read again)', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${nominees[2].id}/update`, { reason: 'Edited reason text', remarks: 'Edited remarks' });
+  check(r.status === 200 && r.json.data.nominees.find((n: any) => n.id === nominees[2].id)?.reason === 'Edited reason text', 'awards API: HR edits a nominee', r);
+  r = await api('hr', 'POST', '/hr/awards/winners', { nomineeIds: [nominees[0].id], remarks: 'Clear winner' });
+  check(r.status === 200 && r.json.data.totalWinners === 1 && r.json.data.status === 'WINNERS_DECLARED', 'awards API: one winner declared', r);
+  r = await api('hr', 'POST', '/hr/awards/winners', { nomineeIds: [nominees[0].id, nominees[1].id] });
+  check(r.status === 200 && r.json.data.totalWinners === 2 && r.json.data.totalNominees === 3
+    && r.json.data.nominees.filter((n: any) => n.status === 'WINNER').length === 2, 'awards API: a second winner for the same award; the third stays a nominee', r);
+  const winners = r.json.data.winners as { id: string; nomineeId: string }[];
+  r = await api('a', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: 'Not allowed' });
+  check(r.status === 403, 'awards API: an employee cannot revoke a winner', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${winners[1].nomineeId}/remove`, {});
+  check(r.status === 409, 'awards API: a winner cannot be removed before the declaration is revoked', r);
+  r = await api('hr', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: '' });
+  check(r.status === 422, 'awards API: revoking needs a reason', r);
+  r = await api('hr', 'POST', `/hr/awards/winners/${winners[1].id}/revoke`, { reason: 'Declared by mistake' });
+  check(r.status === 200 && r.json.data.totalWinners === 1 && r.json.data.revokedWinners.length === 1, 'awards API: HR revokes a winner (kept on record)', r);
+  r = await api('hr', 'POST', `/hr/awards/nominees/${nominees[2].id}/remove`, { reason: 'Duplicate' });
+  check(r.status === 200 && r.json.data.totalNominees === 2 && r.json.data.removedNominees === 1, 'awards API: HR removes a nominee', r);
+  // another month: the same award starts empty and October stays as it was
+  r = await api('hr', 'POST', '/hr/awards/RISING_STAR/nominees', { month: '2026-11', nomineeType: 'INDIVIDUAL', entityId: people[0].id, reason: 'Another strong month' });
+  check(r.status === 201 && r.json.data.month === '2026-11' && r.json.data.totalNominees === 1, 'awards API: the next month has its own nominees', r);
+  r = await api('hr', 'GET', `/hr/awards?month=${M}`);
+  const card = r.json.data.awards.find((a: any) => a.code === 'RISING_STAR');
+  check(r.status === 200 && card.nominees === 2 && card.winners === 1 && card.winnerNames.length === 1
+    && r.json.data.history.some((h: any) => h.month === '2026-11') && r.json.data.history.some((h: any) => h.month === M), 'awards API: October is intact, both months in the history', r);
+  r = await api('sa', 'GET', `/hr/awards/RISING_STAR?month=${M}`);
+  check(r.status === 200 && r.json.data.totalWinners === 1, 'awards API: the Super Admin reads the awards', r);
+  r = await api('hr', 'GET', `/hr/awards/NOPE?month=${M}`);
+  check(r.status === 422, 'awards API: an unknown award', r);
+  await db.query(`delete from public.hr_award_winners; delete from public.hr_award_nominees; delete from public.hr_award_periods`);
+}
+// --- International / Reseller recognised by the database flag, not by a slug (migration 20270202000300) ---
+{
+  const r = await api('sa', 'GET', '/departments');
+  const by = (slug: string) => r.json.data.find((d: any) => d.slug === slug);
+  check(r.status === 200 && by('international')?.unifiedSalesSupport === true && by('reseller')?.unifiedSalesSupport === true, 'departments API: International and Reseller are flagged unified (Sales + Support)', r);
+  check(by('wabastore')?.unifiedSalesSupport === false && r.json.data.filter((d: any) => d.unifiedSalesSupport).every((d: any) => /international|reseller/i.test(`${d.name} ${d.slug}`)), 'departments API: no Sales or Support department is flagged', r);
+  const a = await api('a', 'GET', '/departments');
+  check(a.status === 200 && a.json.data.every((d: any) => typeof d.unifiedSalesSupport === 'boolean'), 'departments API: every signed-in person reads the flag', a);
+}
+// --- Role-based Offer Letters (migration 20270206000100): one template per designation, its own fields / wording / letterhead; PDF; versions ---
+{
+  const { INITIAL_OFFER_TEMPLATES, offerStartingValues } = await import('../../shared/offerTemplates.js');
+  const { PDFDocument, PDFName, PDFArray, decodePDFRawStream } = await import('pdf-lib');
+  const textOf = async (bytes: Uint8Array) => {
+    const doc = await PDFDocument.load(bytes);
+    let text = '';
+    for (const page of doc.getPages()) {
+      const c = page.node.Contents();
+      for (const ref of c instanceof PDFArray ? c.asArray() : [page.node.get(PDFName.of('Contents'))]) {
+        const raw = Buffer.from(decodePDFRawStream(doc.context.lookup(ref) as any).decode()).toString('latin1');
+        for (const m of raw.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) text += Buffer.from(m[1], 'hex').toString('latin1');
+      }
+    }
+    return { pages: doc.getPageCount(), text: text.replace(/\s+/g, '') };
+  };
+  const squash = (t: string) => t.replace(/\s+/g, '');
+  const canon = (v: unknown): unknown => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v as object).sort().map(k => [k, canon((v as any)[k])])) : v;
+  const same = (x: unknown, y: unknown) => JSON.stringify(canon(x)) === JSON.stringify(canon(y));
+  await db.query(`insert into public.hr_employees (id, name, email, designation, department_id, status, joining_date, monthly_salary, data)
+                  values ('APIOFR-1', 'Ritika Offer', 'apiofr-1@example.com', 'Executive', 'wabastore', 'Full-Time', '2026-12-01', '18000', '{}')
+                  on conflict (id) do nothing`);
+  const K = 'HR:APIOFR-1';
+
+  let r = await api('a', 'GET', '/hr/offer-templates');
+  check(r.status === 403, 'offer templates: an ordinary employee cannot open them', r);
+  r = await api('rrec1', 'GET', '/hr/offer-templates');
+  check(r.status === 403, 'offer templates: nor an HR Recruiter', r);
+  r = await api('hrmember', 'GET', '/hr/offer-templates');
+  check(r.status === 200 && r.json.data.canManage === false && r.json.data.templates.length === 5, 'offer templates: an HR team member reads the five templates (and may not manage them)', r);
+  r = await api('hr', 'GET', '/hr/offer-templates');
+  const list = r.json.data.templates as any[];
+  check(r.status === 200 && r.json.data.canManage === true
+    && list.map(t => t.designation).join('|') === 'Technical Support|Customer Support|Business Development Executive|Sales Executive|AI Developer',
+    'offer templates: the HR Admin Head manages them; the dropdown lists the five designations in order', r);
+  for (const init of INITIAL_OFFER_TEMPLATES) {
+    const t = list.find(x => x.key === init.key);
+    check(!!t && t.current.version === 1 && same(t.current.content, init.content) && same(t.current.letterhead, init.letterhead),
+      `offer templates: ${init.designation} version 1 is exactly the supplied sample's template`);
+  }
+  r = await api('hr', 'GET', '/hr/offer-templates/letterheads');
+  check(r.status === 200 && r.json.data.length === 5 && r.json.data.some((l: any) => l.key === 'business-development' && /M Pillar/.test(l.label)), 'offer templates: the five bundled letterheads', r);
+
+  // each designation: its own template, fields, wording and letterhead
+  const p = (await api('hrmember', 'GET', `/hr/documents/prefill?employeeKey=${encodeURIComponent(K)}&type=OFFER`)).json.data;
+  const MARK: Record<string, { has: string[]; not: string[]; pages: [number, number] }> = {
+    'technical-support': { has: ['TechnicalSupportExecutive', 'smoothoperationalsupportforWabastore', 'DearRitikaOffer,', '18,000/-permonth(Fixed)'], not: ['ANNEXURE', 'REF-NO', 'M-PillarCorporation'], pages: [1, 3] },
+    'customer-support': { has: ['APPOINTMENTLETTER', 'Ms.RitikaOffer', '(RupeesEighteenThousandOnly)', 'ANNEXUREA', 'DuringProbitionPeriod'], not: ['KeyResponsibilities', 'REF-NO'], pages: [4, 8] },
+    'business-development': { has: ['REF-NO:MPL/OFFER/2026/07', 'BusinessDevelopmentExecutive(BDE)', 'M-PillarCorporation', 'MpillarCorporation'], not: ['ANNEXURE', 'smoothoperationalsupport'], pages: [1, 3] },
+    'sales-executive': { has: ['SalesExecutive', 'assignedterritory', 'TeamLeaderandDepartmentHead', 'Miss.AartiKalange(CEO)'], not: ['ANNEXURE', 'REF-NO'], pages: [1, 3] },
+    'ai-developer': { has: ['AiDeveloperIntern', 'AiStudio', 'Mr.AmolKamble', 'DateofJoining:1stDecember2026'], not: ['ANNEXURE', 'REF-NO'], pages: [1, 3] }
+  };
+  const valuesFor = (t: any) => {
+    const v = offerStartingValues(t.current.content.fields, { employeeName: p.employee.name, designation: p.employee.designation, department: p.employee.department,
+      joiningDate: p.employee.joiningDate, monthlySalary: p.employee.monthlySalary, today: '2026-11-24' });
+    if ('title' in v) v.title = 'Ms.';
+    if ('refNo' in v) v.refNo = 'MPL/OFFER/2026/07';
+    if ('department' in v && !v.department) v.department = 'Wabastore';
+    return v;
+  };
+  for (const t of list) {
+    const m = MARK[t.key];
+    const keys = t.current.content.fields.map((f: any) => f.key);
+    check(keys.includes('employeeName') && keys.includes('joiningDate') && keys.includes('salary'), `offer letters: ${t.designation} has its own fields (${keys.length})`);
+    const values = valuesFor(t);
+    check(values.employeeName === 'Ritika Offer' && values.salary === '18000' && values.joiningDate === '2026-12-01', `offer letters: ${t.designation} starts from the CRM record`, values);
+    r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: t.id, templateVersion: 1, values } });
+    check(r.status === 200 && r.json.data.fileName.includes(t.designation.replace(/\s+/g, '-')), `offer letters: ${t.designation} previews`, r);
+    const doc = await textOf(Buffer.from(r.json.data.pdfBase64, 'base64'));
+    const missing = m.has.filter(x => x && !doc.text.includes(squash(x)));
+    const wrong = m.not.filter(x => doc.text.includes(squash(x)));
+    check(!missing.length && !wrong.length && doc.pages >= m.pages[0] && doc.pages <= m.pages[1],
+      `offer letters: ${t.designation} loads its own wording (${doc.pages} page${doc.pages === 1 ? '' : 's'})`, { missing, wrong, pages: doc.pages });
+    check(!doc.text.includes('{') && !doc.text.includes('**'), `offer letters: ${t.designation} has every placeholder filled`);
+  }
+
+  // the values are checked against the chosen template's fields
+  const tech = list.find(t => t.key === 'technical-support');
+  const cs = list.find(t => t.key === 'customer-support');
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: cs.id, templateVersion: 1, values: { ...valuesFor(cs), title: '' } } });
+  check(r.status === 422 && /title/i.test(r.json.error.message), 'offer letters: a required field (the title) is checked', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: { ...valuesFor(tech), salary: '18,000.50' } } });
+  check(r.status === 422 && /whole rupees/.test(r.json.error.message), 'offer letters: the salary is whole rupees', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: { ...valuesFor(tech), refNo: 'X' } } });
+  check(r.status === 422 && /no field "refNo"/.test(r.json.error.message), 'offer letters: a field of another template is refused', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 7, values: valuesFor(tech) } });
+  check(r.status === 404, 'offer letters: an unknown template version', r);
+  r = await api('rrec1', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: valuesFor(tech) } });
+  check(r.status === 403, 'offer letters: an HR Recruiter cannot make one', r);
+
+  // generate, download, then replace the template: the issued letter never changes
+  const techValues = valuesFor(tech);
+  r = await api('hrmember', 'POST', '/hr/documents', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 1, values: techValues } });
+  const issued = r.json.data;
+  check(r.status === 201 && issued.fields.templateVersion === 1 && issued.fields.templateDesignation === 'Technical Support' && issued.fields.values.salary === '18000'
+    && same(issued.fields.content, tech.current.content), 'offer letters: generated and stored with the designation, template version, wording and values', r);
+  const row = (await db.query(`select offer_template_id, offer_template_version, sha256 from public.hr_documents where id = $1`, [issued.id])).rows[0];
+  check(row.offer_template_id === tech.id && row.offer_template_version === 1, 'offer letters: the record links the template version');
+  r = await api('hrmember', 'GET', `/hr/documents/${issued.id}/download`);
+  const before = Buffer.from(await (await fetch(r.json.data.url)).arrayBuffer());
+  check(r.status === 200 && crypto.createHash('sha256').update(before).digest('hex') === row.sha256 && (await textOf(before)).text.includes('smoothoperationalsupportforWabastore'),
+    'offer letters: the download is the stored PDF', r);
+
+  const changed = { ...tech.current.content, blocks: tech.current.content.blocks.map((b: any, i: number) => (i === 4 ? { ...b, text: 'In this role, you will lead the new support desk.' } : b)) };
+  r = await api('hrmember', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: changed, letterhead: tech.current.letterhead, baseVersion: 1 });
+  check(r.status === 403, 'offer templates: an HR team member cannot replace a template', r);
+  r = await api('hr', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: { ...changed, blocks: [...changed.blocks, { type: 'paragraph', text: 'Bonus: {bonus}' }] }, letterhead: tech.current.letterhead, baseVersion: 1 });
+  check(r.status === 422 && /\{bonus\}/.test(r.json.error.message), 'offer templates: a placeholder that is not a field is refused', r);
+  r = await api('hr', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: changed, letterhead: tech.current.letterhead, baseVersion: 1, note: 'New support desk wording' });
+  check(r.status === 201 && r.json.data.current.version === 2 && r.json.data.versionCount === 2, 'offer templates: the HR Admin Head saves version 2', r);
+  r = await api('hr', 'POST', `/hr/offer-templates/${tech.id}`, { designation: 'Technical Support', content: changed, letterhead: tech.current.letterhead, baseVersion: 1 });
+  check(r.status === 409, 'offer templates: saving over an older version is a conflict', r);
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: tech.id, templateVersion: 2, values: techValues } });
+  check(r.status === 200 && (await textOf(Buffer.from(r.json.data.pdfBase64, 'base64'))).text.includes('leadthenewsupportdesk'), 'offer letters: new letters use version 2', r);
+  r = await api('hrmember', 'GET', `/hr/documents/${issued.id}/download`);
+  const after = Buffer.from(await (await fetch(r.json.data.url)).arrayBuffer());
+  check(after.equals(before), 'offer letters: the letter issued with version 1 is unchanged');
+  r = await api('hrmember', 'GET', `/hr/offer-templates/${tech.id}`);
+  check(r.status === 200 && r.json.data.versions.length === 2 && r.json.data.versions.find((v: any) => v.version === 1)?.issued === 1, 'offer templates: the history counts the letters issued per version', r);
+  r = await api('hrmember', 'GET', `/hr/offer-templates/${tech.id}/versions/1`);
+  check(r.status === 200 && same(r.json.data.content, tech.current.content), 'offer templates: version 1 stays readable', r);
+
+  // uploads: a sample (Word / PDF) and a letterhead (PDF); a new designation with its own letterhead
+  const docx = Buffer.concat([Buffer.from('PK\u0003\u0004'), Buffer.from('....word/document.xml....')]);
+  r = await api('hrmember', 'POST', '/hr/offer-templates/files', { kind: 'SAMPLE', fileName: 'Sample.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dataBase64: docx.toString('base64') });
+  check(r.status === 403, 'offer templates: an HR team member cannot upload', r);
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'SAMPLE', fileName: 'Sample.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dataBase64: docx.toString('base64') });
+  const sample = r.json.data;
+  check(r.status === 201 && sample.kind === 'SAMPLE' && sample.fileName === 'Sample.docx', 'offer templates: the HR Admin Head uploads a Word sample', r);
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'SAMPLE', fileName: 'fake.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from('not a pdf at all').toString('base64') });
+  check(r.status === 422 && /not a PDF/.test(r.json.error.message), 'offer templates: a file is checked by its content, not its name', r);
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'LETTERHEAD', fileName: 'Letterhead.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', dataBase64: docx.toString('base64') });
+  check(r.status === 422, 'offer templates: a letterhead must be a PDF', r);
+  const lhDoc = await PDFDocument.create();
+  const lhPage = lhDoc.addPage([595.3, 841.9]);
+  lhPage.drawRectangle({ x: 0, y: 760, width: 595.3, height: 80, color: (await import('pdf-lib')).rgb(0.1, 0.3, 0.7) });
+  r = await api('hr', 'POST', '/hr/offer-templates/files', { kind: 'LETTERHEAD', fileName: 'Letterhead.pdf', mimeType: 'application/pdf', dataBase64: Buffer.from(await lhDoc.save()).toString('base64') });
+  const letterhead = r.json.data;
+  check(r.status === 201 && letterhead.kind === 'LETTERHEAD', 'offer templates: a letterhead PDF is uploaded', r);
+  r = await api('hrmember', 'GET', `/hr/offer-templates/files/${sample.id}/url`);
+  check(r.status === 200 && typeof r.json.data.url === 'string' && r.json.data.fileName === 'Sample.docx', 'offer templates: HR staff open the sample (a short-lived link)', r);
+  const ai = list.find(t => t.key === 'ai-developer');
+  r = await api('hr', 'POST', '/hr/offer-templates/preview', { designation: 'Graphic Designer', content: ai.current.content, letterhead: { fileId: letterhead.id } });
+  check(r.status === 200 && (await textOf(Buffer.from(r.json.data.pdfBase64, 'base64'))).text.includes('[Employeename]'), 'offer templates: a template previews with [field labels] on an uploaded letterhead', r);
+  r = await api('hr', 'POST', '/hr/offer-templates', { designation: 'Graphic Designer', description: 'Design team', content: ai.current.content, letterhead: { fileId: letterhead.id }, sampleFileId: sample.id, baseVersion: 0 });
+  const gd = r.json.data;
+  check(r.status === 201 && gd.key === 'graphic-designer' && gd.current.version === 1 && gd.current.sampleFile?.id === sample.id && gd.current.letterheadFile?.id === letterhead.id,
+    'offer templates: a new designation is added with its sample and letterhead', r);
+  r = await api('hr', 'POST', '/hr/offer-templates', { designation: 'Graphic Designer', content: ai.current.content, letterhead: { builtin: 'ai-developer' }, baseVersion: 0 });
+  check(r.status === 409, 'offer templates: the same designation twice is refused', r);
+  r = await api('hrmember', 'POST', '/hr/documents', { type: 'OFFER', employeeKey: K, fields: { offerTemplateId: gd.id, templateVersion: 1, values: valuesFor(gd) } });
+  check(r.status === 201 && r.json.data.fields.templateDesignation === 'Graphic Designer', 'offer letters: a letter is generated from the new designation (uploaded letterhead)', r);
+  r = await api('hrmember', 'GET', '/hr/offer-templates');
+  check(r.status === 200 && r.json.data.templates.length === 6 && r.json.data.templates.find((t: any) => t.key === 'technical-support').issued === 1, 'offer templates: six designations now, with their issued counts', r);
+
+  // the NDA and the earlier Offer Letter keep working
+  r = await api('hrmember', 'POST', '/hr/documents/preview', { type: 'NDA', employeeKey: K, fields: { letterDate: '2026-11-24', employeeName: 'Ritika Offer' } });
+  check(r.status === 200 && r.json.data.fileName.startsWith('NDA-'), 'offer letters: the NDA still generates', r);
+  await db.query(`delete from public.hr_documents where employee_key = $1`, [K]);
+  await db.query(`delete from public.hr_employees where id = 'APIOFR-1'`);
+}
+// 20270205000100: Notice Board delete (a soft delete by the people who already manage notices)
+{
+  const rid = () => `nd-${Math.random().toString(16).slice(2)}-${Date.now()}`;
+  let r = await api('hr', 'POST', '/notices', { title: 'NDX HR notice to delete', body: 'HR text.', category: 'HR', priority: 'IMPORTANT', audienceType: 'COMPANY', clientRequestId: rid() });
+  const nd1 = r.json.data.id;
+  r = await api('sa', 'POST', '/notices', { title: 'NDX Keep this one', body: 'Stays.', category: 'GENERAL', audienceType: 'COMPANY', clientRequestId: rid() });
+  const nd2 = r.json.data.id;
+  r = await api('a', 'POST', `/notices/${nd2}/acknowledge`, {});
+  check(r.status === 200 && r.json.data.acknowledged === true, 'notice delete API: an employee acknowledges a notice', r);
+
+  r = await api('a', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 404, 'notice delete API: a Team Member cannot delete (the notice is "not found" for them)', r);
+  r = await api('th', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 404, 'notice delete API: nor a Team Lead', r);
+  r = await api(null, 'DELETE', `/notices/${nd1}`);
+  check(r.status === 401, 'notice delete API: a visitor who is not signed in is refused', r);
+  r = await api('sa', 'DELETE', '/notices/not-a-uuid');
+  check(r.status === 422, 'notice delete API: a malformed id is refused', r);
+  r = await api('hr', 'DELETE', `/notices/${nd2}`);
+  check(r.status === 404, 'notice delete API: HR cannot delete a notice the Super Admin published', r);
+  r = await api('a', 'GET', '/notices?limit=100');
+  check(r.json.data.items.some((i: any) => i.id === nd1) && r.json.data.items.some((i: any) => i.id === nd2), 'notice delete API: every refusal left both notices in place', r);
+
+  r = await api('hr', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 200 && r.json.data.deleted === true && r.json.data.alreadyDeleted === false, 'notice delete API: the publisher deletes their notice', r);
+  r = await api('hr', 'DELETE', `/notices/${nd1}`);
+  check(r.status === 200 && r.json.data.alreadyDeleted === true, 'notice delete API: a second request is answered as already done', r);
+  r = await api('hr', 'GET', '/notices?scope=MINE&limit=100');
+  check(!r.json.data.items.some((i: any) => i.id === nd1), 'notice delete API: it is gone from the publisher\'s list', r);
+  r = await api('a', 'GET', '/notices?limit=100');
+  check(!r.json.data.items.some((i: any) => i.id === nd1) && r.json.data.items.some((i: any) => i.id === nd2), 'notice delete API: and from the employee\'s board, which keeps the other notice', r);
+  r = await api('a', 'GET', '/notices/pending');
+  check(!r.json.data.items.some((i: any) => i.id === nd1), 'notice delete API: and from the popup queue', r);
+  r = await api('a', 'GET', `/notices/${nd1}`);
+  check(r.status === 404, 'notice delete API: nobody can open it any more', r);
+  r = await api('hr', 'GET', `/notices/${nd1}/receipts`);
+  check(r.status === 404, 'notice delete API: its receipts are not served', r);
+  r = await api('a', 'POST', `/notices/${nd1}/acknowledge`, {});
+  check(r.status === 404, 'notice delete API: it cannot be acknowledged', r);
+  r = await api('hr', 'POST', `/notices/${nd1}/update`, { title: 'NDX Back again' });
+  check(r.status === 404, 'notice delete API: it cannot be edited back to life', r);
+  r = await api('hr', 'POST', `/notices/${nd1}/archive`, {});
+  check(r.status === 404, 'notice delete API: nor archived', r);
+  r = await api('sa', 'GET', '/notices?scope=MINE&limit=100');
+  check(!r.json.data.items.some((i: any) => i.id === nd1), 'notice delete API: the Super Admin does not see it either', r);
+
+  // what is kept: the record, who and when, the receipts, the history and the audit entry
+  const kept = (await db.query(`select status, deleted_by is not null as who, deleted_at is not null as at,
+      (select count(*)::int from public.company_notice_recipients where notice_id = n.id) as recipients,
+      (select count(*)::int from public.company_notice_revisions where notice_id = n.id and action = 'DELETED') as revisions,
+      (select count(*)::int from public.audit_logs where action = 'COMPANY_NOTICE_DELETED' and entity_id = n.id) as audits
+    from public.company_notices n where id = $1`, [nd1])).rows[0];
+  check(kept.status === 'DELETED' && kept.who && kept.at && kept.recipients > 0 && kept.revisions === 1 && kept.audits === 1, 'notice delete API: the record, the receipts, the history and the audit entry are kept', kept);
+  const ack = (await db.query(`select count(*)::int n from public.company_notice_recipients where notice_id = $1 and acknowledged_at is not null`, [nd2])).rows[0].n;
+  check(ack >= 1, 'notice delete API: acknowledgements of other notices are untouched', ack);
+
+  r = await api('sa', 'DELETE', `/notices/${nd2}`);
+  check(r.status === 200 && r.json.data.deleted === true, 'notice delete API: the Super Admin can delete any notice', r);
+}
+
+// ---------------------------------------------------------------------------
+// Meeting notifications on phones (20270208000100): an invitation reaches the invitee's phone at once, and the 5-minute scheduled run
+// sends the 15-minute reminder. Fake push service and a generated VAPID key; no real device.
+{
+  const subtle = globalThis.crypto.subtle;
+  const vk = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const saved = { priv: process.env.VAPID_PRIVATE_KEY, subj: process.env.VAPID_SUBJECT, pub: process.env.VAPID_PUBLIC_KEY };
+  process.env.VAPID_PRIVATE_KEY = JSON.stringify(await subtle.exportKey('jwk', vk.privateKey));
+  process.env.VAPID_SUBJECT = 'mailto:hr@example.com';
+  delete process.env.VAPID_PUBLIC_KEY;
+  const b64u = (b: ArrayBuffer | Uint8Array) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString('base64url');
+  const dev = async () => b64u(await subtle.exportKey('raw', (await subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])).publicKey));
+  const realFetch = globalThis.fetch;
+  const pushed: string[] = [];
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://push.example.com/mp-')) { pushed.push(url); return new Response(null, { status: 201 }); }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  try {
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/mp-%'`);
+    await db.query(`insert into public.push_subscriptions (profile_id, endpoint, p256dh, auth, label) values ($1, 'https://push.example.com/mp-md-phone', $2, $3, 'Chrome on Android')`,
+      [sa.id, await dev(), b64u(globalThis.crypto.getRandomValues(new Uint8Array(16)))]);
+    const soon = (min: number) => new Date(Date.now() + min * 60e3).toISOString();
+    let mr = await api('tm2', 'POST', '/meetings', { title: 'MPush API review', description: 'Confidential agenda', startsAt: soon(3 * 1440), endsAt: soon(3 * 1440 + 60), attendeeIds: [sa.id] });
+    check(mr.status === 201, 'meeting push: a colleague invites the Managing Director', mr);
+    const m1 = mr.json.data.id;
+    const { rows: d1 } = await db.query(`select d.status, d.url, d.title, d.body from public.notification_deliveries d where d.kind = 'MEETING' and d.profile_id = $1 and d.url like $2`,
+      [sa.id, `%${m1}`]);
+    check(d1.length === 1 && d1[0].status === 'ACCEPTED_BY_PUSH_SERVICE' && pushed.includes('https://push.example.com/mp-md-phone'),
+      'meeting push: the invitation is on the Managing Director\'s phone right away (sent after the change, not at the next run)', d1);
+    check(d1[0].url === `/?open=meeting&id=${m1}` && !/Confidential/.test(d1[0].title + d1[0].body), 'meeting push: it opens that meeting and never shows the agenda', d1[0]);
+
+    pushed.length = 0;
+    mr = await api('tm2', 'POST', '/meetings', { title: 'MPush API standup', startsAt: soon(12), endsAt: soon(40), attendeeIds: [sa.id] });
+    check(mr.status === 201, 'meeting push: a meeting in 12 minutes', mr);
+    const m2 = mr.json.data.id;
+    const run = await fetch(`${base}/internal/attendance/reminders`, { method: 'POST', headers: { authorization: 'Bearer dispatch-secret-0123456789' } })
+      .then(async x => ({ status: x.status, json: (await x.json()) as any }));
+    const { rows: d2 } = await db.query(`select d.status from public.notification_deliveries d join public.notifications n on n.id = d.notification_id
+                                           where n.type = 'MEETING_REMINDER' and n.entity_id = $1 and d.profile_id = $2`, [m2, sa.id]);
+    check(run.status === 200 && d2.length === 1 && d2[0].status === 'ACCEPTED_BY_PUSH_SERVICE',
+      'meeting push: the 5-minute scheduled run sends the 15-minute reminder to the phone', { run: run.json, d2 });
+    await db.query(`delete from public.meetings where title like 'MPush API %'`);
+    await db.query(`delete from public.push_subscriptions where endpoint like 'https://push.example.com/mp-%'`);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (saved.priv === undefined) delete process.env.VAPID_PRIVATE_KEY; else process.env.VAPID_PRIVATE_KEY = saved.priv;
+    if (saved.subj === undefined) delete process.env.VAPID_SUBJECT; else process.env.VAPID_SUBJECT = saved.subj;
+    if (saved.pub !== undefined) process.env.VAPID_PUBLIC_KEY = saved.pub;
+  }
+}
+
+// --- International / Reseller: Performance Management is the Team Lead's and the Department Head's, never the Team Member's (migration 20270210000100) ---
+{
+  const { rows: [intl] } = await db.query(`select d.id, (select t.id from public.teams t where t.department_id = d.id order by t.created_at limit 1) as team from public.departments d where d.slug = 'international'`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const head = await mkUser('uphHead', 'uph.head@example.com', 'UPH Head', { provisioned_role: 'DEPARTMENT_HEAD', provisioned_department_id: intl.id });
+  const lead = await mkUser('uphLead', 'uph.lead@example.com', 'UPH Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: intl.team });
+  const mem = await mkUser('uphMem', 'uph.member@example.com', 'UPH Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: intl.team });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
+                                            values ($1, $2, 'UPH API follow-up list', $3, $4, current_date + 3) returning id`, [intl.id, intl.team, lead, mem]);
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);   // the office day (India), as the database counts it
+  const period = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) };
+  const q = `?start=${period.start}&end=${period.end}`;
+  try {
+    let r = await api('uphMem', 'GET', `/performance-approval/overview${q}`);
+    check(r.status === 403 && /for Team Leads and Department Heads/.test(r.json.error?.message ?? ''), 'International: a Team Member has no performance view (403)', r);
+    r = await api('uphMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared half of the follow-up list', progress: 40, pendingWork: 'The other half' });
+    check(r.status === 201 && r.json.data.status === 'PENDING', 'International: the member still submits a daily report on the assigned task', r);
+    const reportId = r.json.data.id;
+    r = await api('uphLead', 'GET', `/performance-approval/overview${q}`);
+    const m = r.json.data?.members?.find((x: any) => x.id === mem);
+    check(r.status === 200 && m?.record?.ratingRequired === true && m.record.canReturn === false && m.record.waitingReports === 1 && r.json.data.leadDecidesMembers === true,
+      'International: the Team Lead sees the member, a rating is required, no return, one report waiting', r.json.data);
+    const recId = m.record.id;
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 4 });
+    check(r.status === 409 && /still waiting/.test(r.json.error?.message ?? ''), 'International: the performance cannot be approved while a report waits', r);
+    r = await api('uphLead', 'POST', `/task-reports/${reportId}/review`, { decision: 'APPROVE' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED', 'International: the Team Lead approves the daily report', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR' && /rating/.test(r.json.error?.message ?? ''), 'International: approving needs a rating', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 9 });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR', 'International: a rating outside 1 to 5 is refused', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'RETURN', remarks: 'Please redo the list' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR' && /not returned to them/.test(r.json.error?.message ?? ''), 'International: a member\'s performance is not returned (their reports are)', r);
+    r = await api('uphLead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 4, remarks: 'Good first week' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.rating === 4, 'International: the Team Lead finalizes the member\'s performance with a rating of 4', r);
+    r = await api('uphLead', 'GET', `/performance-approval/people/${mem}/history`);
+    check(r.status === 200 && r.json.data.records.some((x: any) => x.id === recId && x.rating === 4 && x.reviewedBy === 'UPH Lead'), 'International: the member\'s evaluation history keeps the rating', r);
+    r = await api('uphMem', 'GET', `/performance-approval/people/${mem}/history`);
+    check(r.status === 404, 'International: the member cannot read their own evaluation history', r);
+    r = await api('uphMem', 'GET', `/performance-approval/records/${recId}/history`);
+    check(r.status === 404, 'International: nor the approval history of their record', r);
+    r = await api('uphHead', 'POST', `/performance-approval/records/${recId}/review`, { decision: 'APPROVE', rating: 3 });
+    check(r.status === 403 || r.status === 409, 'International: the Department Head does not decide a member\'s performance', r);
+    r = await api('uphHead', 'GET', `/performance-approval/overview${q}`);
+    const l = r.json.data?.leads?.find((x: any) => x.id === lead);
+    check(r.status === 200 && l?.members?.some((x: any) => x.id === mem && x.record?.status === 'APPROVED' && x.record.rating === 4) && l.record?.canDecide === true && l.record.canReturn === true,
+      'International: the Department Head sees the member\'s approved evaluation and may decide the Team Lead\'s', r.json.data);
+    r = await api('uphHead', 'POST', `/performance-approval/records/${l.record.id}/review`, { decision: 'APPROVE' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR' && /rating/.test(r.json.error?.message ?? ''), 'International: the Department Head rates the Team Lead when approving', r);
+    r = await api('uphHead', 'POST', `/performance-approval/records/${l.record.id}/review`, { decision: 'APPROVE', rating: 5, remarks: 'Team on track' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.rating === 5, 'International: the Department Head approves the Team Lead\'s performance with a rating of 5', r);
+  } finally {
+    await db.query(`delete from public.task_daily_reports where task_id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[head, lead, mem]]);
+    await db.query(`delete from public.work_tasks where id = $1`, [task.id]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead, head]]);
+  }
+}
+
+// --- Performance Management in every department: Team Lead edits reports, updates evaluations, opens a member's work (migration 20270213000100) ---
+{
+  await db.query(`delete from public.departments where slug = 'plp-api'`);
+  const { rows: [dept] } = await db.query(`insert into public.departments (slug, name) values ('plp-api', 'PLP API Department') returning id`);
+  const { rows: [team] } = await db.query(`insert into public.teams (department_id, name, division) values ($1, 'Sales', 'SALES') returning id`, [dept.id]);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const head = await mkUser('plpHead', 'plp.head@example.com', 'PLP Head', { provisioned_role: 'DEPARTMENT_HEAD', provisioned_department_id: dept.id });
+  const lead = await mkUser('plpLead', 'plp.lead@example.com', 'PLP Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: team.id });
+  const mem = await mkUser('plpMem', 'plp.member@example.com', 'PLP Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: team.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, due_date)
+                                            values ($1, $2, 'PLP API renewal list', $3, $4, current_date + 3) returning id`, [dept.id, team.id, lead, mem]);
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  const period = { start: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10), end: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) };
+  const q = `?start=${period.start}&end=${period.end}`;
+  try {
+    let r = await api('plpMem', 'GET', `/performance-approval/overview${q}`);
+    check(r.status === 403, 'every department: a Team Member has no performance view (403)', r);
+    r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared the first draft of the renewal list', progress: 40, pendingWork: 'The rest of the list' });
+    check(r.status === 201 && r.json.data.status === 'PENDING', 'every department: the member submits a daily report', r);
+    const reportId = r.json.data.id;
+    const edit = { workCompleted: 'Prepared and checked the first draft of the renewal list', progress: 50, pendingWork: 'The rest of the list', reason: 'Progress checked against the sheet' };
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, reason: '' });
+    check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR', 'every department: a Team Lead\'s edit needs a reason (422)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, progress: 60, pendingWork: undefined });
+    check(r.status === 422 && /still pending/.test(r.json.error?.message ?? ''), 'every department: the member\'s rules apply to the edit (pending work below 100%)', r);
+    r = await api('plpMem', 'POST', `/task-reports/${reportId}/edit`, edit);
+    check(r.status === 403, 'every department: the member cannot edit as reviewer (403)', r);
+    r = await api('plpHead', 'POST', `/task-reports/${reportId}/edit`, edit);
+    check(r.status === 403, 'every department: the Department Head does not edit a led member\'s report (403)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, edit);
+    check(r.status === 200 && r.json.data.progress === 50 && r.json.data.editedBy === 'PLP Lead' && r.json.data.status === 'PENDING' && r.json.data.canReviewerEdit === true,
+      'every department: the Team Lead edits the waiting report (still Pending)', r);
+    r = await api('plpLead', 'GET', `/task-reports/${reportId}`);
+    check(r.status === 200 && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.progress?.from === 40 && h.changes?.progress?.to === 50),
+      'every department: the report history shows the edit (progress 40 -> 50)', r.json.data?.history);
+    r = await api('plpLead', 'GET', `/performance-approval/people/${mem}/work${q}`);
+    check(r.status === 200 && r.json.data.tasks.some((t: any) => t.id === task.id && t.lastReport?.progress === 50 && t.pendingReports === 1),
+      'every department: the Team Lead opens the member\'s tasks with the latest report', r.json.data);
+    r = await api('plpMem', 'GET', `/performance-approval/people/${mem}/work${q}`);
+    check(r.status === 404, 'every department: the member cannot open their own work view (404)', r);
+    r = await api('plpLead', 'GET', `/performance-approval/people/${mem}/work?start=${period.end}&end=${period.start}`);
+    check(r.status === 422, 'every department: the work period is validated (422)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/review`, { decision: 'APPROVE' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED', 'every department: the Team Lead approves the edited report', r);
+    r = await api('plpLead', 'GET', `/performance-approval/overview${q}`);
+    const m = r.json.data?.members?.find((x: any) => x.id === mem);
+    check(r.status === 200 && m?.record?.ratingRequired === true && m.record.canReturn === false && r.json.data.leadDecidesMembers === true,
+      'every department: the Team Lead evaluates the member (rating required, never returned)', r.json.data);
+    r = await api('plpLead', 'POST', `/performance-approval/records/${m.record.id}/review`, { decision: 'APPROVE', rating: 4, remarks: 'Good week' });
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.canUpdate === true, 'every department: the Team Lead approves with a rating; it can be updated later', r);
+    r = await api('plpLead', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 9 });
+    check(r.status === 422, 'every department: an updated rating is 1 to 5 (422)', r);
+    r = await api('plpMem', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 5 });
+    check(r.status === 404, 'every department: the member cannot update (404)', r);
+    r = await api('plpHead', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 5 });
+    check(r.status === 403, 'every department: the Department Head does not replace the Team Lead as the member\'s evaluator (403)', r);
+    r = await api('plpLead', 'POST', `/performance-approval/records/${m.record.id}/evaluation`, { rating: 3, remarks: 'Adjusted after the client review' });
+    check(r.status === 200 && r.json.data.rating === 3 && r.json.data.status === 'APPROVED', 'every department: the Team Lead updates the rating', r);
+    r = await api('plpLead', 'GET', `/performance-approval/records/${m.record.id}/history`);
+    check(r.status === 200 && r.json.data.some((h: any) => h.action === 'UPDATED' && h.changes?.rating?.from === 4 && h.changes?.rating?.to === 3), 'every department: the update is in the approval history', r.json.data);
+    r = await api('plpHead', 'GET', `/performance-approval/overview${q}`);
+    const l = r.json.data?.leads?.find((x: any) => x.id === lead);
+    check(r.status === 200 && r.json.data.leadDecidesMembers === false && l?.members?.some((x: any) => x.id === mem && x.record?.rating === 3 && x.record.canUpdate === false),
+      'every department: the Department Head sees the Team Lead\'s updated evaluation, read only', r.json.data);
+    r = await api('plpHead', 'GET', `/performance-approval/people/${lead}/work${q}`);
+    check(r.status === 200 && r.json.data.role === 'TEAM_HEAD', 'every department: the Department Head opens a Team Lead\'s work', r);
+  } finally {
+    await db.query(`delete from public.task_daily_reports where task_id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[head, lead, mem]]);
+    await db.query(`delete from public.work_tasks where id = $1`, [task.id]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead, head]]);
+    await db.query(`delete from public.teams where id = $1`, [team.id]);
+    await db.query(`delete from public.departments where id = $1`, [dept.id]);
+  }
+}
+
+// --- AI Studio: Performance Management reads AI Studio's own work; the Team Lead corrects a waiting report (migration 20270214000100) ---
+{
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const { rows: [project] } = await db.query(`select id from public.ai_studio_projects where name = 'AI CRM'`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const lead = await mkUser('apiAiLead', 'api.ai.lead@example.com', 'API AI Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const mem = await mkUser('apiAiMem', 'api.ai.member@example.com', 'API AI Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  const { rows: [task] } = await db.query(`insert into public.ai_studio_tasks (project_id, title, assigned_by, assignee_id, due_date) values ($1, 'API AI task', $2, $3, current_date + 2) returning id`, [project.id, lead, mem]);
+  const { rows: [rep] } = await db.query(`insert into public.ai_studio_daily_reports (author_id, author_name, author_role, project_id, task_id, report_date, work_completed, status, lead_id, submitted_at)
+                                          values ($1, 'API AI Member', 'MEMBER', $2, $3, current_date, 'Built the first screen', 'PENDING_TL_APPROVAL', $4, now()) returning id`, [mem, project.id, task.id, lead]);
+  // a month either side: the task is due in two days
+  const span = `start=${new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)}&end=${new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)}`;
+  try {
+    let r = await api('apiAiLead', 'GET', `/performance-approval/overview?${span}`);
+    check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.members.some((m: any) => m.id === mem && m.metrics.tasks.total === 1 && m.metrics.reports.pending === 1),
+      'AI Studio: the Team Lead\'s Performance Management reads AI Studio\'s tasks and reports', r.json.data);
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: '' });
+    check(r.status === 422, 'AI Studio: a Team Lead\'s correction needs a reason (422)', r);
+    r = await api('apiAiMem', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Changed by me', reason: 'I want to' });
+    check(r.status === 403, 'AI Studio: the member cannot use the Team Lead\'s correction (403)', r);
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: 'Added the menu you also built' });
+    check(r.status === 200 && r.json.data.workCompleted === 'Built the first screen and the menu' && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.workCompleted),
+      'AI Studio: the Team Lead corrects the waiting report; the history keeps the change', r);
+    r = await api('apiAiLead', 'GET', `/performance-approval/people/${mem}/work?${span}`);
+    check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.tasks.some((t: any) => t.id === task.id && t.project === 'AI CRM'), 'AI Studio: the member\'s AI Studio task in the drill-down', r.json.data);
+    r = await api('apiAiMem', 'GET', `/performance-approval/overview?${span}`);
+    check(r.status === 403, 'AI Studio: the member has no performance view (403)', r);
+  } finally {
+    await db.query(`delete from public.ai_studio_daily_reports where id = $1`, [rep.id]);
+    await db.query(`delete from public.ai_studio_tasks where id = $1`, [task.id]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[lead, mem]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[mem, lead]]);
+  }
 }
 
 // --- Weekly department report: with no Operations Head the Department Head sends it straight to HR ---

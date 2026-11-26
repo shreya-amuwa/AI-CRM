@@ -8,6 +8,7 @@ import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { AuthAdminRepository } from '../repositories/AuthAdminRepository.js';
 import { recordSecurityEvent } from '../security/events.js';
+import { linkLifetimeText } from '../security/linkLifetime.js';
 
 /**
  * "Forgot password?" on the staff sign-in page (no login). Always answers the same way, so nobody can find out which addresses belong to
@@ -26,7 +27,7 @@ export function renderStaffResetEmail(p: { name: string; link: string }): Render
 <div style="padding:24px">
 <h1 style="font-size:20px;margin:0 0 12px;color:#0f1d3a">Reset your password</h1>
 <p>Hello ${esc(name)},</p>
-<p>We received a request to reset the password of your Amuwa CRM account. Use the button below to choose a new one. The link works once and for a limited time.</p>
+<p>We received a request to reset the password of your Amuwa CRM account. Use the button below to choose a new one. ${linkLifetimeText()}</p>
 <p style="margin:18px 0"><a href="${esc(p.link)}" style="background:#2f5fd0;color:#ffffff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:10px;display:inline-block">Choose a new password</a></p>
 <p style="font-size:12px;color:#52607a;margin:0 0 4px">If the button does not work, copy this address into your browser:<br><span style="word-break:break-all">${esc(p.link)}</span></p>
 <p style="color:#52607a;font-size:13px">If you did not ask for this, ignore this email: your password stays as it is. Nobody from Amuwa will ever ask you for your password.</p>
@@ -34,7 +35,7 @@ export function renderStaffResetEmail(p: { name: string; link: string }): Render
 </div></div></div>`;
   const text = [
     `Hello ${name},`, '',
-    'We received a request to reset the password of your Amuwa CRM account. Open this link to choose a new one (it works once and for a limited time):',
+    'We received a request to reset the password of your Amuwa CRM account. Open this link to choose a new one. ' + linkLifetimeText(),
     p.link, '',
     'If you did not ask for this, ignore this email: your password stays as it is.', '',
     'Amuwa Corporation'
@@ -70,7 +71,9 @@ export async function staffForgotPassword(body: unknown, deps?: StaffResetDeps):
     // always the CRM's own address (APP_URL), never the caller's Origin
     const link = await d.link(login.email, `${s.appUrl ?? DEFAULT_APP_URL}/set-password?purpose=reset`);
     // a one-time link: never copied to the CRM's CC / BCC lists
-    const r = await sendEmail({ ...s, email: { ...s.email, cc: [], bcc: [] } }, { email: login.email, name: login.name }, renderStaffResetEmail({ name: login.name, link }));
+    // a one-time reset link: AUTH (never copied, CRITICAL, sent at once; a fresh link each request, so no idempotency key)
+    const r = await sendEmail({ ...s, email: { ...s.email, cc: [], bcc: [] } }, { email: login.email, name: login.name }, renderStaffResetEmail({ name: login.name, link }), undefined,
+      { category: 'AUTH', priority: 'CRITICAL', template: 'staff-password-reset' });
     if (!r.ok) console.warn('[api] staff reset e-mail not sent', r.detail);
   } catch (e) {
     console.warn('[api] staff reset link failed', (e as Error)?.message);

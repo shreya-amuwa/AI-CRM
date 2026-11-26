@@ -81,13 +81,23 @@ try {
     'the one-time token is used only when the password is saved, then the new password is stored');
   check(await p3.evaluate(() => !location.search.includes('token_hash')), 'the token is removed from the address bar');
   const p4 = await ctx.newPage();
+  p4.on('pageerror', e => errors.push(String(e)));
+  await p4.route('**/auth/forgot-password', async route => { sent.push(JSON.parse(route.request().postData() || '{}')); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { ok: true } }) }); });
   await p4.goto(`${base}/set-password?purpose=reset&token_hash=used-token&type=recovery`);
   await p4.evaluate(() => window.mountSet());
   const f4 = p4.locator('input[type="password"]');
   await f4.nth(0).fill('New-Secret-2026'); await f4.nth(1).fill('New-Secret-2026');
   await p4.getByRole('button', { name: /Save password/ }).click();
   await p4.getByText('This link has expired').waitFor();
-  check(/Forgot password\?/.test(await p4.locator('body').textContent()), 'a used or expired reset link says how to get a new one');
+  check(/24 hours/.test(await p4.locator('body').textContent()) && await p4.getByTestId('new-link-form').isVisible(),
+    'a used or expired link says links work for 24 hours and offers "Send me a new link" on the spot');
+  check(await p4.getByTestId('bot-check').count() === 0, 'without a site key no robot check is shown (nothing to complete)');
+  const sentBefore = sent.length;
+  await p4.getByTestId('new-link-email').fill('Asha@Amuwa.com');
+  await p4.getByTestId('new-link-submit').click();
+  await p4.getByTestId('new-link-sent').waitFor();
+  check(sent.length === sentBefore + 1 && sent[sent.length - 1].email === 'asha@amuwa.com' && /24 hours/.test(await p4.getByTestId('new-link-sent').textContent()),
+    '"Send me a new link" asks for a new link the same way as "Forgot password?" and says it works for 24 hours', sent);
   check(errors.length === 0, 'no error in the page', errors);
   check(!(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)), 'no sideways scroll at 390px');
 } finally {

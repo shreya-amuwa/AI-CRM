@@ -81,7 +81,7 @@ export const InvoiceWhatsAppCard: React.FC<{ invoiceId: string; invoiceNumber: s
       </div>
       {settings && !settings.enabled && (
         <p role="status" className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Sending invoices by WhatsApp is switched off. {settings.canEdit ? 'Open Settings and tick "Allow sending paid invoices by WhatsApp".' : 'Ask the Super Admin or the Accounts Department Head to switch it on.'}
+          Sending invoices by WhatsApp is switched off. {settings.canEdit ? 'Open Settings and tick "Allow sending paid invoices by WhatsApp".' : 'Ask the Managing Director or the Accounts Department Head to switch it on.'}
         </p>
       )}
       {settings?.delivery && !settings.delivery.ready && (

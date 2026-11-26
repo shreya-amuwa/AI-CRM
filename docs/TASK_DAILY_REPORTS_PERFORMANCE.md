@@ -1,0 +1,227 @@
+# Task daily reports and performance approval
+
+Migration `supabase/migrations/20270209000100_task_daily_reports_performance.sql` (run after `20270208000200`; safe to run twice; nothing is deleted, no column is
+changed, no existing function is replaced). It **adds** to the task module (`work_tasks`, [WORK_TASKS.md](WORK_TASKS.md), [TASK_MANAGEMENT_V2.md](TASK_MANAGEMENT_V2.md)),
+the report chain ([WORK_REPORTS.md](WORK_REPORTS.md)) and Performance Management ([PERFORMANCE_MANAGEMENT.md](PERFORMANCE_MANAGEMENT.md)). Those keep working as before.
+
+```
+Department Head -> Team Lead -> Team Member          (tasks, existing)
+Team Member submits a daily report on a task -> Team Lead approves or returns it
+Approved reports + task records -> performance figures
+Team Lead approves a Team Member's performance; Department Head approves a Team Lead's performance
+```
+
+## What people see
+
+| Role | Side panel | What it does |
+| --- | --- | --- |
+| Department Head | **Assign Task**, **Daily Reports**, **Performance Management** | assigns to Team Leads (existing page); *Daily Reports -> Task Reports* lists every task report of the department with its status (read-only); *Performance Management -> Scores & Approvals* compares the Team Leads and teams and approves or returns each Team Lead's performance |
+| Team Lead | **Assign Task**, **Daily Reports**, **Performance Management** | assigns to members (existing page); *Task Reports* is the inbox: Approve, or Return for correction with a reason; *Scores & Approvals* shows each member's figures and the Team Lead's own, and approves or returns a member's performance |
+| Team Member | **My Assigned Tasks**, **Daily Reports** (no *My Performance* since `20270213000100`, see the last section) | *Task Reports*: report on an assigned task (task, date, work completed, progress %, pending work, reason for delay, remarks); the list shows Pending / Approved / Returned for correction, the Team Lead's remarks and the approval history; a returned report is corrected and sent again |
+
+The same entries exist in the International and Reseller dashboard (`UnifiedDashboard`), the Sales Team Lead, Support Team Lead, Department Head, Sales Department Head
+(new *Assign Task* entry, the same page the other heads use) and the Sales and Support Team Member dashboards. The existing *Reports* page is now called **Daily Reports**; its
+tabs are unchanged and **Task Reports** is a new last tab. The older task analytics (AI written reports) are the second tab of Performance Management.
+
+## Task daily report (`task_daily_reports`)
+
+* One report per **task and date** (`unique (task_id, report_date)`); the date is today or one of the last 7 days (never the future, never before the task was assigned,
+  never after the task closed). A returned report is edited and sent again: the same row, `revision + 1`, so there is never a duplicate.
+* Validation (database and form, one Zod schema `taskReportSubmitSchema`): what was done (at least 10 characters); progress 0 to 100; **pending work** is required below 100%;
+  the **reason for the delay** is required when the task is past its deadline and not finished.
+* Only the **assignee** of the task, a Team Member, can report on it. A report never changes the task itself (task status and progress stay with the existing work updates).
+* Status `PENDING` -> `APPROVED` or `RETURNED` (-> `PENDING` again on resubmission). A return needs a reason (5 characters).
+* **Who decides:** the Team Member's Team Lead (`private.direct_lead_of`); a member without a Team Lead (AI Studio) is decided by the Department Head covering them. Nobody decides
+  on their own report; the Department Head and the Super Admin read, they do not approve a member who has a Team Lead.
+* **Approval history** (`task_daily_report_history`, append-only: a signed-in user cannot edit or delete a row): submitted, returned, resubmitted, approved with the approver, the time
+  and the remarks. Every step is also in the audit log (`TASK_REPORT_*`).
+* **Notifications** (category *Reports*): `REPORT_TASK_SUBMITTED` -> Team Lead (or the head), `REPORT_TASK_APPROVED` / `REPORT_TASK_RETURNED` -> the Team Member.
+
+## Performance (`performance_records`)
+
+Figures are calculated by `performance_overview(start, end)` from the real task records and the approved reports; **nothing is typed in**. A task belongs to the period by its deadline
+(or, with none, the day it was assigned). A share with nothing to divide is `null` and shown as *Insufficient data* (never 0%); the score re-balances over the parts that have data.
+
+| Team Member score | weight | | Team Lead score | weight |
+| --- | --- | --- | --- | --- |
+| Task completion (completed / tasks) | 35 | | Own task completion | 20 |
+| Progress (completed = 100, else the latest **approved** report's progress) | 15 | | Team task completion | 25 |
+| On-time completion (completed on or before the deadline) | 20 | | Team on-time completion | 15 |
+| Reports approved (approved / (approved + returned)) | 15 | | Reports reviewed (reviewed / (reviewed + waiting more than a day)) | 25 |
+| Reporting consistency (days with an approved report / working days with an open task; Sundays excluded) | 15 | | Work handed down (received tasks handed to the team or taken on / received) | 15 |
+
+Also shown: tasks assigned / completed / pending / overdue, reports submitted / approved / pending / returned, tasks given to the team, the average time to review. The Department Head
+sees the department totals, a comparison of the Team Leads and teams (tasks, completion, overdue, report status, score) and every member under each lead.
+
+* **Record and approval.** A record exists per person and period (`unique (subject_id, period_start, period_end)`), created when there is data. Status `PENDING` / `APPROVED` / `RETURNED`.
+  The Team Lead decides a member's record, the Department Head a Team Lead's (`private.perf2_can_decide`); nobody decides their own; the Super Admin and (for members) the Department Head read.
+  The decision carries the `version` that was on screen: if the figures changed in between it is refused (`CONFLICT`) and the reviewer reloads.
+* **Automatic updates.** Every overview recalculates; a Pending or Returned record follows the data (a new `version` only when a figure changed), and a report submission or decision refreshes the
+  member's and their Team Lead's open records of that period at once. An **Approved record keeps the approved figures**; the live figures are shown next to it.
+* **Returned for correction:** the person fixes the work and presses *Send again for approval* (`performance_record_resubmit`: figures recalculated, status Pending, the reviewer notified).
+* **History** (`performance_record_history`, append-only): generated, refreshed, approved, returned, resubmitted, with the approver, the time, the score and the remarks. Decisions are in the
+  audit log (`PERFORMANCE_RECORD_*`) and notify the person (`REPORT_PERFORMANCE_APPROVED` / `_RETURNED`; `REPORT_PERFORMANCE_PENDING` to the reviewer on resubmission).
+
+## Departments and permissions
+
+Nothing new is hard-coded: the rules are the existing hierarchy (`direct_lead_of`, `head_covers`), so each department, team and function (Sales / Support) is isolated exactly as for tasks, and
+**International** and **Reseller** work without a special case (their people are ordinary profiles of their own department). Row level security is on for the four tables; the app roles have
+`select` through policies and **no write grant**; every write is a `security definer` function that reads the caller from `auth.uid()` (the browser sends no role, team, department or reviewer).
+
+| Who | Reads | Decides |
+| --- | --- | --- |
+| Team Member | own reports and own performance | nothing |
+| Team Lead | reports and performance of the members they lead, their own performance | their members' reports and performance |
+| Department Head | everything of the department (and function) they cover | Team Leads' performance (and members without a Team Lead) |
+| Super Admin | every department (`performance_overview(..., department)`) | nothing here |
+| Another department, another Team Lead | nothing | nothing |
+
+## API
+
+`GET /task-reports/my-tasks`, `GET /task-reports?scope=MINE|TEAM&status&from&to&memberId&taskId&page`, `POST /task-reports`, `GET /task-reports/:id`, `POST /task-reports/:id/review`
+(`{decision: APPROVE|RETURN, remarks}`), `GET /performance-approval/overview?start&end[&departmentId]`, `POST /performance-approval/records/:id/review` (`{decision, remarks, version}`),
+`POST /performance-approval/records/:id/resubmit`, `GET /performance-approval/records/:id/history`. Route -> `taskReportsController` -> `TaskReportService` (Zod: `taskReportSubmitSchema`,
+`taskReportReviewSchema`, `taskReportListQuerySchema`, `performanceOverviewQuerySchema`, `performanceRecordReviewSchema`) -> `TaskReportRepository` -> the database function.
+
+## Tests
+
+* `supabase/tests/task_daily_reports_performance_test.sql` (+ `task_daily_reports_flow.sql`, run once for an ordinary department, International and Reseller): the whole workflow, validation,
+  one report per task and day, return / resubmit / approve, performance figures from real records, approval of members and Team Leads, version conflicts, frozen approved record, history,
+  audit, notifications, and every refusal (another department, another Team Lead, a member, the Super Admin, direct table writes).
+* `supabase/tests/task_daily_reports.test.ts`: the schemas and the service. `supabase/tests/ui_task_reports_performance.test.mjs`: the screens in Chromium (member, Team Lead, Department Head),
+  including phone width. `unified_dashboard.test.ts`, `ui_unified_dashboard.test.mjs`, `sales_head_nav.test.ts` cover the new sidebar entries.
+
+## Rollout
+
+Run the migration in the Supabase SQL editor. The screens call the new functions, so until it is run the *Task Reports* tab and the *Scores & Approvals* tab show the database's error; the rest of
+the CRM is unaffected. Not built: reports for Team Leads' or Department Heads' own tasks (the report chain of [WORK_REPORTS.md](WORK_REPORTS.md) covers their own daily report), a Department Head's
+second approval of members' performance (the head reads it), attachments on a task report.
+
+## International and Reseller: the strict hierarchy (migration 20270210000100)
+
+Migration `supabase/migrations/20270210000100_unified_performance_hierarchy.sql` (run after `20270209000100`; safe to run twice; nothing is deleted). For a department flagged
+`unified_sales_support` (International, Reseller; `private.perf2_strict`) the rules above change as follows. **Every other department keeps the rules above unchanged.**
+
+```
+Team Lead assigns a task -> Team Member submits a daily report on it -> Team Lead approves or returns the report
+-> Team Lead evaluates and approves the member's performance (with a rating; only approved reports count)
+Team Lead's performance -> Department Head approves (with a rating) or returns it
+```
+
+| Feature | Team Member | Team Lead | Department Head |
+| --- | --- | --- | --- |
+| Assign tasks | no | yes | yes |
+| Submit daily reports on assigned tasks | yes | - | - |
+| Approve / return a member's daily report | no | yes (their own members) | no (reads) |
+| Performance Management in the side panel | **no** | yes | yes |
+| Member's performance | **cannot read, calculate, change or approve it** | evaluates and approves it, with a rating | reads it and the Team Lead's decision |
+| Team Lead's performance | - | reads it, resubmits when returned | evaluates, approves (with a rating) or returns it |
+
+* **Team Member.** *My Performance* is removed from the International / Reseller dashboard (an old `/my-performance` address opens the Overview). The database refuses them too:
+  `performance_overview` returns `FORBIDDEN`, their records and histories are not readable (row level security and the functions), `performance_record_resubmit` is refused, and they
+  are not notified of performance decisions. Their task daily reports work as before (submit, see Pending / Approved / Returned, correct and resubmit).
+* **Team Lead decides members.** Approving a member's performance needs a **rating 1 to 5** (`rating`, stored on the record and in its history) and is refused (`CONFLICT`) while any
+  of that member's daily reports in the period is still **Pending**: approve or return them first, so the evaluation uses approved work only. A member's performance is **not returned**
+  (`VALIDATION_ERROR`): the member cannot correct a record, so the Team Lead returns the daily reports instead and approves once they are right.
+* **Department Head.** Approves a Team Lead's performance with a rating, or returns it with a reason (the Team Lead resubmits). Reads every member's performance with the Team Lead's
+  decision. **Never decides a member's report or performance**, also for a member without a Team Lead: such a member's reports wait (nothing is lost) and the Team Lead named later
+  decides them; the screen asks the head to name one.
+* **Evaluation history.** `GET /performance-approval/people/:id/history` (`performance_subject_history`): every record of one person (all periods: status, score, rating, who decided, when,
+  remarks), for their Team Lead, their Department Head and the Super Admin; anyone else gets 404. The screen's *Evaluation history* button opens it.
+* **API.** `POST /performance-approval/records/:id/review` takes an optional `rating` (1 to 5; Zod `performanceRecordReviewSchema`); the database requires it here. The record gains
+  `rating`, `canReturn`, `ratingRequired`, `waitingReports`; the Team Lead's and the head's overview gain `leadDecidesMembers` (all optional, so the screens work before the migration).
+* **Fixed for every department:** `tdr_reviews`, `tdr_can_view` and `perf2_can_view` could return NULL (instead of false) for a member without a Team Lead, which the `if not ...` guards let
+  through (for example, someone who may read a report could decide it). They now always return true or false.
+
+Tests: the strict branch of `supabase/tests/task_daily_reports_flow.sql` (run for International and Reseller), `supabase/tests/unified_performance_hierarchy_test.sql` (member without a Team Lead,
+history access, null-safety, other departments unchanged), the "International / Reseller: Performance Management" block of `api_integration.test.ts`, `task_daily_reports.test.ts` (rating
+validation), `unified_dashboard.test.ts` / `ui_unified_dashboard.test.mjs` (no performance entry for the member) and `ui_task_reports_performance.test.mjs` (rating, no Return, waiting reports, history).
+
+Rollout: run the migration in the Supabase SQL editor. Before it is run, the new screens still work (the new fields are optional) and the member's sidebar no longer offers performance;
+the database rules above apply once it is run.
+
+## The Managing Director (Super Admin): Performance Management
+
+The Super Admin's dashboard has **Performance Management** in the *Company* section (`SuperAdminPerformance`). A **Department** list chooses the department (remembered on the device;
+International / Reseller first by default), and the page is the Department Head's view of that department: the department figures, every Team Lead and team, every member and each
+approval status, for a weekly, monthly or custom period. It reads `GET /performance-approval/overview?departmentId=...` (`performance_overview(start, end, department)`, which already
+allowed the Super Admin), so no migration is needed. It is **read only**: the Team Lead decides the members, the Department Head decides the Team Leads, and the database refuses the
+Super Admin's decisions.
+
+## Team Lead and Department Head Performance Management, every department (migration 20270213000100)
+
+Migration `supabase/migrations/20270213000100_performance_lead_primary.sql` (run after `20270212000100`; safe to run twice; nothing is deleted). The rules of
+"International and Reseller: the strict hierarchy" above now apply to **every department** (existing and future), and three things are added.
+
+```
+Team Lead assigns a task -> Team Member submits a daily report on it
+-> Team Lead reviews it, edits it if necessary, approves or returns it
+-> Team Lead evaluates the member from the approved reports and the task records: approves with a rating (and may update the rating / remarks later)
+-> Department Head reads the member's performance and the Team Lead's decision
+-> Department Head evaluates the Team Lead: approves with a rating, or returns it (the Team Lead resubmits)
+```
+
+| Who | Side panel | Performance Management |
+| --- | --- | --- |
+| Team Member | no performance entry (*My Performance* removed from the Sales / general and Support member dashboards; an old address opens the dashboard) | refused by the database (`FORBIDDEN`); they submit daily reports and see their status |
+| Team Lead | **Performance Management** (Sales Team Lead, Support Team Lead, International / Reseller) | every member who reports to them; open a member: their **assigned tasks** (status, deadline, overdue / on time, latest report) and **daily reports** of the period, where the Team Lead **edits**, approves or returns each report; then approves the member's performance with a **rating 1 to 5** and remarks; **Update evaluation** changes the rating / remarks of an approved one; **Evaluation history** (every period) and **Approval history** (every step) |
+| Department Head | **Performance Management** (Department Head, Sales Department Head, International / Reseller) | department analytics; every Team Lead with their team; open a Team Lead: their figures and tasks, approve (with a rating) or return their performance, update an approved evaluation; each member's reports and evaluation with the Team Lead's decision, **read only** |
+
+* **Team Lead edits a report** (`POST /task-reports/:id/edit`, `task_report_reviewer_edit`; Zod `taskReportReviewerEditSchema`): only the member's reviewer, only while the report is
+  **Pending**; the member's own rules apply (work at least 10 characters, progress 0 to 100, pending work below 100%, the reason for the delay past the deadline) plus a **reason**
+  (5 to 1000 characters) the member reads. The report keeps who edited it and when (`edited_by`, `edited_at`); the history gets an `EDITED` step with the reason and every changed
+  field (`changes`: field -> from / to); the audit log `TASK_REPORT_EDITED`; the member is notified (`REPORT_TASK_EDITED`); the figures follow. Saving the same values again
+  records nothing. Then the Team Lead approves or returns it as before.
+* **Update an approved evaluation** (`POST /performance-approval/records/:id/evaluation` `{rating, remarks}`, `performance_record_update_evaluation`): the reviewer of that record
+  (Team Lead for a member, Department Head for a Team Lead), only when it is **Approved**; the approved figures are not changed. History `UPDATED` with the old and new values,
+  audit `PERFORMANCE_RECORD_EVALUATION_UPDATED`; a Team Lead is notified (`REPORT_PERFORMANCE_UPDATED`), a member is not (they have no performance view). The record carries
+  `canUpdate`.
+* **A person's work** (`GET /performance-approval/people/:id/work?start&end`, `performance_member_work`): the tasks the performance counts (by deadline, else assignment day; at
+  most 300) with the report counts and the latest report. Readable by whoever may read the person's performance, **never by the person themselves**; anyone else gets 404.
+* **Members without a Team Lead:** outside International / Reseller the Department Head covering them still reviews their reports and evaluates them (AI Studio has no Team Leads);
+  in International / Reseller they wait for a Team Lead, as before. The overview's `leadDecidesMembers` is `true` for a Team Lead, and for a Department Head says whether such
+  members wait (`true` in International / Reseller).
+* **Records returned under the old rules:** a member's record that was *Returned for correction* (which the member can no longer resubmit) goes back to **Pending** for the Team
+  Lead (history `REOPENED`); approved records are not touched.
+* AI Studio: see the next section (`20270214000100`). AI Design Studio keeps its own dashboard and reports.
+
+Tests: `supabase/tests/performance_lead_primary_test.sql` (edits, evaluation updates, a person's work, every refusal, the Department Head standing in for an unled member outside
+International / Reseller, the reopened records); `task_daily_reports_performance_test.sql` now runs the Team-Lead-first branch of the flow for the ordinary department too;
+`unified_performance_hierarchy_test.sql` (every department is Team-Lead-first); the "Performance Management in every department" block of `api_integration.test.ts`;
+`task_daily_reports.test.ts` (schemas and service); `performance_sidebar.test.ts` (side panels); `ui_task_reports_performance.test.mjs` (member refused, the drill-down, edit then
+approve, update evaluation, the head's read-only view).
+
+Rollout: run the migration in the Supabase SQL editor. Until it is run: members no longer see a performance entry (the screens changed); *Edit report* and *Update
+evaluation* do not appear (the database does not offer them yet: `canReviewerEdit` / `canUpdate` are absent); a member's tasks panel shows the database's error; everything else
+works as before.
+
+## AI Studio: Performance Management in its side panel (migration 20270214000100)
+
+**Why it was missing.** AI Studio people do not use the Team Lead / Department Head dashboards that received Performance Management: the app opens
+`AiStudioDashboard` for them (`user.role === 'ai-studio'`), whose side panel had Overview, Projects, (Tasks, Team Management), Daily Report(s) and the shared
+entries, and never a Performance Management entry. Behind it, AI Studio keeps its own tasks (`ai_studio_tasks`) and two-step daily reports
+(`ai_studio_daily_reports`: Team Lead, then Department Head), while the shared figures read `work_tasks` and `task_daily_reports` only, so even a link to the
+shared page would have shown an AI Studio team with no work.
+
+**What changed.**
+
+* Side panel (`src/components/ai-studio/AiStudioDashboard.tsx`): **Performance Management** for the Team Lead (after *Daily Report*) and the Department Head
+  (after *Daily Reports*), its own entry and page (`/ai-studio/dashboard/:id/performance`, which works after a reload). Daily Report(s) and its tabs are unchanged.
+  A Team Member has no entry, and the address opens their Overview (the database refuses them too).
+* The page is the shared Performance Management (`PerformanceApprovals`): same records, ratings, approvals, histories and permissions as every department. For AI
+  Studio people the database reads AI Studio's work (`perf2_member` / `perf2_lead` choose by department): tasks from `ai_studio_tasks` (progress from the task),
+  reports from `ai_studio_daily_reports`, where a report counts as **Approved** once its Team Lead approved it (or the Department Head, for a member without a Team
+  Lead), **Returned** when sent back at either step and **Pending** while it waits at the Team Lead's step. AI Studio has no task split, so "work handed down" is
+  not part of a Team Lead's AI Studio score. Every other department keeps the task-record figures (the 20270209000100 bodies, unchanged).
+* The drill-down: opening a member shows their AI Studio tasks (with the project) and their AI Studio daily reports (the same list and dialog as Daily Report);
+  the Team Lead **edits** a report waiting for them (`POST /ai-studio/reports/:id/lead-edit`, `ai_studio_report_lead_edit`: the author's rules plus a reason the
+  employee reads; history `EDITED` with each change, audit `AI_STUDIO_REPORT_EDITED`, notification), approves it, then approves the member's performance with a
+  rating. The Department Head sees the Team Lead's own reports and tasks, every member with the Team Lead's decision (read only), and evaluates the Team Lead.
+
+Tests: `supabase/tests/ai_studio_performance_test.sql`; the AI Studio block of `api_integration.test.ts`; `performance_sidebar.test.ts`; and the browser run
+`supabase/tests/e2e/run-performance-nav.sh`, which signs in through the login page as the Team Lead, the Department Head and the Team Member of AI Studio,
+International and Reseller (and a Sales Team Lead) and checks the side panel, the page, the data, the edit / approve / rate flow and the refusals (45 checks).
+
+Rollout: run the migration in the Supabase SQL editor. Before it is run the AI Studio entry already shows, but the page shows AI Studio people with no task data,
+and *Edit report* does not appear.
+

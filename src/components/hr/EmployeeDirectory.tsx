@@ -3,6 +3,7 @@ import { AlertCircle, ArrowLeft, Building2, ChevronRight, Search, Users } from '
 import type { Employee } from '../../types/amuwaHq';
 import { MonthlyLeaveFilter } from './MonthlyLeaveFilter';
 import type { MonthlyCounts } from '../../hooks/useMonthlyLeave';
+import { designationLabel } from '../../../shared/roleNames';
 
 type StatusFilter = 'all' | 'Full-Time' | 'Training / Probation' | 'Intern' | 'Left' | 'pending';
 
@@ -193,7 +194,7 @@ export const EmployeeDirectory: React.FC<Props> = ({
                       <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold text-slate-900 truncate">{e.name}</span>
                         <span className="block text-xs text-slate-500 truncate">
-                          {e.designation || e.roleLabel || 'No designation'}{searching && e.departmentName ? ` · ${e.departmentName}` : ''}
+                          {designationLabel(e.designation) || e.roleLabel || 'No designation'}{searching && e.departmentName ? ` · ${e.departmentName}` : ''}
                         </span>
                       </span>
                       {(c.halfDays > 0 || c.leaveDays > 0) && (

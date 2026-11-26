@@ -178,3 +178,13 @@ CPU time per request should stay far below the 30-second limit.
 
 Delete the CRM project in Vercel (not the Candidate Portal's). Ask for a small pull request removing `vercel.json` and the Vercel docs.
 Keep the `SMTP_*` settings: they are the e-mail backup.
+
+## RazorpayX payouts (incentive withdrawals, migration `20270125000100`)
+Optional: without these settings Accounts pays withdrawals by hand and the "Pay through Razorpay" button stays hidden.
+1. In RazorpayX (Razorpay's payouts product, switched on for the account, with a current account or RazorpayX Lite), start in **Test mode**.
+2. **Settings > API Keys**: create a key. Add as server secrets (Cloudflare Worker / Vercel, never in the code or the database):
+   `RAZORPAYX_KEY_ID`, `RAZORPAYX_KEY_SECRET`, and `RAZORPAYX_ACCOUNT_NUMBER` (the RazorpayX account number money is sent from).
+3. **Settings > Webhooks**: add `https://<CRM domain>/api/v1/internal/razorpay/payouts` with the events `payout.processed`,
+   `payout.reversed`, `payout.failed`, `payout.rejected`, and a secret of 16+ characters; add the same secret as `RAZORPAYX_WEBHOOK_SECRET`.
+4. Try one small withdrawal in test mode: it should move Requested → Being sent → Paid. Then switch the keys and webhook to Live mode.
+5. A missed webhook is caught by **Check status** on the request, and by the scheduled automations run (requests being sent > 10 minutes).

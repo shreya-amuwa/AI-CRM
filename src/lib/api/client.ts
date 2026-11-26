@@ -1,3 +1,4 @@
+import { relabelRoles } from '../../../shared/roleNames';
 import type { ApiResponse, ErrorCode } from '../../../shared/contracts';
 import { getSupabase } from '../../services/supabaseClient';
 import { scopeHeaders } from '../scope/activeScope';
@@ -52,7 +53,7 @@ if (typeof window !== 'undefined') {
  * Supabase access token, unwraps the `{ success, data | error }` envelope
  * and throws ApiError on failure.
  */
-export async function apiRequest<T>(method: string, path: string, options: { query?: Query; body?: unknown } = {}): Promise<T> {
+export async function apiRequest<T>(method: string, path: string, options: { query?: Query; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
   const session = (await getSupabase()?.auth.getSession())?.data.session;
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(options.query || {})) {
@@ -64,7 +65,9 @@ export async function apiRequest<T>(method: string, path: string, options: { que
     ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
     // the department / function a Department Head works in (the server and the database check it against what was authorised)
-    ...scopeHeaders()
+    ...scopeHeaders(),
+    // e.g. the "confirm you are not a robot" token on public forms (x-turnstile-token)
+    ...(options.headers ?? {})
   };
   const send = async (): Promise<RawResponse> => {
     let res: Response;
@@ -139,7 +142,10 @@ export const api = {
 };
 
 export function errorMessage(err: unknown): string {
+  // the API already shows its messages with the new role designations (server/http/errors.ts)
   if (err instanceof ApiError) return err.message;
+  // an error straight from the database (a direct Supabase call): its wording is the internal one (shared/roleNames.ts)
+  if (err && typeof err === 'object' && 'code' in err && 'details' in err && 'hint' in err && 'message' in err) return relabelRoles(String((err as { message: unknown }).message));
   if (err instanceof Error) return err.message;
   return 'Something went wrong.';
 }

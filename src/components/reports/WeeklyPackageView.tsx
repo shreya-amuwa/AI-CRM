@@ -3,9 +3,9 @@ import type { ReportPackage } from '../../../shared/contracts';
 import { timeLabel, WeeklyStatusPill } from './reportUi';
 
 const ACTION: Record<string, string> = {
-  COMPILED: 'Compiled', SAVED: 'Draft saved', SUBMITTED: 'Submitted to the Operations Head', RESUBMITTED: 'Resubmitted to the Operations Head',
-  APPROVED: 'Approved by the Operations Head and sent to HR', REVISION_REQUESTED: 'Revision requested', HR_STARTED: 'HR review started',
-  SENT_TO_HR_DIRECT: 'Sent directly to HR (no Operations Head is assigned)', HR_COMPLETED: 'HR review completed', SUBMITTED_TO_SUPERADMIN: 'Submitted to the Super Admin'
+  COMPILED: 'Compiled', SAVED: 'Draft saved', SUBMITTED: 'Submitted to the CEO', RESUBMITTED: 'Resubmitted to the CEO',
+  APPROVED: 'Approved by the CEO and sent to HR', REVISION_REQUESTED: 'Revision requested', HR_STARTED: 'HR review started',
+  SENT_TO_HR_DIRECT: 'Sent directly to HR (no CEO is assigned)', HR_COMPLETED: 'HR review completed', SUBMITTED_TO_SUPERADMIN: 'Submitted to the Managing Director'
 };
 
 /** The Department Head's weekly summary (title, task overviews, remarks), the Operations Head's decision and every step so far. */
@@ -33,7 +33,7 @@ export const WeeklyPackageView: React.FC<{ pkg: ReportPackage; showHistory?: boo
       </dl>
       {pkg.ohReviewer ? (
         <div className={`rounded-xl border px-3 py-2 text-sm ${pkg.status === 'REVISION_REQUIRED' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-indigo-100 bg-indigo-50/50 text-slate-800'}`} data-testid="weekly-oh-note">
-          <p className="text-[11px] font-bold uppercase tracking-wide">{pkg.status === 'REVISION_REQUIRED' ? 'Revision requested' : 'Operations Head review'} - {pkg.ohReviewer}, {timeLabel(pkg.ohReviewedAt)}</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide">{pkg.status === 'REVISION_REQUIRED' ? 'Revision requested' : 'CEO review'} - {pkg.ohReviewer}, {timeLabel(pkg.ohReviewedAt)}</p>
           {pkg.ohComment ? <p className="mt-1 whitespace-pre-wrap">{pkg.ohComment}</p> : null}
         </div>
       ) : null}

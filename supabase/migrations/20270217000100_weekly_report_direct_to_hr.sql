@@ -33,7 +33,7 @@ end $$;
 create or replace function private.weekly_routing_issue(p_department uuid, p_division text)
 returns text language sql stable security definer set search_path = '' as $$
   select case when exists (select 1 from private.weekly_reviewer_ids(p_department, p_division)) then null
-    else format('No active Operations Head is assigned to %s%s, so this weekly report goes directly to HR. Once the Super Admin assigns an Operations Head, later weeks go through them.',
+    else format('No active Operations Head is assigned to %s%s, so this weekly report goes directly to HR. Once the Super Admin assigns one, later weeks go through them.',
                 (select d.name from public.departments d where d.id = private.base_department(p_department)),
                 case when p_division is null then ' (whole department)' else ' ' || private.function_label(p_division) end) end
 $$;

@@ -36,7 +36,7 @@ In the **HR Department Panel**, **Attendance → Attendance register (all staff)
 | CRM Login | First CRM sign-in of the day and the last sign-out ("No logout yet" / "Logout not recorded" when the session was not closed) |
 | Punch In / Punch Out | Time in India Standard Time; "Missing" when punched in but not out |
 | Punch In / Punch Out Location | Coordinates, accuracy in metres, a Google Maps link, and the nearest address when it has been looked up |
-| Lunch Duration | Total of all breaks; anything over the **50 minutes** allowed is shown as extra |
+| Lunch Duration | Total of all breaks; anything over the **45 minutes** allowed is shown as extra |
 | Worked | Punch In to Punch Out (lunch is shown separately, not deducted) |
 | Status | Not Punched In, Punched In, On Lunch, Resumed Work, Punched Out, Incomplete Attendance |
 
@@ -47,6 +47,28 @@ Punch Out. Opening the register is recorded in the audit log. No office location
 workplace boundary.
 
 ---
+
+## Attendance reminders: the company times
+
+Open **Attendance → Reminders**. Under **Company reminder times** you set the times everyone gets unless they chose their own:
+
+| Setting | Default |
+|---|---|
+| Punch In / Lunch / Punch Out reminder | 10:00 / 14:00 / 19:00 (India time) |
+| Follow-up if it is still not done | after 15 minutes (once) |
+| Lunch warning | 5 minutes before the 45-minute allowance runs out |
+| Reminder days | Monday to Saturday |
+
+* **Reminders are on for the company** switches every reminder on or off.
+* **Turn off reminders for today** stops the rest of today's reminders (a holiday, an office closure). It is back to normal tomorrow.
+* Nobody is reminded of something already done, on approved leave (full day, or the half that is off), or on a day that is not a reminder day.
+* Every change is recorded in the audit log.
+
+## "Low precision" punches
+
+Each punch shows how precisely the device knew where it was ("within 25 m"). A punch **less precise than 100 m** is marked
+**low precision**: usually a laptop that located itself from Wi-Fi or the network instead of GPS. It is still a valid punch (up to 1 km is
+accepted), but the location is approximate. Ask staff who are often "low precision" to punch from the Amuwa CRM app on their phone.
 
 ## The 15-Minute Discrepancy Rule
 

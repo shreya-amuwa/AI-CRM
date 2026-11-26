@@ -42,14 +42,15 @@ function safeOrigin(origin: string | undefined): string | null {
 }
 
 /** Sends one client e-mail, or says why it was not sent (the team can send it again later). */
-async function sendClientMail(to: { email: string; name: string }, mail: RenderedEmail): Promise<{ sent: boolean; detail?: string }> {
+async function sendClientMail(to: { email: string; name: string }, mail: RenderedEmail, customerId?: string): Promise<{ sent: boolean; detail?: string }> {
   const s = clientEmailSettings(automationSettings());
   if (s.mode !== 'live') return { sent: false, detail: 'E-mails are switched off on the server (AUTOMATION_MODE is not "live").' };
   if (!liveChannels(s).includes('EMAIL')) return { sent: false, detail: 'E-mail sending is not set up on the server.' };
   if (s.testRecipients && !s.testRecipients.emails.has(to.email.toLowerCase())) {
     return { sent: false, detail: 'Test mode: only the test recipients get e-mails.' };
   }
-  const r = await sendEmail(s, to, mail);
+  // every e-mail sent here carries a set-password link or a password: never copied to anyone (CREDENTIALS), whatever EMAIL_CC / EMAIL_BCC say
+  const r = await sendEmail(s, to, mail, undefined, { category: 'CREDENTIALS', application: 'CLIENT_PORTAL', template: 'client-login', ...(customerId ? { context: { customerId } } : {}) });
   return r.ok ? { sent: true } : { sent: false, detail: r.detail ?? 'The e-mail could not be sent.' };
 }
 
@@ -127,13 +128,19 @@ export class CustomerImportService {
     return out;
   }
 
-  /** The team sends the "Set your password" e-mail again (e.g. the link expired). */
+  /**
+   * The team (the relationship manager, Accounts) sends the "Set your password" e-mail again, e.g. the client did not set a password
+   * within the link's 24 hours. The database checks who may and the limits first (one every 2 minutes and 5 a day per customer, 100 a
+   * day per sender: 20270212000100), and records the send once the e-mail was accepted.
+   */
   async sendPasswordEmail(actor: Actor, id: string, origin?: string): Promise<{ email: string; sent: boolean; detail?: string }> {
     const customerId = parse(uuidSchema, id);
-    const t = unwrap(await this.db.rpc('client_login_invite_target', { p_customer: customerId })) as { email: string; name: string; businessName: string };
     if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'Client logins are not set up on the server.');
+    const t = unwrap(await this.db.rpc('client_password_link_begin', { p_customer: customerId })) as { email: string; name: string; businessName: string };
     const link = await this.authAdmin.passwordLink(t.email, setPasswordUrl(origin));
-    const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({ name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'WELCOME' }));
+    const r = await sendClientMail({ email: t.email, name: t.name }, renderClientPasswordEmail({ name: t.name, businessName: t.businessName, loginEmail: t.email, link, kind: 'WELCOME' }), customerId);
+    // only a link that went out counts towards the limits (a test-mode or failed e-mail uses nothing up)
+    if (r.sent) unwrap(await this.db.rpc('client_password_link_sent', { p_customer: customerId }));
     // a password link was made for a client's login: who asked, for which customer (the address and the link are not recorded)
     const info = requestInfo.getStore();
     await recordSecurityEvent({
@@ -141,6 +148,11 @@ export class CustomerImportService {
       requestId: info?.requestId, ip: info?.ip, dedupeKey: `client-pwd-link:${customerId}:${Math.floor(Date.now() / 60_000)}`, metadata: { sent: r.sent }
     });
     return { email: t.email, ...r };
+  }
+
+  /** The "Client login" card: is there a login, did the client choose a password, the last link and when the next can be sent. */
+  async clientLoginStatus(id: string): Promise<unknown> {
+    return unwrap(await this.db.rpc('client_login_status', { p_customer: parse(uuidSchema, id) }));
   }
 
   private async createLogin(actor: Actor, l: ImportRpcResult['newLogins'][number], origin?: string, teamPassword?: string): Promise<CustomerDataImportLogin> {

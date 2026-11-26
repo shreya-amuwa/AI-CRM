@@ -19,23 +19,23 @@ set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select hr_training_programs_list()$$, 'a Sales member cannot open the training workspace', 'FORBIDDEN');
 select test.must_fail($$select hr_training_overview()$$, 'nor its overview', 'FORBIDDEN');
-select test.must_fail($$select hr_training_program_save(null, 'Sneaky', null, current_date)$$, 'nor create a program', 'FORBIDDEN');
+select test.must_fail($$select hr_training_program_save(null, 'Sneaky', null, (now() at time zone 'Asia/Kolkata')::date)$$, 'nor create a program', 'FORBIDDEN');
 select test.login('dh_wab');
 select test.must_fail($$select hr_training_records()$$, 'a Department Head of another department cannot read training records', 'FORBIDDEN');
 select test.login('hr_head');
-select test.must_fail($$insert into hr_training_programs (name, start_date) values ('Direct', current_date)$$, 'the tables cannot be written directly', 'permission denied');
+select test.must_fail($$insert into hr_training_programs (name, start_date) values ('Direct', (now() at time zone 'Asia/Kolkata')::date)$$, 'the tables cannot be written directly', 'permission denied');
 
 \echo '   programs and days'
-select hr_training_program_save(null, 'Onboarding Bootcamp A', 'Three days for new joiners', current_date - 5, test.id('hrx_tm'));
-select test.check((select jsonb_array_length(j -> 'days') = 3 and j ->> 'endDate' = (current_date - 3)::text and j ->> 'phase' = 'ENDED'
+select hr_training_program_save(null, 'Onboarding Bootcamp A', 'Three days for new joiners', (now() at time zone 'Asia/Kolkata')::date - 5, test.id('hrx_tm'));
+select test.check((select jsonb_array_length(j -> 'days') = 3 and j ->> 'endDate' = ((now() at time zone 'Asia/Kolkata')::date - 3)::text and j ->> 'phase' = 'ENDED'
                          and (j -> 'days' -> 0 ->> 'title') = 'Initial Training' and (j -> 'days' -> 1 ->> 'title') = 'Practical Training' and (j -> 'days' -> 2 ->> 'title') = 'Final Training and Assessment'
-                         and (j -> 'days' -> 1 ->> 'date')::date = current_date - 4
+                         and (j -> 'days' -> 1 ->> 'date')::date = (now() at time zone 'Asia/Kolkata')::date - 4
                      from (select x as j from jsonb_array_elements(hr_training_programs_list()) x where x ->> 'name' = 'Onboarding Bootcamp A') q),
   'a program gets its three days on consecutive dates from the start date');
-select test.must_fail($$select hr_training_program_save(null, 'X', null, current_date)$$, 'a program needs a name', 'name');
-select test.must_fail($$select hr_training_program_save(null, 'Bad Date', null, current_date + 5000)$$, 'and a sensible start date', 'start date');
-select hr_training_program_save(null, 'Onboarding Bootcamp B', null, current_date, test.id('hrx_tm'));
-select hr_training_program_save(null, 'Later Bootcamp C', null, current_date + 10, test.id('hrx_tm'));
+select test.must_fail($$select hr_training_program_save(null, 'X', null, (now() at time zone 'Asia/Kolkata')::date)$$, 'a program needs a name', 'name');
+select test.must_fail($$select hr_training_program_save(null, 'Bad Date', null, (now() at time zone 'Asia/Kolkata')::date + 5000)$$, 'and a sensible start date', 'start date');
+select hr_training_program_save(null, 'Onboarding Bootcamp B', null, (now() at time zone 'Asia/Kolkata')::date, test.id('hrx_tm'));
+select hr_training_program_save(null, 'Later Bootcamp C', null, (now() at time zone 'Asia/Kolkata')::date + 10, test.id('hrx_tm'));
 select hr_training_day_save(test.prog('Onboarding Bootcamp B'), 1, 'Initial Training', '["CRM basics","Company policies"]', 'Rina Trainer', null, '[]', null);
 select hr_training_day_save(test.prog('Onboarding Bootcamp B'), 3, 'Final Training and Assessment', '["Mock calls"]', 'Th Wab', test.id('th_wab'), '[{"name":"Quiz","max":10},{"name":"Role play","max":10}]', 60);
 select test.must_fail($$select hr_training_day_save(test.prog('Onboarding Bootcamp B'), 2, 'Practical', '[]', null, null, '[{"name":"","max":0}]', null)$$, 'a criterion needs a name and a maximum', 'criterion');
@@ -69,7 +69,7 @@ select test.check((hr_training_report_save(test.enr('Onboarding Bootcamp B', 'Me
   'an absent day is not complete');
 -- time passes: Program B started two days ago
 reset role;
-update hr_training_programs set start_date = current_date - 2 where name = 'Onboarding Bootcamp B';
+update hr_training_programs set start_date = (now() at time zone 'Asia/Kolkata')::date - 2 where name = 'Onboarding Bootcamp B';
 set role authenticated;
 select test.login('hr_head');
 select test.check((select e ->> 'status' = 'IN_PROGRESS' and (e -> 'days' -> 1 ->> 'completed') = 'false' and (e -> 'days' -> 1 ->> 'overdue') = 'true'
@@ -109,13 +109,13 @@ select test.must_fail($$select hr_training_program_get(test.prog('Onboarding Boo
 \echo '   the daily check, history and the overview'
 select test.login('hr_head');
 reset role;
-select test.check((select (r ->> 'statusesChanged')::int >= 2 and (r ->> 'consolidatedReports')::int >= 2 from (select hr_training_tick(current_date) r) x), 'the daily check ends the training of a program that is over without the work done: Incomplete, with a consolidated report');
+select test.check((select (r ->> 'statusesChanged')::int >= 2 and (r ->> 'consolidatedReports')::int >= 2 from (select hr_training_tick((now() at time zone 'Asia/Kolkata')::date) r) x), 'the daily check ends the training of a program that is over without the work done: Incomplete, with a consolidated report');
 select test.check((select count(*) = 2 and bool_and(consolidated is not null) from hr_training_enrollments e join hr_training_programs p on p.id = e.program_id where p.name = 'Onboarding Bootcamp A' and e.status = 'INCOMPLETE'),
   'both employees of the past program are Incomplete (the dates passed, nothing was attended)');
 select test.check((select (consolidated -> 'missing') @> '["Day 1: no attendance recorded"]'::jsonb and (consolidated ->> 'daysCompleted') = '0' from hr_training_enrollments e where employee_name = 'Member A' and program_id = test.prog('Onboarding Bootcamp A')),
   'the consolidated report says what is missing instead of inventing it');
 select test.check((select count(*) = 2 from notifications where type = 'TRAINING_REPORTS_PENDING' and recipient_id = test.id('hrx_tm')), 'the responsible HR employee is reminded, once per program, of the day reports still missing');
-select test.check((select (r ->> 'statusesChanged')::int = 0 and (r ->> 'consolidatedReports')::int = 0 from (select hr_training_tick(current_date) r) x), 'a second run changes and creates nothing');
+select test.check((select (r ->> 'statusesChanged')::int = 0 and (r ->> 'consolidatedReports')::int = 0 from (select hr_training_tick((now() at time zone 'Asia/Kolkata')::date) r) x), 'a second run changes and creates nothing');
 select test.check((select count(*) = 2 from notifications where type = 'TRAINING_REPORTS_PENDING' and recipient_id = test.id('hrx_tm')), 'and sends no second reminder');
 set role authenticated;
 select test.login('hr_head');
@@ -129,8 +129,8 @@ select test.must_fail($$select hr_training_unenroll(test.enr('Onboarding Bootcam
 select hr_training_unenroll((select e.id from hr_training_enrollments e join hr_training_programs p on p.id = e.program_id where p.name = 'Later Bootcamp C'));
 select test.check((select count(*) = 0 from hr_training_enrollments e join hr_training_programs p on p.id = e.program_id where p.name = 'Later Bootcamp C'), 'an enrolment made by mistake can be removed');
 -- rescheduling moves the three days
-select hr_training_program_save(test.prog('Later Bootcamp C'), 'Later Bootcamp C', null, current_date + 20);
-select test.check((select (j -> 'days' -> 2 ->> 'date')::date = current_date + 22 from (select x as j from jsonb_array_elements(hr_training_programs_list()) x where x ->> 'name' = 'Later Bootcamp C') q), 'changing the start date moves all three days');
+select hr_training_program_save(test.prog('Later Bootcamp C'), 'Later Bootcamp C', null, (now() at time zone 'Asia/Kolkata')::date + 20);
+select test.check((select (j -> 'days' -> 2 ->> 'date')::date = (now() at time zone 'Asia/Kolkata')::date + 22 from (select x as j from jsonb_array_elements(hr_training_programs_list()) x where x ->> 'name' = 'Later Bootcamp C') q), 'changing the start date moves all three days');
 -- cancelling
 select hr_training_program_cancel(test.prog('Later Bootcamp C'));
 select test.must_fail($$select hr_training_enroll(test.prog('Later Bootcamp C'), array[test.id('tm_a')::text])$$, 'nobody can be enrolled in a cancelled program', 'cancelled');

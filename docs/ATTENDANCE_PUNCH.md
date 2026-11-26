@@ -12,7 +12,12 @@ card at the top of their Operations Dashboard. Nothing is recorded automatically
 * **Signing in to the CRM never punches in, and signing out never punches out.** The two are recorded separately (see "CRM sign-in and
   sign-out" below).
 * **Punch In** / **Punch Out** need the device's **current location** (migration 0700). When the button is pressed the browser is asked for
-  the position (`enableHighAccuracy`, `maximumAge: 0`, up to 20 s; readings are watched for a few seconds and the most precise one is kept).
+  the position (`enableHighAccuracy`, `maximumAge: 0`). A reading within **100 m** is used at once; otherwise the readings are watched for
+  at most **3 seconds** after the first acceptable one and the most precise is kept; a first reading over the limit (a phone's coarse fix
+  from the mobile network) keeps it listening for the GPS fix, up to **20 seconds** in all. A punch is usually recorded in 1–3 s.
+  A punch less precise than 100 m (a laptop locating itself from Wi-Fi or the network) is still accepted up to the limit below, and shown as
+  **"low precision"** to the employee and in HR's register. To make 100 m strict, set `attendance_settings.max_location_accuracy_m` to 100
+  (then punches over 100 m are refused with the "not precise enough" help).
   Punch Out takes a **fresh** position of its own. If permission is denied, location services are off, no position comes in time, the browser
   has no geolocation, or the position is less precise than `attendance_settings.max_location_accuracy_m` (**1000 m** by default — an
   approximate network/IP position is typically several km), **nothing is recorded** and the card explains how to turn location on. The
@@ -28,11 +33,41 @@ card at the top of their Operations Dashboard. Nothing is recorded automatically
 * One Punch In a day (a second click, a refresh or another tab returns the first). Punch Out is append-only: each later Punch Out is a new
   event and the **latest** one is the effective Punch Out; earlier ones stay. The same request again (network retry) or a second click within
   60 seconds is not a new punch.
-* **Lunch**: Start Lunch / Resume Work; one open break at a time; several breaks add up against the **50-minute** allowance
+* **Lunch**: Start Lunch / Resume Work; one open break at a time; several breaks add up against the **45-minute** allowance
   (`attendance_settings.lunch_allowance_minutes`). The running timer is computed from the server's start time and clock, so it survives a
   refresh and does not drift. Over the allowance is **flagged only** (no payroll or score effect). A lunch still open at Punch Out ends with it.
-  No lunch before Punch In or after Punch Out. Remaining = 50 − total taken (never below 0); extra = total taken − 50. Lunch is shown
+  No lunch before Punch In or after Punch Out. Remaining = allowance − total taken (never below 0); extra = total taken − allowance. Lunch is shown
   separately and is **not** deducted from the worked time (Punch In to Punch Out).
+
+## Reminders and the app (migrations 20270109000200, 20270110000200)
+
+Staff get **Punch In**, **Lunch time**, **Lunch ends in N minutes** and **Punch Out** reminders in the CRM bell and, on each device where
+they turned them on, as phone / laptop notifications (Web Push).
+
+* **Times.** Company defaults (HR and the Super Admin, Attendance → Reminders): Punch In 10:00, Lunch 14:00, Punch Out 19:00, one follow-up
+  15 minutes later, the lunch warning 5 minutes before the allowance runs out, Monday to Saturday, a master switch and "Turn off reminders for
+  today". Each person may choose their own times (Punch In 06:00–13:00, Lunch 11:00–17:00, Punch Out 14:00–23:30) or switch reminders off.
+  Every change is in the audit log.
+* **Who gets what.** A reminder is skipped when it is already done (punched in, lunch started, punched out), on approved full-day leave, on
+  a morning half-day (no Punch In) or an afternoon half-day (no lunch, no Punch Out), on days that are not reminder days, and for the Super
+  Admin. Each reminder goes out **once** (per person, day, kind and first/follow-up); a reminder more than 30 minutes late is dropped; when a
+  run comes after the follow-up is due, only the follow-up goes. The lunch warning is once per break and says the minutes really left.
+* **Sending.** The Worker's `*/5 * * * *` cron calls `POST /api/v1/internal/attendance/reminders` (the dispatch secret; off until
+  `SCHEDULED_ENABLED=true`). The database (`attendance_reminders_due`) records each reminder and puts it in the bell; the API pushes it to the
+  person's devices (`server/automations/webPush.ts`: RFC 8291 `aes128gcm` + RFC 8292 VAPID with Web Crypto, 10-second timeout). A device the
+  push service reports as gone (404 / 410) is switched off. Without `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` the reminders reach the bell only.
+* **Devices.** "Turn on reminders" (the banner on every staff dashboard, or Attendance → Reminders) saves the browser's subscription for the
+  signed-in person; the last person to sign in on a device owns it, and signing out removes it. At most 10 active devices per person.
+  Attendance → Reminders lists them (Remove) and sends a test notification.
+* **The app.** `public/manifest.webmanifest` makes the CRM installable ("Amuwa CRM", standalone, icons in `public/icons/`). `public/sw.js`
+  only shows the reminders and opens Attendance when one is tapped: **no fetch handler and no cache**, so it never serves an old CRM. It is
+  served with `Cache-Control: no-cache` (`public/_headers`) and registered only by the staff dashboard shell. When a browser renews its
+  subscription, the service worker sends the old and new one to `POST /api/v1/attendance/push-resubscribe` (no sign-in; only an existing,
+  active device is moved, `push_subscription_replace`, service role only).
+* **Chat messages** use the same devices: see `docs/CHAT.md`, "Push notifications". The banner and the button say "notifications" because
+  they cover both; each person has a separate **Chat notifications** switch.
+* **iPhone / iPad:** web notifications work only for the app added to the Home Screen (iOS 16.4 or later): Safari → Share → Add to Home
+  Screen, then open Amuwa CRM from the Home Screen and turn reminders on there. The banner shows these steps in a Safari tab.
 
 ## CRM sign-in and sign-out (separate from attendance)
 * Sign-in: the API records `SESSION_STARTED` once per session (now with the browser and system, e.g. "Chrome on Windows"), and the first
@@ -106,3 +141,55 @@ Super Admin. For each employee it checks:
 
 It then checks that the HR Admin Head sees all of them in today's register, and that the entry comes first on a phone.
 
+
+## Reliable reminders, Resume Work, sound and Notification Health (migration 20270126000200)
+
+Details: `docs/NOTIFICATION_RELIABILITY.md`.
+
+* **Delivery outbox.** The scheduled run now records the reminder, writes the bell and queues one delivery per device in one transaction
+  (`attendance_reminders_generate`); deliveries are sent with leases, retried after temporary failures (timeout, 429, 5xx), cancelled when
+  the reminder is no longer true (punched in, lunch ended, punched out, leave) or the device moved to another person, and expire 30 minutes
+  after they were due. "Accepted by the push service" is recorded, never "delivered".
+* **Resume Work.** "Time to Resume Work" when an open lunch reaches the allowance left for the day (real start time, earlier breaks counted),
+  plus one follow-up (`reminder_resume_follow_up_minutes`, 10 by default, 0 = none; HR sets it in Attendance → Reminders). The 5-minute
+  "Lunch ends in N minutes" warning is unchanged.
+* **Sound.** Attendance → Reminders → Notification sound: Attendance reminders, Chat messages, General notifications, Test sound.
+* **Devices.** Send test notification (then "Did it appear / make a sound?"), Test sound, Check device status, Notification troubleshooting.
+* **Notification Health.** HR (not recruiters) and the Super Admin: Attendance → Notification health (the Super Admin also has it in their
+  menu). Per active employee: reminder settings, devices, last acceptance and failure, status, sound status, Send test.
+
+## Today's Attendance Overview and the Super Admin's 11:00 alert (migration 20270131000100)
+
+Run after `20270130000100_unified_head_sales_pages.sql`. Additive and safe to run twice.
+
+### The alert
+
+Every working day at 11:00 India time, each active Super Admin gets **"Look at today's attendance."**:
+
+- in the CRM bell, with a one-line summary (absent, not yet marked, on leave, present);
+- as a push notification on each of their devices where push is switched on.
+
+Nobody else gets it: no Department Head, Team Lead, Team Member or HR person.
+
+- **When.** The Worker's 5-minute scheduled run calls `sa_attendance_alert_generate()`.
+  - It sends from 11:00 until 14:00 at the latest, so a scheduler that was down catches up, but the alert never arrives in the evening.
+  - The time is `attendance_settings.sa_alert_time` (11:00 by default).
+- **Working days.** The company's days (`attendance_settings.reminder_days`, Monday to Saturday by default). HR's "off for today" switch (`reminders_paused_on`, used for a holiday or an office closure) skips that day.
+- **Once a day.** `sa_attendance_alerts` holds one row per Super Admin per day (`trigger_key`, unique). It is written in the same transaction as the bell notification and the push deliveries, so a retry or a second run creates nothing new.
+- **Delivery.** Push goes through the existing outbox (`notification_deliveries`, kind `SA_ATTENDANCE`): retries with a lease, and each attempt is recorded. The log row keeps the destination `/?open=attendance&view=today`, the number of devices, and `QUEUED`, `NO_DEVICE` or `PUSH_OFF`.
+
+### The overview
+
+Clicking the alert, in the bell or on a phone or laptop, opens **Attendance → Today's overview** directly, on the list of absent employees. HR and the Super Admin also find it as the first Attendance tab. `attendance_today_overview(date)` is HR / Super Admin only, and each read is audited like the register.
+
+| Group | Rule |
+| --- | --- |
+| Present | punched in |
+| Late | punched in after 10:30 India time, for everyone (company-wide rule, docs/ATTENDANCE_MANAGEMENT.md "Late marking") |
+| On leave | approved full-day leave, or morning half-day leave and not punched in |
+| Absent | not punched in, not on leave, and their day start + `absent_after_minutes` (60 by default) has passed; on an earlier day, absent |
+| Not yet marked | not punched in, not on leave, before that point (or a day that is not a working day) |
+
+The screen also shows the totals, a department-wise summary, and a date picker for earlier days.
+
+Tests: `supabase/tests/sa_attendance_alert_test.sql`, `supabase/tests/ui_notice_board.test.mjs` (the alert's click and the overview).

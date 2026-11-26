@@ -68,6 +68,10 @@ export type DefaultDashboard =
   | 'ai-studio-head'
   | 'ai-studio-lead'
   | 'ai-studio-member'
+  /** International / Reseller (departments flagged unified_sales_support, migration 20270127000100): Sales and Support in one dashboard for each role. */
+  | 'unified-head'
+  | 'unified-lead'
+  | 'unified-member'
   /** A Sales sub-role that has no dashboard of its own yet: 'sales-business-associate', 'sales-influencer', 'sales-visit-sales', 'sales-business-partner'. */
   | `sales-${string}`
   | 'team-member';
@@ -106,6 +110,8 @@ export interface Department extends DepartmentRef {
   /** Set for a department that is the Sales or Support side of another one (Wabatalk = the Support side of D Talk). */
   facetOf: string | null;
   facetDivision: HeadDivision | null;
+  /** Sales AND Support in one department (International, Reseller): decided by the database, never by the slug (20270127000100, 20270202000300). */
+  unifiedSalesSupport?: boolean;
   createdAt: string;
 }
 
@@ -854,6 +860,26 @@ export interface PipelineCustomerDetail extends PipelineCustomer {
   conversations: Conversation[];
   checklist: ChecklistItem[];
   handover: HandoverInfo | null;
+  /** AI Website client onboarding details (migration 20270113000200); null when none were recorded (or the database is not updated yet). */
+  aiWebsiteOnboarding?: AiWebsiteOnboarding | null;
+}
+
+// ---- AI Website client onboarding (migration 20270113000200): one record per lead, kept through every stage ----
+export interface AiWebsiteOnboarding {
+  customerId: string;
+  clientName: string;
+  mobile: string;
+  email: string | null;
+  businessName: string;
+  onGoogleMaps: boolean;
+  googleMapsLink: string | null;
+  city: string;
+  businessType: string;
+  businessTypeOther: string | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Who saved it last (returned by the save; not read back with the lead). */
+  updatedBy: { id: string; name: string } | null;
 }
 
 /** Leads tabs beyond the status ones: with Accounts for payment confirmation / returned by Accounts. */
@@ -2947,6 +2973,8 @@ export interface ChatConversation {
   isAdmin: boolean;
   /** Client chat: false until a Team Member or Team Lead is assigned (nobody can answer yet). */
   assigned: boolean | null;
+  /** Client chat, employees only: who is handling it now (20270129000100). Never sent to the client. */
+  handler?: ChatHandler | null;
   lastSeq: number;
   lastMessageAt: string | null;
   lastMessagePreview: string | null;
@@ -2989,7 +3017,18 @@ export interface ChatMessage {
   e2ee?: ChatE2eeForViewer | null;
   /** Set by the BROWSER after it opened (or failed to open) an encrypted message. The server never sets it. */
   secure?: ChatSecureState;
+  /** Group members this message tags (migration 20270116000300). */
+  mentions?: ChatTaggedPerson[];
+  /** Reactions with counts, whether I reacted, and who reacted (one per person). */
+  reactions?: ChatReaction[];
+  /** Set on a send whose message was stored but whose tags were refused (e.g. someone left the group meanwhile). */
+  mentionWarning?: string;
 }
+// ---- Chat: @mentions, reactions, Delete Inbox (migration 20270116000300) ----
+export interface ChatTaggedPerson { id: string; name: string; me: boolean }
+export interface ChatReaction { emoji: string; count: number; mine: boolean; people: ChatTaggedPerson[] }
+export interface ChatReactResult { messageId: string; reactions: ChatReaction[] }
+export interface ChatInboxDeleteResult { scope: 'MINE' | 'ALL_INTERNAL'; conversations: number; messages: number; filesRemoved?: number; filesPending?: number }
 /** What the server hands to ONE member of an encrypted message: the ciphertext and the key sealed for that member. */
 export interface ChatE2eeForViewer {
   v: 1;
@@ -3075,6 +3114,18 @@ export interface ChatDirectoryPerson {
   /** The employee's designation (or position); from migration 20261228000300, absent before it. */
   designation?: string | null;
   departmentId?: string | null;
+}
+/** Who is handling a client conversation or ticket right now (20270129000100). Information only; the Relationship Manager is never changed by it. */
+export interface ChatHandler { id: string; name: string; at: string; active: boolean; me: boolean }
+/** A client conversation on the shared Support desk: the department's customers for Support employees covering for a colleague. */
+export interface ChatDeskClient extends Omit<ChatMyClient, 'role'> {
+  role: ChatMyClient['role'] | 'Support desk';
+  rm: { id: string; name: string } | null;
+  handler: ChatHandler | null;
+  lastSenderName: string | null;
+  /** The client wrote last and no employee has answered yet. */
+  awaitingReply: boolean;
+  shared: true;
 }
 export interface ChatMyClient {
   customerId: string;
@@ -3976,6 +4027,8 @@ export interface BaDemo {
   rescheduleCount: number;
   feedback: string | null;
   followUpNotes: string | null;
+  /** The authorised person of the client attended (20270119000100): a completed demo earns its incentive only with this tick. */
+  authorisedPersonAttended?: boolean;
   client: string | null;
   company: string | null;
 }
@@ -4519,13 +4572,18 @@ export interface EmployeeIssue {
   employee: CaseEmployee;
   /** Set when a submission was recognised as one that already exists. */
   duplicate?: boolean;
+  /** Issue routing (20270128000200): an employee issue goes to HR; HR may escalate it to the Developer Team (one linked issue) */
+  recipient?: 'HR';
+  routing?: 'WITH_HR' | 'ESCALATED_TO_DEVELOPERS';
+  escalation?: { bugId: string; reference: string; status: DevBugStatus; assigneeName: string | null; resolutionNote: string | null;
+    updatedAt: string; escalatedAt: string | null; escalatedBy: string | null } | null;
 }
 export interface CaseEvent {
   id: number;
   kind: string;
   /** EMPLOYEE: the employee reads it; HR: an internal note, only HR ever gets it. */
   visibility: 'EMPLOYEE' | 'HR';
-  side: 'EMPLOYEE' | 'HR';
+  side: 'EMPLOYEE' | 'HR' | 'DEVELOPER';
   actorName: string | null;
   body: string | null;
   fromStatus: string | null;
@@ -4533,9 +4591,11 @@ export interface CaseEvent {
   createdAt: string;
 }
 export interface IssueAttachment { id: string; name: string; mime: string; size: number; eventId: number | null; createdAt: string }
-export interface EmployeeIssueDetail { issue: EmployeeIssue; events: CaseEvent[]; attachments: IssueAttachment[] }
+export interface EmployeeIssueDetail { issue: EmployeeIssue; events: CaseEvent[]; attachments: IssueAttachment[];
+  /** HR: what the Developer Team told the reporter about the escalated issue (status changes, replies), never internal comments */
+  escalationHistory?: DevBugHistoryEntry[]; duplicate?: boolean }
 export interface EmployeeIssueList { items: EmployeeIssue[]; total: number; limit: number; offset: number }
-export interface EmployeeIssueOverview { total: number; new: number; inProgress: number; awaiting: number; resolved: number; closed: number; urgent: number }
+export interface EmployeeIssueOverview { total: number; new: number; inProgress: number; awaiting: number; resolved: number; closed: number; urgent: number; escalated?: number }
 export interface HrAssignee { id: string; name: string; designation: string }
 export interface CaseDepartment { id: string; name: string }
 export interface IssueUploadTicket {
@@ -5491,7 +5551,7 @@ export interface HrDocExperienceFields {
 export type HrDocRequest =
   | { type: 'NDA'; employeeKey: string; fields: HrDocNdaFields }
   | { type: 'EXPERIENCE'; employeeKey: string; fields: HrDocExperienceFields }
-  | { type: 'OFFER'; employeeKey: string; fields: HrDocOfferFields };
+  | { type: 'OFFER'; employeeKey: string; fields: HrDocOfferFields | HrRoleOfferFields };
 /** What the HR record says about the employee (the database decides; the browser only shows it). */
 export interface HrDocPrefill {
   employee: {
@@ -5677,9 +5737,10 @@ export interface HrEmployeeFileUploadTicket {
 // ---------------------------------------------------------------------------
 // Meetings (Google Calendar, booking links, CEO approval)
 // ---------------------------------------------------------------------------
-export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING';
+export type CalendarMeetingKind = 'APPOINTMENT' | 'DEMO' | 'MEETING' | 'INTERVIEW' | 'CEO_MEETING' | 'HR_MEETING' | 'CLIENT_MEETING';
 export type CalendarMeetingMode = 'GOOGLE_MEET' | 'ONLINE_LINK' | 'IN_PERSON' | 'PHONE';
-export type CalendarMeetingStatus = 'REQUESTED' | 'PROPOSED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED';
+/** PENDING_AVAILABILITY (migration 20270116000400): no longer set since 20270122000100 (the Super Admin has no Enter / Exit); kept because the database still allows it. */
+export type CalendarMeetingStatus = 'REQUESTED' | 'PROPOSED' | 'SCHEDULED' | 'DECLINED' | 'CANCELLED' | 'COMPLETED' | 'PENDING_AVAILABILITY';
 export type CalendarMeetingSyncStatus = 'PENDING' | 'SYNCED' | 'FAILED' | 'NOT_CONNECTED' | 'SKIPPED';
 
 export interface MeetingAttendee {
@@ -5732,9 +5793,39 @@ export interface Meeting {
   canManage: boolean;
   canDecide: boolean;
   canAnswerProposal: boolean;
+  /** The one who asked for the CEO's time may withdraw a request that is still pending, or ask for another time; never decide. */
+  canWithdraw: boolean;
+  canRequestChange: boolean;
   /** The viewer's own answer when they are an invited colleague; null otherwise. */
   myResponse: MeetingAttendee['response'] | null;
+  /** Requests for the CEO's time: the employee's extra message, department and designation, the reason of a rejection, and the last move. */
+  requestMessage: string | null;
+  createdByDepartment: string | null;
+  createdByDesignation: string | null;
+  rejectionReason: string | null;
+  previousStartsAt: string | null;
+  previousEndsAt: string | null;
+  rescheduledAt: string | null;
+  rescheduledBy: string | null;
+  rescheduledByName: string | null;
+  rescheduleReason: string | null;
+  rescheduleCount: number;
+  /** A client meeting (20270122000200): the client's company. */
+  clientCompany?: string | null;
   attendees: MeetingAttendee[];
+}
+
+/** The dashboard sections for meeting requests with the CEO (Super Admin: everybody's; everybody else: their own). */
+export const CEO_REQUEST_SECTIONS = ['PENDING', 'APPROVED', 'REJECTED', 'RESCHEDULED', 'ALL'] as const;
+export type CeoRequestSection = (typeof CEO_REQUEST_SECTIONS)[number];
+export interface CeoRequestList {
+  section: CeoRequestSection;
+  /** True for the Super Admin (the CEO): they see every employee's request and the management actions. */
+  isSuperAdmin: boolean;
+  counts: { pending: number; approved: number; rejected: number; rescheduled: number; all: number };
+  items: Meeting[];
+  limit: number;
+  offset: number;
 }
 
 export interface MeetingHistoryEntry { kind: string; note: string | null; actorName: string | null; at: string; data: Record<string, unknown> }
@@ -5781,6 +5872,40 @@ export interface MeetingBookingLink {
 }
 
 export interface MeetingAvailabilityWindow { weekday: number; start: string; end: string }
+
+// ---- Live meeting availability of the CEO (migration 20270116000400): Enter / Exit Meeting ----
+export type CeoAvailabilityStatus = 'AVAILABLE' | 'BUSY';
+/** One Super Admin's live availability, as every signed-in employee sees it (the meeting and the queue only for those who may see them). */
+export interface CeoPresence {
+  hostId: string;
+  hostName: string;
+  position: string | null;
+  status: CeoAvailabilityStatus;
+  /** When the current status began (the meeting start while BUSY). */
+  since: string | null;
+  updatedAt: string | null;
+  /** The meeting the CEO is in: only for the CEO and the people who may see that meeting. */
+  meeting: { id: string; title: string; startsAt: string; endsAt: string; mode: string; meetLink: string | null } | null;
+  /** The CEO's own queue of requests waiting for them to be free (null for everybody else). */
+  pending: { id: string; title: string; startsAt: string; endsAt: string; requestedBy: string | null; createdAt: string }[] | null;
+  /** How many waiting requests the viewer can count (the CEO: all; anyone else: their own). */
+  pendingCount: number;
+}
+/** What Exit Meeting scheduled. */
+export interface CeoAutoScheduled { id: string; title: string; startsAt: string; endsAt: string; requestedStartsAt: string; moved: boolean; requestedBy: string | null }
+export interface CeoPresenceExit extends CeoPresence { scheduled: CeoAutoScheduled[] }
+/** CEO office arrival (20270128000300): HR marks it once a day; it only drives the banner on "Ask the CEO for time", never the requests. */
+export interface CeoOfficeCeo {
+  ceoId: string; name: string; position: string | null; arrived: boolean; arrivedAt: string | null; markedBy: string | null; presence: 'AVAILABLE' | 'BUSY';
+  // CEO Availability (20270201000100): today's status and the latest status update (the time and the person); optional so an older database still works
+  status?: 'ARRIVED' | 'NOT_ARRIVED';
+  updatedAt?: string | null;
+  updatedStatus?: 'ARRIVED' | 'NOT_ARRIVED' | null;
+  updatedBy?: string | null;
+  /** False when the latest update is from an earlier day (today has no update yet). */
+  updatedToday?: boolean;
+}
+export interface CeoOfficeStatus { day: string; canMark: boolean; ceos: CeoOfficeCeo[]; duplicate?: boolean }
 
 export interface MeetingSettings {
   timezone: string;
@@ -5933,6 +6058,211 @@ export interface ReminderCallList {
   rows: ReminderCallRow[];
 }
 
+// =============================================================================
+// AI Design Studio (migration 20270110000100): a separate, client-oriented department.
+// Department Head -> Team Lead -> Team Member. Every shape below is what the ads_* database functions return.
+// =============================================================================
+/**
+ * The department slug. This department is named "AI Design Studio" (migration 20270118000100 gave the name back; the slug and every ads_* function
+ * are unchanged). It is a different department from "AI Studio" and from "Amuwa Design Studio" (slug designstudio).
+ */
+export const AI_DESIGN_STUDIO_SLUG = 'ai-design-studio';
+
+// ---- Amuwa Design Studio / AI Design Studio roles (migrations 20270112000100, 20270112000200): Department Head -> Team Lead -> Team Member only. ----
+// No Sales or Support role, team or side is offered or accepted (the database refuses it: private.designstudio_role_problem).
+/** Amuwa Design Studio, an active department (migration 20270118000100 restored its name after it was labelled "(Retired)"). */
+export const AMUWA_DESIGN_STUDIO_SLUG = 'designstudio';
+/** The departments whose people are never given a Sales or Support role (only Department Head, Team Lead and Team Member). */
+export const NO_SALES_SUPPORT_DEPARTMENT_SLUGS: readonly string[] = [AI_DESIGN_STUDIO_SLUG, AMUWA_DESIGN_STUDIO_SLUG];
+
+// ---- International and Reseller (migration 20270127000100): Sales AND Support in one dashboard for every role ----
+/**
+ * The departments flagged unified_sales_support in the database. Used by the forms only, to offer the plain roles (Department Head, Team Lead, Team Member),
+ * the department's one team and no Sales / Support side; the database decides who may do what (the flag, private.dept_is_unified).
+ */
+export const UNIFIED_DEPARTMENT_SLUGS: readonly string[] = ['international', 'reseller'];
+
+export const ADS_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+export type AdsPriority = (typeof ADS_PRIORITIES)[number];
+export const ADS_PRIORITY_LABELS: Record<AdsPriority, string> = { LOW: 'Low', MEDIUM: 'Medium', HIGH: 'High', URGENT: 'Urgent' };
+
+export const ADS_NOTICE_CATEGORIES = ['NEW_INSTRUCTIONS', 'DESIGN_FEEDBACK', 'REQUIREMENT_CHANGE', 'REVISION_REQUEST', 'APPROVAL_UPDATE', 'DELIVERY_UPDATE', 'IMPORTANT'] as const;
+export type AdsNoticeCategory = (typeof ADS_NOTICE_CATEGORIES)[number];
+export const ADS_NOTICE_CATEGORY_LABELS: Record<AdsNoticeCategory, string> = {
+  NEW_INSTRUCTIONS: 'New client instructions', DESIGN_FEEDBACK: 'Design feedback', REQUIREMENT_CHANGE: 'Requirement change', REVISION_REQUEST: 'Revision request',
+  APPROVAL_UPDATE: 'Approval update', DELIVERY_UPDATE: 'Delivery update', IMPORTANT: 'Important client communication'
+};
+export const ADS_NOTICE_STATUSES = ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'] as const;
+export type AdsNoticeStatus = (typeof ADS_NOTICE_STATUSES)[number];
+export const ADS_NOTICE_STATUS_LABELS: Record<AdsNoticeStatus, string> = { OPEN: 'Open', ACKNOWLEDGED: 'Acknowledged', RESOLVED: 'Resolved' };
+
+export const ADS_ASSIGNMENT_STATUSES = ['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS', 'PENDING_REVIEW', 'REVISION_REQUIRED', 'COMPLETED'] as const;
+export type AdsAssignmentStatus = (typeof ADS_ASSIGNMENT_STATUSES)[number];
+export const ADS_ASSIGNMENT_STATUS_LABELS: Record<AdsAssignmentStatus, string> = {
+  ASSIGNED: 'Assigned', ACCEPTED: 'Accepted', IN_PROGRESS: 'In Progress', PENDING_REVIEW: 'Pending Review', REVISION_REQUIRED: 'Revision Required', COMPLETED: 'Completed'
+};
+
+export const ADS_REPORT_STATUSES = ['PENDING_TL', 'PENDING_DH', 'APPROVED', 'RETURNED'] as const;
+export type AdsReportStatus = (typeof ADS_REPORT_STATUSES)[number];
+export const ADS_REPORT_STATUS_LABELS: Record<AdsReportStatus, string> = {
+  PENDING_TL: 'Pending Team Lead approval', PENDING_DH: 'Pending Department Head approval', APPROVED: 'Approved', RETURNED: 'Returned'
+};
+
+export const ADS_ISSUE_CATEGORIES = ['CLIENT_REQUIREMENTS', 'WORK_ASSIGNMENT', 'DESIGN_BLOCKER', 'TECHNICAL', 'TEAM_COORDINATION', 'OTHER'] as const;
+export type AdsIssueCategory = (typeof ADS_ISSUE_CATEGORIES)[number];
+export const ADS_ISSUE_CATEGORY_LABELS: Record<AdsIssueCategory, string> = {
+  CLIENT_REQUIREMENTS: 'Client requirements', WORK_ASSIGNMENT: 'Work assignment', DESIGN_BLOCKER: 'Design-related blocker', TECHNICAL: 'Technical difficulty',
+  TEAM_COORDINATION: 'Team coordination', OTHER: 'Other work-related concern'
+};
+export const ADS_ISSUE_STATUSES = ['OPEN', 'UNDER_REVIEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as const;
+export type AdsIssueStatus = (typeof ADS_ISSUE_STATUSES)[number];
+export const ADS_ISSUE_STATUS_LABELS: Record<AdsIssueStatus, string> = { OPEN: 'Open', UNDER_REVIEW: 'Under Review', IN_PROGRESS: 'In Progress', RESOLVED: 'Resolved', CLOSED: 'Closed' };
+
+export interface AdsLink { name: string; url: string }
+export type AdsRole = 'DEPARTMENT_HEAD' | 'TEAM_HEAD' | 'TEAM_MEMBER';
+
+export interface AdsContext {
+  userId: string;
+  name: string;
+  role: AdsRole;
+  departmentId: string;
+  teamId: string | null;
+  leadId: string | null;
+  leadName: string | null;
+  /** A Team Member who has no Team Lead yet: work, reports and issues go straight to the Department Head. */
+  unassigned: boolean;
+}
+export interface AdsPerson { id: string; name: string; role: 'TEAM_HEAD' | 'TEAM_MEMBER'; leadId: string | null; leadName: string | null; hasLead: boolean }
+
+export interface AdsClient {
+  id: string;
+  clientName: string;
+  companyName: string | null;
+  contactPerson: string | null;
+  contactNumber: string | null;
+  email: string | null;
+  businessAddress: string | null;
+  requirements: string | null;
+  designService: string | null;
+  workDescription: string | null;
+  remarks: string | null;
+  attachments: AdsLink[];
+  status: 'ACTIVE' | 'INACTIVE';
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  canEdit?: boolean;
+}
+export interface AdsNotice {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  title: string;
+  category: AdsNoticeCategory;
+  description: string;
+  priority: AdsPriority;
+  status: AdsNoticeStatus;
+  assignedTo: string | null;
+  assignedToName: string | null;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+}
+export interface AdsEvent { id: number; event: string; fromValue: string | null; toValue: string | null; note: string | null; actorId: string | null; actorName: string | null; createdAt: string }
+export interface AdsAssignment {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  parentId: string | null;
+  title: string;
+  description: string | null;
+  instructions: string | null;
+  priority: AdsPriority;
+  dueDate: string | null;
+  status: AdsAssignmentStatus;
+  progress: number;
+  attachments: AdsLink[];
+  assignedBy: string;
+  assignedByName: string | null;
+  assigneeId: string;
+  assigneeName: string | null;
+  assigneeRole: AdsRole | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  overdue: boolean;
+  memberCount: number;
+  memberCompleted: number;
+}
+export interface AdsAssignmentDetail extends AdsAssignment {
+  events: AdsEvent[];
+  /** What a Team Lead passed on to Team Members (the rows the caller may see). */
+  members: AdsAssignment[];
+  canReview: boolean;
+  canUpdateStatus: boolean;
+}
+export interface AdsReport {
+  id: string;
+  authorId: string;
+  authorName: string | null;
+  authorRole: AdsRole | null;
+  leadId: string | null;
+  leadName: string | null;
+  reportDate: string;
+  clientId: string | null;
+  clientName: string | null;
+  assignmentId: string | null;
+  assignmentTitle: string | null;
+  workCompleted: string;
+  workInProgress: string | null;
+  pendingWork: string | null;
+  challenges: string | null;
+  remarks: string | null;
+  attachments: AdsLink[];
+  status: AdsReportStatus;
+  returnStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
+  revision: number;
+  submittedAt: string;
+  updatedAt: string;
+  /** The caller is the one who must decide on it now (the database works this out). */
+  canReview: boolean;
+}
+export interface AdsReportDetail extends AdsReport { events: AdsEvent[] }
+export interface AdsIssue {
+  id: string;
+  reference: string;
+  title: string;
+  category: AdsIssueCategory;
+  description: string;
+  clientId: string | null;
+  clientName: string | null;
+  assignmentId: string | null;
+  assignmentTitle: string | null;
+  priority: AdsPriority;
+  attachments: AdsLink[];
+  status: AdsIssueStatus;
+  handlerLevel: 'TEAM_LEAD' | 'DEPARTMENT_HEAD';
+  raisedBy: string;
+  raisedByName: string | null;
+  leadName: string | null;
+  escalatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface AdsIssueDetail extends AdsIssue { events: AdsEvent[]; canWork: boolean; canEscalate: boolean }
+export interface AdsActivity { id: number; entityType: 'assignment' | 'report' | 'issue' | 'notice' | 'client'; entityId: string; event: string; fromValue: string | null; toValue: string | null; actorName: string | null; createdAt: string; title: string | null }
+export interface AdsOverview {
+  clients: number;
+  assignments: { total: number; ongoing: number; completed: number; pending: number; overdue: number };
+  upcoming: AdsAssignment[];
+  pendingReports: number;
+  /** null for a Department Head (they do not write daily reports). */
+  reportToday: boolean | null;
+  openIssues: number;
+  notices: AdsNotice[];
+  activity: AdsActivity[];
+}
 
 // ---- AI Studio (migration 20270105000100): projects, tasks and daily reports -------------------------------------------------------------
 export const AI_STUDIO_SLUG = 'ai-studio';
@@ -5962,12 +6292,27 @@ export interface AiStudioProject {
   description: string | null;
   status: AiStudioProjectStatus;
   createdAt: string;
+  /** When the project is due (set by the Super Admin / Department Head, migration 20270119000100); null = no deadline. */
+  deadlineAt?: string | null;
   /** The caller works on this project. */
   mine: boolean;
   leads: { id: string; name: string }[];
   memberCount: number;
   tasks: AiStudioTaskCounts;
 }
+/** The clock (migration 20270119000100): a running project with a deadline. The server's own time comes with the list so every browser counts to the same moment. */
+export interface AiStudioDeadlineItem {
+  projectId: string;
+  name: string;
+  status: AiStudioProjectStatus;
+  deadlineAt: string;
+  /** The caller works on this project. */
+  mine: boolean;
+  /** Tasks of this project not completed yet that the caller may see / that are assigned to the caller. */
+  openTasks: number;
+  myOpenTasks: number;
+}
+export interface AiStudioDeadlines { serverNow: string; items: AiStudioDeadlineItem[] }
 export interface AiStudioPerson {
   id: string;
   fullName: string;
@@ -6031,8 +6376,10 @@ export interface AiStudioReportSummary {
 }
 export interface AiStudioReportHistoryEntry {
   id: string;
-  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED';
+  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED' | 'EDITED';
   stage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
+  /** 20270214000100: what the Team Lead changed (field -> before / after) on an EDITED step. */
+  changes?: Record<string, { from: string | null; to: string | null }> | null;
   fromStatus: string | null;
   toStatus: AiStudioReportStatus;
   comment: string | null;
@@ -6055,6 +6402,8 @@ export interface AiStudioReportDetail extends AiStudioReportSummary {
   dhReviewerName: string | null;
   canEdit: boolean;
   canReview: boolean;
+  /** 20270214000100 (optional: absent on an older database): the Team Lead reviewing it may correct it before deciding. */
+  canLeadEdit?: boolean;
   reviewStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   history: AiStudioReportHistoryEntry[];
 }
@@ -6098,3 +6447,1024 @@ export interface AiStudioOverview {
     projects: { id: string; name: string; status: AiStudioProjectStatus; total: number; completed: number; ongoing: number; progress: number; leads: string[] }[];
   };
 }
+
+// ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
+export type CrocodialHealth = 'UNKNOWN' | 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR';
+export interface CrocodialConnection {
+  id: string;
+  name: string;
+  externalAccountLabel: string | null;
+  /** The NAME of the server setting that holds the token; the token itself never leaves the server. */
+  credentialRef: string;
+  /** Whether the server has that setting (added by the server; the database cannot know). */
+  credentialConfigured?: boolean;
+  enabled: boolean;
+  health: CrocodialHealth;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  timezone: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+/** "Refresh" on a Sales dashboard (croc_refresh_*): the browser names a scope; the database works out the people and connections. */
+export type CrocodialRefreshScope = 'SELF' | 'TEAM' | 'DEPARTMENT' | 'ALL';
+export type CrocodialRefreshState = 'UP_TO_DATE' | 'REFRESH_QUEUED' | 'SYNCING' | 'PARTIALLY_SYNCED' | 'SYNC_FAILED' | 'RATE_LIMITED'
+  | 'TOKEN_MISSING' | 'TOKEN_INVALID' | 'DATA_UNAVAILABLE';
+export interface CrocodialRefreshRequest {
+  id: string;
+  scope: CrocodialRefreshScope;
+  departmentId: string | null;
+  /** connected people the request covers (counted from approved mappings) */
+  people: number;
+  connections: number;
+  /** QUEUED: a read was started; JOINED: a read already running / asked for; UP_TO_DATE: read in the last 2 minutes */
+  outcome: 'QUEUED' | 'JOINED' | 'UP_TO_DATE';
+  requestedAt: string;
+  state: CrocodialRefreshState;
+  /** false while the read is queued or running */
+  finished: boolean;
+  /** the oldest complete read of the connections involved (null: never read) */
+  lastSyncAt: string | null;
+  repeated?: boolean;
+}
+export interface CrocodialRefreshCapabilities {
+  kind: 'EMPLOYEE' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'SUPER_ADMIN';
+  active: boolean;
+  /** Crocodial is switched on for the caller's own department's Sales */
+  rollout: boolean;
+  self: { state: 'CONNECTED' | 'NOT_MAPPED' | 'PENDING_APPROVAL' | 'NOT_ENABLED'; lastSyncAt?: string | null };
+  team: { people: number } | null;
+  departments: { departmentId: string; name: string; people: number; lastSyncAt: string | null }[];
+  all: { people: number } | null;
+  /** the caller's latest request of the last 10 minutes, to keep showing its progress after a reload */
+  recent: CrocodialRefreshRequest | null;
+}
+/** What one server (Cloudflare / Vercel / Node.js, environment, deployment) reported about a connection's token: never the token. */
+export interface CrocodialRuntimeReport {
+  runtime: string;
+  platform: 'cloudflare' | 'vercel' | 'node';
+  environment: string | null;
+  deployment: string | null;
+  host: string | null;
+  credentialDetected: boolean;
+  credentialFormatValid: boolean;
+  context: 'PAGE' | 'TEST' | 'SYNC' | 'REFRESH';
+  reportedAt: string;
+}
+export interface CrocodialConnectionHealth {
+  connection: CrocodialConnection;
+  syncable: boolean;
+  refreshRequestedAt: string | null;
+  lastManualSyncAt: string | null;
+  lastSyncAt: string | null;
+  syncRunning: boolean;
+  syncInProgress: boolean;
+  lastSyncError: string | null;
+  connectedPeople: number;
+  refreshesToday: number;
+  runtimes: CrocodialRuntimeReport[];
+  /** checked live by the server answering this page */
+  current: { nameValid: boolean; credentialDetected: boolean; credentialFormatValid: boolean };
+}
+export interface CrocodialHealthReport {
+  /** the server answering this page */
+  server: { runtime: string; platform: 'cloudflare' | 'vercel' | 'node'; environment: string | null; deployment: string | null; host: string | null };
+  connections: CrocodialConnectionHealth[];
+}
+export interface CrocodialMapping {
+  id: string;
+  connectionId: string;
+  externalEmployeeId: number;
+  externalName: string | null;
+  profileId: string;
+  profileName: string;
+  departmentId: string;
+  departmentName: string | null;
+  division: 'SALES';
+  roleSnapshot: { role?: string; salesSubRole?: string | null; teamId?: string | null; teamName?: string | null };
+  status: 'PENDING' | 'APPROVED' | 'REVOKED';
+  approvedByName: string | null;
+  approvedAt: string | null;
+  effectiveFrom: string | null;
+  endedAt: string | null;
+  endReason: string | null;
+  createdAt: string;
+  live: boolean;
+}
+export interface CrocodialAdminOverview {
+  rollout: { departmentId: string; departmentName: string; departmentSlug: string; division: 'SALES'; allowed: boolean; note: string | null; updatedAt: string }[];
+  connections: CrocodialConnection[];
+  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string }[];
+  mappings: CrocodialMapping[];
+  externalEmployees: { connectionId: string; externalId: number; name: string | null; isActive: boolean | null; branchIds: number[]; lastSeenAt: string; missingSince: string | null; mappingStatus: 'PENDING' | 'APPROVED' | null }[];
+  externalBranches: { connectionId: string; externalId: number; name: string | null; status: string | null; missingSince: string | null }[];
+  audit: { at: string; action: string; actorName: string | null; entityId: string | null; metadata: Record<string, unknown> }[];
+}
+export interface CrocodialProfileCheck {
+  profileId: string;
+  name: string;
+  status: string;
+  role: string;
+  salesSubRole: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  teamId: string | null;
+  teamName: string | null;
+  teamDivision: string | null;
+  active: boolean;
+  inDepartment: boolean;
+  inFunction: boolean;
+  eligible: boolean;
+}
+export interface CrocodialMappingCheck {
+  profile: CrocodialProfileCheck | null;
+  externalEmployee: { externalId: number; name: string | null; isActive: boolean | null } | null;
+  externalAlreadyMapped: boolean;
+  profileAlreadyMapped: boolean;
+  departmentLinked: boolean;
+}
+export interface CrocodialTestResult {
+  ok: boolean;
+  health: Exclude<CrocodialHealth, 'UNKNOWN'>;
+  message: string;
+  employees: number;
+  branches: number;
+  timezone: string | null;
+  requests: number;
+}
+export interface CrocodialMyStatus {
+  enabled: boolean;
+  connectionName?: string;
+  externalName?: string | null;
+  departmentName?: string;
+  lastSuccessAt?: string | null;
+  health?: CrocodialHealth;
+  timezone?: string | null;
+}
+
+export type CrocodialSyncResource = 'leads' | 'call-logs' | 'followups' | 'remarks';
+export interface CrocodialSyncStatus {
+  connectionId: string;
+  syncable: boolean;
+  lastManualSyncAt: string | null;
+  resources: { resource: CrocodialSyncResource; checkpoint: string | null; lastFullAt: string | null; running: boolean; inProgress: boolean;
+    lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; rowsLastRun: number | null; skippedLastRun: number | null }[];
+  counts: { leads: number; calls: number; followups: number; remarks: number; missing: number };
+  /** Records whose Crocodial user has no approved mapping: kept, never counted for anyone. */
+  unmatched: { calls: number; followups: number; leads: number };
+  unmatchedByUser: { externalId: number; name: string | null; calls: number }[];
+  recentRuns: { resource: CrocodialSyncResource; startedAt: string; finishedAt: string; outcome: 'DONE' | 'PARTIAL' | 'FAILED'; fullPull: boolean; pages: number; rows: number; skipped: number; error: string | null }[];
+}
+export interface CrocodialSyncRunResult {
+  connections: { connectionId: string; health: string; error?: string;
+    resources: { resource: CrocodialSyncResource; outcome: 'DONE' | 'PARTIAL' | 'FAILED' | 'SKIPPED'; pages: number; rows: number; skipped: number; error?: string }[] }[];
+  requests: number;
+  note: string | null;
+}
+
+/** One person's Crocodial activity (croc_activity): absent figures mean "not available", never zero. */
+export interface CrocodialActivity {
+  enabled: boolean;
+  reason?: 'NOT_ENABLED';
+  available?: boolean;
+  stale?: boolean;
+  lastSyncAt?: string | null;
+  timezone?: string;
+  from?: string;
+  to?: string;
+  person?: { id: string; name: string; role: string; salesSubRole: string | null };
+  demos?: { scheduled: number; completed: number; cancelled: number; upcoming: number };
+  calls?: { made: number; connected: number; notConnected?: number; connectRate: number | null; talkSeconds: number; incoming: number; missed: number; uniqueLeads: number; uniqueNumbers?: number };
+  followups?: { scheduled: number; completed: number; completionRate: number | null; overdue: number };
+  leads?: { assigned: number; neverCalled: number; followUpDue: number };
+  remarks?: number;
+  daily?: { day: string; made: number; connected: number }[];
+  recentCalls?: { callAt: string; type: string; connected: boolean | null; durationSeconds: number | null; contactName: string | null; phone: string | null; leadStatus: string | null }[];
+  upcomingFollowups?: { scheduledAt: string; note: string | null; leadName: string | null; overdue: boolean }[];
+}
+
+/** The connected people a manager may see (croc_team_activity). Totals cover only these people, never the whole department. */
+/** A person's Crocodial leads (croc_leads): assigned to their mapped Crocodial user now; phones masked. */
+export interface CrocodialLeads {
+  enabled: boolean;
+  reason?: 'NOT_ENABLED';
+  person?: { id: string; name: string };
+  counts?: { all: number; neverCalled: number; followUpDue: number };
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  lastSyncAt?: string | null;
+  items?: {
+    id: number; name: string | null; company: string | null; city: string | null; status: string | null; source: string | null; phone: string | null;
+    called: boolean | null; dialerOutcome: string | null; remarkCount: number | null; nextFollowupAt: string | null; followUpDue: boolean | null;
+    lastInteractionAt: string | null; createdAt: string | null; calls: number;
+  }[];
+}
+export interface CrocodialTeamActivity {
+  connectedEmployees: number;
+  label: string;
+  stage: 'PILOT' | 'PRODUCTION';
+  from: string | null;
+  to: string | null;
+  oldestSyncAt: string | null;
+  anyStale: boolean;
+  unavailable: number;
+  note: string;
+  people: {
+    profileId: string; name: string; role: string; salesSubRole: string | null; teamId: string | null; teamName: string | null;
+    departmentId: string; departmentName: string | null; available: boolean; stale: boolean; lastSyncAt: string | null;
+    calls: CrocodialActivity['calls'] | null; followups: CrocodialActivity['followups'] | null; demos: CrocodialActivity['demos'] | null;
+  }[];
+  totals: { made: number; connected: number; notConnected?: number; connectRate: number | null; talkSeconds: number; uniqueLeads: number; uniqueNumbers?: number; followupsScheduled: number;
+    followupsCompleted: number; followupsOverdue: number; demosScheduled: number; demosCompleted: number };
+  teams: { teamId: string | null; teamName: string | null; people: number; made: number | null; connected: number | null }[];
+  daily: { day: string; made: number; connected: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Sales Department Head: role-wise sections (migration 20270117000300). Read-only figures counted from existing records.
+// ---------------------------------------------------------------------------
+export type SalesRole = 'TELECALLER' | 'BUSINESS_ASSOCIATE';
+/** OFF: no approved Crocodial mapping; NOT_SYNCED: connected, first sync not finished; ON: call figures available. */
+export type SalesRoleCrocodialState = 'OFF' | 'NOT_SYNCED' | 'ON';
+/** Call figures come from Crocodial only (null unless crocodial = ON); demo figures from the CRM demo schedule; the rest are CRM records. */
+export interface SalesRoleMetrics {
+  crocodial: SalesRoleCrocodialState;
+  calls: number | null; connected: number | null; notConnected: number | null; connectRate: number | null; uniqueNumbers: number | null; talkSeconds: number | null;
+  // Telecaller (CRM)
+  leadsCreated?: number; convertedLeads?: number;
+  // Business Associate (CRM)
+  leadsAssigned?: number; demosScheduled?: number; demosCompleted?: number; demosCancelled?: number; demosUpcoming?: number;
+  quotations?: number; dealsClosed?: number; dealValue?: number;
+}
+export interface SalesRolePersonRow {
+  id: string; name: string; email: string | null; phone: string | null; employeeCode: string; status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED';
+  teamId: string | null; teamName: string | null; teamLeadId: string | null; teamLeadName: string | null;
+}
+export interface SalesRoleList {
+  role: SalesRole; from: string; to: string; total: number; page: number; pageSize: number;
+  teamLeads: { id: string; name: string }[];
+  items: (SalesRolePersonRow & { metrics: SalesRoleMetrics })[];
+}
+/** One Crocodial call as the screens show it (number masked to its last 4 digits). */
+export interface SalesRoleCall {
+  id: number; callAt: string; type: string | null; connected: boolean | null; durationSeconds: number | null; contactName: string | null; phone: string | null; leadStatus: string | null;
+}
+export interface SalesRolePersonDashboard {
+  role: SalesRole; from: string; to: string;
+  person: SalesRolePersonRow & { joinedAt: string };
+  metrics: SalesRoleMetrics;
+  crocodial: { state: SalesRoleCrocodialState; lastSyncAt: string | null; stale: boolean };
+  /** one row per day of the period (India time); calls / connected are null when the person is not connected to Crocodial */
+  daily: ({ day: string } & Record<string, number | string | null>)[];
+  records: {
+    calls: SalesRoleCall[];
+    leads?: { id: string; name: string; company: string | null; stage: string; leadStatus: string | null; convertedTo: string | null; createdAt: string }[];
+    contacts?: { id: string; name: string; company: string | null; stage: string; assignedAt: string; telecaller: string | null }[];
+    demos?: { id: string; title: string; client: string; startsAt: string; mode: string; status: string }[];
+    quotations?: { id: string; number: string; revision: number; client: string; total: number; finalizedAt: string }[];
+    deals?: { id: string; name: string; company: string | null; stage: string; dealAmount: number | null; closedAt: string }[];
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Client meetings (migration 20270122000200): a meeting of kind CLIENT_MEETING with the client as its outside guest
+// ---------------------------------------------------------------------------
+export interface ClientMeetingInput {
+  clientName: string; clientEmail: string; companyName: string; title: string; agenda: string;
+  startsAt: string; endsAt: string; timezone?: string | null; mode: 'ONLINE' | 'OFFLINE'; meetLink?: string | null; location?: string | null;
+  hostId?: string | null; clientRequestId: string;
+}
+/** The meeting as created; duplicate: the same form was already sent (no second meeting, no second e-mail). */
+export type ClientMeetingResult = Meeting & { client: { name: string | null; email: string } | null; duplicate: boolean };
+/** One e-mail of a meeting and how its delivery went (meeting_mail_outbox). */
+export interface MeetingMail {
+  id: number; toEmail: string; toName: string | null; kind: string; external: boolean;
+  status: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED'; attempts: number; lastError: string | null; sentAt: string | null; createdAt: string; meetingVersion: number;
+  /** a later new-time or cancellation e-mail to the same person replaced it (it is not sent again) */
+  superseded: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Bugs for the Developers team (migration 20270122000300)
+// ---------------------------------------------------------------------------
+export type DevBugStatus = 'PENDING' | 'UNDER_REVIEW' | 'IN_PROGRESS' | 'NEEDS_INFO' | 'RESOLVED' | 'REJECTED' | 'CLOSED';
+/** Issue routing (20270128000200): EMPLOYEE (an employee reported it), HR_REPORT (HR reported it), HR_ESCALATION (HR escalated an employee issue) */
+export type DevBugSource = 'EMPLOYEE' | 'HR_REPORT' | 'HR_ESCALATION';
+export type DevIssueCategory = 'BUG' | 'FEATURE_REQUEST' | 'ACCESS_LOGIN' | 'DATA_ISSUE' | 'PERFORMANCE' | 'OTHER';
+export type DevIssuePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export interface DevBugRouting {
+  category?: DevIssueCategory; priority?: DevIssuePriority; source?: DevBugSource; sourceIssueReference?: string | null;
+  affectedDepartment?: string | null; affectedEmployee?: string | null;
+}
+export type DevBugAssignmentStatus = 'UNASSIGNED' | 'ASSIGNED';
+export interface DevBugRow extends DevBugRouting {
+  id: string; reference: string; title: string; status: DevBugStatus; reporterName: string; department: string | null; designation: string | null;
+  assigneeId: string | null; assigneeName: string | null; attachmentCount: number; createdAt: string; updatedAt: string; resolvedAt: string | null;
+  /** UNASSIGNED: every developer sees it; ASSIGNED: the Team Lead and the assigned developer only (20270122000400) */
+  assignmentStatus: DevBugAssignmentStatus; assignedByName: string | null; assignedAt: string | null;
+  /** the reporter's own list carries the resolution note */
+  resolutionNote?: string | null;
+  /** the last message of the conversation between the reporter and the developers */
+  lastMessage?: { from: 'REPORTER' | 'DEVELOPER'; note: string | null; by: string | null; at: string } | null;
+}
+export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT' | 'MESSAGE'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; at: string }
+export interface DevBug extends DevBugRouting {
+  sourceIssueId?: string | null; affectedDepartmentId?: string | null; affectedEmployeeId?: string | null;
+  id: string; reference: string; title: string; description: string; steps: string | null; status: DevBugStatus;
+  reporterId: string; reporterName: string; department: string | null; designation: string | null;
+  assigneeId: string | null; assigneeName: string | null; resolutionNote: string | null; resolvedAt: string | null; createdAt: string; updatedAt: string;
+  assignmentStatus: DevBugAssignmentStatus; assignedById: string | null; assignedByName: string | null; assignedAt: string | null;
+  /** the assignment history (the team only; empty for the reporter) */
+  assignments: { to: string | null; by: string | null; at: string }[];
+  /** fromIssue: a file of the escalated employee issue (referenced, not copied) */
+  attachments: { id: string; name: string; mime: string; size: number; fromIssue?: boolean }[];
+  /** internal comments only for the developers */
+  history: DevBugHistoryEntry[];
+  duplicate?: boolean;
+}
+export interface DevBugList {
+  total: number;
+  counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number;
+    UNDER_REVIEW?: number; NEEDS_INFO?: number; CLOSED?: number; OPEN?: number };
+  /** the Team Lead sees every bug; a developer the unassigned ones and their own */
+  isLead: boolean;
+  /** the lead's view of the team's workload */
+  byDeveloper: { id: string; name: string; open: number; closed: number }[];
+  items: DevBugRow[];
+}
+/** developers: who the Team Lead can assign to (empty for everyone else) */
+export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[] }
+export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; isLead: boolean; department: string | null; addedAt: string }
+
+// ---------------------------------------------------------------------------
+// Post-meeting summaries and the CEO's Meeting Decisions (migration 20270124000200)
+// ---------------------------------------------------------------------------
+export type MeetingSummaryStatus = 'PENDING' | 'DRAFT' | 'SUBMITTED' | 'REVISION_REQUESTED' | 'REVISED';
+export type MeetingSummaryOwnerMethod =
+  | 'SENIORITY' | 'HOST' | 'CREATOR' | 'SELECTED' | 'DELEGATED' | 'TRANSFERRED' | 'ROUTED' | 'ESCALATED' | 'NO_LEADER' | 'SELECTION_REQUIRED';
+export type MeetingDecisionStatus = 'PROPOSED' | 'APPROVED' | 'IN_PROGRESS' | 'IMPLEMENTED' | 'ON_HOLD';
+export type MeetingActionStatus = 'PENDING' | 'IN_PROGRESS' | 'DONE' | 'BLOCKED' | 'CANCELLED';
+export type MeetingActionPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+export type MeetingBlockerCategory = 'PENDING_APPROVAL' | 'RESOURCE' | 'OPERATIONAL' | 'CUSTOMER_ESCALATION' | 'DEPENDENCY' | 'CEO_DECISION' | 'OTHER';
+/** A colleague as a summary shows them: rank 4 CEO, 3 Operations Head, 2 Department Head, 1 Team Lead, 0 member. */
+export interface MeetingSummaryPerson {
+  id: string;
+  name: string;
+  rank: number;
+  roleLabel: string;
+  position: string | null;
+  active: boolean;
+  department: string | null;
+  team: string | null;
+}
+export interface MeetingSummaryAttendee extends MeetingSummaryPerson {
+  invited: boolean;
+  response: string | null;
+  /** null: not confirmed yet. */
+  attended: boolean | null;
+}
+export interface MeetingSummaryDecision {
+  id?: string;
+  key: string;
+  title: string;
+  description: string | null;
+  departmentId: string | null;
+  department?: string | null;
+  teamId: string | null;
+  team?: string | null;
+  decidedBy: string | null;
+  decidedByName?: string | null;
+  status: MeetingDecisionStatus;
+  ceoFollowUp?: boolean;
+  ceoFollowUpNote?: string | null;
+}
+export interface MeetingSummaryAction {
+  id?: string;
+  key: string;
+  title: string;
+  description: string | null;
+  assigneeId: string;
+  assigneeName?: string | null;
+  dueDate: string | null;
+  priority: MeetingActionPriority;
+  status: MeetingActionStatus;
+  decisionKey: string | null;
+  overdue?: boolean;
+  completedAt?: string | null;
+  updatedAt?: string | null;
+}
+export interface MeetingSummaryBlocker {
+  id?: string;
+  key: string;
+  category: MeetingBlockerCategory;
+  description: string;
+  needsCeoAttention: boolean;
+  ceoFollowUp?: boolean;
+  ceoFollowUpNote?: string | null;
+}
+export interface MeetingSummaryContent {
+  purposeNote: string | null;
+  executiveSummary: string | null;
+  discussionPoints: string[];
+  noDecisions: boolean;
+  noBlockers: boolean;
+  nextSteps: string | null;
+  followUp: { required: boolean; date: string | null; outcome: string | null };
+  decisions: MeetingSummaryDecision[];
+  actions: MeetingSummaryAction[];
+  blockers: MeetingSummaryBlocker[];
+}
+export interface MeetingSummaryRevision {
+  revisionNo: number;
+  kind: 'SUBMITTED' | 'REVISED';
+  changeNote: string | null;
+  actor: string | null;
+  createdAt: string;
+  snapshot: MeetingSummaryContent & { submittedBy?: string; submittedAt?: string; attended?: string[] };
+}
+export interface MeetingSummary {
+  id: string;
+  status: MeetingSummaryStatus;
+  overdue: boolean;
+  dueAt: string;
+  isHistorical: boolean;
+  owner: MeetingSummaryPerson | null;
+  ownerMethod: MeetingSummaryOwnerMethod | null;
+  ownerReason: string | null;
+  ownerAssignedBy: string | null;
+  ownerAssignedAt: string | null;
+  selectionRequired: boolean;
+  candidates: MeetingSummaryPerson[];
+  attendanceConfirmedAt: string | null;
+  attendanceConfirmedBy: string | null;
+  revisionNo: number;
+  version: number;
+  submittedAt: string | null;
+  firstSubmittedAt: string | null;
+  submittedBy: string | null;
+  updatedAt: string;
+  canRead: boolean;
+  content: MeetingSummaryContent | null;
+  comments: { id: number; kind: 'CLARIFICATION' | 'RESPONSE' | 'FOLLOW_UP'; body: string; author: string | null; createdAt: string }[] | null;
+  revisions: MeetingSummaryRevision[] | null;
+  history: { kind: string; note: string | null; actor: string | null; createdAt: string }[] | null;
+  assignable: { id: string; name: string; roleLabel: string }[] | null;
+  routeTargets: MeetingSummaryPerson[] | null;
+}
+/** One meeting's summary as the viewer may see it (outcome fields only: no guests, links or locations). */
+export interface MeetingSummaryView {
+  meetingId: string;
+  eligible: boolean;
+  started: boolean;
+  ended: boolean;
+  meeting: {
+    id: string; reference: string; title: string; purpose: string | null; kind: string; status: string;
+    startsAt: string; endsAt: string; timezone: string;
+    department: string | null; departmentId: string | null; division: string | null; team: string | null;
+    host: MeetingSummaryPerson | null; organiser: MeetingSummaryPerson | null;
+  };
+  attendance: MeetingSummaryAttendee[];
+  can: { confirmAttendance: boolean; edit: boolean; submit: boolean; amend: boolean; assignOwner: boolean; clarify: boolean; flag: boolean; reply: boolean; updateActions: boolean };
+  summary: MeetingSummary | null;
+}
+export interface MeetingSummaryRow {
+  meetingId: string;
+  reference: string;
+  title: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  meetingStatus: string;
+  department: string | null;
+  departmentId: string | null;
+  team: string | null;
+  teamId: string | null;
+  owner: MeetingSummaryPerson | null;
+  ownerMethod: MeetingSummaryOwnerMethod | null;
+  hostName: string | null;
+  attendees: number;
+  invited: number;
+  status: MeetingSummaryStatus;
+  overdue: boolean;
+  dueAt: string;
+  isHistorical: boolean;
+  awaitingAttendance: boolean;
+  decisions: number;
+  actions: number;
+  openActions: number;
+  blockers: number;
+  needsAttention: boolean;
+  submittedAt: string | null;
+  revisionNo: number;
+  version: number;
+}
+export type MeetingSummaryTab = 'PENDING' | 'DRAFT' | 'SUBMITTED' | 'OVERDUE' | 'ALL';
+export interface MeetingSummaryList {
+  items: MeetingSummaryRow[];
+  total: number;
+  counts: Record<'PENDING' | 'DRAFT' | 'SUBMITTED' | 'OVERDUE', number>;
+}
+export interface MyMeetingAction {
+  id: string;
+  title: string;
+  description: string | null;
+  dueDate: string | null;
+  priority: MeetingActionPriority;
+  status: MeetingActionStatus;
+  overdue: boolean;
+  meetingId: string;
+  meetingTitle: string;
+  meetingStartsAt: string;
+  ownerName: string | null;
+}
+export interface MeetingReportsOverview {
+  held: number;
+  submitted: number;
+  revisionRequested: number;
+  pending: number;
+  overdue: number;
+  decisions: number;
+  openActions: number;
+  overdueActions: number;
+  attention: number;
+  latestDecisions: { id: string; title: string; description: string | null; status: MeetingDecisionStatus; ceoFollowUp: boolean; decidedByName: string | null;
+    department: string | null; meetingId: string; meetingTitle: string; meetingStartsAt: string }[];
+  attentionItems: { type: 'BLOCKER' | 'DECISION'; id: string; text: string; category: MeetingBlockerCategory | null; flagged: boolean; meetingId: string; meetingTitle: string }[];
+  departments: { id: string; name: string }[];
+  teams: { id: string; name: string; departmentId: string }[];
+  leaders: MeetingSummaryPerson[];
+  overdueHours: number;
+}
+export interface MeetingReportList { items: MeetingSummaryRow[]; total: number }
+export interface MeetingReportAction {
+  id: string;
+  title: string;
+  description: string | null;
+  status: MeetingActionStatus;
+  priority: MeetingActionPriority;
+  dueDate: string | null;
+  overdue: boolean;
+  assigneeName: string | null;
+  decision: string | null;
+  meetingId: string;
+  meetingTitle: string;
+  meetingStartsAt: string;
+  ownerName: string | null;
+  department: string | null;
+  updatedAt: string;
+}
+export interface MeetingReportActionList { items: MeetingReportAction[]; total: number }
+
+// ---------------------------------------------------------------------------
+// Notification Health (migration 20270126000200). Counts, times, statuses and short failure codes only: never a device address or key.
+// "Accepted" means the push service took the message, not that the device showed it or made a sound.
+// ---------------------------------------------------------------------------
+export type NotificationHealthStatus = 'READY' | 'SETUP_REQUIRED' | 'NOTIFICATIONS_BLOCKED' | 'DEVICE_NOT_REGISTERED' | 'PUSH_UNAVAILABLE'
+  | 'DELIVERY_FAILED' | 'RETRY_PENDING' | 'REMINDERS_DISABLED' | 'COMPANY_PAUSED';
+export type NotificationSoundStatus = 'CONFIRMED' | 'AUDIO_ENABLED' | 'AUDIO_LOCKED' | 'UNKNOWN';
+export interface NotificationHealthEmployee {
+  profileId: string;
+  name: string;
+  role: string;
+  designation: string | null;
+  departmentId: string | null;
+  department: string | null;
+  status: NotificationHealthStatus;
+  remindersEnabled: boolean;
+  effective: { punchIn: string; lunch: string; punchOut: string };
+  activeDevices: number;
+  inactiveDevices: number;
+  expiredDevices: number;
+  lastAcceptedAt: string | null;
+  lastFailureAt: string | null;
+  lastFailureCode: string | null;
+  failed7d: number;
+  retryPending: number;
+  pending: number;
+  todayGenerated: number;
+  todayNoDevice: number;
+  reminderMissing: boolean;
+  noReminderToday: boolean;
+  onLeave: boolean;
+  attendanceStatus: string;
+  blockedReported: boolean;
+  lastDeviceCheckAt: string | null;
+  testConfirmedAt: string | null;
+  soundStatus: NotificationSoundStatus;
+}
+export interface NotificationHealthReport {
+  generatedAt: string;
+  today: string;
+  pushConfigured: boolean | null;
+  summary: { eligible: number; remindersEnabled: number; remindersDisabled: number; withDevice: number; withoutDevice: number; recentFailures: number;
+             reminderMissing: number; ready: number; byStatus: Partial<Record<NotificationHealthStatus, number>> };
+  queue: { pending: number; retryPending: number; accepted24h: number; failed24h: number; expired24h: number; cancelled24h: number };
+  todayReminders: { generated: number; bellWritten: number; noDevice: number; pushOff: number };
+  scheduler: {
+    lastSuccessAt: string | null; lastRunAt: string | null; lastRunOk: boolean | null; lastError: string | null; lastRunPushConfigured: boolean | null;
+    runs24h: number; failedRuns24h: number; health: 'HEALTHY' | 'DELAYED' | 'NOT_RUNNING';
+    last24h: { attempted: number; accepted: number; failed: number; retry: number; gone: number; noDevice: number; generated: number };
+  };
+  employees: NotificationHealthEmployee[];
+}
+export interface NotificationHealthDetail {
+  profileId: string;
+  name: string;
+  devices: { id: string; label: string | null; active: boolean; createdAt: string; lastSuccessAt: string | null; lastFailureAt: string | null;
+             lastFailureCode: string | null; failureCount: number; deactivatedReason: string | null; testConfirmedAt: string | null }[];
+  browsers: { label: string | null; permission: string; pushState: string; audioState: string; standalone: boolean; checkedAt: string }[];
+  deliveries: { id: number; kind: 'ATTENDANCE_REMINDER' | 'TEST'; reminderKind: string | null; step: number | null; device: string | null; status: string;
+                attempts: number; statusCode: number | null; error: string | null; createdAt: string; acceptedAt: string | null; finishedAt: string | null }[];
+  reminders: { date: string; kind: string; step: number; dueAt: string | null; sentAt: string; pushStatus: string | null; devices: number }[];
+}
+/** A test notification: `sent` = devices whose push service accepted it. */
+export interface NotificationTestResult { devices: number; sent: number; retry: number; failed: number; gone: number; pushConfigured: boolean }
+
+// ---------------------------------------------------------------------------
+// Email Management (migration 20270201000100). No message bodies, links, codes or keys anywhere. "ACCEPTED" means the provider took the
+// e-mail; DELIVERY_CONFIRMED needs the provider's own delivery event.
+// ---------------------------------------------------------------------------
+export type EmailProviderName = 'resend' | 'ses' | 'smtp' | 'brevo';
+export interface EmailSettings {
+  providerOrder: ('resend' | 'ses' | 'smtp')[] | null;
+  quotaThresholds: number[];
+  resendDailyLimit: number;
+  resendMonthlyLimit: number;
+  sesDailyLimit: number | null;
+  criticalReserve: number;
+  maxAutoRecipients: number;
+  allowedSenderDomains: string[];
+  updatedAt?: string;
+}
+export interface EmailSender { category: string; fromEmail: string; fromName: string; replyTo: string | null; enabled: boolean; updatedAt?: string }
+export interface EmailRule {
+  id: string; name: string; category: string; application: string | null; departmentId: string | null; workflow: string | null;
+  mode: 'CC' | 'BCC'; target: string; profileIds: string[]; addresses: string[]; excludeProfileIds: string[]; priority: number; enabled: boolean;
+  effectiveFrom: string | null; effectiveTo: string | null; updatedAt?: string;
+}
+export interface EmailProviderState {
+  provider: 'resend' | 'ses' | 'smtp';
+  pausedUntil: string | null; pauseReason: string | null; lastSuccessAt: string | null; lastErrorAt: string | null; lastErrorCategory: string | null;
+  reportedDaily: string | null; reportedMonthly: string | null; reportedAt: string | null; usedToday: number; usedMonth: number;
+}
+export interface EmailDiagnostics {
+  route: EmailProviderName[]; intended: EmailProviderName | null; excluded: { provider: EmailProviderName; reason: string }[]; fallback: boolean;
+  sesProductionEnabled: boolean; configured: Record<'resend' | 'ses' | 'smtp', boolean>; sesRegion: string | null; sesRegionExplicit: boolean;
+  sesConfigurationSet: boolean; smtpHost: string | null; fromEmail: string; replyTo: string; globalCc: number; globalBcc: number;
+  resendWebhookSecret: boolean; orderFromEnv: string | null;
+}
+export interface EmailOverview {
+  settings: EmailSettings;
+  today: { submitted: number; accepted: number; deliveryConfirmed: number; failed: number; bounced: number; complained: number; unknown: number;
+           suppressed: number; retryPending: number; processing: number; fallbacks: number };
+  providers: EmailProviderState[];
+  senders: EmailSender[];
+  rules: EmailRule[];
+  suppressions: number;
+  webhookEvents24h: number;
+  lastWebhookAt: string | null;
+  diagnostics: EmailDiagnostics;
+}
+export interface EmailProviderCheck { provider: 'resend' | 'ses' | 'smtp'; ok: boolean; checkedAt: string; summary: string; details: Record<string, unknown> }
+export interface EmailHistoryItem {
+  id: string; application: string; category: string; template: string | null; priority: string; sender: string | null; recipient: string;
+  cc: string[]; bccCount: number; bcc: string[] | null; status: string; provider: EmailProviderName | null; fallbackUsed: boolean; attempts: number;
+  errorCategory: string | null; customerId: string | null; applicationId: string | null; createdAt: string; acceptedAt: string | null;
+  deliveredAt: string | null; bouncedAt: string | null; complainedAt: string | null;
+}
+export interface EmailHistoryPage { total: number; items: EmailHistoryItem[] }
+export interface EmailHistoryDetail {
+  attempts: { provider: string; outcome: string; errorCategory: string | null; statusCode: number | null; ms: number | null; at: string }[];
+  events: { type: string; bounceType: string | null; at: string }[];
+}
+export interface EmailSuppression { email: string; active: boolean; reason: string; source: string; note: string | null; updatedAt: string }
+export interface EmailRulePreview { rule: string; recipients: { mode: 'CC' | 'BCC'; email: string; name: string | null }[] }
+
+// ---------------------------------------------------------------------------
+// Company Notice Board (migration 20270131000200)
+// ---------------------------------------------------------------------------
+export type NoticeCategory = 'GENERAL' | 'HR' | 'POLICY' | 'EVENT' | 'HOLIDAY' | 'IT_SYSTEM' | 'OPERATIONS' | 'OTHER';
+export type NoticePriority = 'NORMAL' | 'IMPORTANT' | 'URGENT';
+export type NoticeAudienceType = 'COMPANY' | 'DEPARTMENT' | 'ROLE' | 'EMPLOYEES';
+/** SUPER_ADMIN / HR / DEVELOPER: any audience; OPERATIONS_HEAD: only the departments they own */
+/** 20270202000100: SUPER_ADMIN, HR and CRM_TEAM (Ashish, Shreya, Siddhesh by profile id) publish; the earlier OPERATIONS_HEAD / DEVELOPER only mark old notices. */
+export type NoticePublisherRole = 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'HR' | 'DEVELOPER' | 'CRM_TEAM';
+export interface CompanyNotice {
+  id: string; reference: string; title: string; body: string; category: NoticeCategory; priority: NoticePriority;
+  status: 'SCHEDULED' | 'PUBLISHED' | 'ARCHIVED'; expired: boolean; publishAt: string; expiresAt: string | null; releasedAt: string | null; updatedAt: string; version: number;
+  publisherId: string; publisherName: string | null; publisherRole: NoticePublisherRole;
+  audience: { type: NoticeAudienceType; departments: string[]; roles: string[]; employees: string[]; departmentNames: string[] };
+  isRecipient: boolean; read: boolean; readAt: string | null; canManage: boolean; recipientCount: number; readCount: number;
+  /** 20270202000100: the person's own acknowledgement, and (managers only; 0 for everybody else) how many acknowledged */
+  acknowledged: boolean; acknowledgedAt: string | null; acknowledgedCount: number;
+  attachments: { id: string; name: string; mime: string; size: number }[];
+  /** the publisher's / Super Admin's view of an opened notice: every version */
+  history?: { version: number; action: 'PUBLISHED' | 'EDITED' | 'ARCHIVED'; by: string | null; at: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null }[];
+  duplicate?: boolean; notified?: number;
+}
+export interface NoticeList { items: CompanyNotice[]; total: number; unread: number; publisherRole: NoticePublisherRole | null }
+export interface NoticeReceipts {
+  noticeId: string; status: CompanyNotice['status']; total: number; read: number; unread: number;
+  acknowledged: number; notAcknowledged: number; readPercent: number; acknowledgedPercent: number; version: number;
+  push: { devices: number; accepted: number; pending: number; failed: number; cancelled: number };
+  rows: { profileId: string; name: string; department: string | null; notifiedAt: string | null; readAt: string | null; acknowledgedAt: string | null; acknowledgedVersion: number | null }[];
+}
+/** 20270202000100: the popup queue (Urgent first, then Important, then Normal; the oldest first inside a priority), the acknowledgement, and the CRM team's access */
+export interface NoticePending { pending: number; items: CompanyNotice[] }
+/** Deleting a notice (migration 20270205000100): a soft delete, the record and its receipts are kept. */
+export interface NoticeDeleted { id: string; deleted: true; alreadyDeleted: boolean }
+export interface NoticeAcknowledged { noticeId: string; acknowledged: boolean; acknowledgedAt: string | null; pending: number }
+export interface NoticeManagers {
+  managers: { profileId: string; name: string; email: string | null; status: string; department: string | null; since: string }[];
+  candidates: { profileId: string; name: string; role: string; department: string | null }[];
+}
+export interface NoticeAudienceOptions {
+  canPublish: boolean; role: NoticePublisherRole | null; audiences: NoticeAudienceType[];
+  departments: { id: string; name: string }[]; roles: { id: string; label: string }[];
+  employees: { id: string; name: string; role: string; department: string | null; departmentId: string | null }[];
+}
+
+// ---------------------------------------------------------------------------
+// HR Awards (20270203000100): Award Management > Awards
+// ---------------------------------------------------------------------------
+export type HrAwardCode = 'PROFESSIONALISM_EXCELLENCE' | 'RISING_STAR' | 'PLAYER' | 'EMERGING_LEADER' | 'DEPARTMENT' | 'TEAM' | 'BUSINESS_ICON';
+export type HrAwardNomineeType = 'INDIVIDUAL' | 'TEAM' | 'DEPARTMENT';
+/** NO_NOMINEES: nothing yet; NOMINATIONS_OPEN: nominees, no winner yet; WINNERS_DECLARED: at least one winner */
+export type HrAwardStatus = 'NO_NOMINEES' | 'NOMINATIONS_OPEN' | 'WINNERS_DECLARED';
+export interface HrAwardCard {
+  code: HrAwardCode; name: string; description: string | null; nomineeType: HrAwardNomineeType;
+  periodId: string | null; nominees: number; winners: number; status: HrAwardStatus; winnerNames: string[];
+}
+export interface HrAwardsOverview {
+  month: string; monthLabel: string; awards: HrAwardCard[];
+  /** the months that have award records, newest first */
+  history: { month: string; monthLabel: string; nominees: number; winners: number }[];
+}
+export interface HrAwardNominee {
+  id: string; periodId: string; nomineeType: HrAwardNomineeType; entityId: string;
+  profileId: string | null; teamId: string | null; departmentId: string | null;
+  name: string; departmentName: string | null; teamName: string | null; designation: string | null;
+  reason: string; remarks: string | null; status: 'NOMINATED' | 'WINNER';
+  nominatedAt: string; nominatedBy: string | null; updatedAt: string; updatedBy: string | null;
+}
+export interface HrAwardWinner {
+  id: string; periodId: string; nomineeId: string; name: string; nomineeType: HrAwardNomineeType;
+  departmentName: string | null; teamName: string | null; designation: string | null; remarks: string | null;
+  declaredAt: string; declaredBy: string | null; updatedAt: string;
+  revokedAt: string | null; revokedBy: string | null; revokeReason: string | null;
+}
+export interface HrAwardDetail {
+  award: { code: HrAwardCode; name: string; description: string | null; nomineeType: HrAwardNomineeType };
+  month: string; monthLabel: string; periodId: string | null;
+  totalNominees: number; totalWinners: number; status: HrAwardStatus;
+  nominees: HrAwardNominee[]; winners: HrAwardWinner[]; revokedWinners: HrAwardWinner[]; removedNominees: number;
+}
+export interface HrAwardOptions {
+  employees: { id: string; name: string; departmentId: string | null; departmentName: string | null; teamId: string | null; teamName: string | null; designation: string | null }[];
+  teams: { id: string; name: string; departmentId: string; departmentName: string; members: number }[];
+  departments: { id: string; name: string; members: number }[];
+}
+
+// ---------------------------------------------------------------------------
+// Role-based Offer Letter templates (20270206000100): HR > Offer Letter Generation
+// ---------------------------------------------------------------------------
+import type { OfferLetterhead, OfferTemplateContent } from './offerTemplates.js';
+export type { OfferBlock, OfferLetterhead, OfferTemplateContent, OfferTemplateField } from './offerTemplates.js';
+/** A role-based Offer Letter request: the template version and the values HR entered (the server loads the wording and letterhead itself). */
+export interface HrRoleOfferFields { offerTemplateId: string; templateVersion: number; values: Record<string, string> }
+export interface OfferTemplateFile { id: string; kind: 'SAMPLE' | 'LETTERHEAD'; fileName: string; mimeType: string; sizeBytes: number; uploadedBy: string | null; createdAt: string }
+export interface OfferTemplateVersion {
+  templateId: string;
+  version: number;
+  letterhead: OfferLetterhead;
+  sampleFile: OfferTemplateFile | null;
+  letterheadFile: OfferTemplateFile | null;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  content?: OfferTemplateContent;
+  /** letters issued with this version (in the version history) */
+  issued?: number;
+}
+export interface OfferTemplate {
+  id: string;
+  key: string;
+  designation: string;
+  description: string | null;
+  sortOrder: number;
+  active: boolean;
+  updatedAt: string;
+  versionCount: number;
+  current: OfferTemplateVersion & { content: OfferTemplateContent };
+  /** letters issued from this template */
+  issued: number;
+}
+export interface OfferTemplateList { canManage: boolean; templates: OfferTemplate[] }
+export interface OfferTemplateHistory extends OfferTemplate { versions: OfferTemplateVersion[] }
+/** The bundled letterheads (from the supplied samples), for the template editor. */
+export interface OfferLetterheadOption { key: string; label: string }
+
+// ---- Task daily reports and performance approval (migration 20270209000100) ----
+export type TaskReportStatus = 'PENDING' | 'APPROVED' | 'RETURNED';
+
+/** One daily report of a Team Member against one assigned task. */
+export interface TaskDailyReport {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskStatus: string;
+  taskPriority: string;
+  taskDueDate: string | null;
+  authorId: string;
+  author: string;
+  designation: string | null;
+  departmentId: string;
+  teamId: string | null;
+  reviewerId: string | null;
+  reportDate: string;
+  workCompleted: string;
+  progress: number;
+  pendingWork: string | null;
+  delayReason: string | null;
+  remarks: string | null;
+  status: TaskReportStatus;
+  revision: number;
+  submittedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+  /** The signed-in person is the reviewer and the report waits for a decision. */
+  canReview: boolean;
+  /** The signed-in person wrote it and it was returned for correction. */
+  canEdit: boolean;
+  /** 20270213000100 (optional: absent on an older database). The Team Lead who last edited it before deciding, and when. */
+  editedBy?: string | null;
+  editedAt?: string | null;
+  /** The signed-in person is the reviewer and may edit the waiting report before deciding it. */
+  canReviewerEdit?: boolean;
+}
+/** A changed field of a report or an evaluation: the value before and after. */
+export type FieldChanges = Record<string, { from: string | number | null; to: string | number | null }>;
+export interface TaskDailyReportDetail extends TaskDailyReport {
+  history: { action: 'SUBMITTED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED' | 'EDITED'; by: string | null; at: string; from: string | null; to: string; remarks: string | null; revision: number; changes?: FieldChanges | null }[];
+}
+export interface TaskDailyReportList {
+  counts: { pending: number; approved: number; returned: number; total: number };
+  total: number;
+  items: TaskDailyReport[];
+}
+/** A task the Team Member may report on. */
+export interface TaskReportTaskOption {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  progress: number;
+  description: string | null;
+  assignedAt: string;
+  lastReportDate: string | null;
+  reportedToday: boolean;
+}
+
+export interface PerformancePart { key: string; label: string; weight: number; value: number | null }
+export interface MemberPerformanceMetrics {
+  tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number };
+  completionPct: number | null;
+  onTimePct: number | null;
+  progressPct: number | null;
+  reports: { submitted: number; approved: number; returned: number; pending: number; approvalPct: number | null; expectedDays: number; approvedDays: number; consistencyPct: number | null };
+  parts: PerformancePart[];
+  score: number | null;
+}
+export interface LeadPerformanceMetrics {
+  own: { total: number; completed: number; overdue: number; completionPct: number | null };
+  team: { members: number; total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; completionPct: number | null; onTimePct: number | null; progressPct: number | null };
+  reports: { submitted: number; approved: number; returned: number; pending: number; waitingOverOneDay: number; reviewedPct: number | null; avgReviewHours: number | null };
+  management: { tasksAssignedToTeam: number; tasksReceived: number; handedDown: number; handledOrDelegated: number; delegationPct: number | null };
+  parts: PerformancePart[];
+  score: number | null;
+}
+export interface PerformanceRecordState {
+  id: string;
+  status: TaskReportStatus;
+  version: number;
+  /** The score that was stored (for an approved record: the score that was approved). */
+  score: number | null;
+  generatedAt: string;
+  refreshedAt: string;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+  canDecide: boolean;
+  canResubmit: boolean;
+  /** 20270210000100 (optional: absent on an older database). The rating (1 to 5) given when approving. */
+  rating?: number | null;
+  /** The reviewer may return it (false for a member of International / Reseller: their reports are returned, not their performance). */
+  canReturn?: boolean;
+  /** Approving needs a rating (International / Reseller). */
+  ratingRequired?: boolean;
+  /** The member's daily reports in the period still waiting for review (International / Reseller cannot approve until they are decided). */
+  waitingReports?: number;
+  /** 20270213000100: the reviewer may update the rating and remarks of this approved evaluation. */
+  canUpdate?: boolean;
+}
+export interface PerformancePerson<M = MemberPerformanceMetrics | LeadPerformanceMetrics> {
+  id: string;
+  name: string;
+  designation: string | null;
+  role: 'TEAM_MEMBER' | 'TEAM_HEAD';
+  teamId: string | null;
+  team: string | null;
+  metrics: M;
+  liveScore: number | null;
+  record: PerformanceRecordState | null;
+}
+export type PerformanceMember = PerformancePerson<MemberPerformanceMetrics>;
+export type PerformanceLead = PerformancePerson<LeadPerformanceMetrics> & { members: PerformanceMember[] };
+interface PerformanceOverviewBase { periodStart: string; periodEnd: string; today: string }
+export interface MemberPerformanceOverview extends PerformanceOverviewBase { role: 'TEAM_MEMBER'; me: PerformanceMember }
+export interface LeadPerformanceOverview extends PerformanceOverviewBase {
+  role: 'TEAM_HEAD';
+  me: PerformancePerson<LeadPerformanceMetrics>;
+  members: PerformanceMember[];
+  pendingReports: number;
+  pendingRecords: number;
+  /** 20270210000100: only the Team Lead decides the members (International / Reseller). */
+  leadDecidesMembers?: boolean;
+  /** 20270214000100: AI Studio's own reports (the drill-down opens those). */
+  source?: PerformanceSource;
+}
+export interface DepartmentPerformanceOverview extends PerformanceOverviewBase {
+  role: 'DEPARTMENT_HEAD' | 'SUPER_ADMIN';
+  department: { id: string; name: string };
+  tasks: { total: number; completed: number; pending: number; overdue: number; completionPct: number | null };
+  reports: { submitted: number; approved: number; returned: number; pending: number; approvedPct: number | null };
+  leads: PerformanceLead[];
+  unassignedMembers: PerformanceMember[];
+  pendingRecords: number;
+  /** 20270210000100: members without a Team Lead wait for one (International / Reseller) instead of being decided by the Department Head. */
+  leadDecidesMembers?: boolean;
+  /** 20270214000100: AI Studio's own reports (the drill-down opens those). */
+  source?: PerformanceSource;
+}
+export type PerformanceOverview = MemberPerformanceOverview | LeadPerformanceOverview | DepartmentPerformanceOverview;
+export interface PerformanceRecordHistoryEntry { action: 'GENERATED' | 'REFRESHED' | 'APPROVED' | 'RETURNED' | 'RESUBMITTED' | 'UPDATED' | 'REOPENED'; by: string | null; at: string; from: string | null; to: string; score: number | null; remarks: string | null; rating?: number | null; changes?: FieldChanges | null }
+
+// ---- Performance Management, every department: one person's work for the reviewer (20270213000100) ----
+export interface PerformanceWorkTask {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate: string | null;
+  progress: number;
+  assignedAt: string;
+  completedAt: string | null;
+  overdue: boolean;
+  /** Completed by the deadline (null: not completed, or no deadline). */
+  onTime: boolean | null;
+  reports: number;
+  pendingReports: number;
+  lastReport: { id: string; reportDate: string; progress: number; status: TaskReportStatus } | null;
+  /** AI Studio (20270214000100): the task's project. */
+  project?: string | null;
+}
+/** Where the work comes from: the task records and task daily reports, or AI Studio's own tasks and daily reports (20270214000100). */
+export type PerformanceSource = 'TASKS' | 'AI_STUDIO';
+export interface PerformanceWork { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; periodStart: string; periodEnd: string; tasks: PerformanceWorkTask[]; source?: PerformanceSource }
+
+// ---- International / Reseller: performance evaluation history of one person (20270210000100) ----
+export interface PerformanceSubjectRecord {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  status: TaskReportStatus;
+  score: number | null;
+  rating: number | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewRemarks: string | null;
+}
+export interface PerformanceSubjectHistory { id: string; name: string; role: 'TEAM_MEMBER' | 'TEAM_HEAD'; records: PerformanceSubjectRecord[] }
+
+/** Global search (Ctrl / Cmd + K): the kinds of records the database may return (public.global_search). */
+export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice'] as const;
+export type SearchRecordType = (typeof SEARCH_RECORD_TYPES)[number];
+export interface SearchRecord {
+  type: SearchRecordType;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  meta: string | null;
+  reference: string | null;
+  score: number;
+}
+export interface SearchResponse {
+  query: string;
+  groups: { type: SearchRecordType; items: SearchRecord[]; hasMore: boolean }[];
+}
+/** One opened result (GET /search/records/:type/:id): label / value pairs for display, in order. */
+export interface SearchRecordCard { type: SearchRecordType; id: string; title: string; fields: [string, string][] }

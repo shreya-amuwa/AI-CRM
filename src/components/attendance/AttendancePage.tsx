@@ -1,11 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Coffee, LogIn, LogOut, MapPin, Play } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { OPEN_ATTENDANCE_EVENT, takePendingAttendance, type AttendanceView } from './attendanceEvents';
+import { TodayOverview } from './TodayOverview';
+import { BottomSheet } from '../common/BottomSheet';
+import { TeamAttendance } from './TeamAttendance';
+import { AttendanceCorrections, CorrectionRequestForm } from './AttendanceCorrections';
 import { isOperationsHead } from '../../lib/auth/roleMapping';
 import {
-  attendanceApi, captureLocation, coords, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
-  STATUS_LABEL, STATUS_TONE, type AttendanceDayData, type AttendanceRegister, type AttendanceStatus, type LunchRow, type PunchInfo, type RegisterRow
+  attendanceApi, captureLocation, coords, isLowPrecision, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
+  STATUS_LABEL, STATUS_TONE, newPunchRequestId, type PunchOutPreview, type AttendanceDayData, type AttendanceRegister, type AttendanceStatus, type LunchRow, type PunchInfo, type RegisterRow
 } from '../../lib/attendance';
+const RemindersPanel = React.lazy(() => import('./RemindersPanel'));
+const NotificationHealth = React.lazy(() => import('../notifications/NotificationHealth'));
 
 const card = 'bg-white rounded-2xl border border-slate-200 p-5';
 const btnBase = 'inline-flex items-center justify-center gap-2 px-4 h-11 rounded-xl text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed';
@@ -44,7 +51,7 @@ export const PunchLocation: React.FC<{ p: PunchInfo | null | undefined; testId?:
       <span className="inline-flex items-start gap-1 font-semibold text-slate-800"><MapPin className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-500" aria-hidden="true" />
         <span data-testid="coords">{c.lat.toFixed(6)}, {c.lng.toFixed(6)}</span></span>
       <span className="text-[11px] text-slate-500">
-        {p.accuracy != null ? <>within {p.accuracy} m · </> : null}
+        {p.accuracy != null ? <>within {p.accuracy} m{isLowPrecision(p.accuracy) ? <> · <span className="font-semibold text-amber-700" title="Less precise than 100 m: the device located itself from Wi-Fi or the network">low precision</span></> : null} · </> : null}
         <a className="text-blue-700 font-semibold hover:underline" href={mapsUrl(c.lat, c.lng)} target="_blank" rel="noreferrer">Google Maps</a>
       </span>
       {p.place ? <span className="text-[11px] text-slate-500" data-testid="place" title="Nearest address looked up from the coordinates (approximate)">Near: {p.place}</span> : null}
@@ -52,9 +59,73 @@ export const PunchLocation: React.FC<{ p: PunchInfo | null | undefined; testId?:
   );
 };
 
+const mins = (m: number | null | undefined) => (m == null ? '-' : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')} min`);
+const IST_NOW = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });
+const clock12 = (hhmm: string | null) => {
+  if (!hhmm) return '-';
+  const [h, m] = hhmm.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'} IST`;
+};
+
+/** "Start your workday?" / "End your workday?": nothing is recorded until Confirm, and success is shown only after the server's answer. */
+const PunchConfirm: React.FC<{
+  confirm: { kind: 'in' } | { kind: 'out'; preview: PunchOutPreview | null }; name: string | null; day: AttendanceDayData | null; offsetMs: number;
+  busy: boolean; error: string | null; onCancel: () => void; onConfirm: () => void;
+}> = ({ confirm, name, day, offsetMs, busy, error, onCancel, onConfirm }) => {
+  const now = new Date(Date.now() + offsetMs);
+  const out = confirm.kind === 'out';
+  const p = out ? confirm.preview : null;
+  const row = 'flex items-baseline justify-between gap-3 py-1.5 border-b border-slate-100 last:border-0';
+  return (
+    <BottomSheet
+      alert
+      testId={out ? 'punch-out-confirm' : 'punch-in-confirm'}
+      title={out ? 'End your workday?' : 'Start your workday?'}
+      subtitle={out ? 'Punching out will end your current working session. Please make sure you have completed your work for today.'
+        : 'You are about to punch in. Your working hours will start once you confirm.'}
+      onClose={onCancel}
+      dismissible={!busy}
+      maxPhoneHeight="max-h-[70vh]"
+      size="sm"
+      footer={<>
+        <button type="button" className={`${btnBase} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`} onClick={onCancel} disabled={busy}>
+          {out ? 'Continue Working' : 'Cancel'}
+        </button>
+        <button type="button" data-testid={out ? 'confirm-punch-out' : 'confirm-punch-in'} onClick={onConfirm}
+          disabled={busy}
+          className={`${btnBase} text-white ${out ? 'bg-slate-900 hover:bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+          {out ? <LogOut className="w-4 h-4" aria-hidden="true" /> : <LogIn className="w-4 h-4" aria-hidden="true" />}
+          {busy ? 'Recording…' : out ? 'Confirm Punch Out' : 'Confirm Punch In'}
+        </button>
+      </>}
+    >
+      <dl className="text-sm">
+        {!out && name ? <div className={row}><dt className="text-slate-500">Employee</dt><dd className="font-medium text-slate-900">{name}</dd></div> : null}
+        {!out ? <div className={row}><dt className="text-slate-500">Date</dt><dd className="font-medium text-slate-900">{day ? istLongDate(day.date) : '-'}</dd></div> : null}
+        {out ? <div className={row}><dt className="text-slate-500">Punch In</dt><dd className="font-medium text-slate-900">{istClock(p?.punchInAt ?? day?.punchIn?.at)}</dd></div> : null}
+        <div className={row}><dt className="text-slate-500">Current time</dt><dd className="font-medium text-slate-900">{IST_NOW.format(now).toUpperCase()} IST</dd></div>
+        {out ? <>
+          <div className={row}><dt className="text-slate-500">Total working time</dt><dd className="font-medium text-slate-900">{mins(p?.workedMinutes ?? day?.workedMinutes)}</dd></div>
+          <div className={row}><dt className="text-slate-500">Breaks</dt><dd className="font-medium text-slate-900">{mins(p?.breakMinutes ?? day?.lunch.minutes)}</dd></div>
+          <div className={row}><dt className="text-slate-500">Net working time</dt><dd className="font-semibold text-slate-900">{p ? mins(p.netMinutes) : '-'}</dd></div>
+          {p?.shiftEnd ? <div className={row}><dt className="text-slate-500">Scheduled shift end</dt><dd className="font-medium text-slate-900">{clock12(p.shiftEnd)}</dd></div> : null}
+        </> : null}
+      </dl>
+      {error ? <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm font-medium text-rose-700" data-testid="punch-dialog-error">{error}</p> : null}
+    </BottomSheet>
+  );
+};
+
 /** The employee's own day: Punch In, Start Lunch / Resume Work, Punch Out. The location is asked only when a punch button is pressed. */
 export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
+  // the name in the Punch In dialog when there is a signed-in account (the card is also mounted on its own)
+  let profile: ReturnType<typeof useAuth>['profile'] | null = null;
+  try { profile = useAuth().profile; } catch { profile = null; }
   const [day, setDay] = useState<AttendanceDayData | null>(null);
+  // the confirmation before a punch (Task 02): one request id per dialog, so pressing Confirm twice or retrying is the same punch
+  const [confirm, setConfirm] = useState<null | { kind: 'in'; request: string } | { kind: 'out'; request: string; preview: PunchOutPreview | null }>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [askCorrection, setAskCorrection] = useState(false);
   const [offsetMs, setOffsetMs] = useState(0);
   const [busy, setBusy] = useState<'' | 'in' | 'out' | 'lunch'>('');
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
@@ -69,23 +140,36 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
   useEffect(load, [load]);
   const lunchMinutes = useLunchMinutes(day, offsetMs);
 
-  const punch = async (kind: 'in' | 'out') => {
+  const openPunch = (kind: 'in' | 'out') => {
+    setDialogError(null);
+    const request = newPunchRequestId();
+    if (kind === 'in') { setConfirm({ kind: 'in', request }); return; }
+    setConfirm({ kind: 'out', request, preview: null });
+    // the figures (worked, break, net, shift end) come from the server's clock; without them the dialog still confirms
+    attendanceApi.punchOutPreview().then(p => setConfirm(c => (c && c.kind === 'out' && c.request === request ? { ...c, preview: p } : c)), () => { /* figures unavailable */ });
+  };
+  const punch = async (kind: 'in' | 'out', request: string) => {
     setBusy(kind);
     setNotice(null);
+    setDialogError(null);
     try {
       // a fresh position for every punch (Punch Out never reuses the Punch In one); nothing is sent without one
-      const loc = await captureLocation();
       const max = day?.maxAccuracyM ?? 1000;
-      if (loc.status !== 'CAPTURED') { setNotice({ ok: false, text: locationHelp(loc.status) }); return; }
-      if (loc.accuracy != null && loc.accuracy > max) { setNotice({ ok: false, text: locationHelp('CAPTURED', loc.accuracy, max) }); return; }
-      const d = kind === 'in' ? await attendanceApi.punchIn(loc) : await attendanceApi.punchOut(loc);
+      const loc = await captureLocation({ maxM: max });
+      if (loc.status !== 'CAPTURED') { setDialogError(locationHelp(loc.status)); return; }
+      if (loc.accuracy != null && loc.accuracy > max) { setDialogError(locationHelp('CAPTURED', loc.accuracy, max)); return; }
+      // Punch Out before the shift end needs no reason: the confirmation is enough (the same request id is never a second punch)
+      const d = kind === 'in' ? await attendanceApi.punchIn(loc, request) : await attendanceApi.punchOut(loc, request);
       accept(d);
+      // only now, with the server's answer: success
+      setConfirm(null);
       const at = kind === 'in' ? d.punchIn?.at : d.punchOut?.at;
-      setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${istClock(at)} (location within ${loc.accuracy} m).` });
-      load();
+      setNotice({ ok: true, text: `${kind === 'in' ? 'Punched in' : 'Punched out'} at ${istClock(at)} (location within ${loc.accuracy} m${isLowPrecision(loc.accuracy) ? ' · low precision' : ''}).` });
+      // the punch's answer is already today's day; the place-name lookup refreshes the rest afterwards
       attendanceApi.resolvePlaces().then(load, () => { /* the nearest address comes later */ });
     } catch (e) {
-      setNotice({ ok: false, text: e instanceof Error ? e.message : 'Could not record the punch.' });
+      // the dialog stays open; pressing Confirm again sends the same request (never a second punch)
+      setDialogError(e instanceof Error ? e.message : 'Could not record the punch. Check your connection and try again.');
     } finally {
       setBusy('');
     }
@@ -96,7 +180,7 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
     try { accept(await attendanceApi.lunch(action)); } catch (e) { setNotice({ ok: false, text: e instanceof Error ? e.message : 'Could not update lunch.' }); } finally { setBusy(''); }
   };
 
-  const allowance = day?.lunch.allowanceMinutes ?? 50;
+  const allowance = day?.lunch.allowanceMinutes ?? 45;
   const over = Math.max(0, lunchMinutes - allowance);
   const remaining = Math.max(0, allowance - lunchMinutes);
   const status: AttendanceStatus = day?.status ?? (!day?.punchIn ? 'NOT_PUNCHED_IN' : day.punchOut ? 'PUNCHED_OUT' : day.lunch.open ? 'ON_LUNCH' : 'PUNCHED_IN');
@@ -129,7 +213,7 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
           <div className={`${box} ${over ? '!bg-rose-50' : ''}`}><dt className={label}>Extra lunch</dt><dd className={`text-lg font-extrabold ${over ? 'text-rose-700' : 'text-slate-900'}`} data-testid="lunch-extra">{over ? `${over} min` : '-'}</dd></div>
         </dl>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" data-testid="punch-in" className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700`} disabled={!canIn || !!busy} onClick={() => void punch('in')}>
+          <button type="button" data-testid="punch-in" className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700`} disabled={!canIn || !!busy} onClick={() => openPunch('in')}>
             <LogIn className="w-4 h-4" aria-hidden="true" /> {busy === 'in' ? 'Getting your location…' : day?.punchIn ? 'Punched in' : 'Punch In'}
           </button>
           {onLunch ? (
@@ -137,12 +221,22 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
           ) : (
             <button type="button" data-testid="lunch-start" className={`${btnBase} border border-amber-300 text-amber-800 bg-white hover:bg-amber-50`} disabled={!canLunch || !!busy} onClick={() => void lunch('START')}><Coffee className="w-4 h-4" aria-hidden="true" /> Start Lunch</button>
           )}
-          <button type="button" data-testid="punch-out" className={`${btnBase} bg-slate-900 text-white hover:bg-slate-800`} disabled={!canOut || !!busy} onClick={() => void punch('out')}>
+          <button type="button" data-testid="punch-out" className={`${btnBase} bg-slate-900 text-white hover:bg-slate-800`} disabled={!canOut || !!busy} onClick={() => openPunch('out')}>
             <LogOut className="w-4 h-4" aria-hidden="true" /> {busy === 'out' ? 'Getting your location…' : status === 'PUNCHED_OUT' ? 'Punched out' : 'Punch Out'}
           </button>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">Signing in or out of the CRM does not mark attendance. Punch In and Punch Out record your current location; times are the server's, in India Standard Time.</p>
+        {status === 'PUNCHED_OUT' && !compact ? (
+          <p className="mt-2 text-xs text-slate-600">Punched out by mistake?{' '}
+            <button type="button" className="font-semibold text-blue-700 hover:underline" onClick={() => setAskCorrection(true)} data-testid="ask-resume">Ask to resume your day</button></p>
+        ) : null}
       </section>
+      {askCorrection && day ? <CorrectionRequestForm date={day.date} kind="RESUME_DAY" onClose={() => setAskCorrection(false)} onSent={() => { setAskCorrection(false); setNotice({ ok: true, text: 'Correction requested. You are told when it is decided.' }); }} /> : null}
+      {confirm ? (
+        <PunchConfirm confirm={confirm} name={profile?.fullName ?? null} day={day} offsetMs={offsetMs} busy={busy === confirm.kind} error={dialogError}
+          onCancel={() => { if (!busy) setConfirm(null); }}
+          onConfirm={() => void punch(confirm.kind, confirm.request)} />
+      ) : null}
       {compact ? null : <section className={card} aria-label="Last two weeks">
         <h3 className="text-sm font-extrabold text-slate-900 mb-2">Last two weeks</h3>
         {history === null ? <p className="text-xs text-slate-500">Loading…</p> : history.length === 0 ? <p className="text-xs text-slate-500">No attendance recorded yet.</p> : (
@@ -219,7 +313,7 @@ const PunchDetail: React.FC<{ title: string; p: PunchInfo | null }> = ({ title, 
             <dl className="text-[11px] text-slate-600 grid grid-cols-[auto_1fr] gap-x-2">
               <dt>Latitude</dt><dd className="font-mono">{c.lat.toFixed(6)}</dd>
               <dt>Longitude</dt><dd className="font-mono">{c.lng.toFixed(6)}</dd>
-              <dt>Accuracy</dt><dd>{p.accuracy != null ? `${p.accuracy} m` : '-'}</dd>
+              <dt>Accuracy</dt><dd>{p.accuracy != null ? `${p.accuracy} m${isLowPrecision(p.accuracy) ? ' · low precision' : ''}` : '-'}</dd>
               {p.place ? <><dt>Near</dt><dd title="Nearest address looked up from the coordinates (approximate)">{p.place}</dd></> : null}
             </dl>
           ) : <p className="text-[11px] text-slate-500">{locationLabel(p)}</p>}
@@ -275,7 +369,7 @@ export const HrAttendanceRegister: React.FC<{ defaultDepartment?: { id: string; 
       <div className="flex flex-wrap items-end gap-3 mb-3">
         <div className="mr-auto min-w-0">
           <h2 className="text-base font-extrabold text-slate-900">Attendance register – {istLongDate(date)}</h2>
-          <p className="text-[11px] text-slate-500">All employees · India Standard Time (Asia/Kolkata) · lunch allowance {data?.allowanceMinutes ?? 50} min · locations kept {data?.retentionDays ?? 90} days. Opening this register is recorded in the audit log.</p>
+          <p className="text-[11px] text-slate-500">All employees · India Standard Time (Asia/Kolkata) · lunch allowance {data?.allowanceMinutes ?? 45} min · locations kept {data?.retentionDays ?? 90} days. Opening this register is recorded in the audit log.</p>
         </div>
         <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Date<input type="date" data-testid="register-date" className={field} value={date} max={istToday()} onChange={e => e.target.value && setDate(e.target.value)} /></label>
         <label className="text-xs font-semibold text-slate-600 flex flex-col gap-1">Department<select className={field} value={dept} onChange={e => { setDept(e.target.value); setEmp(''); }}><option value="">All</option>{departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
@@ -357,12 +451,31 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
   // hrView: opened from HR's own panel (only HR staff reach it), so the HR tabs do not depend on the profile's department being loaded
   const isHr = hrView || (!!profile && (isSa || (profile.department?.slug === 'hr' && profile.hrSubRole !== 'HR_RECRUITER')));
   const isOh = !!profile && isOperationsHead(profile);
+  const isManager = isHr || isSa || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'TEAM_HEAD';
   const tabs = [
+    // HR and the Super Admin: Present / Absent / On leave / Not yet marked / Late today (20270131000100); the 11:00 alert opens it
+    ...(isHr ? [{ id: 'today', label: "Today's overview" }] : []),
     ...(isHr ? [{ id: 'register', label: 'Attendance register (all staff)' }] : []),
     ...(isSa ? [] : [{ id: 'mine', label: 'My attendance' }]),
-    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : [])
+    // managers and HR: one status per person they may see (20270205000200; the database decides who)
+    ...(isManager ? [{ id: 'team', label: 'Team attendance' }] : []),
+    { id: 'corrections', label: 'Corrections' },
+    ...(isHr || isOh ? [{ id: 'lunch', label: 'Lunch breaks' }] : []),
+    // everyone: their own reminder times and devices; HR and the Super Admin also the company defaults
+    { id: 'reminders', label: 'Reminders' },
+    // HR and the Super Admin: who can receive the reminders (the database checks again)
+    ...(isHr ? [{ id: 'health', label: 'Notification health' }] : [])
   ];
-  const [tab, setTab] = useState(tabs[0]?.id ?? 'mine');
+  // opened from a reminder (the bell or a notification): the person's own day; from the Super Admin's 11:00 alert: Today's overview
+  const viewTab = (v: AttendanceView | null) => (v && tabs.some(t => t.id === v) ? v : null);
+  const [tab, setTab] = useState(() => viewTab(takePendingAttendance()) ?? tabs[0]?.id ?? 'mine');
+  // a notification tapped while Attendance is already open switches to its view
+  useEffect(() => {
+    const on = (e: Event) => { const v = viewTab(((e as CustomEvent).detail?.view ?? null) as AttendanceView | null); takePendingAttendance(); if (v) setTab(v); };
+    window.addEventListener(OPEN_ATTENDANCE_EVENT, on);
+    return () => window.removeEventListener(OPEN_ATTENDANCE_EVENT, on);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHr, isSa]);
   return (
     <div className="space-y-4">
       <div>
@@ -375,7 +488,11 @@ export const AttendancePage: React.FC<{ hrView?: boolean; defaultDepartment?: { 
             className={`px-3.5 h-9 rounded-xl text-sm font-bold border ${tab === t.id ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600'}`}>{t.label}</button>)}
         </div>
       ) : null}
-      {tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : <HrAttendanceRegister defaultDepartment={defaultDepartment} />}
+      {tab === 'today' ? <TodayOverview /> : tab === 'team' ? <TeamAttendance /> : tab === 'corrections' ? <AttendanceCorrections canDecide={isManager} /> : tab === 'mine' ? <MyAttendance /> : tab === 'lunch' ? <LunchOverview /> : tab === 'health'
+        ? <React.Suspense fallback={<p role="status" className="text-sm text-slate-500">Loading…</p>}><NotificationHealth /></React.Suspense>
+        : tab === 'reminders'
+        ? <React.Suspense fallback={<p role="status" className="text-sm text-slate-500">Loading reminders…</p>}><RemindersPanel /></React.Suspense>
+        : <HrAttendanceRegister defaultDepartment={defaultDepartment} />}
     </div>
   );
 };

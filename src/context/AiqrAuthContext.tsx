@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
-export type AiqrUserRole = 'Super Admin' | 'Agency Manager' | 'Client Admin';
+export type AiqrUserRole = 'Managing Director' | 'Agency Manager' | 'Client Admin';
 
 export interface AiqrUser {
   id: string;
@@ -30,7 +30,7 @@ const DEFAULT_USERS: Record<string, { pass: string; key: string; user: AiqrUser 
       id: 'usr-admin-01',
       name: 'Alexander Vance',
       email: 'admin@aiqr.io',
-      role: 'Super Admin',
+      role: 'Managing Director',
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
       lastLogin: 'Just now'
     }
@@ -99,7 +99,7 @@ export const AiqrAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         id: 'usr-master-99',
         name: email.split('@')[0] || 'Authorized Operator',
         email: email || 'admin@aiqr.io',
-        role: 'Super Admin',
+        role: 'Managing Director',
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
         lastLogin: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });

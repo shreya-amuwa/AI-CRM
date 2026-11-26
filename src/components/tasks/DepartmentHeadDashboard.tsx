@@ -17,11 +17,12 @@ import {
   Sparkles,
   UserCheck,
   UserPlus,
-  Users
+  Users,
+  Clock3,
+  FileText
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { HandoverBoard } from '../handover/HandoverBoard';
-import { DepartmentCustomers } from '../handover/DepartmentCustomers';
 import { ClientNotices } from '../notices/ClientNotices';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { AccountsConfirmations } from '../accounts/AccountsConfirmations';
@@ -41,16 +42,24 @@ import { useOpenIssuesRequest } from '../issues/issueEvents';
 import { REPORTS_NAV, ReportsRoute } from '../reports/ReportsRoute';
 import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents';
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
-import { HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
+import { HEAD_PAGES, HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
 import { HeadReports } from './head/HeadReports';
 import { HeadDaily } from './head/HeadDaily';
 import { HeadSearch } from './head/HeadSearch';
-import { PerformanceManagement } from '../performance/PerformanceManagement';
+import { PerformanceHub } from '../performance/PerformanceHub';
 import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ContactSheets } from '../telecaller/ContactSheets';
 import { ServicePrices } from '../business-associate/ServicePrices';
 import { OperationsDashboard } from '../operations/OperationsDashboard';
+import { WorkUpdatesPanel, useWorkUpdateCounts } from './WorkUpdates';
+import { useOpenWorkUpdateRequest } from './workUpdateEvents';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
+import { HeadAttendancePage } from '../department-head/HeadAttendancePage';
+import { HeadLeadsPage } from '../department-head/HeadLeadsPage';
+import { HeadCustomersPage, supportTeamPeople } from '../department-head/HeadCustomersPage';
+import { HeadInvoicesPage } from '../department-head/HeadInvoicesPage';
+import { TeamAttendanceSummary } from '../attendance/TeamAttendance';
 
 /**
  * Department Head dashboard (the design handoff): grouped navigation, a search bar, and these pages.
@@ -68,9 +77,11 @@ export const DepartmentHeadDashboard: React.FC = () => {
   const isAccounts = profile?.department?.slug === 'accounts';
   const supportSide = profile?.headDivision === 'SUPPORT';
   const operationsHead = !!profile?.isOperationsHead;
-  const [nav, setNav] = useState<HeadPage>(lastHeadPage ?? (isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview'));
+  const [nav, setNav] = useRememberedPage<HeadPage>('department-head', lastHeadPage ?? (isAccounts ? 'payments' : operationsHead ? 'operations' : 'overview'), HEAD_PAGES);
   const [taskQuery, setTaskQuery] = useState('');
   const [customerQuery, setCustomerQuery] = useState('');
+  // the Overview's "Add lead": opens the Leads page with the form already open (a number, so asking twice works)
+  const [addLead, setAddLead] = useState(0);
   const data = useWorkTasks();
   const waiting = useWaitingForLead();
   const chatUnread = useChatNavBadge();
@@ -78,10 +89,13 @@ export const DepartmentHeadDashboard: React.FC = () => {
   useOpenIssuesRequest(React.useCallback(() => setNav('raise-issue'), []));
   const reportsBadge = useReportsBadge();
   useOpenReportsRequest(React.useCallback(() => setNav('work-reports'), []));
+  useOpenWorkUpdateRequest(React.useCallback(() => setNav('work-updates'), []));
+  const updateCounts = useWorkUpdateCounts();
 
   const groups: ShellNavGroup[] = useMemo(() => {
     const work = [
-      { id: 'assign', label: 'Assign', icon: ClipboardList },
+      { id: 'assign', label: 'Assign Task', icon: ClipboardList },
+      { id: 'work-updates', label: 'Work Updates', icon: Clock3, badge: updateCounts?.pending || 0 },
       { id: 'reports', label: 'Task Reports', icon: BarChart3 },
       { id: REPORTS_NAV.id, label: REPORTS_NAV.label, icon: REPORTS_NAV.icon, badge: reportsBadge },
       { id: 'performance', label: 'Performance Management', icon: LineChart },
@@ -116,7 +130,10 @@ export const DepartmentHeadDashboard: React.FC = () => {
         label: 'Customers',
         items: [
           { id: 'clients', label: 'Client Hand-overs', icon: UserCheck, badge: waiting || 0 },
+          // not for the Accounts head (Accounts has its own invoice pages)
+          ...(!isAccounts ? [{ id: 'leads', label: 'Leads', icon: UserPlus }] : []),
           { id: 'customers', label: 'Customers', icon: Users },
+          ...(!isAccounts ? [{ id: 'invoices', label: 'Invoices', icon: FileText }] : []),
           { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
           { id: 'support', label: 'Support Desk', icon: Headset },
           { id: 'notices', label: 'Client Notices', icon: Megaphone }
@@ -125,6 +142,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {
         label: 'Team',
         items: [
+          { id: 'team-attendance', label: 'Team Attendance', icon: CalendarCheck },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
           { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
@@ -132,11 +150,19 @@ export const DepartmentHeadDashboard: React.FC = () => {
         ]
       }
     ];
-  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread, reportsBadge]);
+  }, [isAccounts, supportSide, operationsHead, waiting, chatUnread, reportsBadge, updateCounts?.pending]);
+
+  // A Support Department Head may add a customer by hand (not only by sheet); it goes to an active Support team member of the department they work in.
+  const supportPeople = useMemo(
+    () => (supportSide ? supportTeamPeople(data.people, data.teams, profile?.departmentId) : undefined),
+    [supportSide, data.people, data.teams, profile?.departmentId]
+  );
 
   const pages = useMemo(() => groups.flatMap(g => g.items.map(i => ({ id: i.id as HeadPage, label: i.label }))), [groups]);
   const go = (p: HeadPage) => {
     lastHeadPage = p;
+    // leaving the Leads page ends the Overview's "open the lead form" request, so the next visit starts on the list
+    if (p !== 'leads') setAddLead(0);
     setNav(p);
   };
   // a page this department does not have (for example Accounts' Payment confirmations): its own first page, never a blank or stale one
@@ -147,12 +173,12 @@ export const DepartmentHeadDashboard: React.FC = () => {
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle={operationsHead ? `Operations Head · ${profile?.department?.name || 'Departments'}` : profile?.department?.name || 'Department'}
-      ariaLabel={operationsHead ? 'Operations Head navigation' : 'Department Head navigation'}
+      subtitle={operationsHead ? `CEO · ${profile?.department?.name || 'Departments'}` : profile?.department?.name || 'Department'}
+      ariaLabel={operationsHead ? 'CEO navigation' : 'Department Head navigation'}
       groups={groups}
       active={nav}
       onSelect={id => go(id as HeadPage)}
-      user={{ name: user?.name || (operationsHead ? 'Operations Head' : 'Department Head'), role: operationsHead ? 'Operations Head' : 'Department Head' }}
+      user={{ name: user?.name || (operationsHead ? 'CEO' : 'Department Head'), role: operationsHead ? 'CEO' : 'Department Head' }}
       onSignOut={() => void logout()}
       flush={nav === 'chat'}
       wide={nav === 'team'}
@@ -183,17 +209,24 @@ export const DepartmentHeadDashboard: React.FC = () => {
           {data.error}
         </div>
       )}
-      {nav === 'overview' && <HeadOverview data={data} go={go} />}
+      {nav === 'overview' && <div className="mb-6"><TeamAttendanceSummary /></div>}
+      {nav === 'overview' && <HeadOverview data={data} go={go} onAddLead={() => { setAddLead(n => n + 1); go('leads'); }} />}
       {nav === 'operations' && operationsHead && <OperationsDashboard />}
       {nav === 'assign' && <HeadAssign data={data} query={taskQuery} />}
+      {nav === 'work-updates' && <WorkUpdatesPanel />}
       {nav === 'reports' && <HeadReports data={data} />}
-      {nav === 'performance' && <PerformanceManagement mode="DEPARTMENT_HEAD" />}
+      {nav === 'performance' && <PerformanceHub mode="DEPARTMENT_HEAD" />}
       {nav === 'top-performers' && <TopPerformersPage mode={operationsHead ? 'COMPANY' : 'DEPARTMENT_HEAD'} />}
       {nav === 'daily' && <HeadDaily data={data} />}
       {nav === 'activity' && <TeamActivityPage />}
       {nav === 'support' && <SupportDeskPage />}
       {nav === 'clients' && <HandoverBoard role="DEPARTMENT_HEAD" />}
-      {nav === 'customers' && <DepartmentCustomers initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} />}
+      {nav === 'leads' && !isAccounts && <HeadLeadsPage startAdd={addLead} />}
+      {nav === 'customers' && (
+        <HeadCustomersPage initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} addCustomerPeople={supportPeople} />
+      )}
+      {nav === 'invoices' && !isAccounts && <HeadInvoicesPage />}
+      {nav === 'team-attendance' && <HeadAttendancePage />}
       {nav === 'notices' && <ClientNotices />}
       {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}
       {nav === 'payments' && <AccountsConfirmations />}

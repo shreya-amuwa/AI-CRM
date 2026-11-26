@@ -25,6 +25,8 @@ create table if not exists auth.users (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- as in Supabase's auth.users (read by client_login_status, 20270212000100)
+alter table auth.users add column if not exists last_sign_in_at timestamptz;
 
 create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(

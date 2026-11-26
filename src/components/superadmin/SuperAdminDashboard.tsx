@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, MessageCircle, RotateCcw, ShieldCheck, Sparkles, Trophy, UserPlus, Users } from 'lucide-react';
+import { Activity, AtSign, BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, LineChart, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -12,16 +12,25 @@ import { useOpenChatRequest } from '../chat/chatEvents';
 import { useOpenReportsRequest } from '../reports/reportEvents';
 import { BusinessReports } from '../reports/BusinessReports';
 import { DepartmentIncome } from '../reports/DepartmentIncome';
+import { IncentiveSetup } from '../income/IncentiveSetup';
 import { TopPerformersPage } from '../top-performers/TopPerformersPage';
 import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
+import { CrocodialAdminPage } from '../crocodial/CrocodialAdminPage';
+import { CrocodialTeamPanel } from '../crocodial/CrocodialTeamPanel';
+import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const ReportPerformance = lazy(() => import('./performance/ReportPerformance'));
+const SuperAdminPerformance = lazy(() => import('./performance/SuperAdminPerformance'));
+const NotificationHealth = lazy(() => import('../notifications/NotificationHealth'));
+const EmailManagement = lazy(() => import('../email/EmailManagement'));
+const WalletAdmin = lazy(() => import('../wallet/WalletAdmin'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-performers' | 'report-performance' | 'security' | 'lead-whatsapp' | 'ai-studio' | 'chat' | 'notifications';
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email'] as const;
+type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
  * The Super Admin's dashboard (the only role with a company-wide view). It replaces the old "pick a department" hub:
@@ -29,13 +38,15 @@ type Page = 'overview' | 'departments' | 'team' | 'reports' | 'income' | 'top-pe
  *   Departments         the department cards: open a department's own panel, lock / unlock, add one (unchanged functions)
  *   Business Reports    the existing company business report
  *   Team Members        Team Member Management in full screen: Add Team Member, Team Members (the directory), Access Control
+ *   Sales Incentives    create, edit, stop and delete the incentive rules sales staff earn from (20270121000100)
+ *   Performance Mgmt.   each department's Team Leads and members, figures and approvals (read only)
  *   Security & Audit    who did what, and what was refused (read-only)
  * Opening a department still uses the existing department panels; their "home" button brings the Super Admin back here.
  */
 export const SuperAdminDashboard: React.FC = () => {
   const { user, logout, selectDepartment } = useAuth();
   const { refreshDepartments } = useDepartments();
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useRememberedPage<Page>('super-admin', 'overview', SUPER_ADMIN_PAGES);
   // the header's "Add Team Member" opens Team Member Management on its Add tab
   const [teamTab, setTeamTab] = useState<{ tab: TeamMemberTab; n: number }>({ tab: 'members', n: 0 });
   const openTeam = (tab: TeamMemberTab) => {
@@ -55,6 +66,11 @@ export const SuperAdminDashboard: React.FC = () => {
           { id: 'departments', label: 'Departments', icon: Building2 },
           { id: 'team', label: 'Team Members', icon: Users },
           { id: 'income', label: 'Department Income', icon: Building2 },
+          { id: 'incentives', label: 'Sales Incentives', icon: SlidersHorizontal },
+          // wallet credits (bonus, adjustment, refund) and the wallet report (20270207000100); the Super Admin has no wallet of their own
+          { id: 'wallet-admin', label: 'Wallet', icon: Wallet },
+          // each department's Team Leads and members, their figures and approvals (read only: the Team Leads and the Department Heads decide)
+          { id: 'performance', label: 'Performance Management', icon: LineChart },
           { id: 'top-performers', label: 'Top Performers & Rankings', icon: Trophy },
           { id: 'report-performance', label: 'Reports & Performance', icon: FileBarChart },
           { id: 'reports', label: 'Business Reports', icon: BarChart3 }
@@ -63,12 +79,16 @@ export const SuperAdminDashboard: React.FC = () => {
       // AI Studio: the Super Admin is its Department Head; the entry opens AI Studio's own workspace (a button there brings the Super Admin back)
       { label: 'AI Studio', items: [{ id: 'ai-studio', label: 'AI Studio', icon: Sparkles }] },
       { label: 'Governance', items: [{ id: 'security', label: 'Security & Audit Logs', icon: ShieldCheck }] },
-      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }] },
+      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }, { id: 'crocodial', label: 'Crocodial Integration', icon: PhoneCall }, { id: 'crocodial-activity', label: 'Crocodial Activity', icon: PhoneCall }] },
       {
         label: 'Communication',
         items: [
           { ...CHAT_NAV, badge: chatUnread },
-          { id: 'notifications', label: 'Notification Center', icon: Bell }
+          { id: 'notifications', label: 'Notification Center', icon: Bell },
+          // attendance reminders: who can receive them, what the scheduler and the push services did (20270126000200)
+          { id: 'notification-health', label: 'Notification Health', icon: Activity },
+          // providers, senders, CC/BCC rules and the delivery of every e-mail (20270201000100)
+          { id: 'email', label: 'Email Management', icon: AtSign }
         ]
       }
     ],
@@ -86,8 +106,10 @@ export const SuperAdminDashboard: React.FC = () => {
   return (
     <DashboardShell
       title="Amuwa"
-      subtitle="Super Admin"
-      ariaLabel="Super Admin navigation"
+      subtitle="Managing Director"
+      reminders="meetings"
+      wallet={false}
+      ariaLabel="Managing Director navigation"
       groups={groups}
       active={page}
       onSelect={id => {
@@ -95,9 +117,9 @@ export const SuperAdminDashboard: React.FC = () => {
         if (id === 'team' && page !== 'team') setTeamTab(t => ({ tab: 'members', n: t.n }));
         setPage(id as Page);
       }}
-      user={{ name: user?.name || 'Super Admin', role: 'Super Admin' }}
+      user={{ name: user?.name || 'Managing Director', role: 'Managing Director' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'top-performers' || page === 'report-performance' || page === 'team'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'performance' || page === 'team' || page === 'notification-health' || page === 'email'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -126,13 +148,20 @@ export const SuperAdminDashboard: React.FC = () => {
       )}
       {page === 'team' && <TeamMemberManagement initialTab={teamTab.tab} openRequest={teamTab.n} />}
       {page === 'income' && <DepartmentIncome />}
+      {page === 'incentives' && <IncentiveSetup />}
+      {page === 'wallet-admin' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><WalletAdmin /></Suspense>}
       {page === 'top-performers' && <TopPerformersPage mode="COMPANY" />}
       {page === 'report-performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><ReportPerformance /></Suspense>}
+      {page === 'performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><SuperAdminPerformance /></Suspense>}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
+      {page === 'crocodial' && <CrocodialAdminPage />}
+      {page === 'crocodial-activity' && <CrocodialTeamPanel />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
+      {page === 'email' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><EmailManagement /></Suspense>}
+      {page === 'notification-health' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><NotificationHealth /></Suspense>}
     </DashboardShell>
   );
 };

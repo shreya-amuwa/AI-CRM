@@ -17,15 +17,20 @@
   },
   // Was vercel.json "crons" (UTC): 09:00 and 10:30 IST, the automations' safety net and retries. They do nothing until the dashboard
   // variable SCHEDULED_ENABLED is "true" (worker/index.ts), so a rehearsal copy and Vercel never run the automations at the same time.
+  // "*/5 * * * *": the attendance reminders (Punch In, lunch, Punch Out), every 5 minutes; also off until SCHEDULED_ENABLED is "true".
   "triggers": {
-    "crons": ["30 3 * * *", "0 5 * * *"]
+    "crons": ["30 3 * * *", "0 5 * * *", "*/5 * * * *"]
   },
   // Only what is the same for every deployment. Everything else from .env.example (EMAIL_PROVIDER, SCHEDULED_ENABLED, ...) is a dashboard
   // variable or a secret, so it can be changed without a code change.
   "vars": {
     // Tells server/security/clientNetwork.ts that the caller's address and place come from Cloudflare (worker/index.ts).
-    "CRM_PLATFORM": "cloudflare"
+    "CRM_PLATFORM": "cloudflare",
+    // Names this deployment on Super Admin -> Crocodial Integration -> Connection health (a rehearsal copy may set its own name).
+    "CRM_ENVIRONMENT": "production"
   },
+  // The running deployment's id and tag, shown on the same page (never a secret).
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   // Keep the variables set in the dashboard when a new version deploys (without this, every deploy would remove them, e.g. switch the
   // scheduled automations off again or drop EMAIL_PROVIDER). Secrets are never touched by a deploy.
   "keep_vars": true,

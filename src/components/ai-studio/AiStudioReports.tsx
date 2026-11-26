@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { AI_STUDIO_REPORT_STATUS_LABELS, type AiStudioPerson, type AiStudioProject, type AiStudioReportContext, type AiStudioReportDetail, type AiStudioReportPage, type AiStudioReportStatus, type AiStudioRole } from '../../../shared/contracts';
-import { aiStudioReportReviewSchema, aiStudioReportSchema } from '../../../shared/validation';
+import { aiStudioReportLeadEditSchema, aiStudioReportReviewSchema, aiStudioReportSchema } from '../../../shared/validation';
 import { aiStudioApi } from '../../lib/api/aiStudio';
 import { errorMessage } from '../../lib/api/client';
 import { PageTitle } from '../layout/shell';
@@ -10,13 +10,17 @@ import { Card, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../task
 import { notifyAiStudioChanged, peekPendingAiStudio, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
 import { ReportStatusBadge, TableWrap, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
 
-const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean }[] = [
+// The daily report asks three things: what was completed, what is pending, and any challenge. "Work In Progress" (the same as pending work) and "Remarks" were
+// dropped from the form to keep it short; they are shown (and kept when the report is edited) only on an older report that already has them.
+const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean; legacy?: boolean }[] = [
   { key: 'workCompleted', label: 'Work Completed Today', required: true },
-  { key: 'workInProgress', label: 'Work In Progress' },
   { key: 'pendingWork', label: 'Pending Work' },
   { key: 'blockers', label: 'Challenges / Blockers' },
-  { key: 'remarks', label: 'Remarks or Additional Updates' }
+  { key: 'workInProgress', label: 'Work In Progress', legacy: true },
+  { key: 'remarks', label: 'Remarks or Additional Updates', legacy: true }
 ];
+/** The parts to show: the three of the form, and an older report's extra parts only when they have text. */
+const shownParts = (values: Partial<Record<(typeof PARTS)[number]['key'], string | null>>) => PARTS.filter(p => !p.legacy || (values[p.key] ?? '').trim() !== '');
 
 /**
  * The daily report form (Team Member and Team Lead): the date, the project, the task, and what was done. "Save draft" keeps it private; "Submit Daily Report" sends it
@@ -78,7 +82,7 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
             </select>
           </Field>
         </div>
-        {PARTS.map(p => (
+        {shownParts(existing ?? {}).map(p => (
           <Field key={p.key} label={p.label} htmlFor={`ai-rp-${p.key}`} required={p.required}>
             <textarea id={`ai-rp-${p.key}`} className={textareaCls} rows={p.key === 'workCompleted' ? 4 : 3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
           </Field>
@@ -103,10 +107,48 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
   );
 };
 
+const PART_LABEL: Record<string, string> = Object.fromEntries(PARTS.map(p => [p.key, p.label]));
+
+/** The Team Lead corrects a report waiting for their approval before deciding it (20270214000100): the employee reads the reason and every change is kept. */
+const LeadEditForm: React.FC<{ r: AiStudioReportDetail; onSaved: () => void; onCancel: () => void }> = ({ r, onSaved, onCancel }) => {
+  const [text, setText] = useState<Record<(typeof PARTS)[number]['key'], string>>({
+    workCompleted: r.workCompleted ?? '', workInProgress: r.workInProgress ?? '', pendingWork: r.pendingWork ?? '', blockers: r.blockers ?? '', remarks: r.remarks ?? ''
+  });
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = aiStudioReportLeadEditSchema.safeParse({ ...text, reason });
+    if (!parsed.success) { setProblem(parsed.error.issues[0]?.message ?? 'Please check the report.'); return; }
+    setBusy(true); setProblem('');
+    try { await aiStudioApi.leadEdit(r.id, parsed.data); notifyAiStudioChanged(); onSaved(); } catch (err) { setProblem(errorMessage(err)); } finally { setBusy(false); }
+  };
+  return (
+    <form onSubmit={save} noValidate className="rounded-2xl border border-blue-100 bg-blue-50/40 p-4 space-y-3" aria-label="Edit this report" data-testid="ai-report-lead-edit">
+      <p className="text-xs text-slate-600">Correct the report before you approve it. The employee is told what you changed and why; the change stays in the approval history.</p>
+      {shownParts(r).map(p => (
+        <Field key={p.key} label={p.label} htmlFor={`ai-le-${p.key}`} required={p.required}>
+          <textarea id={`ai-le-${p.key}`} className={textareaCls} rows={p.key === 'workCompleted' ? 4 : 2} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} disabled={busy} />
+        </Field>
+      ))}
+      <Field label="Why you changed it (the employee reads this)" htmlFor="ai-le-reason" required>
+        <input id="ai-le-reason" className={fieldCls} maxLength={1000} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} />
+      </Field>
+      {problem && <ErrorBanner message={problem} />}
+      <div className="flex flex-wrap gap-2">
+        <button type="submit" className={primaryBtn} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+        <button type="button" className={ghostBtn} disabled={busy} onClick={onCancel}>Cancel editing</button>
+      </div>
+    </form>
+  );
+};
+
 /** One report in full, with its approval history, and (when the database says so) the decision form or the edit form. */
 export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged?: () => void }> = ({ id, onClose, onChanged }) => {
   const { data: r, error, reload } = useLoad<AiStudioReportDetail>(() => aiStudioApi.report(id), [id]);
   const [editing, setEditing] = useState(false);
+  const [leadEditing, setLeadEditing] = useState(false);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
@@ -141,13 +183,15 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
             <span className="text-slate-500">Submitted {dateTimeText(r.submittedAt)}{r.revision > 1 ? ` · version ${r.revision}` : ''}</span>
             {r.leadName && r.authorRole === 'MEMBER' && <span className="text-slate-500">Team Lead: {r.leadName}</span>}
           </div>
-          {PARTS.map(p => (
+          {shownParts(r).map(p => (
             <div key={p.key}>
               <div className="text-xs font-semibold text-slate-500 mb-1">{p.label}</div>
               <p className="text-sm text-slate-800 whitespace-pre-wrap">{r[p.key] || <span className="text-slate-400">-</span>}</p>
             </div>
           ))}
-          {r.canReview && (
+          {leadEditing ? <LeadEditForm r={r} onCancel={() => setLeadEditing(false)} onSaved={() => { setLeadEditing(false); onChanged?.(); reload(); }} />
+            : r.canLeadEdit ? <div><button type="button" className={ghostBtn} onClick={() => setLeadEditing(true)}>Edit report</button></div> : null}
+          {r.canReview && !leadEditing && (
             <div className="rounded-2xl border border-slate-200 p-4 space-y-3" role="group" aria-label="Review this report">
               <h3 className="text-sm font-extrabold text-slate-900">{r.reviewStage === 'TEAM_LEAD' ? 'Team Lead review' : 'Department Head review'}</h3>
               <Field label="Remarks (needed when you return the report)" htmlFor="ai-rv-comment">
@@ -167,10 +211,15 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
               {r.history.map(h => (
                 <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
                   <div className="font-semibold text-slate-800">
-                    {h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
+                    {h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'EDITED' ? 'Edited by the Team Lead' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
                     <span className="font-normal text-slate-500"> · {h.actorName ?? 'Someone'} · {dateTimeText(h.createdAt)} · {AI_STUDIO_REPORT_STATUS_LABELS[h.toStatus]}</span>
                   </div>
                   {h.comment && <p className="text-slate-600 whitespace-pre-wrap">{h.comment}</p>}
+                  {h.changes ? (
+                    <ul className="mt-1 space-y-0.5 text-xs" data-testid="ai-report-changes">
+                      {Object.entries(h.changes).map(([k, v]) => <li key={k} className="text-slate-600 break-words"><span className="font-semibold">{PART_LABEL[k] ?? k}:</span> <s className="text-slate-400">{v.from || '(empty)'}</s> → {v.to || '(empty)'}</li>)}
+                    </ul>
+                  ) : null}
                 </li>
               ))}
             </ol>
@@ -195,8 +244,12 @@ export const ReportList: React.FC<{
   people?: AiStudioPerson[];
   waitingStatus?: AiStudioReportStatus;
   onNew?: () => void;
-}> = ({ view, projects, people = [], waitingStatus, onNew }) => {
-  const [f, setF] = useState<Filters>({ ...NO_FILTERS, status: waitingStatus ?? '' });
+  /** one employee's reports of a period (the Performance Management drill-down) */
+  initial?: Partial<Filters>;
+  /** called after a decision or an edit in the dialog */
+  onChanged?: () => void;
+}> = ({ view, projects, people = [], waitingStatus, onNew, initial, onChanged }) => {
+  const [f, setF] = useState<Filters>({ ...NO_FILTERS, status: waitingStatus ?? '', ...initial });
   const [page, setPage] = useState(1);
   const pendingReport = usePendingAiStudio('report');
   const [openId, setOpenId] = useState<string | null>(pendingReport);
@@ -226,19 +279,19 @@ export const ReportList: React.FC<{
           <select aria-label="Project" className={`${fieldCls} !w-auto min-w-[9rem]`} value={f.projectId} onChange={e => set({ projectId: e.target.value })}>
             <option value="">All projects</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          {view === 'department' && (
+          {view === 'department' && !initial?.authorId && (
             <select aria-label="Team Lead" className={`${fieldCls} !w-auto min-w-[9rem]`} value={f.leadId} onChange={e => set({ leadId: e.target.value })}>
               <option value="">All Team Leads</option>{leads.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
             </select>
           )}
-          {view !== 'mine' && (
+          {view !== 'mine' && !initial?.authorId && (
             <select aria-label="Employee" className={`${fieldCls} !w-auto min-w-[9rem]`} value={f.authorId} onChange={e => set({ authorId: e.target.value })}>
               <option value="">All employees</option>{members.map(p => <option key={p.id} value={p.id}>{p.fullName}</option>)}
             </select>
           )}
           <label className="flex items-center gap-1.5 text-xs text-slate-500">From <input type="date" className={`${fieldCls} !w-auto`} value={f.from} max={f.to || undefined} onChange={e => set({ from: e.target.value })} /></label>
           <label className="flex items-center gap-1.5 text-xs text-slate-500">To <input type="date" className={`${fieldCls} !w-auto`} value={f.to} min={f.from || undefined} onChange={e => set({ to: e.target.value })} /></label>
-          {(f.projectId || f.leadId || f.authorId || f.from || f.to) && <button type="button" className={ghostBtn} onClick={() => set({ ...NO_FILTERS, status: f.status })}>Clear filters</button>}
+          {!initial && (f.projectId || f.leadId || f.authorId || f.from || f.to) && <button type="button" className={ghostBtn} onClick={() => set({ ...NO_FILTERS, status: f.status })}>Clear filters</button>}
         </div>
       </div>
       {error && <div className="p-4"><ErrorBanner message={error} onRetry={reload} /></div>}
@@ -266,7 +319,7 @@ export const ReportList: React.FC<{
         </TableWrap>
       )}
       {data && data.total > data.pageSize && <div className="p-4 border-t border-slate-100"><Pager page={data.page} pageSize={data.pageSize} total={data.total} noun="reports" onPage={setPage} /></div>}
-      {openId && <ReportDialog id={openId} onClose={() => setOpenId(null)} onChanged={reload} />}
+      {openId && <ReportDialog id={openId} onClose={() => setOpenId(null)} onChanged={() => { reload(); onChanged?.(); }} />}
     </Card>
   );
 };
