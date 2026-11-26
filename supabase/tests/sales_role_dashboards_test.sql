@@ -94,7 +94,8 @@ select test.must_fail($$select private.croc_person_calls(test.id('rd_tc2'), now(
 
 \echo '   the management view counts a number once across people'
 select test.login('sh_head');
-insert into rd select 'team', croc_team_activity((now() at time zone 'Asia/Kolkata')::date, (now() at time zone 'Asia/Kolkata')::date, test.dept('wabastore'));
+-- the calls above were made 5 to 60 minutes ago: from midnight to 01:00 India time some of them are on yesterday's date, so the period starts 2 hours back
+insert into rd select 'team', croc_team_activity((now() at time zone 'Asia/Kolkata' - interval '2 hours')::date, (now() at time zone 'Asia/Kolkata')::date, test.dept('wabastore'));
 select test.check((select (v -> 'totals' ->> 'made')::int = 6 and (v -> 'totals' ->> 'connected')::int = 3 and (v -> 'totals' ->> 'notConnected')::int = 2 from rd where k = 'team'),
   'totals: 6 calls, 3 connected, 2 not connected (the sum of the people)');
 select test.check((select (v -> 'totals' ->> 'uniqueNumbers')::int = 3 and (v -> 'totals' ->> 'uniqueLeads')::int = 2 from rd where k = 'team'),

@@ -5,6 +5,9 @@
 # Requires a superuser on a throw-away PostgreSQL 15+ instance (NOT Supabase).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# The business time zone. The functions decide "today" in India (Asia/Kolkata); a psql session defaults to UTC, where current_date is a day
+# behind from 18:30 to 24:00 UTC, so tests that build a date with current_date failed in that window. Tests now see the same "today" as the code.
+export PGTZ="${TEST_TZ:-Asia/Kolkata}"
 DB="${TEST_DB:-crm_rls_test}"
 PSQL="psql -v ON_ERROR_STOP=1 -q"
 $PSQL -d postgres -c "drop database if exists $DB" -c "create database $DB"
