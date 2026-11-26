@@ -6201,6 +6201,8 @@ export interface AdsAssignmentDetail extends AdsAssignment {
   members: AdsAssignment[];
   canReview: boolean;
   canUpdateStatus: boolean;
+  /** The Team Lead who gave it or the Department Head may delete it (20270220000100); absent before that migration. */
+  canDelete?: boolean;
 }
 export interface AdsReport {
   id: string;
@@ -6353,7 +6355,7 @@ export interface AiStudioTask {
   overdue: boolean;
 }
 export interface AiStudioTaskHistoryEntry { id: string; kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED'; status: AiStudioTaskStatus; progress: number; note: string | null; authorName: string | null; createdAt: string }
-export interface AiStudioTaskDetail extends AiStudioTask { canUpdate: boolean; canEdit: boolean; history: AiStudioTaskHistoryEntry[] }
+export interface AiStudioTaskDetail extends AiStudioTask { canUpdate: boolean; canEdit: boolean; canDelete?: boolean; history: AiStudioTaskHistoryEntry[] }
 export interface AiStudioTaskPage { items: AiStudioTask[]; total: number; page: number; pageSize: number }
 
 export interface AiStudioReportSummary {
@@ -7540,3 +7542,16 @@ export interface SearchResponse {
 }
 /** One opened result (GET /search/records/:type/:id): label / value pairs for display, in order. */
 export interface SearchRecordCard { type: SearchRecordType; id: string; title: string; fields: [string, string][] }
+
+// ---------------------------------------------------------------------------
+// Assigned task deletion (20270220000100): Team Lead, Department Head, Operations Head
+// ---------------------------------------------------------------------------
+/** What the delete confirmation shows for a Task module task: whether the caller may delete it and what goes with it. */
+export interface TaskDeletePreview {
+  taskId: string; title: string; status: string; assigneeName: string | null;
+  canDelete: boolean; reason: string | null;
+  subtasks: number; updates: number; dailyReports: number;
+}
+export interface TaskDeleteResult { deleted: true; taskId: string; title: string; subtasks: number; updates: number; dailyReports: number }
+export interface AiStudioTaskDeleteResult { deleted: true; taskId: string; title: string; updates: number; reportEntries: number }
+export interface AdsAssignmentDeleteResult { deleted: true; id: string; title: string; memberParts: number }

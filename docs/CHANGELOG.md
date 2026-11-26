@@ -24,6 +24,11 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
   references to the task history, never copies; a submitted report keeps showing its day. The Team Lead and Department Head read it
   project by project (with counts, blockers and cross-team filters); the Team Lead who gave a cross-team task sees only that task's part,
   in the task window. Older one-task reports stay as they are. Migration `20270219000100_ai_studio_consolidated_reports.sql`.
+* **Deleting assigned tasks** (docs/TASK_DELETION.md). Team Leads delete the tasks they assigned; Department Heads and Operations Heads delete tasks
+  within their department and function, in the Task module of every department, AI Studio and AI Design Studio. Team Members (Telecallers, Business
+  Associates and every member designation) cannot, and the Super Admin's access is unchanged. The database checks the role and scope on every delete; the
+  button appears only when it says so and opens a confirmation naming the task. Sub-tasks, updates and per-task reports go with the task; the assignee is
+  notified and the delete is audited. Migration `20270220000100_task_deletion.sql`.
 * **Global search (Ctrl / Cmd + K)** (docs/GLOBAL_SEARCH_ARCHITECTURE.md, docs/COMMAND_PALETTE_GUIDE.md): a command palette on every staff
   dashboard. It finds the dashboard's own pages (with aliases) and the employees, customers, leads, meetings, support tickets,
   departments and notices the person may already open. The database's row-level rules decide (security invoker). Results open the exact
