@@ -57,10 +57,10 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
       {notice && <p role="status" className={`text-xs font-semibold ${notice.ok ? 'text-emerald-800' : 'text-rose-700'}`} data-testid="operations-notice">{notice.text}</p>}
       {!data && !error && <Spinner label="Loading Operations Heads…" />}
       {routing && routing.some(r => r.issue === 'MISSING' || r.issue === 'INACTIVE') && (
-        <div role="status" data-testid="weekly-routing" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 flex gap-2">
+        <div role="status" data-testid="weekly-routing" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 flex gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
           <div>
-            <b>Weekly reports with no Operations Head to receive them:</b>
+            <b>Departments with no Operations Head (their weekly report goes directly to HR):</b>
             <ul className="mt-1 list-disc pl-4">
               {routing.filter(r => r.issue === 'MISSING' || r.issue === 'INACTIVE').map(r => (
                 <li key={`${r.departmentId}:${r.function}`}>
@@ -70,7 +70,7 @@ export const OperationsHeadsAdminPanel: React.FC = () => {
                 </li>
               ))}
             </ul>
-            Choose the departments of the right Operations Head below (with &quot;approves heads&quot; for that function). Until then those weekly reports cannot be submitted; drafts are kept.
+            Choose the departments of the right Operations Head below (with &quot;approves heads&quot; for that function). Until then the Department Heads of those departments send their weekly report directly to HR.
           </div>
         </div>
       )}

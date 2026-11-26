@@ -144,3 +144,5 @@ that the Super Admin gives the final approval (no stage after it), a notificatio
 ```
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest E2E_CHROMIUM=/path/to/chrome supabase/tests/e2e/run-ai-studio.sh ./ai-studio-screenshots
 ```
+
+`run-weekly-direct-hr.sh` drives the weekly department report in real browsers: a Department Head whose department has an Operations Head still sees *Submit to Operations Head*; one whose department has none is told the week goes directly to HR, sends it with *Send to HR*, and the week is `SENT_TO_HR` with no Operations Head decision recorded and visible to HR (9 checks).

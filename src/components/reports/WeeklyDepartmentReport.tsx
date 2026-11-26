@@ -102,7 +102,7 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
     try {
       await weeklyReportsApi.saveWeekly(body(submit));
       notifyReportsChanged();
-      setNote(submit ? 'The weekly report was submitted to the Operations Head.' : 'Draft saved.');
+      setNote(submit ? (data?.reviewers?.length ? 'The weekly report was submitted to the Operations Head.' : 'The weekly report was sent directly to HR.') : 'Draft saved.');
       setPreview(false);
       load();
     } catch (e) {
@@ -145,7 +145,7 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
         {data ? (
           <div className="space-y-5">
             {data.routingIssue && !locked ? (
-              <div role="alert" data-testid="weekly-routing-issue" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{data.routingIssue}</div>
+              <div role="note" data-testid="weekly-routing-issue" className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">{data.routingIssue}</div>
             ) : null}
             {data.package.status === 'REVISION_REQUIRED' ? (
               <div role="note" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><b>{data.package.ohReviewer ?? 'The Operations Head'} asked for a revision:</b> {data.package.ohComment}</div>
@@ -179,10 +179,10 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
                 {locked ? null : (
                   <>
                     <button type="button" className={btn.secondary} onClick={() => void run(false)} disabled={!!busy}><Save className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'draft' ? 'Saving...' : 'Save as draft'}</button>
-                    <button type="submit" className={btn.primary} disabled={!!busy}><Send className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'submit' ? 'Submitting...' : data.package.status === 'REVISION_REQUIRED' ? 'Resubmit to Operations Head' : 'Submit to Operations Head'}</button>
+                    <button type="submit" className={btn.primary} disabled={!!busy}><Send className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'submit' ? 'Submitting...' : data.package.status === 'REVISION_REQUIRED' ? 'Resubmit to Operations Head' : data.reviewers?.length ? 'Submit to Operations Head' : 'Send to HR'}</button>
                   </>
                 )}
-                {locked ? <span className="text-xs text-slate-500">Submitted: it can only be changed if the Operations Head sends it back.</span> : null}
+                {locked ? <span className="text-xs text-slate-500">{data.package.ohReviewer || data.reviewers?.length ? 'Submitted: it can only be changed if the Operations Head sends it back.' : 'Sent to HR.'}</span> : null}
                 {note ? <span role="status" className="text-xs text-emerald-700">{note}</span> : null}
               </div>
             </form>
@@ -206,7 +206,7 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
             <CompiledWeek data={data} />
             <div className="flex justify-end gap-2">
               <button type="button" className={btn.secondary} onClick={() => setPreview(false)}>Close</button>
-              {locked ? null : <button type="button" className={btn.primary} onClick={() => void run(true)} disabled={!!busy}><Send className="w-3.5 h-3.5" aria-hidden="true" /> Submit to Operations Head</button>}
+              {locked ? null : <button type="button" className={btn.primary} onClick={() => void run(true)} disabled={!!busy}><Send className="w-3.5 h-3.5" aria-hidden="true" /> {data?.reviewers?.length ? 'Submit to Operations Head' : 'Send to HR'}</button>}
             </div>
           </div>
         </Dialog>

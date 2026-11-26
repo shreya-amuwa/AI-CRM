@@ -10964,6 +10964,34 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check([200, 201, 404].includes(q.status), 'AI Studio: the leave module is reachable for AI Studio people', q);
 }
 
+// --- Weekly department report: with no Operations Head the Department Head sends it straight to HR ---
+{
+  const dept = (await db.query(`insert into public.departments (slug, name) values ('wdx-n', 'WDX No Operations Head') returning id`)).rows[0].id as string;
+  await db.query(`insert into public.teams (department_id, name, division) values ($1, 'Sales', 'SALES')`, [dept]);
+  const hrTeam = (await db.query(`insert into public.teams (department_id, name, division) select id, 'WDX HR', 'GENERAL' from public.departments where slug = 'hr' returning id`)).rows[0].id as string;
+  const mk = async (name: string, body: Record<string, unknown>) => {
+    const res = await api('sa', 'POST', '/users', { email: `wdx.${name}@amuwa.com`, fullName: `WDX ${name}`, password: 'Sup3rSecret!', ...body });
+    check(res.status === 201, `weekly report without an Operations Head: ${name} account created`, res);
+    tokens.set(`wdx_${name}`, tokenFor(res.json.data.id));
+    return res.json.data.id as string;
+  };
+  await mk('dh', { role: 'DEPARTMENT_HEAD', departmentId: dept });
+  await mk('hr', { role: 'TEAM_MEMBER', teamId: hrTeam, details: { designation: 'HR Assistant', joiningDate: '2026-01-05', dateOfBirth: '1992-05-06', bloodGroup: 'B+', contactNumber: '+91 91234 56771', emergencyContact: '+91 98765 43271' } });
+  const addDays = (iso: string, n: number) => new Date(new Date(`${iso}T00:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
+  const monday = (iso: string) => { const d = new Date(`${iso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const week = addDays(monday(new Date().toISOString().slice(0, 10)), -7);
+  let q: any = await api('wdx_dh', 'GET', `/work-reports/weekly?weekStart=${week}`);
+  check(q.status === 200 && /goes directly to HR/.test(q.json.data.routingIssue ?? '') && q.json.data.reviewers.length === 0, 'weekly report without an Operations Head: the Department Head is told it goes directly to HR', q);
+  q = await api('wdx_dh', 'POST', '/work-reports/weekly', { weekStart: week, title: 'Weekly report without an Operations Head', remarks: 'Steady week', submit: true });
+  check(q.status === 200 && q.json.data.status === 'SENT_TO_HR' && !q.json.data.ohReviewer && q.json.data.events.some((e: any) => e.action === 'SENT_TO_HR_DIRECT'), 'weekly report without an Operations Head: submitting sends it directly to HR (no decision is invented)', q);
+  q = await api('wdx_dh', 'POST', '/work-reports/weekly', { weekStart: week, title: 'Again', remarks: 'Again', submit: true });
+  check(q.status === 409, 'weekly report without an Operations Head: it cannot be sent twice', q);
+  q = await api('wdx_hr', 'GET', `/hr-reviews/overview?weekStart=${week}`);
+  check(q.status === 200 && q.json.data.departments.some((d: any) => d.name === 'WDX No Operations Head' && d.package.status === 'SENT_TO_HR'), 'weekly report without an Operations Head: HR sees it for review', q);
+  q = await api('wdx_hr', 'POST', '/work-reports/weekly', { weekStart: week, title: 'Not allowed', submit: true });
+  check(q.status === 403, 'weekly report without an Operations Head: HR cannot send a department\'s week', q);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

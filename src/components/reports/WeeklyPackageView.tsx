@@ -5,7 +5,7 @@ import { timeLabel, WeeklyStatusPill } from './reportUi';
 const ACTION: Record<string, string> = {
   COMPILED: 'Compiled', SAVED: 'Draft saved', SUBMITTED: 'Submitted to the Operations Head', RESUBMITTED: 'Resubmitted to the Operations Head',
   APPROVED: 'Approved by the Operations Head and sent to HR', REVISION_REQUESTED: 'Revision requested', HR_STARTED: 'HR review started',
-  HR_COMPLETED: 'HR review completed', SUBMITTED_TO_SUPERADMIN: 'Submitted to the Super Admin'
+  SENT_TO_HR_DIRECT: 'Sent directly to HR (no Operations Head is assigned)', HR_COMPLETED: 'HR review completed', SUBMITTED_TO_SUPERADMIN: 'Submitted to the Super Admin'
 };
 
 /** The Department Head's weekly summary (title, task overviews, remarks), the Operations Head's decision and every step so far. */
