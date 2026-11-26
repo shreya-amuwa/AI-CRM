@@ -13038,6 +13038,62 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- Google Sheet sync of existing customers (docs/CUSTOMER_SHEET_SYNC.md, migration 20270216000100) ---
+{
+  let q: any = await api('a', 'GET', '/customers/sheet-sync');
+  check(q.status === 403, 'sheet sync: a Sales member cannot connect a customer sheet', q);
+  q = await api('sm', 'GET', '/customers/sheet-sync');
+  check(q.status === 200 && q.json.data === null, 'sheet sync: not connected yet', q);
+  q = await api('sm', 'POST', '/customers/sheet-sync', {});
+  const key1 = q.json.data?.key as string;
+  check(q.status === 200 && /^crmss_[A-Za-z0-9_-]{43}$/.test(key1) && q.json.data.connection.keyHint === key1.slice(-4), 'sheet sync: connecting returns the key once (only its last 4 characters are kept to show)', q);
+  q = await api('sm', 'GET', '/customers/sheet-sync');
+  check(q.status === 200 && q.json.data.status === 'ACTIVE' && !JSON.stringify(q.json.data).includes(key1), 'sheet sync: the key is never shown again', q);
+
+  const header = [['Mobile Number', 'Customer Name', 'Business Name', 'E-mail', 'Client Password', 'Service', 'Status', 'Start Date', 'CRM Status']];
+  const sheet = (rows: { r: number; c: (string | number | null)[] }[]) => ({ sheetName: 'Import', scriptVersion: 1, header, rows });
+  const sync = (key: string | null, body: unknown) => api(null, 'POST', '/integrations/customer-sheet/sync', body, undefined, key ? { authorization: `Bearer ${key}` } : {});
+  const rows = [
+    { r: 2, c: ['9000008301', 'Sheet Client', 'Sheet Traders (TEST)', 'sheet.client@example.com', 'NotUsed-Password1', 'AI Calling', 'Live', '2026-01-05', null] },
+    { r: 3, c: ['9000008302', 'No Business', null, null, null, null, null, null, null] },
+    { r: 4, c: [null, 'No Mobile', 'No Mobile Co', null, null, null, null, null, null] }
+  ];
+  q = await sync(null, sheet(rows));
+  check(q.status === 401, 'sheet sync: no key: 401', q);
+  q = await sync('crmss_short', sheet(rows));
+  check(q.status === 401, 'sheet sync: a key of the wrong shape: 401 (the database is not asked)', q);
+  q = await sync(`crmss_${'x'.repeat(43)}`, sheet(rows));
+  check(q.status === 403, 'sheet sync: an unknown key: 403', q);
+  q = await sync(key1, { ...sheet(rows), extra: 1 });
+  check(q.status === 422, 'sheet sync: an unexpected field is refused', q);
+  q = await sync(key1, sheet(Array.from({ length: 2001 }, (_, i) => ({ r: i + 2, c: ['x'] }))));
+  check(q.status === 422, 'sheet sync: more than 2000 rows at a time are refused', q);
+
+  q = await sync(key1, sheet(rows));
+  const res = (row: number) => q.json.data?.results?.find((x: any) => x.row === row);
+  check(q.status === 200 && res(2)?.status === 'ADDED' && res(3)?.status === 'ERROR' && /Business Name/.test(res(3)?.message) && res(4)?.status === 'ERROR' && /Mobile/.test(res(4)?.message),
+    'sheet sync: each row gets its own result; the good row is saved, the wrong ones say what to fix', q);
+  const added = (await db.query(`select c.owner_id, (select count(*)::int from public.customer_services s where s.customer_id = c.id and s.service_code = 'AI_CALLING') as svc
+                                   from public.customers c where c.phone = '9000008301'`)).rows;
+  check(added.length === 1 && added[0].owner_id === supportMember && added[0].svc === 1, 'sheet sync: the customer is saved once, with its service, for the member who connected the sheet', added);
+  check((await db.query(`select count(*)::int n from public.customers where phone = '9000008302'`)).rows[0].n === 0, 'sheet sync: a wrong row is not saved');
+  q = await sync(key1, sheet([rows[0]]));
+  check(q.status === 200 && res(2)?.status === 'UPDATED', 'sheet sync: sending the same customer again updates it, never a second customer', q);
+  check((await db.query(`select count(*)::int n from public.customers where phone = '9000008301'`)).rows[0].n === 1, 'sheet sync: still one customer');
+  q = await api('sm', 'GET', '/customers/sheet-sync');
+  check(q.status === 200 && q.json.data.syncCount === 2 && q.json.data.runs.length === 2 && q.json.data.runs[1].added === 1, 'sheet sync: every sync is listed on the Import page', q);
+
+  q = await api('sm', 'POST', '/customers/sheet-sync', {});
+  const key2 = q.json.data?.key as string;
+  check(q.status === 200 && key2 && key2 !== key1, 'sheet sync: a new script has a new key', q);
+  q = await sync(key1, sheet([rows[0]]));
+  check(q.status === 403, 'sheet sync: the old key stops working at once', q);
+  q = await api('sm', 'DELETE', '/customers/sheet-sync');
+  check(q.status === 200 && q.json.data.revoked === true, 'sheet sync: the member disconnects the sheet', q);
+  q = await sync(key2, sheet([rows[0]]));
+  check(q.status === 403, 'sheet sync: a disconnected sheet cannot send anything', q);
+}
+
 // --- Weekly department report: with no Operations Head the Department Head sends it straight to HR ---
 {
   const dept = (await db.query(`insert into public.departments (slug, name) values ('wdx-n', 'WDX No Operations Head') returning id`)).rows[0].id as string;

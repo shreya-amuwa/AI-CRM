@@ -155,7 +155,13 @@ export class CustomerImportService {
     return unwrap(await this.db.rpc('client_login_status', { p_customer: parse(uuidSchema, id) }));
   }
 
-  private async createLogin(actor: Actor, l: ImportRpcResult['newLogins'][number], origin?: string, teamPassword?: string): Promise<CustomerDataImportLogin> {
+  /**
+   * Creates the client's login after the customers were saved and e-mails them. Also used by the Google Sheet sync (SheetSyncService), which
+   * records the login as the person who connected the sheet (`record`) and never has a team password.
+   */
+  async createLogin(actor: Pick<Actor, 'id'>, l: ImportRpcResult['newLogins'][number], origin?: string, teamPassword?: string,
+    record: (customerId: string, userId: string, email: string) => Promise<unknown> = async (customerId, userId, email) =>
+      unwrap(await this.db.rpc('record_imported_client_login', { p_customer: customerId, p_user_id: userId, p_email: email }))): Promise<CustomerDataImportLogin> {
     const base = { customerId: l.customerId, email: l.email, name: l.name, businessName: l.businessName };
     const passwordBy = teamPassword ? 'TEAM' : 'CLIENT';
     if (!hasServiceClient()) return { ...base, login: 'FAILED', mail: 'NOT_SENT', passwordBy, detail: 'Client logins are not set up on the server.' };
@@ -168,7 +174,7 @@ export class CustomerImportService {
       return { ...base, login: 'FAILED', mail: 'NOT_SENT', passwordBy, detail: e instanceof AppError ? e.message : 'Could not create the login.' };
     }
     try {
-      unwrap(await this.db.rpc('record_imported_client_login', { p_customer: l.customerId, p_user_id: userId, p_email: l.email }));
+      await record(l.customerId, userId, l.email);
     } catch (e) {
       await this.authAdmin.deleteUser(userId).catch(() => undefined);
       return { ...base, login: 'FAILED', mail: 'NOT_SENT', passwordBy, detail: e instanceof AppError ? e.message : 'Could not save the login.' };

@@ -6,7 +6,7 @@ group: Customer Onboarding & Migration
 roles: [Support Team Member, Support Team Lead, Department Head]
 audience: internal
 status: verified
-sources: [src/components/support/ExistingCustomerImport.tsx, src/lib/existingCustomerImport.ts, shared/contracts.ts]
+sources: [src/components/support/ExistingCustomerImport.tsx, src/components/support/SheetSyncPanel.tsx, shared/existingCustomerImport.ts, src/lib/sheetSyncScript.ts, shared/contracts.ts]
 related: [support/support-leads-management, support/logging-client-activity, client/welcome-client-portal]
 updated: 2026-10-27
 ---
@@ -89,6 +89,18 @@ When you complete Step 3 (`Import Results`), the CRM automatically provisions:
 3. **`ACQUISITION` Revenue Attribution**: Brought-by Sales or Support attribution (`Brought By (Sales / Support)` and `Brought By - Name`) is recorded with `ACQUISITION` revenue attribution for management reporting.
 4. **Service Subscriptions & Usage**: Active service plans, renewal dates, WhatsApp API metrics, campaigns, AI Calling minutes, RCS usage, and monthly deliverables populate the customer's dossier.
 5. **Client Portal Credentials**: Customers with a login email receive active `/client/login` credentials and a welcome email so they can immediately view their services, usage, calendar, invoices, and support tickets.
+
+## Syncing straight from a shared Google Sheet
+
+Instead of downloading and uploading the file every time, keep **one shared Google Sheet** (the one-sheet template) and send it to the CRM from inside the sheet. The Excel upload above still works.
+
+1. On **Import Customers**, under **Google Sheet sync**, click **Connect Google Sheet**. The CRM shows a ready-made Apps Script. **Copy it now**: it holds the sheet's secret key and is shown only once.
+2. In the Google Sheet open **Extensions > Apps Script**, replace everything with the script and click **Save**. Reload the sheet.
+3. A **CRM Sync** menu appears. Click **Sync now**. The first time, Google asks you to allow the script to edit this sheet and to connect to the CRM: allow both.
+4. Each row gets its result in a new **CRM Status** column: ✅ *Added* or *Saved*, 🔁 *Updated* (the customer was already in the CRM: services and usage were updated, their details in the CRM were kept), ⚠️ *Possible duplicate* (held for you to check), ❌ *Fix this* (what to correct) or ⏸ *Not saved* (another row of that customer needs fixing first).
+5. Add new customers to the sheet whenever you like and click **Sync now** again: only new and changed rows are sent. **Send every row again** sends all of them.
+
+Rules: customers are saved with the permissions of the person who connected the sheet (a Team Member's customers are their own). A mobile number that is already a customer anywhere in the CRM is never added a second time, and a new mobile number with another customer's e-mail is held as a possible duplicate. The **Client Password** column is ignored: a client with a login e-mail gets an e-mail to choose their own password. Lost or shared the script? Click **Get a new script**: the old key stops working at once. **Disconnect** stops the sheet from sending anything; customers already saved stay.
 
 ## What you should see
 

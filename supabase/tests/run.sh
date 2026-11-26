@@ -234,4 +234,5 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/unified_performance_hierarchy_test
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/performance_lead_primary_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/ai_studio_performance_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/attendance_late_rule_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/customer_sheet_sync_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/weekly_report_direct_to_hr_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
