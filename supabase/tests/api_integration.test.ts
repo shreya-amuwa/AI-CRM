@@ -13243,6 +13243,51 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- AI Studio: cross-team task assignment (migration 20270221000100) ---
+{
+  const { rows: [aiTeam] } = await db.query(`select t.id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const leadA = await mkUser('xtLeadA', 'api.xt.leada@example.com', 'API XT Lead A', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const leadB = await mkUser('xtLeadB', 'api.xt.leadb@example.com', 'API XT Lead B', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const memA = await mkUser('xtMemA', 'api.xt.mema@example.com', 'API XT Mem A', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [leadA, memA]);
+  const { rows: projs } = await db.query(`insert into public.ai_studio_projects (name) values ('API XT Web'), ('API XT Sales') returning id, name`);
+  const web = projs.find((p: any) => p.name === 'API XT Web').id, sales = projs.find((p: any) => p.name === 'API XT Sales').id;
+  await db.query(`insert into public.ai_studio_project_members (project_id, profile_id) values ($1, $2), ($1, $3), ($4, $5)`, [web, leadA, memA, sales, leadB]);
+  const today = new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
+  try {
+    let r = await api('xtLeadB', 'GET', `/ai-studio/projects/${sales}/assignees`);
+    const offered = r.json.data?.people?.find((p: any) => p.id === memA);
+    check(r.status === 200 && r.json.data.canAssignCrossTeam === true && offered?.assignmentType === 'CROSS_TEAM' && offered.eligible === true && offered.team === 'API XT Lead A\'s team',
+      'AI Studio cross-team: Team Lead B is offered Employee A of another team for a task of their project', r.json.data);
+    r = await api('xtLeadB', 'POST', '/ai-studio/tasks', { projectId: sales, assigneeId: memA, title: 'API XT campaign follow-up', priority: 'HIGH', dueDate: today, assignmentType: 'STANDARD' });
+    check(r.status === 422, 'AI Studio cross-team: the browser cannot send an assignment type (422)', r);
+    r = await api('xtLeadB', 'POST', '/ai-studio/tasks', { projectId: sales, assigneeId: memA, title: 'API XT campaign follow-up', priority: 'HIGH', dueDate: today });
+    check((r.status === 200 || r.status === 201) && r.json.data.assignmentType === 'CROSS_TEAM' && r.json.data.ownerTeam === 'API XT Lead B\'s team', 'AI Studio cross-team: the task is given, cross-team (decided by the server)', r);
+    const crossId = r.json.data.id;
+    r = await api('xtLeadA', 'POST', '/ai-studio/tasks', { projectId: web, assigneeId: memA, title: 'API XT responsive UI', priority: 'MEDIUM', dueDate: today });
+    const webId = r.json.data.id;
+    check(r.json.data.assignmentType === 'STANDARD', 'AI Studio cross-team: Team Lead A\'s task for their own member stays standard', r.json.data);
+    r = await api('xtLeadA', 'PATCH', `/ai-studio/tasks/${crossId}`, { title: 'Changed by Lead A', priority: 'LOW' });
+    check(r.status === 403, 'AI Studio cross-team: the employee\'s own Team Lead cannot change the cross-team task (403)', r);
+    r = await api('xtLeadB', 'GET', `/ai-studio/tasks/${webId}`);
+    check(r.status === 404, 'AI Studio cross-team: Team Lead B cannot open Employee A\'s other tasks (404)', r);
+    r = await api('xtMemA', 'GET', '/ai-studio/tasks?scope=mine&kind=CROSS_TEAM');
+    check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === crossId, 'AI Studio cross-team: Employee A filters their cross-team tasks', r.json.data);
+  } finally {
+    await db.query(`delete from public.ai_studio_daily_reports where author_id = $1`, [memA]);
+    await db.query(`delete from public.ai_studio_tasks where project_id = any($1::uuid[])`, [[web, sales]]);
+    await db.query(`delete from public.ai_studio_projects where id = any($1::uuid[])`, [[web, sales]]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[memA, leadA, leadB]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[memA, leadA, leadB]]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

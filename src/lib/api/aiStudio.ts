@@ -1,5 +1,5 @@
 import type {
-  AiStudioTaskDeleteResult,
+  AiStudioTaskDeleteResult, AiStudioAssignees,
   AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
   AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../../shared/contracts';
@@ -30,7 +30,7 @@ export interface AiStudioDailyReportForm {
   submit: boolean;
   expectedUpdateIds?: string[];
 }
-export interface AiStudioTasksFilter { scope: 'mine' | 'ongoing' | 'team'; projectId?: string; status?: string; assigneeId?: string; page?: number; pageSize?: number }
+export interface AiStudioTasksFilter { scope: 'mine' | 'ongoing' | 'team'; projectId?: string; status?: string; assigneeId?: string; kind?: 'STANDARD' | 'CROSS_TEAM'; page?: number; pageSize?: number }
 
 /** AI Studio: every call is checked again by the database for who is asking. */
 export const aiStudioApi = {
@@ -44,6 +44,8 @@ export const aiStudioApi = {
   updateProject: (id: string, p: { name: string; description?: string; status?: string; deadlineAt?: string | null }) => api.patch<Pick<AiStudioProject, 'id' | 'name' | 'description' | 'status' | 'createdAt' | 'deadlineAt'>>(`/ai-studio/projects/${id}`, p),
   assignProject: (id: string, profileId: string, assign: boolean) => api.post<{ projectId: string; profileId: string; assigned: boolean }>(`/ai-studio/projects/${id}/assign`, { profileId, assign }),
   tasks: (f: AiStudioTasksFilter) => api.get<AiStudioTaskPage>('/ai-studio/tasks', { ...f }),
+  /** Who a task of this project can go to, grouped by team with their workload (cross-team for a Team Lead on the project). */
+  assignees: (projectId: string) => api.get<AiStudioAssignees>(`/ai-studio/projects/${projectId}/assignees`),
   task: (id: string) => api.get<AiStudioTaskDetail>(`/ai-studio/tasks/${id}`),
   assignTask: (t: AiStudioTaskForm) => api.post<AiStudioTask>('/ai-studio/tasks', t),
   editTask: (id: string, t: { title: string; description?: string; priority: string; dueDate?: string }) => api.patch<AiStudioTask>(`/ai-studio/tasks/${id}`, t),

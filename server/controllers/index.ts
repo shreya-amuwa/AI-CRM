@@ -1068,6 +1068,7 @@ export const aiStudioController = {
   deleteDraft: (async ctx => { await svc(ctx).aiStudio.deleteDraft(ctx.params.id); return ok(null); }) as Handler,
   reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler,
   leadEditReport: (async ctx => ok(await svc(ctx).aiStudio.leadEditReport(ctx.params.id, ctx.req.body))) as Handler,
+  assignees: (async ctx => ok(await svc(ctx).aiStudio.assignees(ctx.params.id))) as Handler,
   dailyReportOptions: (async ctx => ok(await svc(ctx).aiStudio.dailyReportOptions(ctx.req.query))) as Handler,
   dailyReportPreview: (async ctx => ok(await svc(ctx).aiStudio.dailyReportPreview(ctx.req.body))) as Handler,
   createDailyReport: (async ctx => ok(await svc(ctx).aiStudio.createDailyReport(ctx.req.body), 201)) as Handler,

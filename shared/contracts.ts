@@ -6298,6 +6298,8 @@ export interface AiStudioProject {
   deadlineAt?: string | null;
   /** The caller works on this project. */
   mine: boolean;
+  /** 20270221000100: the caller is not on the project but has a task in it (a cross-team task). */
+  viaTask?: boolean;
   leads: { id: string; name: string }[];
   memberCount: number;
   tasks: AiStudioTaskCounts;
@@ -6353,9 +6355,42 @@ export interface AiStudioTask {
   completionNote: string | null;
   attachments: string[];
   overdue: boolean;
+  /** 20270221000100 (optional: absent on an older database). STANDARD (the employee's own team) or CROSS_TEAM (another team's Team Lead gave it). */
+  assignmentType?: AiStudioAssignmentType;
+  /** The project-owning team: the Team Lead who gave it ("<name>'s team"). */
+  ownerTeam?: string | null;
+  /** The employee's team now, and when the task was given. */
+  assigneeTeam?: string | null;
+  assigneeTeamAtAssignment?: string | null;
 }
-export interface AiStudioTaskHistoryEntry { id: string; kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED'; status: AiStudioTaskStatus; progress: number; note: string | null; authorName: string | null; createdAt: string }
+export type AiStudioAssignmentType = 'STANDARD' | 'CROSS_TEAM';
+export interface AiStudioTaskHistoryEntry {
+  id: string; kind: 'ASSIGNED' | 'PROGRESS' | 'EDITED'; status: AiStudioTaskStatus; progress: number; note: string | null; authorName: string | null; createdAt: string;
+  /** 20270221000100: an edit's values before / after (field -> {from, to}). */
+  details?: Record<string, unknown> | null;
+}
 export interface AiStudioTaskDetail extends AiStudioTask { canUpdate: boolean; canEdit: boolean; canDelete?: boolean; reportCount?: number; history: AiStudioTaskHistoryEntry[] }
+/** Somebody a task of a project can go to (GET /ai-studio/projects/:id/assignees): grouped by team, with their open workload as counts only. */
+export interface AiStudioAssignee {
+  id: string;
+  fullName: string;
+  avatarUrl: string | null;
+  designation: string | null;
+  role: 'TEAM_HEAD' | 'TEAM_MEMBER';
+  primaryLeadId: string | null;
+  primaryLeadName: string | null;
+  team: string;
+  myTeam: boolean;
+  onProject: boolean;
+  /** Worked out by the server from the reporting lines; the browser never sends it. */
+  assignmentType: AiStudioAssignmentType;
+  eligible: boolean;
+  reason: string | null;
+  workload: { active: number; highPriority: number; dueToday: number; overdue: number; crossTeam: number };
+  onLeaveToday: boolean;
+  punchedInToday: boolean;
+}
+export interface AiStudioAssignees { projectId: string; projectName: string; managesProject: boolean; canAssignCrossTeam: boolean; people: AiStudioAssignee[] }
 export interface AiStudioTaskPage { items: AiStudioTask[]; total: number; page: number; pageSize: number }
 
 export interface AiStudioReportSummary {
@@ -7382,7 +7417,9 @@ export interface TaskReportTaskOption {
 
 export interface PerformancePart { key: string; label: string; weight: number; value: number | null }
 export interface MemberPerformanceMetrics {
-  tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number };
+  tasks: { total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; crossTeam?: number };
+  /** AI Studio (20270221000100): projects contributed to, cross-team tasks, submitted daily reports that name a blocker. */
+  contribution?: { projects: number; crossTeamTasks: number; blockers: number };
   completionPct: number | null;
   onTimePct: number | null;
   progressPct: number | null;
@@ -7394,7 +7431,7 @@ export interface LeadPerformanceMetrics {
   own: { total: number; completed: number; overdue: number; completionPct: number | null };
   team: { members: number; total: number; completed: number; pending: number; overdue: number; onTime: number; late: number; completionPct: number | null; onTimePct: number | null; progressPct: number | null };
   reports: { submitted: number; approved: number; returned: number; pending: number; waitingOverOneDay: number; reviewedPct: number | null; avgReviewHours: number | null };
-  management: { tasksAssignedToTeam: number; tasksReceived: number; handedDown: number; handledOrDelegated: number; delegationPct: number | null };
+  management: { tasksAssignedToTeam: number; tasksReceived: number; handedDown: number; handledOrDelegated: number; delegationPct: number | null; crossTeamGiven?: number };
   parts: PerformancePart[];
   score: number | null;
 }
@@ -7525,7 +7562,7 @@ export interface SheetSyncResult {
   logins: { row?: number; email: string; created: boolean; mail: 'SENT' | 'NOT_SENT'; detail?: string }[];
 }
 /** Global search (Ctrl / Cmd + K): the kinds of records the database may return (public.global_search). */
-export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice'] as const;
+export const SEARCH_RECORD_TYPES = ['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice', 'ai_studio_task', 'ai_studio_project', 'ai_studio_report'] as const;
 export type SearchRecordType = (typeof SEARCH_RECORD_TYPES)[number];
 export interface SearchRecord {
   type: SearchRecordType;

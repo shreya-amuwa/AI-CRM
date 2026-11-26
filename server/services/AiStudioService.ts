@@ -1,5 +1,5 @@
 import type {
-  AiStudioTaskDeleteResult,
+  AiStudioTaskDeleteResult, AiStudioAssignees,
   AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
   AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../shared/contracts.js';
@@ -35,6 +35,8 @@ export class AiStudioService {
   tasks(query: unknown): Promise<AiStudioTaskPage> { return this.repo.tasks(parse(aiStudioTasksQuerySchema, query)); }
   task(id: string): Promise<AiStudioTaskDetail> { return this.repo.task(parse(uuidSchema, id)); }
   assignTask(body: unknown): Promise<AiStudioTask> { return this.repo.assignTask(parse(aiStudioTaskCreateSchema, body)); }
+  /** Who a task of this project can go to: the database works out the team, the assignment type and who is eligible (20270221000100). */
+  assignees(projectId: string): Promise<AiStudioAssignees> { return this.repo.assignees(parse(uuidSchema, projectId)); }
   editTask(id: string, body: unknown): Promise<AiStudioTask> { return this.repo.editTask(parse(uuidSchema, id), parse(aiStudioTaskEditSchema, body)); }
   /** The Team Lead who gave it or the Department Head (the database checks; the Managing Director's access is unchanged). */
   deleteTask(id: string): Promise<AiStudioTaskDeleteResult> { return this.repo.deleteTask(parse(uuidSchema, id)); }

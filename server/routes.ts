@@ -405,6 +405,8 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/ai-studio/projects', handler: aiStudio.createProject, options: S },
   { method: 'PATCH', path: '/ai-studio/projects/:id', handler: aiStudio.updateProject, options: S },
   { method: 'POST', path: '/ai-studio/projects/:id/assign', handler: aiStudio.assignProject, options: S },
+  // 20270221000100: who a task of this project can go to (cross-team assignment)
+  { method: 'GET', path: '/ai-studio/projects/:id/assignees', handler: aiStudio.assignees },
   { method: 'GET', path: '/ai-studio/tasks', handler: aiStudio.tasks },
   { method: 'POST', path: '/ai-studio/tasks', handler: aiStudio.assignTask },
   { method: 'GET', path: '/ai-studio/tasks/:id', handler: aiStudio.task },

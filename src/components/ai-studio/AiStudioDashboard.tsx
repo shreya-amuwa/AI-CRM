@@ -79,7 +79,7 @@ export const AiStudioDashboard: React.FC = () => {
 
   useOpenChatRequest(useCallback(() => setPage('chat'), []));
   useOpenIssuesRequest(useCallback(() => setPage('raise-issue'), []));
-  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); go(d.kind === 'task' ? (who === 'HEAD' ? 'tasks' : 'projects') : 'daily-report'); }, [go, who]));
+  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); go(d.kind === 'task' ? (who === 'HEAD' ? 'tasks' : 'projects') : d.kind === 'project' ? 'projects' : 'daily-report'); }, [go, who]));
 
   const items = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
