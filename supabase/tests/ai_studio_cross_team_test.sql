@@ -160,7 +160,8 @@ select test.login('xt_lead_b');
 select test.check((ai_studio_task_get((select v from xt where k = 'T_X')) ->> 'canDelete')::boolean and (ai_studio_task_get((select v from xt where k = 'T_X')) ? 'reportCount'),
   'Team Lead B (who gave the cross-team task) may delete it; the details still say so');
 select test.login('xt_lead_a');
-select test.check(not (ai_studio_task_get((select v from xt where k = 'T_X')) ->> 'canDelete')::boolean, 'Team Lead A (the employee''s own) may not delete it');
+-- 20270225000100: a Team Lead may delete any task of their own team member, whoever gave it (a cross-team task too); they still may not edit it
+select test.check((ai_studio_task_get((select v from xt where k = 'T_X')) ->> 'canDelete')::boolean, 'Team Lead A (the employee''s own) may delete it (20270225000100)');
 
 \echo '   cleanup'
 reset role;

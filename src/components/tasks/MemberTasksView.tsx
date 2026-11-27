@@ -37,7 +37,7 @@ export const MemberTasksView: React.FC = () => {
       </div>
       {/* update requests from the Team Lead / Department Head: the answer form never changes a task */}
       <MyUpdateRequests />
-      <TaskTracker tasks={mine} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+      <TaskTracker tasks={mine} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()} deletable={data.deletable}
         filters={['ALL', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING']} title="My task tracker" emptyHint="When your Team Lead assigns you a task it appears here." />
       {data.loading ? (
         <p className="text-xs text-slate-500">Loading…</p>
