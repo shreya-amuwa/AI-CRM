@@ -28,11 +28,15 @@ const PRIORITY_STYLE: Record<NoticePriority, string> = {
 };
 const ROLE_LABEL = { SUPER_ADMIN: 'Managing Director', OPERATIONS_HEAD: 'CEO', HR: 'HR', DEVELOPER: 'Developers', CRM_TEAM: 'CRM team' } as const;
 const AUDIENCE_LABEL: Record<NoticeAudienceType, string> = {
-  COMPANY: 'Entire company – all employees', DEPARTMENT: 'Specific departments', ROLE: 'Specific designations or roles', EMPLOYEES: 'Selected employees'
+  COMPANY: 'Entire company – all employees', DEPARTMENT: 'Specific departments', ROLE: 'Specific designations or roles', EMPLOYEES: 'Selected employees',
+  SALES: 'Sales – a Sales department', SUPPORT: 'Support – a Support department'
 };
+const DIVISION_LABEL = { SALES: 'Sales', SUPPORT: 'Support' } as const;
+const isDivision = (a: NoticeAudienceType): a is 'SALES' | 'SUPPORT' => a === 'SALES' || a === 'SUPPORT';
 const audienceText = (n: CompanyNotice) => n.audience.type === 'COMPANY' ? 'Entire company'
   : n.audience.type === 'DEPARTMENT' ? `Departments: ${n.audience.departmentNames.join(', ')}`
   : n.audience.type === 'ROLE' ? `Designations: ${n.audience.roles.join(', ').replace(/_/g, ' ').toLowerCase()}${n.audience.departmentNames.length ? ` (${n.audience.departmentNames.join(', ')})` : ''}`
+  : isDivision(n.audience.type) ? `${DIVISION_LABEL[n.audience.type]}: ${n.audience.departmentNames.join(', ')}${n.audience.employees.length ? ` (${n.audience.employees.length} selected team member${n.audience.employees.length === 1 ? '' : 's'})` : ` (all ${DIVISION_LABEL[n.audience.type]} employees)`}`
   : `${n.audience.employees.length} selected employee${n.audience.employees.length === 1 ? '' : 's'}`;
 
 const PriorityPill: React.FC<{ p: NoticePriority }> = ({ p }) => (
@@ -298,6 +302,10 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
   const [roles, setRoles] = useState<string[]>([]);
   const [emps, setEmps] = useState<string[]>([]);
   const [empSearch, setEmpSearch] = useState('');
+  // Sales / Support (20270223000100): one department of that function, then the whole function or only the ticked team members
+  const [divDept, setDivDept] = useState('');
+  const [divWhole, setDivWhole] = useState(true);
+  const [divEmps, setDivEmps] = useState<string[]>([]);
   const [publishAt, setPublishAt] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -314,19 +322,27 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
     const t = empSearch.trim().toLowerCase();
     return options.employees.filter(e => (!depts.length || (e.departmentId && depts.includes(e.departmentId))) && (!t || e.name.toLowerCase().includes(t))).slice(0, 200);
   }, [options.employees, empSearch, depts]);
+  const divDepartments = audience === 'SALES' ? options.sales ?? [] : audience === 'SUPPORT' ? options.support ?? [] : [];
+  const divSelected = divDepartments.find(d => d.id === divDept) ?? null;
+  const pickAudience = (a: NoticeAudienceType) => { setAudience(a); setDivDept(''); setDivWhole(true); setDivEmps([]); };
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (busy || files.busy) return;
+    const division = isDivision(audience);
     const payload = {
       title: title.trim(), body: body.trim(), category, priority, audienceType: audience,
-      departmentIds: audience === 'DEPARTMENT' || audience === 'ROLE' ? depts : [], roles: audience === 'ROLE' ? roles : [], employeeIds: audience === 'EMPLOYEES' ? emps : [],
+      departmentIds: audience === 'DEPARTMENT' || audience === 'ROLE' ? depts : division ? (divDept ? [divDept] : []) : [],
+      roles: audience === 'ROLE' ? roles : [],
+      employeeIds: audience === 'EMPLOYEES' ? emps : division && !divWhole ? divEmps : [],
       attachmentIds: files.ids, publishAt: publishAt ? new Date(publishAt).toISOString() : null, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       clientRequestId: requestId
     };
     const checked = noticePublishSchema.safeParse(payload);
     const e: Record<string, string> = {};
     if (!checked.success) for (const i of checked.error.issues) { const k = String(i.path[0] ?? ''); if (k && !e[k]) e[k] = i.message; }
+    // an empty list would mean "the whole function": a sender who chose "only selected" must tick someone
+    if (division && divDept && !divWhole && divEmps.length === 0) e.employeeIds = 'Choose at least one team member, or send to the whole department.';
     setErrors(e);
     if (Object.keys(e).length) return;
     setBusy(true);
@@ -334,7 +350,7 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
     try {
       const n = await noticesApi.publish(payload);
       setDone(n);
-      setTitle(''); setBody(''); setCategory('GENERAL'); setPriority('NORMAL'); setDepts([]); setRoles([]); setEmps([]); setPublishAt(''); setExpiresAt(''); files.clear();
+      setTitle(''); setBody(''); setCategory('GENERAL'); setPriority('NORMAL'); setDepts([]); setRoles([]); setEmps([]); setDivDept(''); setDivWhole(true); setDivEmps([]); setPublishAt(''); setExpiresAt(''); files.clear();
       setRequestId(newRequestId());
       loadMine();
       onSent();
@@ -368,7 +384,7 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Target audience">
               {options.audiences.map(a => (
                 <label key={a} className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-sm cursor-pointer ${audience === a ? 'border-blue-600 bg-blue-50/50' : 'border-slate-200 bg-white'}`}>
-                  <input type="radio" name="notice-audience" value={a} checked={audience === a} onChange={() => setAudience(a)} data-testid={`audience-${a}`} /> {AUDIENCE_LABEL[a]}
+                  <input type="radio" name="notice-audience" value={a} checked={audience === a} onChange={() => pickAudience(a)} data-testid={`audience-${a}`} /> {AUDIENCE_LABEL[a]}
                 </label>
               ))}
             </div>
@@ -396,6 +412,37 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
                   ))}
                 </div>
                 {errors.roles ? <p className="text-xs text-rose-700 mt-1" role="alert">{errors.roles}</p> : null}
+              </div>
+            ) : null}
+            {isDivision(audience) ? (
+              <div className="space-y-2" data-testid="audience-division">
+                <Field label={`${DIVISION_LABEL[audience]} department`} required htmlFor="notice-division-dept" error={errors.departmentIds}>
+                  <select id="notice-division-dept" className={`${selectCls} w-full`} value={divDept} data-testid="division-department"
+                    onChange={e => { setDivDept(e.target.value); setDivWhole(true); setDivEmps([]); }} aria-invalid={!!errors.departmentIds}>
+                    <option value="">Choose a {DIVISION_LABEL[audience]} department…</option>
+                    {divDepartments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </Field>
+                {divDepartments.length === 0 ? <p className="text-xs text-slate-500">No department has a {DIVISION_LABEL[audience]} team yet.</p> : null}
+                {divSelected ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-3 text-sm" role="radiogroup" aria-label="Who in this department">
+                      <label className="inline-flex items-center gap-1.5"><input type="radio" name="notice-division-scope" checked={divWhole} onChange={() => setDivWhole(true)} data-testid="division-whole" /> Entire {DIVISION_LABEL[audience]} team of {divSelected.name} ({divSelected.employees.length})</label>
+                      <label className="inline-flex items-center gap-1.5"><input type="radio" name="notice-division-scope" checked={!divWhole} onChange={() => setDivWhole(false)} data-testid="division-selected" disabled={divSelected.employees.length === 0} /> Only selected team members</label>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100" data-testid="division-employees">
+                      {divSelected.employees.map(p => (
+                        <label key={p.id} className={`flex items-center gap-2 px-3 py-1.5 text-sm ${divWhole ? '' : 'cursor-pointer hover:bg-slate-50'}`}>
+                          <input type="checkbox" disabled={divWhole} checked={divWhole || divEmps.includes(p.id)} onChange={() => toggle(divEmps, setDivEmps, p.id)} aria-label={p.name} />
+                          <span className="font-semibold">{p.name}</span>
+                          <span className="text-[11px] text-slate-500">{p.team ?? (p.role === 'DEPARTMENT_HEAD' ? 'Department Head' : '')}</span>
+                        </label>
+                      ))}
+                      {divSelected.employees.length === 0 ? <p className="px-3 py-2 text-xs text-slate-500">No {DIVISION_LABEL[audience]} employees in this department yet.</p> : null}
+                    </div>
+                    {errors.employeeIds ? <p className="text-xs text-rose-700 mt-1" role="alert">{errors.employeeIds}</p> : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {audience === 'EMPLOYEES' ? (

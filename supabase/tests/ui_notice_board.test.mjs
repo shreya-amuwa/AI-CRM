@@ -225,6 +225,72 @@ try {
   check(!(await page.locator('[role="tab"]:has-text("Today\'s overview")').count()), 'an employee has no Today\'s overview');
   await page.close();
 
+  // ---- Sales and Support (20270223000100): the Super Admin, HR and the CRM team each get the two new audiences
+  for (const who of ['sa', 'hr', 'crm']) {
+    const pg = await newPage();
+    await mount(pg, who);
+    await nav(pg, 'Notice Board').click();
+    await pg.click('[data-testid="notice-tab-SEND"]');
+    await pg.waitForSelector('[data-testid="notice-form"]');
+    for (const a of ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES', 'SALES', 'SUPPORT']) check(await pg.isVisible(`[data-testid="audience-${a}"]`), `${who}: the ${a} audience is offered`);
+    await pg.click('[data-testid="audience-SALES"]');
+    const salesOpts = await pg.$$eval('[data-testid="division-department"] option', os => os.map(o => o.textContent));
+    check(JSON.stringify(salesOpts.slice(1)) === JSON.stringify(['Wabastore']), `${who}: the Sales dropdown lists only the Sales departments`, salesOpts);
+    await pg.selectOption('[data-testid="division-department"]', { label: 'Wabastore' });
+    const salesPeople = await pg.innerText('[data-testid="division-employees"]');
+    check(/Priya Member/.test(salesPeople) && !/Ravi Member/.test(salesPeople) && !/Anita/.test(salesPeople), `${who}: Wabastore Sales shows only its Sales employees`, salesPeople);
+    await pg.click('[data-testid="audience-SUPPORT"]');
+    check(await pg.inputValue('[data-testid="division-department"]') === '', `${who}: switching to Support starts with no department chosen`);
+    await pg.selectOption('[data-testid="division-department"]', { label: 'Wabastore' });
+    const supportPeople = await pg.innerText('[data-testid="division-employees"]');
+    check(/Ravi Member/.test(supportPeople) && !/Priya Member/.test(supportPeople), `${who}: Wabastore Support shows only its Support employees`, supportPeople);
+    await pg.close();
+  }
+  page = await newPage();
+  await mount(page, 'sa');
+  await nav(page, 'Notice Board').click();
+  await page.click('[data-testid="notice-tab-SEND"]');
+  await page.waitForSelector('[data-testid="notice-form"]');
+  await page.fill('#notice-title', 'Sales targets for December');
+  await page.fill('#notice-body', 'The December targets are in your dashboard.');
+  await page.click('[data-testid="audience-SALES"]');
+  await page.click('[data-testid="publish-notice"]');
+  await page.waitForSelector('text=Choose one Sales department.');
+  check(!(await page.evaluate(() => window.__calls.some(c => c.method === 'POST' && c.path === '/api/v1/notices'))), 'a Sales notice without a department is not sent');
+  await page.selectOption('[data-testid="division-department"]', { label: 'Wabastore' });
+  await page.click('[data-testid="division-selected"]');
+  await page.click('[data-testid="publish-notice"]');
+  await page.waitForSelector('text=Choose at least one team member, or send to the whole department.');
+  check(!(await page.evaluate(() => window.__calls.some(c => c.method === 'POST' && c.path === '/api/v1/notices'))), '"only selected" with nobody ticked is not sent (it would mean the whole department)');
+  await page.click('[data-testid="division-whole"]');
+  await page.click('[data-testid="publish-notice"]');
+  await page.waitForSelector('[data-testid="notice-sent"]');
+  check(/1 employee notified/.test(await page.innerText('[data-testid="notice-sent"]')), 'the Sales notice is published to the one Sales employee');
+  const salesSent = await page.evaluate(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').map(c => c.body)[0]);
+  check(salesSent.audienceType === 'SALES' && salesSent.departmentIds.length === 1 && salesSent.employeeIds.length === 0 && salesSent.roles.length === 0,
+    'the request: Sales, one department, the whole function', salesSent);
+  await page.fill('#notice-title', 'Support shift change');
+  await page.fill('#notice-body', 'Your shift starts at 9 from Monday.');
+  await page.click('[data-testid="audience-SUPPORT"]');
+  await page.selectOption('[data-testid="division-department"]', { label: 'Wabastore' });
+  await page.click('[data-testid="division-selected"]');
+  await page.click('[data-testid="division-employees"] input[aria-label="Ravi Member"]');
+  await page.click('[data-testid="publish-notice"]');
+  await page.waitForFunction(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').length === 2);
+  const supportSent = await page.evaluate(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').map(c => c.body)[1]);
+  check(supportSent.audienceType === 'SUPPORT' && supportSent.employeeIds.length === 1, 'the request: Support, one department, the ticked team member', supportSent);
+  await page.click('[data-testid="my-notices"] [data-testid="notice-card"]:has-text("Sales targets for December")');
+  await page.waitForSelector('[data-testid="notice-dialog"]');
+  check(/Sales: Wabastore \(all Sales employees\)/.test(await page.innerText('[data-testid="notice-dialog"]')), 'the publisher sees who a Sales notice was for');
+  // the Sales member sees the Sales notice and not the Support one; the Support member the other way round (same page: the same notices)
+  for (const [who, sees, not] of [['member', 'Sales targets for December', 'Support shift change'], ['support', 'Support shift change', 'Sales targets for December']]) {
+    await reset(page);
+    await mount(page, who);
+    await nav(page, 'Notice Board').click();
+    await page.waitForSelector(`[data-testid="notice-card"]:has-text("${sees}")`);
+    check(!(await page.locator(`[data-testid="notice-card"]:has-text("${not}")`).count()), `${who === 'member' ? 'the Sales member' : 'the Support member'} sees "${sees}" and not "${not}"`);
+  }
+  await page.close();
   // ---- phone width
   const phone = await newPage({ width: 360, height: 740 });
   await phone.evaluate(() => window.__make({ title: 'A notice for phones', body: 'Short text.', category: 'GENERAL', priority: 'NORMAL', publisherId: 'x', publisherName: 'Asha CEO', publisherRole: 'SUPER_ADMIN' }));
