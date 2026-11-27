@@ -28,15 +28,30 @@ const HEAD_ROLE: Record<string, string> = { DEPARTMENT_HEAD: 'Department Head', 
  * What the "Crocodial" section of a Team Lead's or head's side panel shows: their own activity and leads (self: they are connected
  * themselves) and the people they oversee (team: any connected person they may see). Nothing is shown when both are false.
  */
-export function useCrocodialNav(): { self: boolean; team: boolean } {
+/**
+ * Whether a manager's dashboard shows the Crocodial menu. It comes from croc_refresh_capabilities (20270303000100): a Department Head, CEO or
+ * Team Lead keeps the menu whenever one of their Sales departments has Crocodial switched on, even before anyone is connected and without a
+ * mapping of their own; the pages then say what is missing. A failed request never hides the menu of a manager (the page shows the error and
+ * a retry); only a definite "not enabled" does. `scopeKey` (the active department) reloads it after the department scope changes.
+ */
+export function useCrocodialNav(scopeKey?: string | null): { self: boolean; team: boolean } {
   const [team, setTeam] = useState(false);
   const [self, setSelf] = useState(false);
   useEffect(() => {
     let alive = true;
-    crocodialApi.teamActivity({ from: daysAgo(0), to: daysAgo(0) }).then(d => alive && setTeam(d.connectedEmployees > 0)).catch(() => alive && setTeam(false));
-    crocodialApi.me().then(d => alive && setSelf(!!d.enabled)).catch(() => alive && setSelf(false));
+    crocodialApi.refreshCapabilities().then(
+      c => {
+        if (!alive) return;
+        const manager = c.kind !== 'EMPLOYEE';
+        setTeam(manager && c.active && (c.eligible ?? (c.departments.length > 0 || !!c.team?.people)));
+        setSelf(c.active && c.self.state === 'CONNECTED');
+      },
+      () => alive && setTeam(true)
+    );
+    // a person connected before the capabilities existed (older database) still gets their own pages
+    crocodialApi.me().then(d => alive && d.enabled && setSelf(true)).catch(() => undefined);
     return () => { alive = false; };
-  }, []);
+  }, [scopeKey]);
   return { self, team };
 }
 
@@ -50,10 +65,10 @@ const Card: React.FC<{ label: string; value: React.ReactNode; hint?: string }> =
 
 /**
  * The refresh buttons of a manager's view, from croc_refresh_capabilities:
- *   Team Lead        - Refresh My Team (+ Refresh My Data when connected themselves)
- *   Department Head  - Refresh Department (+ a department choice when they cover more than one) (+ Refresh My Data)
- *   Operations Head  - Refresh Selected Department, Refresh My Departments (+ Refresh My Data)
- *   Super Admin      - Refresh Selected Department, Refresh All Departments
+ *   Team Lead        - Sync My Team (+ Sync My Data when connected themselves)
+ *   Department Head  - Sync Department Data (+ a department choice when they cover more than one) (+ Sync My Data)
+ *   CEO              - Sync Selected Department, Sync All My Departments (+ Sync My Data)
+ *   Super Admin      - Sync Selected Department, Sync All Departments
  * The department choice also filters the figures below. Counts come from approved mappings, never from Crocodial's own user list.
  */
 const RefreshBar: React.FC<{ caps: CrocodialRefreshCapabilities; dept: string; setDept: (v: string) => void; onCompleted: () => void; lastSyncAt: string | null }> = ({ caps, dept, setDept, onCompleted, lastSyncAt }) => {
@@ -68,7 +83,7 @@ const RefreshBar: React.FC<{ caps: CrocodialRefreshCapabilities; dept: string; s
       <div className="text-xs text-slate-600 space-y-1">
         {caps.kind === 'TEAM_LEAD' ? <p><b className="text-slate-800">My Team Crocodial Activity</b> · Connected employees: {caps.team?.people ?? 0}</p> : null}
         {heads ? (
-          <p><b className="text-slate-800">{caps.kind === 'OPERATIONS_HEAD' ? 'Operations Crocodial Activity' : caps.kind === 'SUPER_ADMIN' ? 'All Crocodial Activity' : 'Department Crocodial Activity'}</b>
+          <p><b className="text-slate-800">{caps.kind === 'OPERATIONS_HEAD' ? 'CEO Crocodial Activity' : caps.kind === 'SUPER_ADMIN' ? 'All Crocodial Activity' : 'Department Crocodial Activity'}</b>
             {' '}· {caps.kind === 'DEPARTMENT_HEAD' ? 'Departments' : 'Authorized departments'}: {depts.length} · Connected employees: {caps.all?.people ?? 0}</p>
         ) : null}
         {heads && depts.length > 1 ? (
@@ -82,21 +97,21 @@ const RefreshBar: React.FC<{ caps: CrocodialRefreshCapabilities; dept: string; s
       </div>
       <div className="flex flex-wrap items-start gap-3">
         {caps.kind === 'TEAM_LEAD' && caps.team?.people ? (
-          <CrocodialRefreshControl scope="TEAM" label="Refresh My Team" variant="primary" lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('TEAM')} />
+          <CrocodialRefreshControl scope="TEAM" label="Sync My Team" variant="primary" lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('TEAM')} />
         ) : null}
         {heads && chosen ? (
           <CrocodialRefreshControl key={chosen.departmentId} scope="DEPARTMENT" departmentId={chosen.departmentId}
-            label={depts.length > 1 ? 'Refresh Selected Department' : 'Refresh Department'} variant={caps.kind === 'DEPARTMENT_HEAD' ? 'primary' : 'secondary'}
+            label={depts.length > 1 ? 'Sync Selected Department' : 'Sync Department Data'} variant={caps.kind === 'DEPARTMENT_HEAD' ? 'primary' : 'secondary'}
             lastSyncAt={chosen.lastSyncAt} onCompleted={onCompleted} resume={recent('DEPARTMENT', chosen.departmentId)} />
         ) : null}
         {heads && depts.length > 1 && caps.kind !== 'DEPARTMENT_HEAD' ? (
-          <CrocodialRefreshControl scope="ALL" label={caps.kind === 'SUPER_ADMIN' ? 'Refresh All Departments' : 'Refresh My Departments'} variant="primary"
+          <CrocodialRefreshControl scope="ALL" label={caps.kind === 'SUPER_ADMIN' ? 'Sync All Departments' : 'Sync All My Departments'} variant="primary"
             lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('ALL')} />
         ) : null}
         {heads && depts.length > 1 && caps.kind === 'DEPARTMENT_HEAD' && !chosen ? (
-          <CrocodialRefreshControl scope="ALL" label="Refresh My Departments" variant="primary" lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('ALL')} />
+          <CrocodialRefreshControl scope="ALL" label="Sync All My Departments" variant="primary" lastSyncAt={lastSyncAt} onCompleted={onCompleted} resume={recent('ALL')} />
         ) : null}
-        {self ? <CrocodialRefreshControl scope="SELF" label="Refresh My Data" lastSyncAt={caps.self.lastSyncAt} onCompleted={onCompleted} resume={recent('SELF')} /> : null}
+        {self ? <CrocodialRefreshControl scope="SELF" label="Sync My Data" lastSyncAt={caps.self.lastSyncAt} onCompleted={onCompleted} resume={recent('SELF')} /> : null}
       </div>
     </div>
   );
@@ -169,7 +184,15 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
 
       {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800" role="alert">{error} <button type="button" className="underline" onClick={load}>Try again</button></p> : null}
       {!data && !error ? <p className="text-xs text-slate-500" role="status">Loading…</p> : null}
-      {data && !data.connectedEmployees ? <p className="text-sm text-slate-500" data-testid="croc-team-empty">{caps?.kind === 'TEAM_LEAD' ? 'No team members connected to Crocodial yet.' : 'None of your people is connected to Crocodial yet.'}</p> : null}
+      {data && !data.connectedEmployees ? (
+        <div className="text-sm text-slate-500 space-y-1" data-testid="croc-team-empty">
+          <p>{caps?.kind === 'TEAM_LEAD' ? 'No team members connected to Crocodial yet.' : 'None of your people is connected to Crocodial yet.'}</p>
+          {/* the menu stays for a manager whose departments have Crocodial on: say what is missing instead of hiding it */}
+          {caps?.enabledDepartments?.length ? (
+            <p className="text-xs" data-testid="croc-team-enabled">Crocodial is switched on for {caps.enabledDepartments.map(d => d.name).join(', ')}. Figures appear here once the administrator approves the employees' Crocodial accounts (Super Admin → Crocodial Integration → Employee mapping).</p>
+          ) : null}
+        </div>
+      ) : null}
       {data && data.connectedEmployees > 0 && data.unavailable === data.connectedEmployees ? <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700" role="status" data-testid="croc-team-first-import">The first Crocodial import is still in progress. Figures appear once it has finished (they are not zero).</p> : null}
 
       {data && data.connectedEmployees ? (

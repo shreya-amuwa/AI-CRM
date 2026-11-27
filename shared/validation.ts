@@ -2045,6 +2045,10 @@ export const salesLeadSheetSchema = z
     commit: z.boolean().default(false)
   })
   .strict();
+// Sales CEO -> Department Head (20270303000100): forward the open leads of a received sheet (count: the oldest first; none = all)
+export const salesSheetForwardSchema = z
+  .object({ assigneeId: uuidSchema, count: z.number().int().min(1, 'Choose at least one lead.').max(2000).optional() })
+  .strict();
 export const salesLeadsQuerySchema = z
   .object({
     search: trimmed(120).optional(),
@@ -3363,7 +3367,8 @@ export type AiStudioReportInput = z.infer<typeof aiStudioReportSchema>;
 
 export const aiStudioReportReviewSchema = z
   .object({
-    decision: z.enum(['APPROVE', 'RETURN']),
+    // REJECT (20270302000100): the Team Lead's final "no", with a reason
+    decision: z.enum(['APPROVE', 'RETURN', 'REJECT']),
     comment: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The remarks can have at most 2000 characters.').nullable().optional())
   })
   .strict()
@@ -3407,12 +3412,38 @@ export const aiStudioDailyReportSchema = z
     taskIds: aiTaskIds,
     /** Only what is NOT already in the tasks: additional work, pending work, blockers, tomorrow's plan, remarks. */
     workCompleted: aiDailyPart, pendingWork: aiDailyPart, blockers: aiDailyPart, tomorrowPlan: aiDailyPart, remarks: aiDailyPart,
+    /** 20270302000100: the Daily Work Description, 10-150 words to submit (a draft may hold less). */
+    workDescription: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'The daily work description can have at most 150 words.').nullable().optional()),
     submit: z.boolean().default(false),
     /** The history entries the person saw in the preview when they submitted: if the tasks changed since, the database refuses and the form refreshes. */
     expectedUpdateIds: z.array(uuidSchema).max(1000).optional()
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.submit) return;
+    const problem = dailyDescriptionProblem(v.workDescription);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['workDescription'] });
+  });
 export type AiStudioDailyReportInput = z.infer<typeof aiStudioDailyReportSchema>;
+
+// ---- AI Studio Daily Work Description and HR's AI Studio Performance (20270302000100) ----
+export const DAILY_DESCRIPTION_MIN_WORDS = 10;
+export const DAILY_DESCRIPTION_MAX_WORDS = 150;
+/** Words, not characters: whitespace-separated pieces with at least one letter or digit (the database's private.word_count is the same rule). */
+export function countWords(text: string | null | undefined): number {
+  return (text ?? '').trim().split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+}
+export function dailyDescriptionProblem(text: string | null | undefined): string | null {
+  const n = countWords(text);
+  if (n < DAILY_DESCRIPTION_MIN_WORDS) return `Write at least ${DAILY_DESCRIPTION_MIN_WORDS} words in the daily work description (now ${n}).`;
+  if (n > DAILY_DESCRIPTION_MAX_WORDS) return `The daily work description can have at most ${DAILY_DESCRIPTION_MAX_WORDS} words (now ${n}).`;
+  return null;
+}
+export const aiStudioHrPerformanceQuerySchema = z
+  .object({ from: isoDate.optional(), to: isoDate.optional() })
+  .strict()
+  .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The start date is after the end date.', path: ['from'] });
+export const aiStudioHrViewerSchema = z.object({ profileId: uuidSchema, allowed: z.boolean() }).strict();
 
 // ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
 /** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */

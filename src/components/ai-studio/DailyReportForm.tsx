@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioReportContext, AiStudioReportDetail } from '../../../shared/contracts';
-import { aiStudioDailyReportSchema } from '../../../shared/validation';
+import { DAILY_DESCRIPTION_MAX_WORDS, DAILY_DESCRIPTION_MIN_WORDS, aiStudioDailyReportSchema, countWords } from '../../../shared/validation';
 import { aiStudioApi } from '../../lib/api/aiStudio';
 import { ApiError, errorMessage } from '../../lib/api/client';
 import { confirmAction, toast } from '../../lib/feedback/feedbackStore';
@@ -37,6 +37,9 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
   const [date, setDate] = useState(existing?.reportDate ?? todayIso());
   const [selected, setSelected] = useState<string[]>(() => existing?.work?.map(w => w.taskId) ?? []);
   const [text, setText] = useState<Extra>(() => extraOf(existing));
+  // 20270302000100: the Daily Work Description, 10-150 words (counted as words, live; the server and the database check the same rule)
+  const [description, setDescription] = useState(existing?.workDescription ?? '');
+  const words = countWords(description);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
   const [error, setError] = useState('');
@@ -90,13 +93,14 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
       setEditing(r);
       setSelected(r.work?.map(w => w.taskId) ?? []);
       setText(extraOf(r));
+      setDescription(r.workDescription ?? '');
       setError('');
     } catch (err) { setError(errorMessage(err)); }
   };
 
   const save = async (submit: boolean) => {
     const body = {
-      reportDate: date, taskIds: selected, ...text, submit,
+      reportDate: date, taskIds: selected, ...text, workDescription: description, submit,
       expectedUpdateIds: submit ? (preview?.updateIds ?? []) : undefined
     };
     const parsed = aiStudioDailyReportSchema.safeParse(body);
@@ -223,6 +227,23 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
         </Card>
       )}
 
+      {/* 3b. The Daily Work Description (required, 10-150 words) */}
+      <Card className="p-5 space-y-2">
+        <Field label="Daily work description" htmlFor="ai-dr-description" required>
+          <textarea id="ai-dr-description" className={textareaCls} rows={4} maxLength={2000} value={description} data-testid="daily-description"
+            aria-describedby="ai-dr-description-count" aria-invalid={words > DAILY_DESCRIPTION_MAX_WORDS}
+            placeholder="What you worked on today, in your own words (10 to 150 words)."
+            onChange={e => { setDescription(e.target.value); setError(''); }} />
+        </Field>
+        <p id="ai-dr-description-count" data-testid="daily-description-count" aria-live="polite"
+          className={`text-xs font-semibold ${words > DAILY_DESCRIPTION_MAX_WORDS ? 'text-rose-700' : words < DAILY_DESCRIPTION_MIN_WORDS ? 'text-amber-700' : 'text-emerald-700'}`}>
+          {words} / {DAILY_DESCRIPTION_MAX_WORDS} words ·{' '}
+          {words > DAILY_DESCRIPTION_MAX_WORDS ? `${words - DAILY_DESCRIPTION_MAX_WORDS} over the limit: shorten it to ${DAILY_DESCRIPTION_MAX_WORDS} words.`
+            : words < DAILY_DESCRIPTION_MIN_WORDS ? `${DAILY_DESCRIPTION_MIN_WORDS - words} more needed (at least ${DAILY_DESCRIPTION_MIN_WORDS}).`
+            : `${DAILY_DESCRIPTION_MAX_WORDS - words} words remaining.`}
+        </p>
+      </Card>
+
       {/* 4. Additional information */}
       <Card className="p-5 space-y-3">
         <div>
@@ -243,7 +264,8 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
         {preview && selected.length > 0 && <WorkSummary s={preview.summary} />}
         {error && <ErrorBanner message={error} />}
         <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
+          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || words < DAILY_DESCRIPTION_MIN_WORDS || words > DAILY_DESCRIPTION_MAX_WORDS}
+            data-testid="daily-submit">{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
           <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
           {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
         </div>

@@ -76,6 +76,7 @@ const RESTORABLE: Partial<Record<ActiveTab, true>> = {
   hr_raise_issue: true,
   hr_meetings: true,
   hr_reviews: true,
+  hr_ai_studio_performance: true,
   hr_field_tracking: true,
   hr_recharge_calls: true,
   hr_letter_nda: true,

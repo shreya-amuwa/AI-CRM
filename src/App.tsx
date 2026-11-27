@@ -40,6 +40,7 @@ const RecruitmentManagement = lazy(() => import('./components/hr/RecruitmentMana
 const ProbationConfirmations = lazy(() => import('./components/hr/ProbationConfirmations').then(m => ({ default: m.ProbationConfirmations })));
 const RechargeReminderCalls = lazy(() => import('./components/hr/RechargeReminderCalls').then(m => ({ default: m.RechargeReminderCalls })));
 const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
+const AiStudioHrPerformance = lazy(() => import('./components/hr/AiStudioHrPerformance').then(m => ({ default: m.AiStudioHrPerformance })));
 const EmployeeIssuesManagement = lazy(() => import('./components/hr/EmployeeIssuesManagement').then(m => ({ default: m.EmployeeIssuesManagement })));
 const HrRaiseIssuePage = lazy(() => import('./components/hr/HrRaiseIssuePage').then(m => ({ default: m.HrRaiseIssuePage })));
 const HrEmployeeRequestsPage = lazy(() => import('./components/employees/HrEmployeeRequestsPage').then(m => ({ default: m.HrEmployeeRequestsPage })));
@@ -564,7 +565,7 @@ const MainAppContent: React.FC = () => {
   showMeetings.current = () => { if (showSidebar) handleTabUpdate('my_meetings'); };
   showNotices.current = () => { if (showSidebar) handleTabUpdate('my_notices'); };
   showWallet.current = () => { if (showSidebar && user.role !== 'superadmin') handleTabUpdate('my_wallet'); };
-  showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : 'hr_meetings');
+  showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : d.section === 'ai-studio' ? 'hr_ai_studio_performance' : 'hr_meetings');
   showHrIssues.current = () => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate('hr_raise_issue'); };
 
   return (
@@ -691,6 +692,8 @@ const MainAppContent: React.FC = () => {
               <Suspense fallback={<ScreenLoader />}><ActiveFieldVisits audience="hr" /></Suspense>
             ) : currentActiveTab === 'hr_reviews' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><PerformanceReviews /></Suspense>
+            ) : currentActiveTab === 'hr_ai_studio_performance' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><AiStudioHrPerformance /></Suspense>
             ) : currentActiveTab === 'client_notices' && currentDeptId === 'hr' ? (
               <ClientNotices />
             ) : currentActiveTab === 'business_reports' && currentDeptId === 'accounts' ? (

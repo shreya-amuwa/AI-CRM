@@ -1,10 +1,10 @@
 import type {
   AiStudioTaskDeleteResult, AiStudioAssignees,
-  AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
+  AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioHrAccess, AiStudioHrPerformance, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
   AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../shared/contracts.js';
 import {
-  aiStudioDailyReportOptionsQuerySchema, aiStudioDailyReportPreviewSchema, aiStudioDailyReportSchema, aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioReportLeadEditSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
+  aiStudioDailyReportOptionsQuerySchema, aiStudioDailyReportPreviewSchema, aiStudioHrPerformanceQuerySchema, aiStudioHrViewerSchema, aiStudioDailyReportSchema, aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioReportLeadEditSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
   aiStudioTaskEditSchema, aiStudioTasksQuerySchema, aiStudioTaskUpdateSchema, uuidSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
@@ -51,6 +51,16 @@ export class AiStudioService {
   reviewReport(id: string, body: unknown): Promise<AiStudioReportDetail> {
     const { decision, comment } = parse(aiStudioReportReviewSchema, body);
     return this.repo.reviewReport(parse(uuidSchema, id), decision, comment);
+  }
+  // HR's AI Studio Performance (20270302000100): who may open it is decided by the database, from the login
+  hrAccess(): Promise<AiStudioHrAccess> { return this.repo.hrAccess(); }
+  setHrViewer(body: unknown): Promise<AiStudioHrAccess> {
+    const { profileId, allowed } = parse(aiStudioHrViewerSchema, body);
+    return this.repo.setHrViewer(profileId, allowed);
+  }
+  hrPerformance(query: unknown): Promise<AiStudioHrPerformance> {
+    const q = parse(aiStudioHrPerformanceQuerySchema, query);
+    return this.repo.hrPerformance(q.from ?? null, q.to ?? null);
   }
   // the consolidated daily report (20270219000100): the browser sends dates and task ids only; the database checks every id and builds the work
   dailyReportOptions(query: unknown): Promise<AiStudioDailyReportOptions> { return this.repo.dailyReportOptions(parse(aiStudioDailyReportOptionsQuerySchema, query).date); }
