@@ -18,6 +18,17 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
 
 ### Added
 
+* **AI Studio: cross-team task assignment** (docs/AI_STUDIO_CROSS_TEAM.md). A Team Lead on a project can give a task of that project to a member of
+  another AI Studio team, from a grouped, searchable list with each person's workload and a heavy-load warning; the server decides the assignment type and
+  keeps the project-owning team and the employee's team; nobody's team, Team Lead or project membership changes. Only the Team Lead who gave a cross-team
+  task (or the Department Head) changes it; the employee's Team Lead sees it and is notified. Task filters (my team / cross-team / overdue), task details
+  (ownership), notifications, performance figures and Ctrl+K search for AI Studio tasks, projects and reports. Works with main's daily report (#319).
+  Migration `20270221000100_ai_studio_cross_team.sql`.
+* **Deleting assigned tasks** (docs/TASK_DELETION.md). Team Leads delete the tasks they assigned; Department Heads and Operations Heads delete tasks
+  within their department and function, in the Task module of every department, AI Studio and AI Design Studio. Team Members (Telecallers, Business
+  Associates and every member designation) cannot, and the Super Admin's access is unchanged. The database checks the role and scope on every delete; the
+  button appears only when it says so and opens a confirmation naming the task. Sub-tasks, updates and per-task reports go with the task; the assignee is
+  notified and the delete is audited. Migration `20270220000100_task_deletion.sql`.
 * **AI Studio: one daily report built from the tasks** (docs/AI_STUDIO_DAILY_REPORTS.md): the employee picks the tasks they worked on, from
   any of their projects, and the report shows the completion details, work updates and links already recorded on those tasks for that
   date, read-only. Only new remarks are typed (additional work, pending work, blockers, tomorrow's plan, remarks). The report stores

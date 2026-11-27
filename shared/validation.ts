@@ -3322,7 +3322,9 @@ export const aiStudioTasksQuerySchema = z
   .object({
     scope: z.enum(['mine', 'ongoing', 'team']).default('mine'),
     projectId: uuidSchema.optional(),
-    status: z.enum([...AI_STUDIO_TASK_STATUSES, 'OPEN']).optional(),
+    status: z.enum([...AI_STUDIO_TASK_STATUSES, 'OPEN', 'OVERDUE']).optional(),
+    // 20270221000100: my team's tasks or cross-team ones
+    kind: z.enum(['STANDARD', 'CROSS_TEAM']).optional(),
     assigneeId: uuidSchema.optional(),
     page: z.coerce.number().int().min(1).max(5000).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(25)
