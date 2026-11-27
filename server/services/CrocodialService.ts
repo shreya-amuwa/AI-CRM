@@ -155,7 +155,9 @@ export class CrocodialService {
   }
   statusMappingSet(id: string, body: unknown) {
     const b = parse(crocodialStatusMappingSchema, body ?? {});
-    return this.repo.statusMappingSet(parse(uuidSchema, id), b.status, b.disposition);
+    // the old body (a disposition) is translated by the database with the migration's table
+    if (b.disposition !== undefined) return this.repo.statusMappingSet(parse(uuidSchema, id), b.status, b.disposition);
+    return this.repo.statusMappingTagSet(parse(uuidSchema, id), b.status, b.tagId ?? null, b.ignore ?? false);
   }
   /** "Reconcile now": the Super Admin check is the overview call (as the signed-in user); the batches run with the service key. */
   async reconcileNow(id: string): Promise<CrocodialReconcileRun> {

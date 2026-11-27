@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialTeamLeads } from '../../shared/contracts.js';
+import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialTeamLeads, CrocodialStatusMappingResult } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Crocodial integration's database functions, called with the signed-in user's own login (the database decides who may do what). */
@@ -60,7 +60,10 @@ export class CrocodialRepository {
   leadLinkResolve(id: string, action: string, customerId: string | null) { return this.rpc<{ id: string; status: string }>('croc_lead_link_resolve', { p_link: id, p_action: action, p_customer: customerId }); }
   leadImportSet(connectionId: string, departmentId: string, mode: string) { return this.rpc<{ mode: string }>('croc_lead_import_set', { p_connection: connectionId, p_department: departmentId, p_mode: mode }); }
   statusMappingSet(connectionId: string, status: string, disposition: string | null) {
-    return this.rpc<{ status: string; disposition: string | null }>('croc_status_mapping_set', { p_connection: connectionId, p_status: status, p_disposition: disposition });
+    return this.rpc<CrocodialStatusMappingResult>('croc_status_mapping_set', { p_connection: connectionId, p_status: status, p_disposition: disposition });
+  }
+  statusMappingTagSet(connectionId: string, status: string, tagId: string | null, ignore: boolean) {
+    return this.rpc<CrocodialStatusMappingResult>('croc_status_mapping_tag_set', { p_connection: connectionId, p_status: status, p_tag: tagId, p_ignore: ignore });
   }
   teamLeads(departmentId: string | null, teamId: string | null) { return this.rpc<CrocodialTeamLeads>('croc_team_leads', { p_department: departmentId, p_team: teamId }); }
   leadActivity(customerId: string) { return this.rpc<CrocodialLeadActivity>('croc_lead_activity', { p_customer: customerId }); }

@@ -120,7 +120,7 @@ export const CrocodialLeadPipeline: React.FC<{ connectionId: string }> = ({ conn
                   {[...o.unknownStatuses.map(u => ({ status: u.status, disposition: '', leads: u.leads })), ...o.mappings.map(m => ({ ...m, leads: null as number | null }))].map(m => (
                     <li key={m.status} className="flex items-center justify-between gap-2">
                       <span className="text-xs break-all">“{m.status}”{m.leads != null ? <span className="text-amber-700"> · unknown · {m.leads} leads</span> : null}</span>
-                      <select className={`${selectCls} max-w-[13rem]`} value={m.disposition} disabled={busy !== null} aria-label={`CRM disposition for ${m.status}`}
+                      <select className={`${selectCls} max-w-[13rem]`} value={m.disposition ?? ''} disabled={busy !== null} aria-label={`CRM disposition for ${m.status}`}
                         onChange={e => void act(`s-${m.status}`, () => crocodialApi.setStatusMapping(connectionId, m.status, e.target.value || null), `“${m.status}” mapped.`)}>
                         <option value="">Not mapped</option>
                         {CROCODIAL_DISPOSITIONS.map(d => <option key={d} value={d}>{DISPOSITION_LABEL[d]}</option>)}

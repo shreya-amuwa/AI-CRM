@@ -13912,6 +13912,35 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     check(r.status === 422, 'crocodial pipeline API: an unknown disposition is refused', r);
     r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: ' Won ', disposition: 'CONVERTED' });
     check(r.status === 200 && r.json.data.status === 'won', 'crocodial pipeline API: a status is mapped (stored lower-cased)', r);
+    // statuses onto lead tags (20270306000100): { status, tagId | null, ignore }; the old { disposition } body is translated
+    const readyToBuy = (await db.query(`select id from public.lead_tags where seed_stage = 'READY_TO_BUY'`)).rows[0].id as string;
+    const demoDone = (await db.query(`select id from public.lead_tags where label = 'Demo done' and scope = 'COMPANY' and created_by is null`)).rows[0].id as string;
+    check(r.json.data.tagId === readyToBuy && r.json.data.ignored === false && r.json.data.disposition === 'CONVERTED', 'crocodial pipeline API: the old disposition body is stored as the seed tag of its stage', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Demo done', tagId: demoDone });
+    check(r.status === 200 && r.json.data.status === 'demo done' && r.json.data.tagId === demoDone && r.json.data.ignored === false, 'crocodial pipeline API: a status is mapped to a tag', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', ignore: true });
+    check(r.status === 200 && r.json.data.ignored === true && r.json.data.tagId === null, 'crocodial pipeline API: a status is mapped to Ignore', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: demoDone, ignore: true });
+    check(r.status === 422, 'crocodial pipeline API: a tag and Ignore together are refused', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: demoDone, disposition: 'NEW' });
+    check(r.status === 422, 'crocodial pipeline API: a tag and a disposition together are refused', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: 'nope' });
+    check(r.status === 422, 'crocodial pipeline API: the tag id is checked', r);
+    r = await api('a', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: demoDone });
+    check(r.status === 403, 'crocodial pipeline API: an employee cannot map a status', r);
+    const wabOnly = (await db.query(`insert into public.lead_tags (label, colour, stage, scope) values ('API Wabastore only', 'amber', 'CONTACTED', 'DEPARTMENTS') returning id`)).rows[0].id as string;
+    await db.query(`insert into public.lead_tag_departments (tag_id, department_id) select $1, id from public.departments where slug = 'wabastore'`, [wabOnly]);
+    try {
+      r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Hot', tagId: wabOnly });
+      check(r.status === 422 && /can't be used in every department of this connection/.test(JSON.stringify(r.json)), 'crocodial pipeline API: a tag not usable in M Pillar is refused for an M Pillar connection', r);
+    } finally {
+      await db.query(`delete from public.lead_tags where id = $1`, [wabOnly]);
+    }
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: null });
+    check(r.status === 200 && r.json.data.tagId === null && r.json.data.ignored === false, 'crocodial pipeline API: no tag and no Ignore removes the mapping', r);
+    r = await api('sa', 'GET', `/crocodial/connections/${cid}/reconcile`);
+    check(r.status === 200 && r.json.data.mappings.some((m: any) => m.status === 'demo done' && m.tagId === demoDone && m.ignored === false)
+      && !r.json.data.mappings.some((m: any) => m.status === 'not now'), 'crocodial pipeline API: the monitor lists the mappings with their tag', r);
     await db.query(`insert into public.crocodial_ext_leads (connection_id, external_id, name, phone_number, status, assigned_to_ext, external_updated_at) values ($1, 1, 'API Croc Lead', '+919770099001', 'Won', 77777, now())`, [cid]);
     r = await api('a', 'POST', `/crocodial/connections/${cid}/reconcile`);
     check(r.status === 403, 'crocodial pipeline API: an employee cannot run reconciliation', r);
