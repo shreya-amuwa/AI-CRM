@@ -6647,6 +6647,72 @@ export interface CrocodialRefreshRequest {
   lastSyncAt: string | null;
   repeated?: boolean;
 }
+// ---- Crocodial -> CRM lead pipeline (20270304000100)
+export type CrocodialLinkStatus = 'LINKED' | 'PENDING_CREATE' | 'PENDING_LINK' | 'UNMAPPED_ASSIGNEE' | 'OUT_OF_SCOPE' | 'NOT_ENABLED' | 'AMBIGUOUS' | 'OWNER_CONFLICT' | 'PROTECTED' | 'IGNORED' | 'FAILED';
+export interface CrocodialReconcileOverview {
+  departments: { departmentId: string; name: string; enabled: boolean; leadImport: 'OFF' | 'PREVIEW' | 'IMPORT' }[];
+  counts: Partial<Record<CrocodialLinkStatus, number>>;
+  ownershipDiffers: number;
+  externalLeads: number;
+  missingAtSource: number;
+  unknownStatuses: { status: string; leads: number }[];
+  mappings: { status: string; disposition: string }[];
+  unmappedAssignees: { externalId: number; name: string | null; leads: number }[];
+  reconcile: { last_run_at: string | null; last_ok_at: string | null; last_error: string | null; processed_last_run: number; created_last_run: number; updated_last_run: number; duration_ms_last_run: number | null; pending: number } | null;
+  resources: { resource: string; lastOkAt: string | null; lastRunAt: string | null; lastError: string | null; rowsLastRun: number | null; inProgress: boolean }[];
+  recentRuns: { resource: string; outcome: string; rows: number; pages: number; finishedAt: string; seconds: number; error: string | null; rateLimited: boolean }[];
+}
+export interface CrocodialLeadLink {
+  id: string;
+  externalLeadId: number;
+  status: CrocodialLinkStatus;
+  reason: string | null;
+  assignmentMode: 'EXTERNAL' | 'CRM_OVERRIDE';
+  importSource: 'CREATED' | 'MATCHED' | 'MANUAL' | null;
+  name: string | null;
+  company: string | null;
+  phone: string | null;
+  externalStatus: string | null;
+  disposition: string | null;
+  externalOwner: string | null;
+  mappedOwner: string | null;
+  customerId: string | null;
+  crmOwner: string | null;
+  department: string | null;
+  candidates: { id: string; name: string; lifecycle: string; owner: string | null }[];
+  lastReconciledAt: string | null;
+  externalUpdatedAt: string | null;
+}
+export interface CrocodialLeadLinkList { total: number; items: CrocodialLeadLink[] }
+/** Who owns which Crocodial lead now (point in time); each lead counted once, under its one current assignee. */
+export interface CrocodialTeamLeads {
+  people: { profileId: string; name: string; teamId: string | null; teamName: string | null; assigned: number; contacted: number; notContacted: number; followupDue: number }[];
+  totals: { assigned: number; newLeads: number; contacted: number; notContacted: number; followupDue: number };
+  statuses: { status: string; disposition: string | null; leads: number }[];
+  connectedEmployees: number;
+}
+export interface CrocodialReconcileRun { batches: number; processed: number; created: number; updated: number; held: number; failed: number; pending: number; enabled: boolean; error?: string }
+export interface CrocodialLeadActivity {
+  linked: boolean;
+  externalLeadId?: number;
+  status?: CrocodialLinkStatus;
+  reason?: string | null;
+  assignmentMode?: 'EXTERNAL' | 'CRM_OVERRIDE';
+  externalStatus?: string | null;
+  disposition?: string | null;
+  externalOwner?: string | null;
+  externalOwnerProfile?: string | null;
+  crmOwner?: string | null;
+  ownershipDiffers?: boolean;
+  missingAtSource?: boolean;
+  lastSyncAt?: string | null;
+  lastReconciledAt?: string | null;
+  calls?: { total: number; outgoing: number; incoming: number; missed: number; connected: number; talkSeconds: number; lastCallAt: string | null };
+  callHistory?: { at: string | null; type: string; connected: boolean | null; seconds: number; by: string | null }[];
+  remarks?: { at: string | null; text: string | null; by: string | null }[];
+  followups?: { scheduledAt: string | null; done: boolean | null; completedAt: string | null; note: string | null; by: string | null }[];
+  ownerHistory?: { observedAt: string; owner: string | null }[];
+}
 export interface CrocodialRefreshCapabilities {
   kind: 'EMPLOYEE' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'SUPER_ADMIN';
   active: boolean;

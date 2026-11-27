@@ -13847,6 +13847,54 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.ai_studio_daily_reports where id = $1`, [reportId]);
 }
 
+// ---------------------------------------------------------------------------
+// Crocodial -> CRM lead pipeline (20270304000100): Super Admin only; the lead page's activity follows who may see the lead
+// ---------------------------------------------------------------------------
+{
+  const mp = (await db.query(`select id from public.departments where slug = 'mpillar'`)).rows[0].id as string;
+  const cid = (await db.query(`insert into public.crocodial_connections (name, credential_ref, enabled, timezone) values ('API pipeline', 'CROCODIAL_TOKEN_APIPIPE', true, 'Asia/Kolkata') returning id`)).rows[0].id as string;
+  await db.query(`insert into public.crocodial_department_links (connection_id, department_id, division, enabled) values ($1, $2, 'SALES', true)`, [cid, mp]);
+  try {
+    let r = await api('a', 'GET', `/crocodial/connections/${cid}/reconcile`);
+    check(r.status === 403, 'crocodial pipeline API: an employee cannot see the reconciliation', r);
+    r = await api('sa', 'GET', `/crocodial/connections/${cid}/reconcile`);
+    check(r.status === 200 && r.json.data.departments.some((d: any) => d.departmentId === mp && d.leadImport === 'OFF'), 'crocodial pipeline API: lead import starts Off', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/lead-import`, { departmentId: mp, mode: 'ON' });
+    check(r.status === 422, 'crocodial pipeline API: an unknown mode is refused', r);
+    r = await api('a', 'POST', `/crocodial/connections/${cid}/lead-import`, { departmentId: mp, mode: 'IMPORT' });
+    check(r.status === 403, 'crocodial pipeline API: an employee cannot switch it on', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/lead-import`, { departmentId: mp, mode: 'PREVIEW' });
+    check(r.status === 200 && r.json.data.mode === 'PREVIEW', 'crocodial pipeline API: the Super Admin switches it to Preview', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Won', disposition: 'PAID' });
+    check(r.status === 422, 'crocodial pipeline API: an unknown disposition is refused', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: ' Won ', disposition: 'CONVERTED' });
+    check(r.status === 200 && r.json.data.status === 'won', 'crocodial pipeline API: a status is mapped (stored lower-cased)', r);
+    await db.query(`insert into public.crocodial_ext_leads (connection_id, external_id, name, phone_number, status, assigned_to_ext, external_updated_at) values ($1, 1, 'API Croc Lead', '+919770099001', 'Won', 77777, now())`, [cid]);
+    r = await api('a', 'POST', `/crocodial/connections/${cid}/reconcile`);
+    check(r.status === 403, 'crocodial pipeline API: an employee cannot run reconciliation', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/reconcile`);
+    check(r.status === 200 && r.json.data.enabled && r.json.data.processed === 1 && r.json.data.created === 0, 'crocodial pipeline API: Reconcile now runs (an unmapped assignee creates nothing)', r);
+    r = await api('sa', 'GET', `/crocodial/connections/${cid}/lead-links?status=UNMAPPED_ASSIGNEE`);
+    check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].name === 'API Croc Lead', 'crocodial pipeline API: the held lead is listed', r);
+    const linkId = r.json.data.items[0].id;
+    r = await api('sa', 'POST', `/crocodial/lead-links/${linkId}/resolve`, { action: 'LINK' });
+    check(r.status === 422, 'crocodial pipeline API: linking needs the CRM record', r);
+    r = await api('sa', 'POST', `/crocodial/lead-links/${linkId}/resolve`, { action: 'IGNORE' });
+    check(r.status === 200 && r.json.data.status === 'IGNORED', 'crocodial pipeline API: the Super Admin ignores it', r);
+    const own = (await db.query(`select id from public.customers where owner_id = $1 limit 1`, [memberA])).rows[0]?.id as string;
+    r = await api('a', 'GET', `/crocodial/lead-activity/${own}`);
+    check(r.status === 200 && r.json.data.linked === false, 'crocodial pipeline API: a lead without a Crocodial link says so', r);
+    r = await api('a', 'GET', `/crocodial/lead-activity/not-a-uuid`);
+    check(r.status === 422, 'crocodial pipeline API: the lead id is checked', r);
+    r = await api('a', 'GET', '/crocodial/team-leads');
+    check(r.status === 200 && r.json.data.connectedEmployees === 0 && r.json.data.totals.assigned === 0, 'crocodial pipeline API: an employee overseeing nobody gets empty lead figures', r);
+    r = await api('sa', 'GET', '/crocodial/team-leads?departmentId=nope');
+    check(r.status === 422, 'crocodial pipeline API: the department filter is checked', r);
+  } finally {
+    await db.query(`delete from public.crocodial_connections where id = $1`, [cid]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

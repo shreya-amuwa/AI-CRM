@@ -8,7 +8,7 @@ import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProvider
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialReconcileRun, CrocodialLeadActivity, CrocodialTeamLeads } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   AiWebsiteOnboarding,
@@ -1120,7 +1120,16 @@ export const crocodialApi = {
     api.post<CrocodialRefreshRequest>('/crocodial/refresh', departmentId ? { scope, departmentId } : { scope }),
   refreshStatus: (id: string) => api.get<CrocodialRefreshRequest>(`/crocodial/refresh/${id}`),
   connectionHealth: () => api.get<CrocodialHealthReport>('/crocodial/connection-health'),
-  teamActivity: (q: { from?: string; to?: string; departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamActivity>('/crocodial/team-activity', { ...q })
+  teamActivity: (q: { from?: string; to?: string; departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamActivity>('/crocodial/team-activity', { ...q }),
+  // the CRM lead pipeline (20270304000100)
+  reconcileOverview: (connectionId: string) => api.get<CrocodialReconcileOverview>(`/crocodial/connections/${connectionId}/reconcile`),
+  leadLinks: (connectionId: string, q: { status?: string; page?: number; pageSize?: number }) => api.get<CrocodialLeadLinkList>(`/crocodial/connections/${connectionId}/lead-links`, q),
+  reconcileNow: (connectionId: string) => api.post<CrocodialReconcileRun>(`/crocodial/connections/${connectionId}/reconcile`),
+  setLeadImport: (connectionId: string, departmentId: string, mode: 'OFF' | 'PREVIEW' | 'IMPORT') => api.post<{ mode: string }>(`/crocodial/connections/${connectionId}/lead-import`, { departmentId, mode }),
+  setStatusMapping: (connectionId: string, status: string, disposition: string | null) => api.post<{ status: string; disposition: string | null }>(`/crocodial/connections/${connectionId}/status-mappings`, { status, disposition }),
+  resolveLeadLink: (id: string, action: 'LINK' | 'IGNORE' | 'RETRY' | 'RELEASE_OVERRIDE', customerId?: string) => api.post<{ id: string; status: string }>(`/crocodial/lead-links/${id}/resolve`, customerId ? { action, customerId } : { action }),
+  leadActivity: (customerId: string) => api.get<CrocodialLeadActivity>(`/crocodial/lead-activity/${customerId}`),
+  teamLeads: (q: { departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamLeads>('/crocodial/team-leads', { ...q }),
 };
 
 export const leadWhatsAppApi = {

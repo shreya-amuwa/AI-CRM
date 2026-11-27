@@ -14,7 +14,10 @@ import { testCrocodialConnection } from './directory.js';
  * resumed pull, a full pull, or rows updated since the checkpoint); every page is stored as it arrives, so a pull that runs out of time
  * resumes from the next page on the next run. The checkpoint moves only after a resource was read to the end.
  *
- * Only the fields the CRM needs are kept: no e-mail, budget, deal value, custom fields, raw numbers, SIM, location or recording.
+ * Only the fields the CRM needs are kept. Leads (20270304000100) also keep e-mail (for matching), interest, budget, deal value, products,
+ * import batch, call due / expected close dates, AI call status and only the custom fields whose keys the Super Admin allowed for the
+ * connection; never raw numbers of other kinds, SIM, location or recording files. After the leads are read, the CRM lead links are
+ * reconciled in batches (croc_reconcile): separate from the read, resumable, and only for departments whose lead import is switched on.
  */
 // the small lists first, the call log (by far the largest) last: a first read that takes several runs never holds the others back
 export const SYNC_RESOURCES = ['leads', 'followups', 'remarks', 'call-logs'] as const;
@@ -22,11 +25,44 @@ export type SyncResource = (typeof SYNC_RESOURCES)[number];
 
 const ref = z.object({ id: z.number().int().positive() }).passthrough().nullable().optional();
 const str = z.string().nullable().optional();
+const looseText = z.union([z.string(), z.number()]).nullable().optional();
 const leadSchema = z.object({
   id: z.number().int().positive(), name: str, phone_number: str, company: str, city: str, status: str, source: str,
   assigned_to: ref, created_by: ref, called: z.boolean().nullable().optional(), dialer_outcome: str, remark_count: z.number().int().nullable().optional(),
-  next_followup_at: str, last_interaction_at: str, created_at: str, updated_at: str
+  next_followup_at: str, last_interaction_at: str, created_at: str, updated_at: str,
+  // (20270304000100) optional, read defensively: a field of another shape is dropped, never fails the row
+  email: z.unknown().optional(), interest: z.unknown().optional(), budget: looseText.or(z.unknown()).optional(), deal_value: z.unknown().optional(),
+  products: z.unknown().optional(), import_batch_id: z.unknown().optional(), import_batch: z.unknown().optional(), call_due_date: z.unknown().optional(),
+  call_due_at: z.unknown().optional(), expected_close_date: z.unknown().optional(), expected_close_at: z.unknown().optional(), ai_call_status: z.unknown().optional(),
+  custom_fields: z.unknown().optional()
 }).passthrough();
+
+/** A scalar as short text (numbers too); anything else is dropped. */
+export function scalarText(v: unknown, max: number): string | null {
+  if (typeof v === 'string') return v.trim() ? v.trim().slice(0, max) : null;
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v).slice(0, max);
+  if (v && typeof v === 'object' && 'name' in (v as Record<string, unknown>)) return scalarText((v as Record<string, unknown>).name, max);
+  if (v && typeof v === 'object' && 'id' in (v as Record<string, unknown>)) return scalarText((v as Record<string, unknown>).id, max);
+  return null;
+}
+/** Products as one short line: a list of names or strings, or a string. */
+export function productsText(v: unknown): string | null {
+  if (Array.isArray(v)) {
+    const names = v.map(x => scalarText(x, 120)).filter((x): x is string => !!x);
+    return names.length ? names.join(', ').slice(0, 500) : null;
+  }
+  return scalarText(v, 500);
+}
+/** Custom fields: a flat object of scalars (the database keeps only the keys allowed for the connection). */
+export function customFields(v: unknown): Record<string, string> | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, 50)) {
+    const t = scalarText(x, 200);
+    if (t !== null && /^[A-Za-z0-9_.\- ]{1,60}$/.test(k)) out[k] = t;
+  }
+  return Object.keys(out).length ? out : null;
+}
 const callSchema = z.object({
   id: z.number().int().positive(), phone_number: str, contact_name: str, call_type: str, call_at: str,
   duration_seconds: z.number().int().nullable().optional(), connected: z.boolean().nullable().optional(), called_by: ref, lead: ref, synced_at: str
@@ -46,7 +82,11 @@ export const TO_STORE: Record<SyncResource, { schema: z.ZodTypeAny; map: (r: any
     map: r => ({ id: r.id, name: r.name ?? null, phone: r.phone_number ?? null, company: r.company ?? null, city: r.city ?? null, status: r.status ?? null,
       source: r.source ?? null, assignedTo: r.assigned_to?.id ?? null, createdBy: r.created_by?.id ?? null, called: r.called ?? null,
       dialerOutcome: r.dialer_outcome ?? null, remarkCount: r.remark_count ?? null, nextFollowupAt: r.next_followup_at ?? null,
-      lastInteractionAt: r.last_interaction_at ?? null, createdAt: r.created_at ?? null, updatedAt: r.updated_at ?? null })
+      lastInteractionAt: r.last_interaction_at ?? null, createdAt: r.created_at ?? null, updatedAt: r.updated_at ?? null,
+      email: scalarText(r.email, 254), interest: scalarText(r.interest, 200), budget: scalarText(r.budget, 40), dealValue: scalarText(r.deal_value, 40),
+      products: productsText(r.products), importBatch: scalarText(r.import_batch_id ?? r.import_batch, 80),
+      callDueAt: scalarText(r.call_due_at ?? r.call_due_date, 40), expectedCloseAt: scalarText(r.expected_close_at ?? r.expected_close_date, 40),
+      aiCallStatus: scalarText(r.ai_call_status, 60), customFields: customFields(r.custom_fields) })
   },
   'call-logs': {
     schema: callSchema,
@@ -69,7 +109,8 @@ export const TO_STORE: Record<SyncResource, { schema: z.ZodTypeAny; map: (r: any
 export const sinceParam = (iso: string | null | undefined): string | undefined => (iso ? new Date(iso).toISOString().replace(/\.\d{3}Z$/, '+00:00') : undefined);
 
 export interface ResourceSummary { resource: SyncResource; outcome: 'DONE' | 'PARTIAL' | 'FAILED' | 'SKIPPED'; pages: number; rows: number; skipped: number; error?: string }
-export interface ConnectionSummary { connectionId: string; health: string; resources: ResourceSummary[]; error?: string }
+export interface ReconcileSummary { batches: number; processed: number; created: number; updated: number; held: number; failed: number; pending: number; enabled: boolean; error?: string }
+export interface ConnectionSummary { connectionId: string; health: string; resources: ResourceSummary[]; error?: string; reconcile?: ReconcileSummary }
 export interface CrocodialSyncSummary { connections: ConnectionSummary[]; requests: number; note?: string }
 
 type Begin = { ok: boolean; reason?: string; full?: boolean; since?: string | null; page?: number };
@@ -185,6 +226,8 @@ export async function runCrocodialSync(
       const fullEvery = opts.connectionId ? '7 days' : null;
       const maxPages = opts.connectionId ? Number.POSITIVE_INFINITY : MAX_PAGES_PER_RUN;
       for (const r of SYNC_RESOURCES) summary.resources.push(await syncResource(db, client, c.id, r, deadline, fullEvery, maxPages));
+      // the CRM lead links: after the read, in batches, within the same time budget (what is left continues on the next run)
+      summary.reconcile = await reconcileLeads(db, c.id, deadline);
       const failed = summary.resources.find(r => r.outcome === 'FAILED');
       summary.health = failed ? 'ERROR' : 'OK';
       await db.rpc('croc_connection_status', { p_connection: c.id, p_health: failed ? 'ERROR' : 'OK', p_error: failed ? `${failed.resource}: ${failed.error}` : null });
@@ -195,6 +238,26 @@ export async function runCrocodialSync(
       await db.rpc('croc_connection_status', { p_connection: c.id, p_health: e.health, p_error: e.message });
     }
     out.requests += client.requests;
+  }
+  return out;
+}
+
+/** Batches of croc_reconcile until nothing is waiting or the time is up. Never throws (the read already succeeded). */
+export async function reconcileLeads(db: SupabaseClient, connectionId: string, deadline: number, batch = 200): Promise<ReconcileSummary> {
+  const out: ReconcileSummary = { batches: 0, processed: 0, created: 0, updated: 0, held: 0, failed: 0, pending: 0, enabled: false };
+  try {
+    while (Date.now() < deadline && out.batches < 50) {
+      const r = await rpc<{ processed?: number; created?: number; updated?: number; held?: number; failed?: number; pending?: number; enabled?: boolean; skipped?: string }>(
+        db, 'croc_reconcile', { p_connection: connectionId, p_limit: batch });
+      out.batches += 1;
+      if (r.skipped) { out.error = r.skipped; break; }
+      out.enabled = !!r.enabled;
+      out.processed += r.processed ?? 0; out.created += r.created ?? 0; out.updated += r.updated ?? 0; out.held += r.held ?? 0; out.failed += r.failed ?? 0;
+      out.pending = r.pending ?? 0;
+      if (!r.enabled || (r.processed ?? 0) < batch) break;
+    }
+  } catch (err) {
+    out.error = (err as Error).message.slice(0, 200);
   }
   return out;
 }

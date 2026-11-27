@@ -179,7 +179,10 @@ function stubDb(begins: Record<string, any> = {}) {
 {
   const lead = TO_STORE.leads.map(TO_STORE.leads.schema.parse({ id: 1, name: 'Ravi', phone_number: '+91', email: 'r@x.com', budget: '25000', deal_value: 25000,
     custom_fields: { a: 1 }, assigned_to: { id: 4138, name: 'sachin' }, created_by: { id: 340 } }));
-  check(lead.assignedTo === 4138 && !('email' in lead) && !('budget' in lead) && !('dealValue' in lead) && !('customFields' in lead), 'a lead keeps its assignee, not e-mail, budget, value or custom fields', lead);
+  // (20270304000100) the CRM lead pipeline needs the e-mail (matching), budget and deal value; custom fields are kept only for the keys the
+  // Super Admin allows per connection (filtered by croc_sync_store); nothing else of the lead is added
+  check(lead.assignedTo === 4138 && lead.email === 'r@x.com' && lead.budget === '25000' && lead.dealValue === '25000' && JSON.stringify(lead.customFields) === '{"a":"1"}'
+    && !('phoneNumbers' in lead) && !('recording' in lead), 'a lead keeps its assignee and, for the CRM pipeline, e-mail, budget, value and custom fields (allowed keys only, in the database)', lead);
   const fu = TO_STORE.followups.map(TO_STORE.followups.schema.parse({ id: 5, created_by: { id: 4138 }, lead: { id: 9, name: 'Ravi' }, done: false, scheduled_at: '2026-11-20T10:00:00+05:30' }));
   check(fu.createdBy === 4138 && fu.lead === 9 && fu.done === false, 'a follow-up keeps who created it and its lead');
   const rm = TO_STORE.remarks.map(TO_STORE.remarks.schema.parse({ id: 7, written_by: { id: 371 }, remark: 'Interested' }));
