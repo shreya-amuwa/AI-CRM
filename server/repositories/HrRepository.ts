@@ -76,6 +76,10 @@ export class HrRepository {
     return this.rpc<HrProbationCycle>('hr_confirm_probation', { p_cycle: id, p_effective: effectiveDate, p_note: note });
   }
   dismissProbation(id: string, note: string) { return this.rpc<HrProbationCycle>('hr_dismiss_probation', { p_cycle: id, p_note: note }); }
+  // Confirmation completes only once the employee's e-mail is sent (20270223000100): read back, retry the e-mail, the overdue reminder.
+  probationGet(id: string) { return this.rpc<HrProbationCycle>('hr_probation_get', { p_cycle: id }); }
+  retryProbationEmail(id: string) { return this.rpc<HrProbationCycle>('hr_probation_retry_email', { p_cycle: id }); }
+  remindOverdueProbation(id: string) { return this.rpc<HrProbationCycle & { reminded: number }>('hr_probation_remind_overdue', { p_cycle: id }); }
   retryEmail(id: string) { return this.rpc<{ id: string; status: string }>('hr_email_retry', { p_event: id }); }
   emailCards() { return this.rpc<Omit<HrEmailCards, 'settings' | 'templates' | 'runsAt'>>('hr_email_cards'); }
   emailDataIssues() { return this.rpc<HrEmailDataIssue[]>('hr_email_data_issues'); }

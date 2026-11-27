@@ -154,21 +154,23 @@ select test.must_fail($$select hr_dismiss_probation((select id from cyc), 'not m
 select test.login('hr_head');
 create temp table conf as select hr_confirm_probation((select id from cyc), null, 'Good review') as j;
 grant all on conf to authenticated;
-select test.check((select j ->> 'status' = 'APPROVED' and j ->> 'effectiveDate' = '2027-03-14' and j ->> 'approvedBy' = 'HR Head' and j ->> 'note' = 'Good review' from conf),
-  'the HR head approves: status, effective date, approver and note are recorded');
+select test.check((select j ->> 'status' = 'CONFIRMING' and j ->> 'effectiveDate' = '2027-03-14' and j ->> 'approvedBy' = 'HR Head' and j ->> 'note' = 'Good review'
+                      and j -> 'email' ->> 'status' = 'PENDING' from conf),
+  'the HR head confirms: effective date, approver and note are recorded; the employee is NOT confirmed until the e-mail is sent (20270223000100)');
 reset role;
-select test.check((select status = 'APPROVED' and approved_at is not null and approved_by = test.id('hr_head') and effective_date = date '2027-03-14' from hr_probation_cycles where id = (select id from cyc)),
-  'the approval date and confirmation status are stored');
+select test.check((select status = 'CONFIRMING' and approved_at is not null and approved_by = test.id('hr_head') and effective_date = date '2027-03-14' from hr_probation_cycles where id = (select id from cyc)),
+  'the decision date is stored and the confirmation waits for its e-mail');
 select test.check(test.ev('CONFIRMATION_EMPLOYEE', 'Hrx Prob') = 1 and test.ev('CONFIRMATION_HR', 'Hrx Prob') = test.hrcount(), 'the employee and HR confirmation e-mails are queued by the approval');
 select test.check((select recipient_email = 'hrx.prob@amuwa.com' and status = 'PENDING' and send_after = timestamptz '2027-03-14 09:00:00+05:30' and payload ->> 'confirmationEffectiveDate' = '2027-03-14'
                      from hr_email_events where kind = 'CONFIRMATION_EMPLOYEE' and payload ->> 'employeeName' = 'Hrx Prob'),
   'the confirmation e-mail waits for the end of the probation period');
 select test.check((select payload ->> 'approvalStatus' = 'Approved' and payload ->> 'confirmationEffectiveDate' = '2027-03-14' and payload ->> 'joiningDate' = '2026-09-14'
                      from hr_email_events where kind = 'CONFIRMATION_HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1), 'the HR notice carries the dates and "Approved"');
-select test.check((select count(*) = 1 from audit_logs where action = 'EMPLOYEE_CONFIRMED' and actor_id = test.id('hr_head')), 'the approval is audited');
+select test.check((select count(*) = 1 from audit_logs where action = 'EMPLOYEE_CONFIRMATION_STARTED' and actor_id = test.id('hr_head')), 'the decision is audited');
+select test.check((select count(*) = 0 from audit_logs where action = 'EMPLOYEE_CONFIRMED' and entity_id = (select id from cyc)), 'but nobody is audited as confirmed before the e-mail is sent');
 set role authenticated;
 select test.login('hr_head');
-select test.must_fail($$select hr_confirm_probation((select id from cyc))$$, 'a second approval is refused (no second e-mail)', 'already decided');
+select test.must_fail($$select hr_confirm_probation((select id from cyc))$$, 'a second approval is refused (no second e-mail)', 'already in progress');
 reset role;
 select test.check(test.ev('CONFIRMATION_EMPLOYEE', 'Hrx Prob') = 1, 'still exactly one confirmation e-mail');
 
@@ -181,10 +183,17 @@ select test.login('dh_wab');
 select test.must_fail($$select hr_dismiss_probation((select id from cyc_over), 'x')$$, 'closing needs a reason', 'Say why');
 select test.check(hr_dismiss_probation((select id from cyc_over), 'Confirmed on paper last year') ->> 'status' = 'DISMISSED',
   'the employee''s Department Head can close a cycle with a reason');
-select test.check(hr_confirm_probation((select id from cyc_prob2), date '2027-03-20') ->> 'status' = 'APPROVED', 'and approve one');
-select test.must_fail($$select hr_confirm_probation((select id from cyc_prob2), date '2000-01-01')$$, 'a decided cycle cannot be decided again', 'already decided');
+select test.check(hr_confirm_probation((select id from cyc_prob2), date '2027-03-20') ->> 'status' = 'CONFIRMING', 'and confirm one');
+select test.must_fail($$select hr_confirm_probation((select id from cyc_prob2), date '2000-01-01')$$, 'a confirmation in progress cannot be decided again', 'already in progress');
 reset role;
-select test.check((select status = 'Full-Time' from hr_employees where id = 'HRX-HRX_PROB2'), 'the HR record moves from "Training / Probation" to "Full-Time" on approval');
+select test.check((select status = 'Training / Probation' from hr_employees where id = 'HRX-HRX_PROB2'), 'the HR record does not change before the confirmation e-mail is sent');
+-- the employee's confirmation e-mail is sent: only now is the employee confirmed and the HR record Full-Time
+update hr_email_events set send_after = now() - interval '1 minute' where cycle_id = (select id from cyc_prob2);
+select test.check((select count(*) >= 1 from jsonb_array_elements(hr_email_claim_cycle((select id from cyc_prob2), 'live')) e where e ->> 'kind' = 'CONFIRMATION_EMPLOYEE'), 'the cycle''s confirmation e-mail is claimed for sending');
+select hr_email_finish(id, 'SENT', 'ok') from hr_email_events where cycle_id = (select id from cyc_prob2) and status = 'SENDING';
+select test.check((select status = 'APPROVED' from hr_probation_cycles where id = (select id from cyc_prob2)), 'once the e-mail is sent, the employee is confirmed');
+select test.check((select status = 'Full-Time' from hr_employees where id = 'HRX-HRX_PROB2'), 'the HR record moves from "Training / Probation" to "Full-Time" once confirmed');
+select test.check((select count(*) = 1 from audit_logs where action = 'EMPLOYEE_CONFIRMED' and entity_id = (select id from cyc_prob2)), 'and the confirmation is audited once');
 select test.check(test.ev('CONFIRMATION_EMPLOYEE', 'Hrx Over') = 0, 'a closed cycle sends no confirmation');
 set role authenticated;
 select test.login('hr_head');
