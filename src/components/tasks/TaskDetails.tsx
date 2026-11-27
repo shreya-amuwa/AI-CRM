@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ArrowDownUp, CalendarDays, CheckCircle2, Clock3, Flag, Play, RefreshCw, X } from 'lucide-react';
-import { workTasksApi, type TaskDetailsData, type TaskStatus, type TaskTimelineItem, type TaskUpdateRecord } from '../../lib/workTasks';
+import { AlertTriangle, ArrowDownUp, CalendarDays, CheckCircle2, Clock3, Flag, Play, RefreshCw, Trash2, X } from 'lucide-react';
+import { notifyWorkTasksChanged, workTasksApi, type TaskDetailsData, type TaskStatus, type TaskTimelineItem, type TaskUpdateRecord } from '../../lib/workTasks';
 import { notifyWorkUpdatesChanged } from '../../lib/workUpdates';
 import { fmtDate, fmtDateTime, PriorityPill, ProgressBar, STATUS_UI, StatusPill } from './TaskParts';
 import { Avatar } from './PeoplePicker';
 import { FollowUpButton, RequestStatusPill, RequestUpdate, ResponseDetails } from './WorkUpdates';
 import { WorkUpdateForm } from './WorkUpdateForm';
 import { ago } from './taskView';
+import type { TaskDeletePreview } from '../../../shared/contracts';
+import { confirmTaskDeletion, countLine } from '../../lib/taskDeletion';
+import { toast } from '../../lib/feedback/feedbackStore';
 
 type FormStatus = 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED';
 
@@ -16,6 +19,7 @@ const primary = `${btn} bg-blue-600 text-white hover:bg-blue-700`;
 const outline = `${btn} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`;
 const danger = `${btn} border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100`;
 const success = `${btn} bg-emerald-600 text-white hover:bg-emerald-700`;
+const destroy = `${btn} border border-rose-300 bg-white text-rose-700 hover:bg-rose-50`;
 
 const Section: React.FC<{ id?: string; title: string; hint?: string; aside?: React.ReactNode; children: React.ReactNode }> = ({ id, title, hint, aside, children }) => (
   <section id={id} aria-label={title} className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -111,10 +115,14 @@ export const TaskDetails: React.FC<{ taskId: string; onClose: () => void; onChan
   const [reqSignal, setReqSignal] = useState(0);
   const [newestFirst, setNewestFirst] = useState(false);
   const [starting, setStarting] = useState(false);
+  // whether this person may delete the task (Team Lead who gave it, Department Head / Operations Head of its scope): the server decides
+  const [deletion, setDeletion] = useState<TaskDeletePreview | null>(null);
   const panel = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
+      // the Delete check never holds up the task itself: the details show at once, the button follows when the server answers
+      void workTasksApi.deletePreview(taskId).then(setDeletion);
       setData(await workTasksApi.details(taskId));
       setError(null);
     } catch (e) {
@@ -129,7 +137,8 @@ export const TaskDetails: React.FC<{ taskId: string; onClose: () => void; onChan
     const overflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     panel.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // Escape inside a confirmation dialog closes only that dialog
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('[data-testid="app-dialog-layer"]') && onClose();
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
@@ -171,6 +180,21 @@ export const TaskDetails: React.FC<{ taskId: string; onClose: () => void; onChan
     } finally {
       setStarting(false);
     }
+  };
+  const canDelete = !!deletion?.canDelete;
+  const remove = async () => {
+    if (!t || !deletion?.canDelete) return;
+    const done = await confirmTaskDeletion({
+      title: t.title, assigneeName: t.assignee?.name, status: STATUS_UI[t.status]?.label ?? t.status, dueDate: t.dueDate ? fmtDate(t.dueDate) : null,
+      alsoRemoved: [countLine(deletion.subtasks, 'sub-task'), countLine(deletion.updates, 'progress update'), countLine(deletion.dailyReports, 'daily report')],
+      run: () => workTasksApi.deleteTask(t.id)
+    });
+    if (!done) return;
+    toast.success(`Task deleted: ${t.title}`);
+    notifyWorkTasksChanged();
+    notifyWorkUpdatesChanged();
+    onChanged?.();
+    onClose();
   };
   const openForm = (s: FormStatus) => { setForm(s); setNotice(null); goTo('ws-updates'); };
 
@@ -322,7 +346,7 @@ export const TaskDetails: React.FC<{ taskId: string; onClose: () => void; onChan
         </div>
 
         {/* ---------------- actions: only what this person may do ---------------- */}
-        {data && t && (data.canUpdate || data.canRequest || respondable || (pending && data.canManage)) && (
+        {data && t && (data.canUpdate || data.canRequest || respondable || (pending && data.canManage) || canDelete) && (
           <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6" aria-label="Task actions">
             <div className="flex flex-wrap items-center gap-2">
               {data.canUpdate && t.status === 'ASSIGNED' && (
@@ -334,6 +358,11 @@ export const TaskDetails: React.FC<{ taskId: string; onClose: () => void; onChan
               {respondable && respondId !== respondable.id && <button type="button" className={outline} onClick={() => { setRespondId(respondable.id); goTo(`req-${respondable.id}`); }}>Respond to request</button>}
               {data.canRequest && <button type="button" className={primary} onClick={() => { setReqSignal(n => n + 1); goTo('ws-requests'); }}><Clock3 className="h-3.5 w-3.5" aria-hidden="true" /> Request update</button>}
               {pending && data.canManage && pending.canFollowUp && <FollowUpButton r={pending} onDone={() => changed()} />}
+              {canDelete && (
+                <button type="button" className={`${destroy} sm:ml-auto`} onClick={() => void remove()} data-testid="task-delete">
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete task
+                </button>
+              )}
             </div>
           </footer>
         )}

@@ -81,7 +81,7 @@ export type RecentItem =
 
 export const RECENT_LIMIT = 8;
 export const recentKey = (userId: string) => `crm.search.recent.v1.${userId}`;
-const RECORD_TYPES = new Set(['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice']);
+const RECORD_TYPES = new Set(['employee', 'customer', 'lead', 'meeting', 'ticket', 'department', 'notice', 'ai_studio_task', 'ai_studio_project', 'ai_studio_report']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSupabase } from '../services/supabaseClient';
 import { listenToTables } from './realtimeShared';
+import { api } from './api/client';
+import type { TaskDeletePreview, TaskDeleteResult } from '../../shared/contracts';
 
 /**
  * Work tasks (migration 20261008000600_work_tasks.sql):
@@ -138,6 +140,10 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+/** Dispatched after a task is deleted in this tab, so every task list and dashboard count on the page reloads. */
+export const WORK_TASKS_CHANGED_EVENT = 'crm:work-tasks-changed';
+export const notifyWorkTasksChanged = () => window.dispatchEvent(new Event(WORK_TASKS_CHANGED_EVENT));
+
 export const workTasksApi = {
   assignToTeamLead: (input: { assigneeId: string; title: string; description?: string; priority: TaskPriority; dueDate?: string | null }) =>
     rpc<string>('assign_task_to_team_lead', {
@@ -205,7 +211,13 @@ export const workTasksApi = {
       p_blockers: u.blockers?.trim() || null, p_next: u.nextSteps?.trim() || null, p_expected: u.expectedCompletion || null, p_request: u.requestId || null
     }),
   /** One task in full: overview, progress history, update requests, activity timeline. Only for people who may already read the task. */
-  details: (taskId: string) => rpc<TaskDetailsData>('work_task_details', { p_task: taskId })
+  details: (taskId: string) => rpc<TaskDetailsData>('work_task_details', { p_task: taskId }),
+  // ---- Deleting an assigned task (20270220000100): through the API, which calls the database function that checks the caller's role and scope ----
+  /** Whether the signed-in person may delete the task and what goes with it; null when the server cannot say (e.g. before the migration): no button. */
+  deletePreview: async (taskId: string): Promise<TaskDeletePreview | null> => {
+    try { return await api.get<TaskDeletePreview>(`/work-tasks/${taskId}/delete-preview`); } catch { return null; }
+  },
+  deleteTask: (taskId: string) => api.delete<TaskDeleteResult>(`/work-tasks/${taskId}`)
 };
 
 export interface WorkUpdateInput {
@@ -307,9 +319,12 @@ export function useWorkTasks(): WorkTaskData {
     };
     // one channel per tab for the task tables, shared with every other task list on the page
     const stop = listenToTables(['work_tasks', 'work_task_updates'], refresh);
+    // a task deleted in this tab: every list and count on the page reloads at once, without waiting for realtime
+    window.addEventListener(WORK_TASKS_CHANGED_EVENT, refresh);
     return () => {
       clearTimeout(timer);
       stop();
+      window.removeEventListener(WORK_TASKS_CHANGED_EVENT, refresh);
     };
   }, [reload]);
 

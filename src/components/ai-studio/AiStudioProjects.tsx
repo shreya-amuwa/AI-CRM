@@ -22,6 +22,7 @@ export const ProjectCards: React.FC<{ projects: AiStudioProject[] }> = ({ projec
           <div className="flex items-center gap-2 min-w-0"><FolderKanban className="w-5 h-5 text-blue-600 shrink-0" aria-hidden="true" /><h3 className="font-extrabold text-slate-900 truncate">{p.name}</h3></div>
           <ProjectStatusBadge status={p.status} />
         </div>
+        {p.viaTask ? <p className="mt-2 text-xs text-slate-500"><span className="inline-flex items-center rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 mr-1">Cross-team</span>You have a task here; you are not on this project.</p> : null}
         {p.description && <p className="mt-2 text-sm text-slate-600 line-clamp-2">{p.description}</p>}
         {p.deadlineAt && <div className="mt-3"><DeadlineChip deadlineAt={p.deadlineAt} status={p.status} /></div>}
         <div className="mt-3"><ProgressBar value={p.tasks.progress} label={`${p.name}: ${p.tasks.progress}% complete`} /></div>
