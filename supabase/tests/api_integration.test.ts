@@ -11217,7 +11217,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('sa', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Approved' });
   check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Super Admin gives the final approval', q);
   q = await api('aim1', 'GET', `/ai-studio/reports/${report1}`);
-  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.length === 6 && q.json.data.history[0].action === 'CREATED' && q.json.data.history[1].action === 'SUBMITTED' && q.json.data.history[5].actorName === 'Root'
+  // (20270302000100) the Team Lead's approval also sent it to HR: one "Sent to HR" entry besides the six steps
+  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').length === 6
+    && q.json.data.history.filter((h: any) => h.action === 'SENT_TO_HR').length === 1 && q.json.data.history[0].action === 'CREATED' && q.json.data.history[1].action === 'SUBMITTED'
+    && q.json.data.history[q.json.data.history.length - 1].actorName === 'Root'
     && q.json.data.history.some((h: any) => h.action === 'RETURNED' && h.comment === 'Add the test results'),
     'AI Studio: the final status and the whole history are visible to the member', q);
   q = await api('sa', 'GET', '/ai-studio/reports?view=department');
