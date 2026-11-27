@@ -1,4 +1,4 @@
-import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Tag, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import type { ShellNavGroup, ShellNavItem } from '../layout/shell';
 
 /**
@@ -34,6 +34,7 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
           // upload a lead sheet (.xlsx / .xls / .csv) to a Sales person of the department, with its history and failed rows (the same page as Lead Assign)
           { id: 'sheet-upload', label: 'Sheet Upload', icon: FileUp },
           { id: 'telecaller-sheets', label: 'Telecaller Sheets', icon: FileSpreadsheet },
+          ...(o.operationsHead ? [{ id: 'lead-tags', label: 'Lead tags', icon: Tag }] : []),
           // Field visits: the Department Head assigns the leads found on visits; both the head and the Sales Operations Head see visits live
           {
             id: 'field-visits-group', label: 'Field Visits', icon: MapPin,
