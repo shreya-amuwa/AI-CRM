@@ -9,6 +9,7 @@ import { Card, CardHead } from '../tasks/head/headParts';
 import { ErrorBanner, Field, Spinner } from '../team-member/pipeline/shared';
 import { EmptyState, dateText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
+import { ClientResearchPanel } from './ClientResearchPanel';
 import { DocBadge, notifyBaChanged, openFile, useContactOptions } from './ui';
 
 export const ScopePage: React.FC<{ go: BaNavigate; initialContactId?: string; initialScopeId?: string }> = ({ initialContactId, initialScopeId }) => {
@@ -216,6 +217,7 @@ const ScopeEditor: React.FC<{ id: string; onClose: () => void; onOpen: (id: stri
       )}
 
       <SectionCard title="A. Client and business profile" busy={busy} canAi={false}>
+        <ClientResearchPanel contactId={doc.contactId} inputs={inputs} disabled={ro} onApply={v => setInputs(x => ({ ...x, ...v }))} />
         <Field label="Document title" htmlFor="sc-title"><input id="sc-title" className={tcInput} disabled={ro} maxLength={200} value={title} onChange={e => setTitle(e.target.value)} /></Field>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Client name" htmlFor="sc-cname"><input id="sc-cname" className={`${tcInput} bg-slate-50`} readOnly value={doc.client?.name || ''} /></Field>
