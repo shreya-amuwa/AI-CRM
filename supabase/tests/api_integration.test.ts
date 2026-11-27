@@ -13773,10 +13773,15 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
 // --- A Department Head adds a lead: no owner chosen = themself; or a Team Lead / Team Member of their side; never outside their department ---
 {
-  const { rows: [salesTeam] } = await db.query(`select t.id, t.department_id from public.teams t join public.departments d on d.id = t.department_id
-                                                 where d.slug = 'wabastore' and t.division = 'SALES' and not t.is_pool order by t.created_at limit 1`);
-  const { rows: [elsewhere] } = await db.query(`select t.id from public.teams t join public.departments d on d.id = t.department_id
-                                                 where d.slug = 'whatsbox' and t.division = 'SALES' and not t.is_pool order by t.created_at limit 1`);
+  // a department with a Sales team and no Sales Department Head yet (a department has at most one), and a Sales team of another department
+  const { rows: [salesTeam] } = await db.query(`select t.id, t.department_id from public.teams t
+                                                 where t.division = 'SALES' and not t.is_pool and t.department_id is not null
+                                                   and not exists (select 1 from public.departments d where d.id = t.department_id and d.facet_of is not null)
+                                                   and not exists (select 1 from public.profiles p where p.department_id = t.department_id and p.role = 'DEPARTMENT_HEAD'
+                                                                    and p.status = 'ACTIVE' and coalesce(p.head_division, 'SALES') = 'SALES')
+                                                 order by t.created_at limit 1`);
+  const { rows: [elsewhere] } = await db.query(`select t.id from public.teams t where t.division = 'SALES' and not t.is_pool and t.department_id <> $1 order by t.created_at limit 1`,
+                                               [salesTeam.department_id]);
   const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
     const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
       [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
