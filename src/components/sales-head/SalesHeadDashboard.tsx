@@ -34,6 +34,7 @@ import { FieldVisitLeadQueuePage } from '../field-visit/FieldVisitLeadQueue';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
+import { ceoLeadTagDepartments } from '../leadTags/ceoDepartments';
 import { LeadTagsPage } from '../leadTags/LeadTagsPage';
 import { IncomePage } from '../income/IncomePage';
 import { IncentiveSetup } from '../income/IncentiveSetup';
@@ -168,7 +169,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'work-reports' && <ReportsRoute />}
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
-      {page === 'lead-tags' && operationsHead && <LeadTagsPage departments={(scopes?.departments ?? []).map(d => ({ id: d.id, name: d.name }))} canCompanyWide={false} />}
+      {page === 'lead-tags' && operationsHead && <LeadTagsPage departments={ceoLeadTagDepartments(scopes?.departments)} canCompanyWide={false} />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'crocodial' && <CrocodialTeamPanel title={operationsHead ? 'Crocodial Overview — My Sales Departments' : 'Department Crocodial Activity'} />}
       {page === 'crocodial-me' && <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} />}

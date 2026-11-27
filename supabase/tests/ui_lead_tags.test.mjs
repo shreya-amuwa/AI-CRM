@@ -95,6 +95,22 @@ try {
   check(await p2.getByLabel('International').count() === 0 && await p2.getByLabel('Sales One').count() === 1, 'a CEO can only pick the departments they run');
   await p2.close();
 
+  // CEO with real scope objects: Support-only scope not offered, ids are the base (data) department ids, all preselected
+  const p4 = await ctx.newPage();
+  const posts4 = [];
+  await p4.route('**/lead-tags**', async r => { if (r.request().method() === 'GET') return r.fulfill(json(TAGS)); const body = JSON.parse(r.request().postData() || '{}'); posts4.push(body); return r.fulfill(json(tag({ id: 'n', ...body }))); });
+  await p4.goto(base);
+  await p4.evaluate(() => window.mountScopes());
+  await p4.getByText('Called twice').first().waitFor();
+  await p4.getByRole('button', { name: 'New tag' }).click();
+  check(await p4.getByLabel('Wabatalk').count() === 0 && await p4.getByLabel('Sales One').count() === 1 && await p4.getByLabel('International').count() === 1, 'a Support-only scope is not offered to a CEO');
+  check(await p4.getByLabel('Sales One').isChecked() && await p4.getByLabel('International').isChecked(), 'a CEO\'s new tag defaults to every department they run');
+  await p4.getByLabel('Label').fill('Hot');
+  await p4.getByRole('button', { name: 'Save tag' }).click();
+  await p4.waitForFunction(() => !document.querySelector('[data-testid="tag-form"]'));
+  check(posts4.length === 1 && JSON.stringify(posts4[0].departmentIds) === JSON.stringify(['d-sales', 'd-intl']), 'it posts the base (data) department ids, with no change needed', posts4);
+  await p4.close();
+
   // 360px
   const m = await browser.newContext({ viewport: { width: 360, height: 740 } });
   const p3 = await m.newPage();

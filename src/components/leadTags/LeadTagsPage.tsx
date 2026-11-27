@@ -39,7 +39,7 @@ const TagForm: React.FC<{ tag: LeadTag | null; departments: { id: string; name: 
   const [label, setLabel] = useState(tag?.label ?? '');
   const [colour, setColour] = useState<LeadTagColour>(tag?.colour ?? 'slate');
   const [stage, setStage] = useState<LeadStatus>(tag?.stage ?? 'NEW');
-  const [deptIds, setDeptIds] = useState<string[]>(tag ? tag.departmentIds : (!canCompanyWide && departments.length === 1 ? [departments[0]!.id] : []));
+  const [deptIds, setDeptIds] = useState<string[]>(tag ? tag.departmentIds : (!canCompanyWide ? departments.map(d => d.id) : []));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const moves = !!tag && tag.stage !== stage && tag.leadCount > 0;
