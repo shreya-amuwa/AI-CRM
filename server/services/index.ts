@@ -55,6 +55,7 @@ import { CustomerImportService } from './CustomerImportService.js';
 import { SheetSyncService } from './SheetSyncService.js';
 import { ChatService } from './ChatService.js';
 import { TicketAttachmentService } from './TicketAttachmentService.js';
+import { SupportRechargeService } from './SupportRechargeService.js';
 import { EmployeeCaseService } from './EmployeeCaseService.js';
 import { BugService } from './BugService.js';
 import { BugRepository } from '../repositories/BugRepository.js';
@@ -72,6 +73,7 @@ import { HrReviewService } from './HrReviewService.js';
 import { ReportAnalyticsRepository } from '../repositories/ReportAnalyticsRepository.js';
 import { ReportAnalyticsService } from './ReportAnalyticsService.js';
 import { TicketAttachmentRepository } from '../repositories/TicketAttachmentRepository.js';
+import { SupportRechargeRepository } from '../repositories/SupportRechargeRepository.js';
 import { ChatRepository } from '../repositories/ChatRepository.js';
 import { DashboardRepository } from '../repositories/DashboardRepository.js';
 import { DashboardService } from './DashboardService.js';
@@ -158,6 +160,7 @@ export function createServices(db: SupabaseClient) {
     welcomeEmails: new WelcomeEmailService(new WelcomeEmailRepository(db)),
     reminderCalls: new ReminderCallService(new ReminderCallRepository(db)),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
+    supportRecharges: new SupportRechargeService(new SupportRechargeRepository(db), new StorageRepository()),
     hrEmployeeFiles: new HrEmployeeFileService(new HrEmployeeFileRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };

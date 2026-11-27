@@ -199,6 +199,7 @@ import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuer
 import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
 import type { AwardNominateInput } from '../../../shared/validation';
 import type { OfferLetterhead, OfferLetterheadOption, OfferTemplate, OfferTemplateContent, OfferTemplateFile, OfferTemplateHistory, OfferTemplateList, OfferTemplateVersion } from '../../../shared/contracts';
+import type { RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../../shared/contracts';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -980,6 +981,23 @@ export const ticketFilesApi = {
   complete: (id: string) => api.post<TicketAttachment>(`/support/ticket-uploads/${id}/complete`, {}),
   abort: (id: string) => api.post<null>(`/support/ticket-uploads/${id}/abort`, {}),
   url: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/support/ticket-attachments/${id}/url`, { action })
+};
+/** Support Recharges (Panel / Message): the server checks the person, the record and the screenshot; the screenshot opens through a short-lived link only. */
+export interface RechargeFormInput {
+  customerName: string; rechargeDate: string; gstAmount: number; gstDetails?: string | null; nonGstAmount: number; nonGstDetails?: string | null;
+  totalAmount?: number; remarks?: string | null; screenshotId?: string | null;
+}
+export interface RechargeListQuery { kind: 'PANEL' | 'MESSAGE'; search?: string; status?: string; from?: string; to?: string; min?: number | ''; max?: number | ''; limit?: number; offset?: number }
+export const rechargesApi = {
+  list: (q: RechargeListQuery) => api.get<SupportRechargeList>('/support/recharges', { ...q }),
+  get: (id: string) => api.get<SupportRecharge>(`/support/recharges/${id}`),
+  create: (kind: 'PANEL' | 'MESSAGE', body: RechargeFormInput, requestId: string) => api.post<SupportRecharge>('/support/recharges', { kind, requestId, ...body }),
+  update: (id: string, body: RechargeFormInput) => api.post<SupportRecharge>(`/support/recharges/${id}/update`, body),
+  setStatus: (id: string, status: string, note?: string) => api.post<SupportRecharge>(`/support/recharges/${id}/status`, { status, note: note || null }),
+  beginUpload: (body: { fileName: string; mimeType: string; sizeBytes: number }) => api.post<RechargeUploadTicket>('/support/recharge-uploads', body),
+  completeUpload: (id: string) => api.post<{ id: string; name: string; mime: string; size: number }>(`/support/recharge-uploads/${id}/complete`, {}),
+  abortUpload: (id: string) => api.post<null>(`/support/recharge-uploads/${id}/abort`, {}),
+  fileUrl: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/support/recharge-files/${id}/url`, { action })
 };
 export interface PlanInput { name: string; description?: string | null; monthlyPrice: number; features: string[]; services: string[]; isActive: boolean }
 export type { MonthlyPlan };

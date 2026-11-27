@@ -7609,3 +7609,62 @@ export interface TaskDeletePreview {
 export interface TaskDeleteResult { deleted: true; taskId: string; title: string; subtasks: number; updates: number; dailyReports: number }
 export interface AiStudioTaskDeleteResult { deleted: true; taskId: string; title: string; updates: number; reports: number }
 export interface AdsAssignmentDeleteResult { deleted: true; id: string; title: string; memberParts: number }
+
+// ---------------------------------------------------------------------------
+// Support Recharges (migration 20270228000200)
+// ---------------------------------------------------------------------------
+export type RechargeKind = 'PANEL' | 'MESSAGE';
+export type RechargeStatus = 'PENDING' | 'VERIFIED' | 'COMPLETED' | 'REJECTED';
+export interface SupportRecharge {
+  id: string;
+  reference: string;
+  kind: RechargeKind;
+  customerName: string;
+  rechargeDate: string;
+  gstAmount: number;
+  gstDetails: string | null;
+  nonGstAmount: number;
+  nonGstDetails: string | null;
+  totalAmount: number;
+  status: RechargeStatus;
+  remarks: string | null;
+  statusNote: string | null;
+  statusAt: string | null;
+  statusByName: string | null;
+  createdById: string;
+  createdByName: string | null;
+  teamName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  screenshot: { id: string; name: string; mime: string; size: number } | null;
+  /** decided by the database for the signed-in person */
+  canEdit: boolean;
+  nextStatuses: RechargeStatus[];
+}
+export interface SupportRechargeSummary {
+  totalRecharges: number;
+  totalAmount: number;
+  totalGst: number;
+  totalNonGst: number;
+  pending: number;
+  verified: number;
+  completed: number;
+  rejected: number;
+}
+export interface SupportRechargeList {
+  items: SupportRecharge[];
+  total: number;
+  limit: number;
+  offset: number;
+  summary: SupportRechargeSummary;
+  role: 'SUPER_ADMIN' | 'HEAD' | 'LEAD' | 'MEMBER';
+  canCreate: boolean;
+}
+export interface RechargeUploadTicket {
+  attachment: { id: string; name: string; mime: string; size: number };
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
+}
