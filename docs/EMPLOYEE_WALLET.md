@@ -70,3 +70,19 @@ failure to notify never blocks Accounts or a withdrawal. Clicking one opens the 
   `earnings` has only three event types (`SALE_PAID`, `DEMO_COMPLETED`, `VISIT_COMPLETED`). A department that earns in another way needs its own change to `earnings`, not to the wallet.
 - **HR screen for the report and credits.** HR can read the report through the database function; a screen for HR (and HR entering credits) is a follow-up.
 - **Team Lead / Department Head views** of their team's wallets (see above).
+
+## Wallet PIN (migration `20270222000100_wallet_pin.sql`)
+Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
+- **First open:** the Wallet asks for a 6-digit PIN, entered twice. Not the same digit six times or a simple sequence (123456, 654321, 012345, 543210).
+- **Afterwards:** the PIN is entered once per sign-in. The unlock is kept for that sign-in session (the access token's `session_id`) for 15 minutes,
+  renewed while the Wallet is used; signing in again, or another device, asks again. **Lock wallet** ends it at once.
+- **Wrong PINs:** 5 lock the Wallet for 15 minutes (`WALLET_PIN_LOCKED` in the audit log).
+- **Change PIN:** the current PIN and the new one twice; other sign-ins must then enter the new PIN.
+- **Forgot PIN:** `POST /api/v1/wallet/pin/forgot` e-mails a one-time 8-character code (30 minutes, 5 tries, one use, at most one a minute). The person types it in
+  the Wallet with a new PIN. The code is made by `wallet_pin_reset_begin`, which only the API (service role) may call, so it never reaches a browser.
+- **Security:** the PIN and the code are stored only as bcrypt hashes (`pgcrypto`); the tables have no grants. `wallet_summary`, `wallet_transactions` and
+  `wallet_monthly` refuse with `WALLET_LOCKED` until the PIN was entered (`private.wallet_me()`), so the browser cannot skip the screen. Set, change, lock-out
+  and reset are audited, never with the PIN or code.
+- **The Managing Director** has no employee wallet and no PIN. Accounts' and HR's wallet screens (credits, report) are not behind a PIN.
+- **Not yet behind the PIN:** My Income and its withdrawals; they move into the Wallet in the next change and then share the same lock.
+- Tests: `supabase/tests/wallet_pin_test.sql`, the Wallet PIN block of `api_integration.test.ts`, the PIN section of `ui_wallet.test.mjs`.

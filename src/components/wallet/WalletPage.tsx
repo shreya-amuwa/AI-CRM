@@ -7,6 +7,7 @@ import { PageTitle } from '../layout/shell';
 import { WithdrawDialog } from '../income/WithdrawDialog';
 import { Empty, Notice, Section, Tile, TransactionList, dayText, timeText } from './walletParts';
 import { confirmAction } from '../feedback/AppFeedback';
+import { WalletPinGate } from './WalletPinGate';
 
 /**
  * The Wallet, in the side panel of every employee dashboard (20270207000100; docs/EMPLOYEE_WALLET.md). Every figure is read from the database for the
@@ -14,6 +15,9 @@ import { confirmAction } from '../feedback/AppFeedback';
  * adjustments are entered by Accounts and approved by a second person. Salary is shown as EXPECTED only until payroll is recorded in the CRM; it is never
  * part of what can be withdrawn.
  */
+/** The wallet behind its PIN (20270222000100): nothing below is loaded until the PIN was entered in this sign-in. */
+export const WalletPage: React.FC = () => <WalletPinGate><WalletContent /></WalletPinGate>;
+
 type Tab = 'overview' | 'earnings' | 'incentives' | 'salary' | 'withdrawals' | 'transactions';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' }, { id: 'earnings', label: 'Earnings' }, { id: 'incentives', label: 'Incentives' },
@@ -24,7 +28,7 @@ const PAGE = 20;
 const errText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 const money = (n: number | null | undefined) => (n == null ? 'Not recorded' : rupees(n));
 
-export const WalletPage: React.FC = () => {
+const WalletContent: React.FC = () => {
   const [tab, setTab] = useState<Tab>('overview');
   const [summary, setSummary] = useState<WalletSummary | null>(null);
   const [months, setMonths] = useState<WalletMonth[] | null>(null);

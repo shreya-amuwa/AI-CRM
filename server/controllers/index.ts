@@ -5,6 +5,7 @@ import type { PaymentInvoiceOutcome, PaymentOverview } from '../../shared/contra
 import { AppError } from '../http/errors.js';
 import type { Handler } from '../http/types.js';
 import { createServices } from '../services/index.js';
+import { walletPinForgot } from '../services/WalletPinService.js';
 import { welcomeEmailQuietly } from '../automations/welcomeDispatcher.js';
 
 const svc = (ctx: Parameters<Handler>[0]) => createServices(ctx.db);
@@ -482,7 +483,9 @@ export const payoutController = {
   slip: (async ctx => ok(await svc(ctx).payouts.slip(ctx.params.id))) as Handler,
   razorpayStatus: (async ctx => ok(svc(ctx).payouts.razorpayStatus())) as Handler,
   payViaRazorpay: (async ctx => ok(await svc(ctx).payouts.payViaRazorpay(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
-  checkRazorpay: (async ctx => ok(await svc(ctx).payouts.checkRazorpay(ctx.params.id))) as Handler
+  checkRazorpay: (async ctx => ok(await svc(ctx).payouts.checkRazorpay(ctx.params.id))) as Handler,
+  /** Wallet PIN: e-mail a one-time reset code to the signed-in employee (20270222000100). */
+  walletPinForgot: (async ctx => ok(await walletPinForgot(ctx.actor.id))) as Handler
 };
 
 // Deleting a Task module task (Team Lead / Department Head / Operations Head; the database decides)
