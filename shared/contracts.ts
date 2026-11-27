@@ -6459,7 +6459,8 @@ export interface AiStudioReportSummary {
 }
 export interface AiStudioReportHistoryEntry {
   id: string;
-  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED' | 'EDITED' | 'REJECTED' | 'SENT_TO_HR';
+  /** SENT_TO_HR (20270302000100): when it reached HR's AI Studio Performance. A rejection is a Team Lead RETURNED step whose toStatus is REJECTED_BY_TL. */
+  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED' | 'EDITED' | 'SENT_TO_HR';
   stage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   /** 20270214000100: what the Team Lead changed (field -> before / after) on an EDITED step. */
   changes?: Record<string, { from: string | null; to: string | null }> | null;

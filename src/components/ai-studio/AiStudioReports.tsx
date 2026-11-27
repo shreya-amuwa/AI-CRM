@@ -260,7 +260,7 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
               {r.history.map(h => (
                 <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
                   <div className="font-semibold text-slate-800">
-                    {h.action === 'SENT_TO_HR' ? 'Sent to HR' : h.action === 'REJECTED' ? 'Rejected by Team Lead' : h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'EDITED' ? 'Edited by the Team Lead' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
+                    {h.action === 'SENT_TO_HR' ? 'Sent to HR' : h.action === 'RETURNED' && h.toStatus === 'REJECTED_BY_TL' ? 'Rejected by Team Lead' : h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'EDITED' ? 'Edited by the Team Lead' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
                     <span className="font-normal text-slate-500"> · {h.actorName ?? 'Someone'} · {dateTimeText(h.createdAt)} · {AI_STUDIO_REPORT_STATUS_LABELS[h.toStatus]}</span>
                   </div>
                   {h.comment && <p className="text-slate-600 whitespace-pre-wrap">{h.comment}</p>}

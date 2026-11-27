@@ -17,7 +17,8 @@
 --        * a Team Lead approves a Team Member's report (the Department Head's step that follows is unchanged), or
 --        * the Department Head approves the report of a Team Member who has no Team Lead (that IS their approval), or
 --        * a Team Lead submits their own daily report (their team report; its review by the Department Head is unchanged).
---      A SENT_TO_HR history entry is written and the AI Studio Performance HR viewers are notified, in the same transaction. A report that is
+--      At commit it is recorded in ai_studio_report_hr_sends (one row per revision: the key makes it once) and shown in the report's history as
+--      "Sent to HR", and the AI Studio Performance HR viewers are notified. A report that is
 --      later returned / rejected stops showing as approved for HR (it keeps hr_sent_at as history).
 --   4. Who sees it: ai_studio_hr_viewers - HR employees the Super Admin names (e.g. Simran Kumari), nobody by default; other HR staff do not get
 --      access. The Super Admin keeps access. Every function below checks this; the tables stay closed to the browser.
@@ -41,9 +42,18 @@ create index if not exists ai_studio_daily_reports_hr_idx on public.ai_studio_da
 alter table public.ai_studio_daily_reports drop constraint if exists ai_studio_daily_reports_status_check;
 alter table public.ai_studio_daily_reports add constraint ai_studio_daily_reports_status_check
   check (status in ('DRAFT', 'SUBMITTED', 'PENDING_TL_APPROVAL', 'RETURNED_BY_TL', 'REJECTED_BY_TL', 'PENDING_DH_APPROVAL', 'RETURNED_BY_DH', 'APPROVED'));
-alter table public.ai_studio_report_events drop constraint if exists ai_studio_report_events_action_check;
-alter table public.ai_studio_report_events add constraint ai_studio_report_events_action_check
-  check (action in ('CREATED', 'SUBMITTED', 'RESUBMITTED', 'APPROVED', 'RETURNED', 'EDITED', 'REJECTED', 'SENT_TO_HR'));
+-- The history actions are NOT changed (an older migration that is run again re-adds its own list): a rejection is the Team Lead's RETURNED step whose
+-- result is REJECTED_BY_TL, and "Sent to HR" has its own record below, shown in the report's history.
+-- One row per report revision sent to HR: the primary key makes "sent once per revision" a database rule.
+create table if not exists public.ai_studio_report_hr_sends (
+  report_id uuid not null references public.ai_studio_daily_reports (id) on delete cascade,
+  revision integer not null,
+  status text not null,
+  sent_at timestamptz not null default clock_timestamp(),
+  primary key (report_id, revision)
+);
+alter table public.ai_studio_report_hr_sends enable row level security;
+revoke all on public.ai_studio_report_hr_sends from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 2. The word rule
@@ -161,10 +171,11 @@ declare
   v_body text := format('%s · %s%s', to_char(new.report_date, 'DD Mon YYYY'), private.ai_studio_team_label(v_lead),
                         case when new.revision > 1 then format(' · revision %s', new.revision) else '' end);
   x uuid;
+  v_rows integer;
 begin
-  insert into public.ai_studio_report_events (report_id, actor_id, actor_name, actor_role, action, stage, from_status, to_status, comment, revision)
-  values (new.id, null, 'AI CRM', null, 'SENT_TO_HR', null, old.status, new.status,
-          case when new.author_role = 'LEAD' then 'Team Lead report sent to HR (AI Studio Performance).' else 'Approved report sent to HR (AI Studio Performance).' end, new.revision);
+  insert into public.ai_studio_report_hr_sends (report_id, revision, status) values (new.id, new.revision, new.status) on conflict do nothing;
+  get diagnostics v_rows = row_count;
+  if v_rows = 0 then return null; end if;   -- this revision was already sent: nothing twice
   for x in select private.ai_studio_hr_viewer_ids() loop
     perform private.notify(x, case when new.author_role = 'LEAD' then 'AI_STUDIO_REPORT_TO_HR_LEAD' else 'AI_STUDIO_REPORT_TO_HR' end, v_title, v_body, 'ai_studio_report', new.id);
   end loop;
@@ -352,7 +363,8 @@ begin
            approved_at = case when p_decision = 'APPROVE' then now() else null end
      where id = r.id returning * into r;
   end if;
-  perform private.ai_studio_event(r, case p_decision when 'APPROVE' then 'APPROVED' when 'REJECT' then 'REJECTED' else 'RETURNED' end, v_stage, v_from, v_comment);
+  -- a rejection is recorded as the Team Lead's RETURNED step whose result is REJECTED_BY_TL (the history actions are unchanged)
+  perform private.ai_studio_event(r, case p_decision when 'APPROVE' then 'APPROVED' else 'RETURNED' end, v_stage, v_from, v_comment);
   perform private.write_audit('AI_STUDIO_REPORT_' || case p_decision when 'APPROVE' then 'APPROVED' when 'REJECT' then 'REJECTED' else 'RETURNED' end, 'ai_studio_report', r.id,
                               private.ai_studio_department(), null, jsonb_build_object('stage', v_stage, 'from', v_from, 'to', r.status, 'author', r.author_id));
 
@@ -446,10 +458,17 @@ begin
     'frozen', private.ai_studio_report_frozen(r),
     'work', v_work,
     'summary', case when v_work is not null then private.ai_studio_work_summary(v_work) end,
-    'history', coalesce((select jsonb_agg(jsonb_build_object('id', e.id, 'action', e.action, 'stage', e.stage, 'fromStatus', e.from_status, 'toStatus', e.to_status,
+    -- (20270302000100) with "Sent to HR" (its own record), in time order
+    'history', coalesce((select jsonb_agg(h.item order by h.at, h.seq) from (
+        select e.created_at as at, e.seq, jsonb_build_object('id', e.id, 'action', e.action, 'stage', e.stage, 'fromStatus', e.from_status, 'toStatus', e.to_status,
                                                                'comment', e.comment, 'actorName', e.actor_name, 'actorRole', e.actor_role, 'revision', e.revision,
-                                                               'createdAt', e.created_at, 'changes', e.changes) order by e.seq)
-                           from public.ai_studio_report_events e where e.report_id = r.id), '[]'::jsonb));
+                                                               'createdAt', e.created_at, 'changes', e.changes) as item
+          from public.ai_studio_report_events e where e.report_id = r.id
+        union all
+        select s.sent_at, null::bigint, jsonb_build_object('id', r.id::text || ':hr:' || s.revision, 'action', 'SENT_TO_HR', 'stage', null, 'fromStatus', null, 'toStatus', s.status,
+                                       'comment', 'Sent to HR (AI Studio Performance).', 'actorName', 'AI CRM', 'actorRole', null, 'revision', s.revision,
+                                       'createdAt', s.sent_at, 'changes', null)
+          from public.ai_studio_report_hr_sends s where s.report_id = r.id) h), '[]'::jsonb));
 end $$;
 revoke all on function private.ai_studio_report_detail(public.ai_studio_daily_reports) from public, anon;
 grant execute on function private.ai_studio_report_detail(public.ai_studio_daily_reports) to authenticated, service_role;

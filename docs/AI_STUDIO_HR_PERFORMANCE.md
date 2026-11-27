@@ -38,8 +38,11 @@ Management are used.
 
 * **Only approved reports reach HR.** A report that the Department Head later returns stops showing as approved to HR (`hr_sent_at` stays as history).
   When it is corrected and approved again, it is sent once more (once per revision).
-* **No duplicates.** Each decision locks the report row, and a second Approve is refused (409). Sending to HR is done by a database trigger,
-  once per revision. Each notification is written once per event.
+* **No duplicates.** Each decision locks the report row, and a second Approve is refused (409). Sending to HR is done by a database trigger.
+  It is recorded in `ai_studio_report_hr_sends`, whose primary key (report, revision) makes it once per revision; the report's history shows it
+  as "Sent to HR". Each notification is written once per event.
+* **History actions are unchanged.** A rejection is the Team Lead's RETURNED step whose result is `REJECTED_BY_TL`. That way an older
+  migration that is run again (it re-adds its own list of actions) still works.
 
 ## The Daily Work Description: 10 to 150 words
 

@@ -22,8 +22,11 @@ create or replace function test.hrow(p_name text) returns public.ai_studio_daily
   select * from public.ai_studio_daily_reports where id = (select id from hp_r where name = p_name) $$;
 create or replace function test.hnotes(p_person text, p_type text, p_report uuid) returns bigint language sql stable security definer set search_path = '' as $$
   select count(*) from public.notifications where recipient_id = test.id(p_person) and type = p_type and entity_id = p_report $$;
+-- the report's history as people read it (SENT_TO_HR comes from its own record), and the rows HR received
 create or replace function test.hevents(p_report uuid, p_action text) returns bigint language sql stable security definer set search_path = '' as $$
-  select count(*) from public.ai_studio_report_events where report_id = p_report and action = p_action $$;
+  select case when p_action = 'SENT_TO_HR' then (select count(*) from public.ai_studio_report_hr_sends where report_id = p_report)
+              when p_action = 'REJECTED' then (select count(*) from public.ai_studio_report_events where report_id = p_report and action = 'RETURNED' and to_status = 'REJECTED_BY_TL')
+              else (select count(*) from public.ai_studio_report_events where report_id = p_report and action = p_action) end $$;
 grant execute on all functions in schema test to anon, authenticated, service_role;
 delete from public.ai_studio_daily_reports where report_date between test.hd(-24) and test.hd(-20) and author_id in (test.id('ai_tm1b'), test.id('ai_tm2a'), test.id('ai_tl1'));
 
@@ -107,6 +110,11 @@ reset role;
 select test.check((test.hrow('m1')).tl_reviewed_by = test.id('ai_tl1') and (test.hrow('m1')).tl_reviewed_at is not null and (test.hrow('m1')).hr_sent_at is not null
                   and (test.hrow('m1')).hr_sent_revision = 1, 'the approver and the time are recorded, and it is sent to HR');
 select test.check(test.hevents(test.hr('m1'), 'SENT_TO_HR') = 1 and test.hevents(test.hr('m1'), 'APPROVED') = 1, 'the history says approved, then sent to HR');
+set role authenticated;
+select test.login('ai_tm1b');
+select test.check((ai_studio_report_get(test.hr('m1')) -> 'history' -> -1 ->> 'action') = 'SENT_TO_HR' and (ai_studio_report_get(test.hr('m1')) -> 'history' -> -2 ->> 'action') = 'APPROVED',
+  'the member reads it in order: approved by the Team Lead, then sent to HR');
+reset role;
 select test.check(test.hnotes('hrp_viewer', 'AI_STUDIO_REPORT_TO_HR', test.hr('m1')) = 1, 'the named HR employee is notified');
 select test.check(test.hnotes('hr_head', 'AI_STUDIO_REPORT_TO_HR', test.hr('m1')) = 0, 'another HR employee is not');
 select test.check(test.hnotes('ai_tm1b', 'AI_STUDIO_REPORT_TL_APPROVED', test.hr('m1')) = 1, 'the member is told it was approved');
