@@ -28,6 +28,15 @@ for (const t of ['SALES', 'SUPPORT']) {
     && noticePublishSchema.safeParse({ ...base, audienceType: t, departmentIds: [id] }).success
     && noticePublishSchema.safeParse({ ...base, audienceType: t, departmentIds: [id], employeeIds: [id2] }).success, `${t.toLowerCase()}: one department, team members optional`);
 }
+// All Sales / Support Departments (20270225000100): asked for explicitly, never together with one department or ticked people, only for Sales / Support
+for (const t of ['SALES', 'SUPPORT']) {
+  check(noticePublishSchema.safeParse({ ...base, audienceType: t, allDepartments: true }).success
+    && !noticePublishSchema.safeParse({ ...base, audienceType: t, allDepartments: true, departmentIds: [id] }).success
+    && !noticePublishSchema.safeParse({ ...base, audienceType: t, allDepartments: true, employeeIds: [id2] }).success
+    && !noticePublishSchema.safeParse({ ...base, audienceType: t, allDepartments: false }).success, `${t.toLowerCase()}: all departments only when asked, and alone`);
+}
+check(!noticePublishSchema.safeParse({ ...base, allDepartments: true }).success && !noticePublishSchema.safeParse({ ...base, audienceType: 'DEPARTMENT', departmentIds: [id], allDepartments: true }).success,
+  '"all departments" is refused for the other audiences');
 check(!noticePublishSchema.safeParse({ ...base, priority: 'CRITICAL' }).success && noticePublishSchema.safeParse({ ...base, priority: 'URGENT' }).success, 'Normal / Important / Urgent');
 check(!noticePublishSchema.safeParse({ ...base, title: 'Hi' }).success && !noticePublishSchema.safeParse({ ...base, body: '' }).success, 'a title and a description');
 check(!noticePublishSchema.safeParse({ ...base, publishAt: '2026-12-01T10:00:00+05:30', expiresAt: '2026-11-30T10:00:00+05:30' }).success

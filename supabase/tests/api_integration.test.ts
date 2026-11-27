@@ -13473,6 +13473,28 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- Notice Board: "All Sales Departments" / "All Support Departments" (migration 20270225000100) ---
+{
+  const key = () => `nax-${crypto.randomUUID().slice(0, 18)}`;
+  const body = { body: 'For every Sales department.', category: 'GENERAL', audienceType: 'SALES' };
+  let r = await api('sa', 'POST', '/notices', { ...body, title: 'NAX All Sales', allDepartments: true, clientRequestId: key() });
+  const expected = (await db.query(`select count(distinct m.profile_id)::int as n from private.notice_division_departments('SALES') dd
+                                      cross join lateral private.notice_division_members(dd.department_id, 'SALES') m where m.profile_id <> $1`, [(await db.query(`select id from public.profiles where role = 'SUPER_ADMIN' order by created_at limit 1`)).rows[0].id])).rows[0].n;
+  check(r.status === 201 && r.json.data.audience.type === 'SALES' && r.json.data.audience.departments.length === 0 && r.json.data.notified === expected && expected > 0,
+    'notice API: All Sales Departments reaches every Sales employee of every Sales department, once each', { status: r.status, notified: r.json.data?.notified, expected });
+  const noticeId = r.json.data.id;
+  const support = (await db.query(`select count(*)::int as n from public.company_notice_recipients r where r.notice_id = $1
+                                     and r.profile_id not in (select m.profile_id from private.notice_division_departments('SALES') dd cross join lateral private.notice_division_members(dd.department_id, 'SALES') m)`, [noticeId])).rows[0].n;
+  check(support === 0, 'notice API: nobody outside Sales (no Support-only person) receives it', support);
+  r = await api('sa', 'POST', '/notices', { ...body, title: 'NAX Nothing chosen', clientRequestId: key() });
+  check(r.status === 422, 'notice API: a Sales notice with no department and no "all" is refused', r);
+  r = await api('sa', 'POST', '/notices', { ...body, title: 'NAX Company all', audienceType: 'COMPANY', allDepartments: true, clientRequestId: key() });
+  check(r.status === 422, 'notice API: "all departments" is refused for another audience', r);
+  r = await api('a', 'POST', '/notices', { ...body, title: 'NAX Not allowed', allDepartments: true, clientRequestId: key() });
+  check(r.status === 403, 'notice API: a Team Member still cannot publish', r);
+  await db.query(`delete from public.company_notices where title like 'NAX %'`);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

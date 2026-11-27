@@ -3809,13 +3809,17 @@ export const noticePublishSchema = z.object({
   attachmentIds: z.array(uuidSchema).max(5, 'Attach at most 5 files.').default([]),
   publishAt: noticeTime,
   expiresAt: noticeTime,
-  clientRequestId: z.string().trim().min(8).max(80)
+  clientRequestId: z.string().trim().min(8).max(80),
+  // (20270225000100) "All Sales Departments" / "All Support Departments": a Sales / Support notice for every department of that function
+  allDepartments: z.boolean().optional()
 }).strict()
   .refine(v => v.audienceType !== 'DEPARTMENT' || v.departmentIds.length > 0, { message: 'Choose at least one department.', path: ['departmentIds'] })
   .refine(v => v.audienceType !== 'ROLE' || v.roles.length > 0, { message: 'Choose at least one designation.', path: ['roles'] })
   .refine(v => v.audienceType !== 'EMPLOYEES' || v.employeeIds.length > 0, { message: 'Choose at least one employee.', path: ['employeeIds'] })
-  .refine(v => v.audienceType !== 'SALES' || v.departmentIds.length === 1, { message: 'Choose one Sales department.', path: ['departmentIds'] })
-  .refine(v => v.audienceType !== 'SUPPORT' || v.departmentIds.length === 1, { message: 'Choose one Support department.', path: ['departmentIds'] })
+  .refine(v => !v.allDepartments || v.audienceType === 'SALES' || v.audienceType === 'SUPPORT', { message: '"All departments" is only for a Sales or Support notice.', path: ['departmentIds'] })
+  .refine(v => !v.allDepartments || (v.departmentIds.length === 0 && v.employeeIds.length === 0), { message: 'Send to all departments, or choose one department (not both).', path: ['departmentIds'] })
+  .refine(v => v.audienceType !== 'SALES' || v.allDepartments || v.departmentIds.length === 1, { message: 'Choose one Sales department, or All Sales Departments.', path: ['departmentIds'] })
+  .refine(v => v.audienceType !== 'SUPPORT' || v.allDepartments || v.departmentIds.length === 1, { message: 'Choose one Support department, or All Support Departments.', path: ['departmentIds'] })
   .refine(v => !v.expiresAt || new Date(v.expiresAt).getTime() > new Date(v.publishAt ?? Date.now()).getTime(), { message: 'The expiry is after the publish date.', path: ['expiresAt'] });
 export const noticeUpdateSchema = z.object({
   title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).').optional(),

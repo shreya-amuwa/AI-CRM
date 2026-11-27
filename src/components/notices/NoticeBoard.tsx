@@ -33,9 +33,12 @@ const AUDIENCE_LABEL: Record<NoticeAudienceType, string> = {
 };
 const DIVISION_LABEL = { SALES: 'Sales', SUPPORT: 'Support' } as const;
 const isDivision = (a: NoticeAudienceType): a is 'SALES' | 'SUPPORT' => a === 'SALES' || a === 'SUPPORT';
+// (20270225000100) the dropdown's "All Sales / Support Departments" choice; stored as a Sales / Support notice with no department
+const ALL_DIVISION = '__all__';
 const audienceText = (n: CompanyNotice) => n.audience.type === 'COMPANY' ? 'Entire company'
   : n.audience.type === 'DEPARTMENT' ? `Departments: ${n.audience.departmentNames.join(', ')}`
   : n.audience.type === 'ROLE' ? `Designations: ${n.audience.roles.join(', ').replace(/_/g, ' ').toLowerCase()}${n.audience.departmentNames.length ? ` (${n.audience.departmentNames.join(', ')})` : ''}`
+  : isDivision(n.audience.type) && n.audience.departments.length === 0 ? `All ${DIVISION_LABEL[n.audience.type]} Departments`
   : isDivision(n.audience.type) ? `${DIVISION_LABEL[n.audience.type]}: ${n.audience.departmentNames.join(', ')}${n.audience.employees.length ? ` (${n.audience.employees.length} selected team member${n.audience.employees.length === 1 ? '' : 's'})` : ` (all ${DIVISION_LABEL[n.audience.type]} employees)`}`
   : `${n.audience.employees.length} selected employee${n.audience.employees.length === 1 ? '' : 's'}`;
 
@@ -324,6 +327,7 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
   }, [options.employees, empSearch, depts]);
   const divDepartments = audience === 'SALES' ? options.sales ?? [] : audience === 'SUPPORT' ? options.support ?? [] : [];
   const divSelected = divDepartments.find(d => d.id === divDept) ?? null;
+  const divAll = isDivision(audience) && divDept === ALL_DIVISION;
   const pickAudience = (a: NoticeAudienceType) => { setAudience(a); setDivDept(''); setDivWhole(true); setDivEmps([]); };
 
   const submit = async (ev: React.FormEvent) => {
@@ -332,9 +336,10 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
     const division = isDivision(audience);
     const payload = {
       title: title.trim(), body: body.trim(), category, priority, audienceType: audience,
-      departmentIds: audience === 'DEPARTMENT' || audience === 'ROLE' ? depts : division ? (divDept ? [divDept] : []) : [],
+      departmentIds: audience === 'DEPARTMENT' || audience === 'ROLE' ? depts : division && divDept && !divAll ? [divDept] : [],
       roles: audience === 'ROLE' ? roles : [],
-      employeeIds: audience === 'EMPLOYEES' ? emps : division && !divWhole ? divEmps : [],
+      employeeIds: audience === 'EMPLOYEES' ? emps : division && !divAll && !divWhole ? divEmps : [],
+      ...(divAll ? { allDepartments: true } : {}),
       attachmentIds: files.ids, publishAt: publishAt ? new Date(publishAt).toISOString() : null, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       clientRequestId: requestId
     };
@@ -420,9 +425,20 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
                   <select id="notice-division-dept" className={`${selectCls} w-full`} value={divDept} data-testid="division-department"
                     onChange={e => { setDivDept(e.target.value); setDivWhole(true); setDivEmps([]); }} aria-invalid={!!errors.departmentIds}>
                     <option value="">Choose a {DIVISION_LABEL[audience]} department…</option>
-                    {divDepartments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    {divDepartments.length > 0 ? (
+                      <option value={ALL_DIVISION} data-testid="division-all">★ All {DIVISION_LABEL[audience]} Departments ({divDepartments.length})</option>
+                    ) : null}
+                    <optgroup label={`Or one ${DIVISION_LABEL[audience]} department`}>
+                      {divDepartments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </optgroup>
                   </select>
                 </Field>
+                {divAll ? (
+                  <p className="text-xs text-slate-600 rounded-xl bg-indigo-50 border border-indigo-100 px-3 py-2" data-testid="division-all-summary">
+                    Every {DIVISION_LABEL[audience]} employee of every {DIVISION_LABEL[audience]} department receives it: {divDepartments.map(d => d.name).join(', ')}.
+                    A department added before the notice goes out is included. Nobody receives it twice.
+                  </p>
+                ) : null}
                 {divDepartments.length === 0 ? <p className="text-xs text-slate-500">No department has a {DIVISION_LABEL[audience]} team yet.</p> : null}
                 {divSelected ? (
                   <div className="space-y-2">

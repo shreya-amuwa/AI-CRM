@@ -38,7 +38,8 @@ const make = (x: any) => {
 // the recipients of a notice: everyone in its audience but its publisher
 const recipients = (n: any) => PEOPLE.filter(p => p.id !== n.publisherId && (n.audience.type === 'COMPANY' || (n.audience.type === 'DEPARTMENT' && n.audience.departments.includes(p.departmentId))
   || (n.audience.type === 'EMPLOYEES' && n.audience.employees.includes(p.id))
-  || ((n.audience.type === 'SALES' || n.audience.type === 'SUPPORT') && (DIVISIONS[n.audience.type].find(d => d.id === n.audience.departments[0])?.employees ?? []).some(e => e.id === p.id)
+  // like the database (20270225000100): no department = every department of that function ("All Sales / Support Departments")
+  || ((n.audience.type === 'SALES' || n.audience.type === 'SUPPORT') && DIVISIONS[n.audience.type].filter(d => n.audience.departments.length === 0 || d.id === n.audience.departments[0]).some(d => d.employees.some(e => e.id === p.id))
       && (n.audience.employees.length === 0 || n.audience.employees.includes(p.id)))));
 const view = (n: any, full = false) => {
   const me = w.__profile.id;

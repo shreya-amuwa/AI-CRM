@@ -235,7 +235,8 @@ try {
     for (const a of ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES', 'SALES', 'SUPPORT']) check(await pg.isVisible(`[data-testid="audience-${a}"]`), `${who}: the ${a} audience is offered`);
     await pg.click('[data-testid="audience-SALES"]');
     const salesOpts = await pg.$$eval('[data-testid="division-department"] option', os => os.map(o => o.textContent));
-    check(JSON.stringify(salesOpts.slice(1)) === JSON.stringify(['Wabastore']), `${who}: the Sales dropdown lists only the Sales departments`, salesOpts);
+    // (20270225000100) "All Sales Departments" first, then each Sales department
+    check(JSON.stringify(salesOpts.slice(1)) === JSON.stringify(['★ All Sales Departments (1)', 'Wabastore']), `${who}: the Sales dropdown offers All Sales Departments, then only the Sales departments`, salesOpts);
     await pg.selectOption('[data-testid="division-department"]', { label: 'Wabastore' });
     const salesPeople = await pg.innerText('[data-testid="division-employees"]');
     check(/Priya Member/.test(salesPeople) && !/Ravi Member/.test(salesPeople) && !/Anita/.test(salesPeople), `${who}: Wabastore Sales shows only its Sales employees`, salesPeople);
@@ -255,7 +256,7 @@ try {
   await page.fill('#notice-body', 'The December targets are in your dashboard.');
   await page.click('[data-testid="audience-SALES"]');
   await page.click('[data-testid="publish-notice"]');
-  await page.waitForSelector('text=Choose one Sales department.');
+  await page.waitForSelector('text=Choose one Sales department, or All Sales Departments.');
   check(!(await page.evaluate(() => window.__calls.some(c => c.method === 'POST' && c.path === '/api/v1/notices'))), 'a Sales notice without a department is not sent');
   await page.selectOption('[data-testid="division-department"]', { label: 'Wabastore' });
   await page.click('[data-testid="division-selected"]');
@@ -279,6 +280,23 @@ try {
   await page.waitForFunction(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').length === 2);
   const supportSent = await page.evaluate(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').map(c => c.body)[1]);
   check(supportSent.audienceType === 'SUPPORT' && supportSent.employeeIds.length === 1, 'the request: Support, one department, the ticked team member', supportSent);
+  // All Sales Departments: no single department and no ticked people are sent, only the explicit "all" choice
+  await page.fill('#notice-title', 'All Sales: new price list');
+  await page.fill('#notice-body', 'The new price list applies from Monday in every Sales department.');
+  await page.click('[data-testid="audience-SALES"]');
+  await page.selectOption('[data-testid="division-department"]', { label: '★ All Sales Departments (1)' });
+  check(await page.isVisible('[data-testid="division-all-summary"]') && !(await page.isVisible('[data-testid="division-employees"]')),
+    'All Sales Departments: a summary is shown and no team-member list (it is every Sales employee)');
+  await page.click('[data-testid="publish-notice"]');
+  await page.waitForFunction(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').length === 3);
+  const allSent = await page.evaluate(() => window.__calls.filter(c => c.method === 'POST' && c.path === '/api/v1/notices').map(c => c.body)[2]);
+  check(allSent.audienceType === 'SALES' && allSent.allDepartments === true && allSent.departmentIds.length === 0 && allSent.employeeIds.length === 0,
+    'the request: Sales, all departments, nobody ticked', allSent);
+  await page.click('[data-testid="my-notices"] [data-testid="notice-card"]:has-text("All Sales: new price list")');
+  await page.waitForSelector('[data-testid="notice-dialog"]');
+  check(/All Sales Departments/.test(await page.innerText('[data-testid="notice-dialog"]')), 'the publisher sees "All Sales Departments" as the audience');
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('[data-testid="notice-dialog"]', { state: 'detached' }).catch(() => undefined);
   await page.click('[data-testid="my-notices"] [data-testid="notice-card"]:has-text("Sales targets for December")');
   await page.waitForSelector('[data-testid="notice-dialog"]');
   check(/Sales: Wabastore \(all Sales employees\)/.test(await page.innerText('[data-testid="notice-dialog"]')), 'the publisher sees who a Sales notice was for');

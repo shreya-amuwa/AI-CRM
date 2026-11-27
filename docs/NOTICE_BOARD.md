@@ -94,6 +94,18 @@ Migration `20270202000100_notice_board_restricted_popup.sql` (after `20270131000
 - **Who reads it.** Only its recipients, its publisher and the Super Admin. The other publishers see a whole-team notice in *All company notices* like a department notice; a notice for ticked team members only is, like *Selected employees*, not shown to them (`notice_visible`, `notice_receipts`).
 - **Tests:** `supabase/tests/notice_sales_support_test.sql`, the "notice Sales/Support API" checks of `api_integration.test.ts`, and the Sales / Support part of `ui_notice_board.test.mjs`.
 
+## All Sales / All Support Departments (migration `20270225000100_notice_all_sales_support_departments.sql`)
+
+* Send Notice > **Sales** (or **Support**) > department: the first choice is **★ All Sales Departments** (**★ All Support Departments**), with the number of
+  departments; the single departments follow under "Or one Sales department". Choosing one department works exactly as before.
+* **All** means every Sales (Support) employee of every Sales (Support) department, the same people as a one-department notice for each of them. The
+  departments are read from the database (a Sales / Support team or side), when the notice is released: a department added before a scheduled
+  notice goes out is included. A Support-only person never receives a Sales notice and the reverse; somebody in several of them gets it once.
+* Sent as `audienceType: SALES|SUPPORT, allDepartments: true` with no department and no ticked people; stored as that type with no department.
+  An empty choice **without** `allDepartments` is still refused, so nobody reaches every department by forgetting to pick one. The database checks
+  all of this again (`notice_publish`).
+* The notice reads **All Sales Departments** / **All Support Departments** where its audience is shown; editing keeps the audience.
+
 ## API
 
 | Route | Who / what |
