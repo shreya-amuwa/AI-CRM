@@ -11,6 +11,7 @@ import { TaskTracker } from '../TaskTracker';
 import { TaskAssignPanel, type AssignValues } from '../TaskAssignPanel';
 import type { PickerPerson } from '../PeoplePicker';
 import { useTaskWorkspace } from '../useTaskWorkspace';
+import { TaskCardDelete } from '../TaskCardDelete';
 
 type Filter = 'all' | 'progress' | 'completed' | 'overdue';
 export const HeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = props => {
@@ -83,7 +84,7 @@ const DepartmentHeadAssign: React.FC<{ data: WorkTaskData; query?: string }> = (
         </div>
       </Card>
 
-      <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+      <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()} deletable={data.deletable}
         title="Task tracker" emptyHint="Tasks you assign appear here with their progress." />
 
       <section aria-label="Assigned tasks" className="space-y-3">
@@ -143,7 +144,10 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData; ws: ReturnTyp
             {toMember ? 'Team member' : 'Team lead'}: <strong className="text-slate-700">{nameOf(data.people, task.assigneeId)}</strong> · <DueLabel task={task} />
           </p>
         </div>
-        <StatusPill status={task.status} />
+        <span className="flex items-center gap-2">
+          {data.deletable.has(task.id) && <TaskCardDelete task={task} assigneeName={nameOf(data.people, task.assigneeId)} />}
+          <StatusPill status={task.status} />
+        </span>
       </div>
       <div className="mt-3 flex items-center gap-3">
         <div className="flex-1">
@@ -173,7 +177,7 @@ const LeadTaskCard: React.FC<{ task: WorkTask; data: WorkTaskData; ws: ReturnTyp
               <li key={c.id} className="p-3 text-[13px]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-slate-900">{nameOf(data.people, c.assigneeId)}</span>
-                  <span className="flex items-center gap-2"><PriorityPill priority={c.priority} /><StatusPill status={c.status} /></span>
+                  <span className="flex items-center gap-2"><PriorityPill priority={c.priority} /><StatusPill status={c.status} />{data.deletable.has(c.id) && <TaskCardDelete task={c} assigneeName={nameOf(data.people, c.assigneeId)} />}</span>
                 </div>
                 <p className="mt-1 text-slate-700">{c.assignmentNote || <span className="text-slate-500">The whole task</span>}</p>
                 <div className="mt-1.5 flex items-center gap-2">

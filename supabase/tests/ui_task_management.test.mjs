@@ -375,6 +375,51 @@ try {
   const tb = await tl2.getByRole('dialog').boundingBox();
   check(tb.width >= 1280 * 0.85, 'it is just as large on the Team Lead page', tb);
 
+  // ================= Delete on the task cards (20270225000100): only where the server said so, the same confirmation, lists reload at once
+  const tl3 = await ctx.newPage();
+  tl3.on('pageerror', e => errors.push(String(e)));
+  const apiCalls = [];
+  await tl3.route('**/api/v1/work-tasks/**', async route => {
+    const req = route.request();
+    apiCalls.push(`${req.method()} ${new URL(req.url()).pathname}`);
+    const id = new URL(req.url()).pathname.split('/')[4];
+    if (req.method() === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { taskId: id, title: 'x', status: 'IN_PROGRESS', assigneeName: 'Avantika Gaikwad', canDelete: true, reason: null, subtasks: 1, updates: 2, dailyReports: 0 } }) });
+    }
+    // the delete: the row leaves the table, as the database does
+    await tl3.evaluate(tid => { const t = window.__tables.work_tasks; t.splice(t.findIndex(r => r.id === tid), 1); }, id);
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: { deleted: true, taskId: id, title: 'x', subtasks: 1, updates: 2, dailyReports: 0 } }) });
+  });
+  await tl3.goto(base);
+  await tl3.evaluate(([rows, ppl]) => {
+    window.__profile = { id: 'lead', role: 'TEAM_HEAD', teamId: 't' }; window.__state.viewer = 'manager'; window.__state.deletable = new Set(['m1']);
+    window.__tables.work_tasks.push(...rows); window.__tables.profiles.push(...ppl); window.mountLead();
+  }, [[dbTask('m1', 'Member task from the head', { assignee_id: 'me', assigned_by: 'boss' }), dbTask('m2', 'Another team task', { assignee_id: 'other', assigned_by: 'boss' })],
+      [...profiles, { id: 'lead', full_name: 'Lena Lead', role: 'TEAM_HEAD', team_id: 't', department_id: 'd', status: 'ACTIVE', position: 'Team Lead' }, { id: 'other', full_name: 'Omar Other', role: 'TEAM_MEMBER', team_id: 'x', department_id: 'd', status: 'ACTIVE', position: null }]]);
+  await tl3.getByRole('button', { name: 'Open Member task from the head' }).waitFor();
+  check(await countCalls(tl3, 'work_tasks_deletable') === 1 && (await lastCall(tl3, 'work_tasks_deletable')).p_ids.length === 2,
+    'one deletable check for the whole list, not one request per card');
+  check(await tl3.getByRole('button', { name: 'Delete task: Member task from the head' }).isVisible(), 'the Delete option is right on the eligible task card');
+  check(await tl3.getByRole('button', { name: 'Delete task: Another team task' }).count() === 0, 'and hidden on a card the server did not allow');
+  await tl3.getByRole('button', { name: 'Delete task: Member task from the head' }).click();
+  const confirmBox = tl3.getByRole('alertdialog').or(tl3.getByRole('dialog')).filter({ hasText: 'Delete this task?' });
+  await confirmBox.waitFor();
+  const confirmText = await confirmBox.innerText();
+  check(/Task: Member task from the head/.test(confirmText) && /Assigned to: Avantika Gaikwad/.test(confirmText) && /1 sub-task, 2 progress updates/.test(confirmText),
+    'the existing confirmation names the task, the assignee and what goes with it', confirmText);
+  check(await tl3.getByRole('dialog', { name: 'Member task from the head' }).count() === 0, 'the click did not open the task workspace');
+  check(!apiCalls.some(c => c.startsWith('DELETE')), 'nothing is deleted before the confirmation');
+  await confirmBox.getByRole('button', { name: 'Keep task' }).click();
+  check(!apiCalls.some(c => c.startsWith('DELETE')) && await tl3.getByRole('button', { name: 'Open Member task from the head' }).isVisible(), 'Keep task cancels: nothing deleted');
+  await tl3.getByRole('button', { name: 'Delete task: Member task from the head' }).click();
+  await confirmBox.waitFor();
+  await confirmBox.getByRole('button', { name: 'Delete task' }).click();
+  await tl3.getByText('Task deleted: Member task from the head').waitFor();
+  check(apiCalls.filter(c => c === 'DELETE /api/v1/work-tasks/m1').length === 1, 'the existing delete API is called once');
+  await tl3.getByRole('button', { name: 'Open Member task from the head' }).waitFor({ state: 'detached' });
+  check(await countCalls(tl3, 'work_tasks_deletable') >= 2 && await tl3.getByRole('button', { name: 'Open Another team task' }).isVisible(),
+    'the list reloads at once: the deleted card is gone, the others stay');
+
   check(errors.length === 0, 'no script errors', errors);
   console.log(`=== ${passed} TASK MANAGEMENT BROWSER CHECKS PASSED ===`);
 } finally {

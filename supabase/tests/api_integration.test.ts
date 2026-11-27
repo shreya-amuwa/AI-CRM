@@ -13245,8 +13245,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     check(r.status === 403, 'task deletion: a Team Member\'s direct API call is rejected (403)', r);
     r = await api('tdOther', 'DELETE', `/work-tasks/${wt.id}`);
     check(r.status === 403 || r.status === 404, 'task deletion: another Team Lead cannot delete it', r);
-    r = await api('sa', 'DELETE', `/work-tasks/${wt.id}`);
-    check(r.status === 403, 'task deletion: the Super Admin\'s access is unchanged (403)', r);
+    // 20270225000100: the Super Admin heads AI Studio and may delete its tasks (this one is kept for the Team Lead below; the full rules are in the block at the end)
+    r = await api('sa', 'GET', `/work-tasks/${wt.id}/delete-preview`);
+    check(r.status === 200 && r.json.data.canDelete === true, 'task deletion: the Super Admin, as AI Studio\'s Department Head, may delete an AI Studio task', r);
     r = await api('tdLead', 'DELETE', '/work-tasks/not-a-uuid');
     check(r.status === 422 || r.status === 400, 'task deletion: a malformed id is refused before the database', r);
     r = await api('tdLead', 'GET', `/work-tasks/${wt.id}/delete-preview`);
@@ -13470,6 +13471,62 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   } finally {
     mailMock.close();
     for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'AUTOMATION_DISPATCH_SECRET']) delete process.env[k];
+  }
+}
+
+// --- Deleting an assigned task by team and department (migration 20270225000100) ---
+{
+  const { rows: [salesTeam] } = await db.query(`select t.id, t.department_id from public.teams t join public.departments d on d.id = t.department_id
+                                                 where d.slug = 'wabastore' and t.division = 'SALES' order by t.created_at limit 1`);
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const tlA = await mkUser('tdhLeadA', 'api.tdh.lead.a@example.com', 'API TDH Lead A', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: salesTeam.id });
+  const tlB = await mkUser('tdhLeadB', 'api.tdh.lead.b@example.com', 'API TDH Lead B', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: salesTeam.id });
+  const memA = await mkUser('tdhMemA', 'api.tdh.mem.a@example.com', 'API TDH Member A', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: salesTeam.id });
+  const memB = await mkUser('tdhMemB', 'api.tdh.mem.b@example.com', 'API TDH Member B', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: salesTeam.id });
+  const aiMem = await mkUser('tdhAiMem', 'api.tdh.ai.mem@example.com', 'API TDH AI Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [tlA, memA]);
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [tlB, memB]);
+  const mkTask = async (title: string, by: string, to: string, team = salesTeam) => (await db.query(
+    `insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id) values ($1, $2, $3, $4, $5) returning id`, [team.department_id, team.id, title, by, to])).rows[0].id as string;
+  try {
+    // the Team Lead: their own member's tasks, whoever gave them; nobody else's
+    const fromSa = await mkTask('API TDH from the Super Admin', sa.id, memA);
+    const fromOther = await mkTask('API TDH from another lead', tlB, memA);
+    const otherTeam = await mkTask('API TDH other team', sa.id, memB);
+    let r = await api('tdhLeadA', 'GET', `/work-tasks/${fromSa}/delete-preview`);
+    check(r.status === 200 && r.json.data.canDelete === true, 'task deletion by team: the Team Lead may delete a task the Super Admin gave their member', r);
+    r = await api('tdhLeadB', 'DELETE', `/work-tasks/${fromSa}`);
+    check(r.status === 403 || r.status === 404, 'task deletion by team: another Team Lead of the department cannot delete it (rejected by the server)', r);
+    r = await api('tdhLeadA', 'DELETE', `/work-tasks/${fromSa}`);
+    check(r.status === 200 && r.json.data.deleted === true, 'task deletion by team: the Team Lead deletes it', r);
+    r = await api('tdhLeadA', 'DELETE', `/work-tasks/${fromOther}`);
+    check(r.status === 200 && r.json.data.deleted === true, 'task deletion by team: the Team Lead deletes a task another Team Lead gave their member', r);
+    r = await api('tdhLeadA', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 403 || r.status === 404, 'task deletion by team: the Team Lead cannot delete another Team Lead\'s team task, even by its id', r);
+    r = await api('tdhMemB', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 403, 'task deletion by team: a Team Member\'s direct API call is still rejected (403)', r);
+    // the Super Admin: AI Studio only
+    r = await api('sa', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 403, 'task deletion by team: the Super Admin cannot delete a Sales task (403)', r);
+    const aiTask = await mkTask('API TDH AI Studio task', tlA, aiMem, aiTeam);
+    r = await api('sa', 'DELETE', `/work-tasks/${aiTask}`);
+    check(r.status === 200 && r.json.data.deleted === true, 'task deletion by team: the Super Admin deletes an AI Studio task, whoever gave it', r);
+    r = await api('tdhLeadB', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 200, 'task deletion by team: the member\'s own Team Lead deletes the task the Super Admin gave', r);
+    const left = (await db.query(`select count(*)::int n from public.work_tasks where title like 'API TDH %'`)).rows[0].n;
+    check(left === 0, 'task deletion by team: exactly the allowed deletes happened', left);
+    const audited = (await db.query(`select count(*)::int n from public.audit_logs where action = 'TASK_DELETED' and metadata #>> '{task,title}' like 'API TDH %'`)).rows[0].n;
+    check(audited === 4, 'task deletion by team: every delete is in the audit log', audited);
+  } finally {
+    await db.query(`delete from public.work_tasks where title like 'API TDH %'`);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[tlA, tlB, memA, memB, aiMem]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[tlA, tlB, memA, memB, aiMem]]);
   }
 }
 

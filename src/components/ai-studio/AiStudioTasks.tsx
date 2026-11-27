@@ -29,6 +29,25 @@ export function assignablePeople(people: AiStudioPerson[], projectId: string, ro
   return people.filter(p => p.status === 'ACTIVE' && p.projects.some(x => x.id === projectId) && (role === 'LEAD' ? p.role === 'TEAM_MEMBER' : p.role !== 'DEPARTMENT_HEAD'));
 }
 
+/**
+ * Delete straight from a task row (20270225000100), shown when the list said canDelete: the Team Lead's own members' tasks, the Department Head's and the
+ * Managing Director's AI Studio tasks. It reads the task once for the confirmation (what goes with it) and deletes through the same API, checked again.
+ */
+export async function deleteAiStudioTaskFromList(id: string): Promise<boolean> {
+  let task: AiStudioTaskDetail;
+  try { task = await aiStudioApi.task(id); } catch (e) { toast.error(errorMessage(e)); return false; }
+  if (!task.canDelete) { toast.error('This task can no longer be deleted.'); return false; }
+  const done = await confirmTaskDeletion({
+    title: task.title, assigneeName: task.assigneeName, status: TASK_STATUS_LABELS[task.status] ?? task.status, dueDate: task.dueDate ? dateText(task.dueDate) : null,
+    alsoRemoved: [countLine(task.history.length, 'history entry', 'history entries'), countLine(task.reportCount, 'daily report entry', 'daily report entries')],
+    run: () => aiStudioApi.deleteTask(task.id)
+  });
+  if (!done) return false;
+  toast.success(`Task deleted: ${task.title}`);
+  notifyAiStudioChanged();
+  return true;
+}
+
 /** One task in full: its details, the progress history, and (when the database says so) the forms to update it or change it. */
 export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?: () => void }> = ({ id, onClose, onChanged }) => {
   const { data: task, error, reload } = useLoad<AiStudioTaskDetail>(() => aiStudioApi.task(id), [id]);
@@ -319,6 +338,7 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
   );
   useAiStudioChanged(reload);
   const team = scope === 'team';
+  const anyDeletable = !!data?.items.some(t => t.canDelete);
   return (
     <Card>
       <div className="flex flex-wrap items-center gap-2 p-4 border-b border-slate-100">
@@ -347,6 +367,7 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
               <tr>
                 <th className={thCls}>Task</th><th className={thCls}>Project</th>{team && <th className={thCls}>Assigned to</th>}
                 <th className={thCls}>Assigned</th><th className={thCls}>Deadline</th><th className={thCls}>Priority</th><th className={thCls}>Status</th><th className={thCls}>Progress</th>
+                {anyDeletable && <th className={thCls}><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -367,6 +388,17 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
                   <td className={tdCls}><PriorityBadge priority={t.priority} /></td>
                   <td className={tdCls}><TaskStatusBadge status={t.status} /></td>
                   <td className={tdCls}><ProgressBar value={t.progress} /></td>
+                  {anyDeletable && (
+                    <td className={tdCls}>
+                      {t.canDelete && (
+                        <button type="button" data-testid="ai-task-row-delete" aria-label={`Delete task: ${t.title}`} title="Delete task"
+                          onClick={e => { e.stopPropagation(); void deleteAiStudioTaskFromList(t.id).then(ok => { if (ok) reload(); }); }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50">
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

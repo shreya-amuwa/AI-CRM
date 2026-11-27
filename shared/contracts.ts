@@ -6181,6 +6181,8 @@ export interface AdsNotice {
 export interface AdsEvent { id: number; event: string; fromValue: string | null; toValue: string | null; note: string | null; actorId: string | null; actorName: string | null; createdAt: string }
 export interface AdsAssignment {
   id: string;
+  /** (20270225000100) the list says whether the caller may delete this assignment (shown on the card); the delete is checked again */
+  canDelete?: boolean;
   clientId: string;
   clientName: string | null;
   parentId: string | null;
@@ -6344,6 +6346,8 @@ export interface AiStudioPerson {
 }
 export interface AiStudioTask {
   id: string;
+  /** (20270225000100) the list says whether the caller may delete this task (shown on the row); the delete is checked again */
+  canDelete?: boolean;
   projectId: string;
   projectName: string;
   title: string;

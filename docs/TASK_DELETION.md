@@ -8,16 +8,18 @@ the button.
 
 | Who | Task module (every department) | AI Studio project tasks | AI Design Studio assignments |
 | --- | --- | --- | --- |
-| Team Lead | Tasks they assigned | Tasks they assigned | Work they gave |
-| Department Head | Tasks they assigned, and tasks in the department and function they head | Tasks they assigned, and any AI Studio task | Work they gave, and any work of the department |
-| Operations Head | Tasks they assigned, and tasks in a department and function they manage | Same as the Department Head when their AI Studio role is Department Head | Same as the Department Head |
+| Team Lead | Tasks they assigned, and **any task of a Team Member who reports directly to them, whoever gave it** | Same | Same |
+| Department Head | Tasks they assigned, and **any task in the department and function they head, whoever gave it** | Tasks they assigned, and any AI Studio task, whoever gave it | Work they gave, and any work of the department, whoever gave it |
+| Operations Head | Unchanged: tasks they assigned, and tasks in a department and function they manage, except one the Super Admin gave | Same as the Department Head when their AI Studio role is Department Head, except a task the Managing Director gave | Same, except work the Super Admin gave |
 | Team Member (incl. Telecaller, Business Associate, every member designation) | Never | Never | Never |
-| Super Admin / Managing Director | Unchanged: no delete | Unchanged: no delete | Unchanged |
+| Super Admin / Managing Director | **AI Studio department tasks only** (as its Department Head) | **Any AI Studio task** (as its Department Head) | Never (AI Design Studio is a separate department) |
+
+The bold parts are migration `20270225000100_task_delete_hierarchy.sql` (see "By team and department" below).
 
 Also:
 
 * Nobody deletes a task that was assigned to **them**.
-* A Department Head cannot delete a task given by the Super Admin or by an Operations Head (a higher level). An Operations Head cannot delete a task given by the Super Admin.
+* An Operations Head cannot delete a task given by the Super Admin. (Since `20270225000100` a Department Head and a Team Lead can, inside their own department / team.)
 * A head only reaches tasks they may already open (`private.can_view_work_task`); a task outside their scope answers "not found".
 
 ## What a delete does
@@ -32,6 +34,27 @@ Also:
 * Writes `TASK_DELETED` / `AI_STUDIO_TASK_DELETED` / `ADS_ASSIGNMENT_DELETED` to the audit log with a snapshot of the task.
 * Locks the row first; a second click (or someone else deleting it meanwhile) gets "Task not found. It may already have been deleted."
 
+## By team and department (migration `20270225000100_task_delete_hierarchy.sql`)
+
+* **Team Lead:** any task of a Team Member who reports directly to them (`private.direct_lead_of`: the member's direct Team Lead, or the only Team Lead of the
+  team), whoever gave it: the Team Lead, the Department Head, the Super Admin, an Operations Head or another Team Lead (an AI Studio cross-team task too).
+  Never a task of another Team Lead's team, another department, another Team Lead or an unrelated employee, and never a task assigned to themselves.
+* **Department Head:** any task inside the department and function they are authorised for (`private.head_covers`: a Support head's scope is the
+  department's Support side), whoever gave it. Never another department.
+* **Super Admin:** an explicit AI Studio department-head permission. AI Studio is found from the department itself (`private.ai_studio_department()`),
+  never from a person or a name in the code. Any Task module task of the AI Studio department and any AI Studio project task, whoever gave it. Every
+  other department (Sales, Support, Accounts, HR, AI Design Studio, ...) stays refused: "The Super Admin deletes only AI Studio tasks, as the Department
+  Head of AI Studio."
+* **Unchanged:** Operations Heads, Team Members, Telecallers, Business Associates and every other role; the confirmation, the cascade, the
+  notifications and the audit log.
+* **Same rule everywhere:** the checks use the reporting lines, teams and departments in the database, so they hold for every existing and new department.
+* **Delete on the task cards.** Besides the task workspace, an eligible card has its own **Delete** button: the Task module's task tracker, the
+  Department Head's "Assigned tasks" cards and their Team Members' parts, the Team Lead's "Tasks you assigned" and their members' parts, the AI Studio
+  task rows and the AI Design Studio assignment table. Which cards get one is decided by the database for the whole list in one request:
+  `work_tasks_deletable(ids)` for the Task module (it reads its tasks from the table), and `canDelete` on each item of `ai_studio_tasks_page` and
+  `ads_assignments_list`. A click checks again with the server, opens the same confirmation, and deletes through the same API; the lists and counts
+  reload at once. Before the migration is run no card has a Delete button.
+
 ## Database
 
 | Function | Purpose |
@@ -42,6 +65,8 @@ Also:
 | `public.ai_studio_task_delete(task)` | Delete an AI Studio task |
 | `public.ads_assignment_get(id)` | Now also returns `canDelete` |
 | `public.ads_assignment_delete(id)` | Delete an AI Design Studio assignment |
+| `public.work_tasks_deletable(ids)` | (`20270225000100`) which of these Task module tasks the caller may delete: one call for a list of cards (at most 1000) |
+| `public.ai_studio_tasks_page(...)`, `public.ads_assignments_list(...)` | (`20270225000100`) each item also carries `canDelete` |
 
 The rules live in `private.work_task_delete_problem`, `private.ai_studio_delete_problem` and `private.ads_delete_problem`, used for both the flag and the delete.
 
@@ -75,5 +100,6 @@ Everything else works as before.
 
 ## Tests
 
-`supabase/tests/task_deletion_test.sql` (every role, including refusals), `supabase/tests/task_deletion.test.ts` (unit) and a block in
-`supabase/tests/api_integration.test.ts`.
+`supabase/tests/task_deletion_test.sql` (every role, including refusals), `supabase/tests/task_delete_hierarchy_test.sql` (the team / department / AI Studio
+rules, `20270225000100`), `supabase/tests/task_deletion.test.ts` (unit), two blocks in `supabase/tests/api_integration.test.ts`, and the card Delete in
+`ui_task_management.test.mjs` and `ui_ai_studio_deadlines.test.mjs`.

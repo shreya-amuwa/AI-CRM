@@ -39,7 +39,7 @@ export const TasksPage: React.FC<{ tasks: WorkTaskData; onOpenCustomer?: (id: st
       </div>
       {/* update requests from the Team Lead / Department Head; the answer never changes a task */}
       <MyUpdateRequests />
-      <TaskTracker tasks={mine} people={tasks.people} meId={profile?.id ?? ''} loading={tasks.loading} onChanged={() => void tasks.reload()}
+      <TaskTracker tasks={mine} people={tasks.people} meId={profile?.id ?? ''} loading={tasks.loading} onChanged={() => void tasks.reload()} deletable={tasks.deletable}
         filters={['ALL', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING']} title="My task tracker" emptyHint="When your Team Lead assigns you a task it appears here." />
       <div role="tablist" className="flex gap-1 overflow-x-auto">
         {FILTERS.map(f => (
