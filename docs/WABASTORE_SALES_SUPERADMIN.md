@@ -35,6 +35,17 @@ The sub-department is a **department id + team division SALES** - never a name. 
 ## Potential
 **2 Potential** is the Sales Team Member's Potential screen (payment cards, search, service / member filters, sort), view only, for the sub-department's POTENTIAL customers with **Added by / Owner**. Confirming payments and starting onboarding stay with the Sales Team Members.
 
+## Lead tags
+Every lead has one **tag**, such as "Demo done" or "No response / unreachable". A tag says where the lead is in more detail than the four lead statuses.
+- **Each tag counts as a stage** (New, Contacted, Interested or Ready to buy). The lead's status is always its tag's stage, so the status tabs, counts, reports, incentives and performance work as before. A tag never moves a lead out of Leads: a tag that counts as Ready to buy shows the usual "Save & move to Potential" prompt, and moving to Potential is still a separate step.
+- **Basic tags:** New, Contacted, Interested and Ready to buy are always there, for the whole company. Tapping a stage step on a lead gives it the basic tag of that stage.
+- **Where you see tags:** the lead form and the lead page have a **Tag** select, grouped by stage. It offers the active tags that can be used in the lead's department. The chosen tag shows as a coloured chip on the lead page and in the Leads list, and the Leads list has a **Tag** filter next to the status tabs.
+- **Who manages tags:** the Managing Director (all tags, including company-wide ones) and each CEO (tags for the departments they run Sales in), on the **Lead tags** page of their dashboard. They can add a tag, rename or recolour it, change the stage it counts as (the page says how many leads that moves first) and retire it. Everyone else only picks tags on their leads.
+- **Retire:** a retired tag is no longer offered. Leads that already have it keep it and show it in a faded chip until someone picks another tag. A retired tag can be restored. The basic tags can't be retired.
+- **Departments:** a department only ever sees company-wide tags and its own. When a lead moves to a department where its tag isn't available, it gets the basic tag of the same stage.
+- **Crocodial:** Crocodial statuses don't set tags yet. A later update maps each Crocodial status onto a tag. Until then a Crocodial status still sets the lead's status, which gives the lead the basic tag of that stage.
+- Technical: `customers.lead_tag_id` (migration `20270305000100_lead_tags.sql`); `GET /api/v1/lead-tags?departmentId`, `POST /api/v1/pipeline/leads/:id/tag {tagId}`; `GET /api/v1/pipeline/customers` takes `leadTagId`, and leads carry `leadTagId`. The form still sends `leadStatus` (the tag's stage) before the tag, so an older server keeps working.
+
 # Wabastore Support - Super Admin dashboard
 
 Same structure as Sales, with the Support workflow instead of leads. Only the Super Admin sees it; the Support Team Member and Support Team Lead dashboards are unchanged.

@@ -609,6 +609,8 @@ export interface PipelineCustomer {
   id: string;
   lifecycleStage: LifecycleStage;
   leadStatus: LeadStatus;
+  /** The lead's tag (migration 20270305000100; it counts as `leadStatus`). Absent from servers before tags. */
+  leadTagId?: string | null;
   name: string;
   company: string | null;
   phone: string | null;

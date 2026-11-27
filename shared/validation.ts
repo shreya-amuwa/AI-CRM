@@ -680,6 +680,8 @@ export const pipelineListQuerySchema = z.object({
   service: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).optional(),
   source: trimmed(60).optional(),
   leadStatus: z.enum(LEAD_STATUSES).optional(),
+  /** Leads with this tag (migration 20270305000100). */
+  leadTagId: uuidSchema.optional(),
   /** Follow-up window computed by the client in the user's timezone. */
   followUpFrom: datetime.optional(),
   followUpTo: datetime.optional(),

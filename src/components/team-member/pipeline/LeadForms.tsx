@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Building2, Check, Clock, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
-import type { Conversation, LeadStatus, PaymentOverview, PipelineCustomerDetail, ServiceCatalogItem, ServiceRequirement } from '../../../../shared/contracts';
+import type { Conversation, LeadStatus, LeadTag, PaymentOverview, PipelineCustomerDetail, ServiceCatalogItem, ServiceRequirement } from '../../../../shared/contracts';
 import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { AI_WEBSITE_SERVICE, leadCreateSchema } from '../../../../shared/validation';
 import { AiWebsiteOnboardingCard, AiWebsiteOnboardingFields, aiWebsiteDraftFrom, checkAiWebsite, emptyAiWebsiteDraft, prefillAiWebsite, type AiWebsiteDraft, type AiWebsiteErrors } from './AiWebsiteOnboarding';
 import { ApiError, errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
+import { leadTagsApi } from '../../../lib/api/leadTags';
+import { toast } from '../../../lib/feedback/feedbackStore';
+import { TagChip } from '../../leadTags/TagChip';
+import { useLeadTags } from '../../leadTags/useLeadTags';
 import { fmtDate, PaymentHistory, rupees, WorkflowBadge } from '../../payments/PaymentBits';
 import { ConversationSection } from './LeadConversations';
 import { CrocodialLeadActivityCard } from '../../crocodial/CrocodialLeadActivityCard';
@@ -25,9 +29,11 @@ import {
   LEAD_SOURCES,
   LEAD_STATUS_HINT,
   LEAD_STATUS_LABEL,
+  LeadTagOptions,
   longDate,
   notifyPipelineChanged,
   Pill,
+  seedTagOf,
   selectCls,
   Spinner,
   todayIso,
@@ -58,6 +64,46 @@ function apiFieldErrors(err: unknown): Errors {
   if (err instanceof ApiError && Array.isArray(err.details)) return fieldErrors(err.details as any);
   return {};
 }
+
+/** A lead's tag that is no longer in the list (retired: only managers still see retired tags): shown, never offered. */
+const unlistedTag = (id: string, stage: LeadStatus): LeadTag => ({
+  id, label: 'Retired tag', colour: 'slate', stage, scope: 'COMPANY', departmentIds: [], retired: true, seed: false, leadCount: 0, canManage: false
+});
+
+/** The "Tag" select of the lead form and the lead page (grouped by stage, active tags only) with the chosen tag's chip. */
+const LeadTagSelect: React.FC<{
+  id: string;
+  tags: LeadTag[];
+  current: LeadTag | null;
+  onChange: (tag: LeadTag) => void;
+  disabled?: boolean;
+  className?: string;
+}> = ({ id, tags, current, onChange, disabled, className = inputCls }) => {
+  const list = current && !tags.some(t => t.id === current.id) ? [...tags, current] : tags;
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <select
+        id={id}
+        className={className}
+        value={current?.id ?? ''}
+        disabled={disabled}
+        onChange={e => {
+          const t = tags.find(x => x.id === e.target.value);
+          if (t) onChange(t);
+        }}
+      >
+        {!current && <option value="">Choose a tag</option>}
+        <LeadTagOptions tags={list} keep={current?.id} />
+      </select>
+      {current && (
+        <span data-testid="lead-tag-current" className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+          <TagChip tag={current} />
+          <span>Counts as {LEAD_STATUS_LABEL[current.stage]}{current.retired ? ' · no longer offered' : ''}</span>
+        </span>
+      )}
+    </div>
+  );
+};
 
 /** datetime-local value ⇄ ISO with the user's offset. */
 const toLocalInput = (iso: string | null) => {
@@ -282,6 +328,15 @@ export const AddLeadView: React.FC<{
   const [otherSource, setOtherSource] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [ownerId, setOwnerId] = useState(owners?.[0]?.id ?? '');
+  // Lead tags: the "Tag" select replaces "Lead status" once the tags are read (a server without tags keeps the status select)
+  const { tags } = useLeadTags();
+  const activeTags = useMemo(() => tags.filter(t => !t.retired), [tags]);
+  const [tagId, setTagId] = useState('');
+  const chosenTag = activeTags.find(t => t.id === tagId) ?? null;
+  useEffect(() => {
+    if (!tagId && activeTags.length) setTagId((seedTagOf(activeTags, form.leadStatus) ?? activeTags.find(t => t.stage === form.leadStatus))?.id ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTags]);
   // the plan, duration, amount and message credits of each selected service (Sales never enters a start or an expiry date)
   const [terms, setTerms] = useState<Record<string, TermsDraft>>({});
   const [termErrors, setTermErrors] = useState<Record<string, TermsErrors>>({});
@@ -394,9 +449,14 @@ export const AddLeadView: React.FC<{
     setReviewOpen(false);
     setSaving(true);
     try {
+      // leadStatus is the chosen tag's stage, so the basic tag the database gives the new lead is of the right stage; then the tag
+      // itself. The lead is saved either way: a tag that can't be set (e.g. not used in the lead's department) is said, not retried.
       const lead = await pipelineApi.createLead({ ...parsed.data, ...(requestId ? { clientRequestId: requestId } : {}) });
+      let tagError: unknown = null;
+      if (chosenTag && !chosenTag.seed) await leadTagsApi.setOnLead(lead.id, chosenTag.id).catch(e => (tagError = e));
       notifyPipelineChanged();
       onSaved(lead.id);
+      if (tagError && chosenTag) toast.error(`The lead was saved, but the tag "${chosenTag.label}" could not be set: ${errorMessage(tagError)}`);
     } catch (err) {
       setErrors(apiFieldErrors(err));
       setError(errorMessage(err));
@@ -595,15 +655,29 @@ export const AddLeadView: React.FC<{
       <Card className="p-5">
         <h2 className="text-sm font-bold text-slate-900 mb-3">Follow-up</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <Field label="Lead status" htmlFor="lead-leadStatus">
-            <select id="lead-leadStatus" className={inputCls} value={form.leadStatus} onChange={set('leadStatus')}>
-              {LEAD_STATUSES.map(s => (
-                <option key={s} value={s}>
-                  {LEAD_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {activeTags.length > 0 ? (
+            <Field label="Tag" htmlFor="lead-tag">
+              <LeadTagSelect
+                id="lead-tag"
+                tags={activeTags}
+                current={chosenTag}
+                onChange={t => {
+                  setTagId(t.id);
+                  setValue('leadStatus', t.stage);
+                }}
+              />
+            </Field>
+          ) : (
+            <Field label="Lead status" htmlFor="lead-leadStatus">
+              <select id="lead-leadStatus" className={inputCls} value={form.leadStatus} onChange={set('leadStatus')}>
+                {LEAD_STATUSES.map(s => (
+                  <option key={s} value={s}>
+                    {LEAD_STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Next follow-up" htmlFor="lead-nextFollowUpAt" error={errors.nextFollowUpAt}>
             {input('nextFollowUpAt', { type: 'datetime-local' })}
           </Field>
@@ -690,6 +764,10 @@ export const EditLeadView: React.FC<{
   const [form, setForm] = useState({ name: '', company: '', phone: '', whatsapp: '', email: '', city: '', address: '', leadSource: '', nextFollowUpAt: '' });
   const [sameWhatsapp, setSameWhatsapp] = useState(true);
   const [status, setStatus] = useState<LeadStatus>('NEW');
+  // The lead's tag ('' on a server without tags); its stage is the status, so the READY_TO_BUY prompt follows the tag
+  const [tagId, setTagId] = useState('');
+  const { tags, byId: tagById } = useLeadTags(lead?.departmentId, { skip: !lead });
+  const activeTags = useMemo(() => tags.filter(t => !t.retired), [tags]);
   const [selected, setSelected] = useState<string[]>([]);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
@@ -725,6 +803,7 @@ export const EditLeadView: React.FC<{
     });
     setSameWhatsapp(startsSameAsMobile(l.phone, l.whatsapp));
     setStatus(l.leadStatus);
+    setTagId(l.leadTagId ?? '');
     setSelected(l.services);
   };
   const load = () => {
@@ -764,6 +843,21 @@ export const EditLeadView: React.FC<{
     );
   }
 
+  const tagsOn = activeTags.length > 0 && lead.leadTagId !== undefined;
+  const currentTag = tagId ? tagById.get(tagId) ?? unlistedTag(tagId, status) : null;
+  /** The tag to send: a new choice (a server without tags never gets one). */
+  const tagChange = tagsOn && tagId && tagId !== (lead.leadTagId ?? '') ? tagId : null;
+  const chooseTag = (t: LeadTag) => {
+    setTagId(t.id);
+    setStatus(t.stage);
+  };
+  /** A stage step: the stage's basic tag, unless the chosen tag already counts as that stage. */
+  const chooseStage = (s: LeadStatus) => {
+    if (s === status) return;
+    setStatus(s);
+    if (tagsOn) setTagId(seedTagOf(activeTags, s)?.id ?? '');
+  };
+
   /** Only the fields that changed are sent. */
   const changes = () => {
     const body: Record<string, unknown> = {};
@@ -802,7 +896,7 @@ export const EditLeadView: React.FC<{
       body.aiWebsiteOnboarding = c.body;
     }
     setAiwErrors({});
-    if (Object.keys(body).length === 0) return true;
+    if (Object.keys(body).length === 0 && !tagChange) return true;
     if (Array.isArray(body.services) && (body.services as string[]).length === 0) {
       setErrors({ services: 'Select at least one service.' });
       return false;
@@ -811,7 +905,10 @@ export const EditLeadView: React.FC<{
     setError(null);
     setErrors({});
     try {
-      await pipelineApi.updateLead(id, body as any);
+      // leadStatus (the tag's stage) first, as before; then the tag. A basic tag with a new stage needs no second call: the database
+      // gives a lead whose status changed the basic tag of that stage.
+      if (Object.keys(body).length > 0) await pipelineApi.updateLead(id, body as any);
+      if (tagChange && !(tagById.get(tagChange)?.seed && body.leadStatus)) await leadTagsApi.setOnLead(id, tagChange);
       const fresh = await pipelineApi.get(id);
       hydrate(fresh);
       notifyPipelineChanged();
@@ -888,6 +985,7 @@ export const EditLeadView: React.FC<{
                 <Pill tone={status === 'READY_TO_BUY' ? 'green' : status === 'INTERESTED' ? 'orange' : status === 'CONTACTED' ? 'indigo' : 'slate'}>
                   {LEAD_STATUS_LABEL[status]}
                 </Pill>
+                {tagsOn && currentTag && !currentTag.seed && <TagChip tag={currentTag} />}
                 <WorkflowBadge workflow={lead.paymentWorkflow} />
               </div>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-slate-500">
@@ -939,7 +1037,7 @@ export const EditLeadView: React.FC<{
                 <li key={s} className="relative flex flex-col items-center text-center">
                   <button
                     type="button"
-                    onClick={() => setStatus(s)}
+                    onClick={() => chooseStage(s)}
                     disabled={locked}
                     aria-pressed={current}
                     aria-label={`${LEAD_STATUS_LABEL[s]} - ${LEAD_STATUS_HINT[s]}`}
@@ -955,6 +1053,14 @@ export const EditLeadView: React.FC<{
               );
             })}
           </ol>
+          {tagsOn && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-[auto_minmax(0,20rem)] sm:items-start gap-x-3 gap-y-1">
+              <label htmlFor="edit-leadTag" className="text-xs font-medium text-slate-500 sm:pt-2.5">
+                Tag
+              </label>
+              <LeadTagSelect id="edit-leadTag" tags={activeTags} current={currentTag} onChange={chooseTag} disabled={locked} />
+            </div>
+          )}
           {status === 'READY_TO_BUY' && !locked && (
             <div className="mt-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-4 rounded-xl bg-emerald-800 text-white">
               <div>
