@@ -26,10 +26,17 @@ const bundle = built.outputFiles[0].text;
 // ---- the fake API: the server's clock is 3 hours AHEAD of the browser's, the way a wrong computer clock looks ---------------------------------------
 const SKEW_MS = 3 * 3600 * 1000;
 let mode = 'normal';
+// Delete on the task rows (20270225000100): whether the list says canDelete, and the deletes the server received
+let taskCanDelete = false;
+const deleteCalls = [];
 const item = (over) => ({ projectId: 'p' + Math.random(), name: 'Project', status: 'ACTIVE', mine: true, openTasks: 4, myOpenTasks: 1, ...over });
 const api = (req, res) => {
   const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
   if (/\/ai-studio\/tasks\/[0-9a-f-]{36}\/reports/.test(req.url)) return send(200, { success: true, data: [] });
+  if (req.method === 'DELETE' && /\/ai-studio\/tasks\/[0-9a-f-]{36}$/.test(req.url)) {
+    deleteCalls.push(req.url);
+    return send(200, { success: true, data: { deleted: true, taskId: req.url.split('/').pop(), title: 'Changes discussed in meeting', updates: 1, reports: 0 } });
+  }
   if (req.url.startsWith('/api/v1/ai-studio/tasks')) {
     const task = { id: 'aaaaaaaa-0000-4000-8000-000000000001', projectId: 'p1', projectName: 'AI Website', title: 'Changes discussed in meeting',
       description: 'To perform the changes discussed in the landing page', priority: 'HIGH', status: 'IN_PROGRESS', progress: 90, dueDate: '2026-11-26',
@@ -37,10 +44,10 @@ const api = (req, res) => {
       assignedByName: 'Head', lastUpdateNote: 'LONG-REPORT: the landing page is live, clean links, faster loading', lastUpdateAt: '2026-11-26T06:00:00Z',
       completionNote: null, attachments: [], overdue: false };
     if (/\/ai-studio\/tasks\/[0-9a-f-]{36}/.test(req.url)) {
-      return send(200, { success: true, data: { ...task, canUpdate: false, canEdit: false, history: [{ id: 'h1', kind: 'PROGRESS', status: 'IN_PROGRESS', progress: 90,
+      return send(200, { success: true, data: { ...task, canUpdate: false, canEdit: false, canDelete: taskCanDelete, reportCount: 0, history: [{ id: 'h1', kind: 'PROGRESS', status: 'IN_PROGRESS', progress: 90,
         note: 'LONG-REPORT: the landing page is live, clean links, faster loading', authorName: 'Aryan', createdAt: '2026-11-26T06:00:00Z' }] } });
     }
-    return send(200, { success: true, data: { items: [task], total: 1, page: 1, pageSize: 10 } });
+    return send(200, { success: true, data: { items: deleteCalls.length ? [] : [{ ...task, canDelete: taskCanDelete }], total: deleteCalls.length ? 0 : 1, page: 1, pageSize: 10 } });
   }
   if (!req.url.startsWith('/api/v1/ai-studio/deadlines')) return send(404, { success: false, error: { code: 'NOT_FOUND', message: 'no fake' } });
   if (mode === 'error') return send(500, { success: false, error: { code: 'INTERNAL', message: 'Something went wrong. Please try again.' } });
@@ -143,6 +150,35 @@ try {
     await page.getByRole('dialog').getByText(/LONG-REPORT/).waitFor();
     check(true, `${label}: clicking the row opens the task, and its update is there`);
     check(errors.length === 0, `${label}: no script errors`, errors);
+    await ctx.close();
+  }
+  // ---- Delete on the task row (20270225000100): shown only when the list says canDelete; the same confirmation and API; the list reloads
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    await page.goto(base);
+    await page.evaluate(() => window.mountTasks());
+    await page.getByTestId('ai-task-row').first().waitFor();
+    check(await page.getByTestId('ai-task-row-delete').count() === 0, 'AI Studio: no Delete on a row the server did not allow');
+    taskCanDelete = true;
+    await page.goto(base);
+    await page.evaluate(() => window.mountTasks());
+    const del = page.getByRole('button', { name: 'Delete task: Changes discussed in meeting' });
+    await del.waitFor();
+    check(true, 'AI Studio: the Delete option is right on an eligible task row');
+    await del.click();
+    const box = page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: 'Delete this task?' });
+    await box.waitFor();
+    check(/Task: Changes discussed in meeting/.test(await box.innerText()) && /Assigned to: Aryan/.test(await box.innerText()), 'AI Studio: the existing confirmation names the task and the assignee');
+    check(deleteCalls.length === 0, 'AI Studio: nothing is deleted before the confirmation');
+    await box.getByRole('button', { name: 'Delete task' }).click();
+    await page.getByText('Task deleted: Changes discussed in meeting').waitFor();
+    check(deleteCalls.length === 1, 'AI Studio: the existing delete API is called once');
+    await page.getByTestId('ai-task-row').first().waitFor({ state: 'detached' });
+    check(true, 'AI Studio: the list reloads at once and the deleted task is gone');
+    check(errors.length === 0, 'AI Studio delete: no script errors', errors);
     await ctx.close();
   }
   console.log(`=== ${passed} AI STUDIO DEADLINE BROWSER CHECKS PASSED ===`);

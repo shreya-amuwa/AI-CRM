@@ -12,6 +12,8 @@ reset role;
 select set_config('request.jwt.claims', '', false);
 \i supabase/migrations/20270220000100_task_deletion.sql
 \i supabase/migrations/20270220000100_task_deletion.sql
+-- the rules by team and department (20270225000100) replace parts of the first rules; task_delete_hierarchy_test.sql tests them in full
+\i supabase/migrations/20270225000100_task_delete_hierarchy.sql
 
 delete from notifications where title like 'TDL %' or title like '%: TDL %';
 delete from work_tasks where title like 'TDL %';
@@ -61,7 +63,7 @@ select test.must_fail($$select work_task_delete(pg_temp.v('W3'))$$, 'a Telecalle
 select test.login('ba_a');
 select test.must_fail($$select work_task_delete(pg_temp.v('WK'))$$, 'a Business Associate cannot delete a task', 'FORBIDDEN');
 select test.login('sa');
-select test.check(not (work_task_delete_preview(pg_temp.v('W1')) ->> 'canDelete')::boolean, 'the Super Admin''s access is unchanged: no Delete option');
+select test.check(not (work_task_delete_preview(pg_temp.v('W1')) ->> 'canDelete')::boolean, 'the Super Admin has no Delete option outside AI Studio (20270225000100)');
 select test.must_fail($$select work_task_delete(pg_temp.v('W1'))$$, '... and a direct call is refused', 'FORBIDDEN');
 select test.must_fail($$delete from work_tasks where id = pg_temp.v('W1')$$, 'nobody deletes the row directly (no table grant): only the checked function', 'permission denied');
 
@@ -74,10 +76,12 @@ select test.login('fvt_supops');
 select test.must_fail($$select work_task_delete(pg_temp.v('W3'))$$, 'a Support Operations Head cannot delete a Sales task of the same department', 'NOT_FOUND|FORBIDDEN');
 select test.login('th_wab');
 select test.must_fail($$select work_task_delete(pg_temp.v('W0'))$$, 'a Team Lead cannot delete a task assigned to them', 'FORBIDDEN: You cannot delete a task that was assigned to you');
-select test.must_fail($$select work_task_delete(pg_temp.v('W2'))$$, 'a Team Lead cannot delete a task the Department Head gave their member', 'NOT_FOUND|FORBIDDEN');
+-- 20270225000100: a Team Lead may delete any task of their own member, whoever gave it (task_delete_hierarchy_test.sql)
+select test.check((work_task_delete_preview(pg_temp.v('W2')) ->> 'canDelete')::boolean, 'a Team Lead may delete a task the Department Head gave their member (20270225000100)');
 select test.login('dh_wab');
-select test.must_fail($$select work_task_delete(pg_temp.v('W4'))$$, 'a Department Head cannot delete a task the Super Admin gave', 'NOT_FOUND|FORBIDDEN');
-select test.must_fail($$select work_task_delete(pg_temp.v('W5'))$$, '... nor one an Operations Head gave', 'NOT_FOUND|FORBIDDEN');
+-- dh_wab heads the Support side; W4 / W5 are Sales tasks: outside their scope, whoever gave them (20270225000100 dropped the "who gave it" limit for a Department Head)
+select test.must_fail($$select work_task_delete(pg_temp.v('W4'))$$, 'a Department Head cannot delete a task outside their function (one the Super Admin gave)', 'NOT_FOUND|FORBIDDEN');
+select test.must_fail($$select work_task_delete(pg_temp.v('W5'))$$, '... nor one an Operations Head gave there', 'NOT_FOUND|FORBIDDEN');
 select test.login('fvt_sops');
 select test.must_fail($$select work_task_delete(pg_temp.v('W4'))$$, 'an Operations Head cannot delete a task the Super Admin gave', 'NOT_FOUND|FORBIDDEN');
 reset role;
@@ -161,10 +165,10 @@ select test.must_fail($$select ai_studio_task_delete(pg_temp.v('A2'))$$, '... an
 select test.login('th_wab');
 select test.must_fail($$select ai_studio_task_delete(pg_temp.v('A1'))$$, 'a Team Lead of another department cannot delete an AI Studio task', 'FORBIDDEN');
 select test.login('sa');
-select test.check(not (ai_studio_task_get(pg_temp.v('A1')) ->> 'canDelete')::boolean, 'the Managing Director''s access is unchanged: no Delete option');
-select test.must_fail($$select ai_studio_task_delete(pg_temp.v('A4'))$$, '... not even on their own task', 'FORBIDDEN');
+-- 20270225000100: the Managing Director is the Department Head of AI Studio and may delete its tasks; the Department Head may delete a task the Managing Director gave
+select test.check((ai_studio_task_get(pg_temp.v('A1')) ->> 'canDelete')::boolean, 'the Managing Director, as AI Studio''s Department Head, has the Delete option (20270225000100)');
 select test.login('ai_dh');
-select test.must_fail($$select ai_studio_task_delete(pg_temp.v('A4'))$$, 'the Department Head cannot delete a task the Managing Director gave', 'FORBIDDEN');
+select test.check((ai_studio_task_get(pg_temp.v('A4')) ->> 'canDelete')::boolean, 'the Department Head may delete a task the Managing Director gave (20270225000100)');
 
 \echo '   07 AI Studio: the Team Lead and the Department Head delete'
 select test.login('ai_tl1');

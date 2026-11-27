@@ -265,6 +265,8 @@ export interface WorkTaskData {
   loading: boolean;
   error: string | null;
   reload: () => Promise<void>;
+  /** the ids of the loaded tasks the signed-in person may delete (20270225000100), decided by the database in one call for the whole list */
+  deletable: Set<string>;
 }
 
 /** Loads every task / update / person the signed-in user may see and keeps it live. */
@@ -275,6 +277,7 @@ export function useWorkTasks(): WorkTaskData {
   const [teams, setTeams] = useState<TeamRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletable, setDeletable] = useState<Set<string>>(() => new Set());
 
   const reload = useCallback(async () => {
     const supabase = getSupabase();
@@ -292,7 +295,15 @@ export function useWorkTasks(): WorkTaskData {
     const firstError = t.error || u.error || p.error || tm.error;
     if (firstError) setError(cleanError(firstError.message));
     else setError(null);
-    if (!t.error) setTasks((t.data || []).map(toTask));
+    if (!t.error) {
+      const loaded = (t.data || []).map(toTask);
+      setTasks(loaded);
+      // which cards get a Delete option: one call for the whole list; before the migration runs (or on any error) no card has one
+      if (loaded.length) {
+        const d = await supabase.rpc('work_tasks_deletable', { p_ids: loaded.map(x => x.id) });
+        setDeletable(new Set(d.error ? [] : ((d.data as string[] | null) ?? [])));
+      } else setDeletable(new Set());
+    }
     if (!u.error) setUpdates((u.data || []).map(toUpdate));
     if (!p.error)
       setPeople(
@@ -328,7 +339,7 @@ export function useWorkTasks(): WorkTaskData {
     };
   }, [reload]);
 
-  return { tasks, updates, people, teams, loading, error, reload };
+  return { tasks, updates, people, teams, loading, error, reload, deletable };
 }
 
 // ---------------------------------------------------------------------------

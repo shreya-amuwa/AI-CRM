@@ -8,6 +8,7 @@ import { TaskWorkUpdates, WorkUpdatesPanel } from './WorkUpdates';
 import { TaskTracker } from './TaskTracker';
 import { SubmitWorkUpdate } from './WorkUpdateForm';
 import { useTaskWorkspace } from './useTaskWorkspace';
+import { TaskCardDelete } from './TaskCardDelete';
 import { TaskAssignPanel, type AssignValues } from './TaskAssignPanel';
 import type { PickerPerson } from './PeoplePicker';
 
@@ -38,7 +39,7 @@ export const TeamLeadTasksView: React.FC = () => {
         <p className="text-xs text-slate-500">{s.total} from your Department Head · {s.completed} completed · {s.overdue} overdue</p>
         <AssignDirectForm data={data} />
       </div>
-      <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()}
+      <TaskTracker tasks={data.tasks} people={data.people} meId={profile?.id ?? ''} loading={data.loading} onChanged={() => void data.reload()} deletable={data.deletable}
         title="Task tracker" emptyHint="Tasks you assign, and tasks from your Department Head, appear here with their progress." />
       <WorkUpdatesPanel hint="Ask your team members how the work is going. Their answers and the reminders you sent are kept here, and in each task below." />
       <DirectTasks tasks={direct} data={data} ws={ws} />
@@ -197,7 +198,10 @@ const LeadTask: React.FC<{ task: WorkTask; data: WorkTaskData; ws: ReturnType<ty
                   <li key={c.id} className="text-xs">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-slate-800">{nameOf(data.people, c.assigneeId)}</span>
-                      <StatusPill status={c.status} />
+                      <span className="flex items-center gap-2">
+                        {data.deletable.has(c.id) && <TaskCardDelete task={c} assigneeName={nameOf(data.people, c.assigneeId)} />}
+                        <StatusPill status={c.status} />
+                      </span>
                     </div>
                     {c.assignmentNote && <p className="text-[11px] text-slate-600 mt-0.5">{c.assignmentNote}</p>}
                     <div className="mt-1">
@@ -276,7 +280,10 @@ const DirectTasks: React.FC<{ tasks: WorkTask[]; data: WorkTaskData; ws: ReturnT
                   <PriorityPill priority={t.priority} />
                   <span className="text-xs text-slate-500">→ {nameOf(data.people, t.assigneeId)}</span>
                 </div>
-                <StatusPill status={t.status} />
+                <span className="flex items-center gap-2">
+                  {data.deletable.has(t.id) && <TaskCardDelete task={t} assigneeName={nameOf(data.people, t.assigneeId)} />}
+                  <StatusPill status={t.status} />
+                </span>
               </div>
               <ProgressBar value={t.progress} label={`Progress of ${t.title}`} />
               <div className="flex flex-wrap gap-x-3 text-[11px] text-slate-500">

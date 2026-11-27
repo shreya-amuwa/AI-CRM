@@ -81,4 +81,24 @@ const fails = async (p: () => Promise<unknown>) => { try { await p(); return fal
     'the confirmation is destructive, names the task and runs the delete inside the dialog (errors stay visible)');
 }
 
+// ---- Delete on the task cards (20270225000100): decided by the server, for the whole list at once, never by role in the screen
+{
+  const lib = readFileSync('src/lib/workTasks.ts', 'utf8');
+  check((lib.match(/rpc\('work_tasks_deletable'/g) ?? []).length === 1 && /deletable: Set<string>/.test(lib),
+    'Task module cards: one work_tasks_deletable call for the whole list (not one request per card)');
+  const card = readFileSync('src/components/tasks/TaskCardDelete.tsx', 'utf8');
+  check(/workTasksApi\.deletePreview\(/.test(card) && /confirmTaskDeletion\(/.test(card) && /workTasksApi\.deleteTask\(/.test(card) && /stopPropagation\(\)/.test(card),
+    'the card Delete re-checks with the server, asks the same confirmation, deletes through the same API and never opens the card');
+  check(/notifyWorkTasksChanged\(\)/.test(card), 'after a delete every task list and count on the page reloads');
+  const cards = ['src/components/tasks/TaskTracker.tsx', 'src/components/tasks/head/HeadAssign.tsx', 'src/components/tasks/TeamLeadTasksView.tsx'].map(f => readFileSync(f, 'utf8'));
+  check(/deletable\?\.has\(t\.id\) && <TaskCardDelete/.test(cards[0]) && /data\.deletable\.has\(task\.id\) && <TaskCardDelete/.test(cards[1]) && /data\.deletable\.has\(t\.id\) && <TaskCardDelete/.test(cards[2]),
+    'the tracker, the Department Head\'s Assigned tasks and the Team Lead\'s lists show Delete only for the tasks the server returned');
+  check(/\{t\.canDelete && \(/.test(readFileSync('src/components/ai-studio/AiStudioTasks.tsx', 'utf8')) && /\{r\.canDelete && \(/.test(readFileSync('src/components/ai-design-studio/AdsAssign.tsx', 'utf8')),
+    'AI Studio and AI Design Studio rows show Delete only when the list says canDelete');
+  for (const src of [card, ...cards]) check(!/role\s*===?\s*'(TEAM_HEAD|DEPARTMENT_HEAD|SUPER_ADMIN)'[^\n]*[Dd]elet/.test(src), 'a card never decides Delete from the role itself');
+  const mig = readFileSync('supabase/migrations/20270225000100_task_delete_hierarchy.sql', 'utf8');
+  check(/private\.ai_studio_department\(\)/.test(mig) && !/'ai-studio'|ai studio'/i.test(mig.replace(/--.*$/gm, '')),
+    'the Super Admin\'s permission is found from the AI Studio department itself (no department name or person hard-coded)');
+}
+
 console.log(`\n${passed} checks passed`);
