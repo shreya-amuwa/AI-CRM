@@ -206,12 +206,21 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const metaVerifier = effectiveChoice === 'META_VERIFIER';
   const operationsHead = effectiveChoice === 'OPERATIONS_HEAD';
   const role: StaffRole = consultant || metaVerifier ? 'TEAM_MEMBER' : operationsHead ? 'DEPARTMENT_HEAD' : effectiveChoice;
-  // The designation starts as the matching one for the role (they stay separate fields: the role decides access).
+  // The designation starts as the matching one for the role (they stay separate fields: the role decides access). It is always the STORED value
+  // (DESIGNATIONS, e.g. 'Operations Head'), never the on-screen label: the CEO's label is "CEO" but its stored designation is 'Operations Head'.
+  // Using the label left a value no option has, so the dropdown showed "CEO" while the form held 'CEO' and was refused ("Choose a designation.").
+  const roleDesignation: string = hrMode ? hrChoice
+    : operationsHead ? 'Operations Head' : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member';
+  // the designations the dropdown offers; the role's own designation is always among them, so the default can always be shown and chosen
+  const designationOptions = useMemo(() => {
+    const base: string[] = designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d)));
+    return hrMode || base.includes(roleDesignation) ? base : [roleDesignation, ...base];
+  }, [departmentSlug, hrMode, roleDesignation]);
+  useEffect(() => { setDesignation(roleDesignation); }, [roleDesignation, departmentSlug]);
+  // the form never holds a designation the dropdown does not offer (what is shown is what is sent)
   useEffect(() => {
-    setDesignation(
-      hrMode ? hrChoice : operationsHead ? OPERATIONS_HEAD_LABEL : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member'
-    );
-  }, [role, operationsHead, hrMode, hrChoice, departmentSlug]);
+    if (!hrMode && !designationOptions.includes(designation)) setDesignation(roleDesignation);
+  }, [hrMode, designationOptions, designation, roleDesignation]);
   // A choice that does not belong to the department (the department was changed, or the person may not create it) is cleared at once.
   useEffect(() => {
     if (hrMode && hrOptions.length && !hrOptions.includes(hrChoice)) setHrChoice(hrOptions[0]);
@@ -871,8 +880,8 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
           {!hrMode && (
             <label className="block text-xs font-semibold text-slate-700">
               Designation *
-              <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required>
-                {designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d))).map(d => <option key={d} value={d}>{designationLabel(d)}</option>)}
+              <select className={`${inputClass} mt-1 cursor-pointer`} value={designation} onChange={e => setDesignation(e.target.value)} required data-testid="staff-designation">
+                {designationOptions.map(d => <option key={d} value={d}>{designationLabel(d)}</option>)}
               </select>
             </label>
           )}
