@@ -118,7 +118,11 @@ select test.check(jsonb_array_length(ai_studio_tasks_list('team') -> 'items') = 
 select test.must_fail($$select ai_studio_report_get((select id from ai_t where name = 'e_r1'))$$, 'but reports already submitted keep their route: the new Team Lead does not see them', 'NOT_FOUND');
 select test.check((ai_studio_reports_list('team') ->> 'total')::int = 0, 'the team report list is empty for now');
 select test.login('sa');
-select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1')) ->> 'status') = 'APPROVED' and jsonb_array_length(ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history') = 3, 'an approved report keeps its status and history');
+-- (20270302000100) the approval of a member without a Team Lead also sends the report to HR: one more history entry, "Sent to HR"
+select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1')) ->> 'status') = 'APPROVED'
+              and (select count(*) = 3 from jsonb_array_elements(ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history') h where h ->> 'action' <> 'SENT_TO_HR')
+              and (select count(*) = 1 from jsonb_array_elements(ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history') h where h ->> 'action' = 'SENT_TO_HR'),
+  'an approved report keeps its status and history (and records that it was sent to HR)');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'status') = 'PENDING_DH_APPROVAL' and (ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'canReview')::boolean, 'a pending report still waits for the Super Admin');
 select test.login('ai_e1');
 select test.check(ai_studio_report_context() ->> 'route' = 'TEAM_LEAD' and ai_studio_report_context() ->> 'reviewer' = 'AI Early Lead', 'the form now says the report goes to the Team Lead first');
@@ -366,8 +370,9 @@ select test.check(test.sq($q$select count(*) = 1 from notifications where recipi
 select test.must_fail($$select ai_studio_report_review((select id from ai_t where name = 'r1'), 'RETURN', 'late')$$, 'an approved report cannot be returned', 'not waiting');
 select test.login('ai_tm1a');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'r1')) ->> 'status') = 'APPROVED', 'the final status is visible to the Team Member');
-select test.check(jsonb_array_length(ai_studio_report_get((select id from ai_t where name = 'r1')) -> 'history') = 9
-              and (ai_studio_report_get((select id from ai_t where name = 'r1')) -> 'history' -> 8 ->> 'actorName') = 'AI Head', 'the full history is kept: reviewer, time, status and remarks of every step');
+-- (20270302000100) each Team Lead approval also sent the report to HR (one "Sent to HR" entry per approved revision)
+select test.check((select count(*) = 9 from jsonb_array_elements(ai_studio_report_get((select id from ai_t where name = 'r1')) -> 'history') h where h ->> 'action' <> 'SENT_TO_HR')
+              and (ai_studio_report_get((select id from ai_t where name = 'r1')) -> 'history' -> -1 ->> 'actorName') = 'AI Head', 'the full history is kept: reviewer, time, status and remarks of every step');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'r1')) -> 'history' @> '[{"action":"RETURNED","stage":"TEAM_LEAD","comment":"Add the test results"}]'::jsonb), 'including the remarks of each return');
 
 \echo '   a Team Lead''s own report goes to the Department Head'

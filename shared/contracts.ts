@@ -6308,13 +6308,15 @@ export const AI_STUDIO_TASK_STATUSES = ['ASSIGNED', 'IN_PROGRESS', 'ON_HOLD', 'C
 export type AiStudioTaskStatus = (typeof AI_STUDIO_TASK_STATUSES)[number];
 export const AI_STUDIO_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
 export type AiStudioPriority = (typeof AI_STUDIO_PRIORITIES)[number];
-export const AI_STUDIO_REPORT_STATUSES = ['DRAFT', 'SUBMITTED', 'PENDING_TL_APPROVAL', 'RETURNED_BY_TL', 'PENDING_DH_APPROVAL', 'RETURNED_BY_DH', 'APPROVED'] as const;
+// REJECTED_BY_TL (20270302000100): the Team Lead rejected it, with a reason; final (a return is for corrections)
+export const AI_STUDIO_REPORT_STATUSES = ['DRAFT', 'SUBMITTED', 'PENDING_TL_APPROVAL', 'RETURNED_BY_TL', 'REJECTED_BY_TL', 'PENDING_DH_APPROVAL', 'RETURNED_BY_DH', 'APPROVED'] as const;
 export type AiStudioReportStatus = (typeof AI_STUDIO_REPORT_STATUSES)[number];
 export const AI_STUDIO_REPORT_STATUS_LABELS: Record<AiStudioReportStatus, string> = {
   DRAFT: 'Draft',
   SUBMITTED: 'Submitted',
   PENDING_TL_APPROVAL: 'Pending Team Lead Approval',
-  RETURNED_BY_TL: 'Returned by Team Lead',
+  RETURNED_BY_TL: 'Returned for Correction',
+  REJECTED_BY_TL: 'Rejected',
   PENDING_DH_APPROVAL: 'Pending Department Head Approval',
   RETURNED_BY_DH: 'Returned by Department Head',
   APPROVED: 'Approved'
@@ -6449,12 +6451,15 @@ export interface AiStudioReportSummary {
   /** 20270219000100: 'DAILY' (one report for the day, many tasks) or 'SINGLE' (an older one-project report). Absent on an older database. */
   kind?: 'DAILY' | 'SINGLE';
   teamName?: string | null;
+  /** 20270302000100: when the report reached HR's AI Studio Performance (null = not sent), and when the Team Lead decided it. */
+  sentToHrAt?: string | null;
+  tlReviewedAt?: string | null;
   counts?: { projects: number; tasks: number; completed: number; crossTeam: number } | null;
   hasBlockers?: boolean;
 }
 export interface AiStudioReportHistoryEntry {
   id: string;
-  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED' | 'EDITED';
+  action: 'CREATED' | 'SUBMITTED' | 'RESUBMITTED' | 'APPROVED' | 'RETURNED' | 'EDITED' | 'REJECTED' | 'SENT_TO_HR';
   stage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   /** 20270214000100: what the Team Lead changed (field -> before / after) on an EDITED step. */
   changes?: Record<string, { from: string | null; to: string | null }> | null;
@@ -6505,6 +6510,11 @@ export interface AiStudioTaskReportEntry { reportId: string; reportDate: string;
 export interface AiStudioReportDetail extends AiStudioReportSummary {
   /** 20270219000100 (absent on an older database). */
   tomorrowPlan?: string | null;
+  /** 20270302000100: the Daily Work Description (10-150 words to submit; not required on reports made before that migration). */
+  workDescription?: string | null;
+  descriptionRequired?: boolean;
+  /** The Team Lead may reject it (final, with a reason). */
+  canReject?: boolean;
   authorDesignation?: string | null;
   /** The content is fixed (submitted and not returned): the work shown is exactly what was submitted. */
   frozen?: boolean;
@@ -6528,6 +6538,32 @@ export interface AiStudioReportDetail extends AiStudioReportSummary {
   canLeadEdit?: boolean;
   reviewStage: 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | null;
   history: AiStudioReportHistoryEntry[];
+}
+// ---- HR's AI Studio Performance (20270302000100): the approved Team Member reports and the Team Lead reports, team-wise and project-wise ----
+export interface AiStudioHrTask { taskId: string | null; title: string; projectId: string | null; projectName: string | null; status: AiStudioTaskStatus | null; progress: number | null; completed: boolean; notes: string[] }
+export interface AiStudioHrMemberReport {
+  id: string; reportDate: string; memberId: string; memberName: string; leadId: string | null; leadName: string | null; teamName: string;
+  tasks: AiStudioHrTask[]; projectIds: string[];
+  description: string | null; workCompleted: string | null; pendingWork: string | null; blockers: string | null; remarks: string | null;
+  status: AiStudioReportStatus; approvalStatus: 'APPROVED'; approvedBy: string | null; approvedAt: string | null; sentToHrAt: string; revision: number;
+  completedTasks: number; pendingTasks: number;
+}
+export interface AiStudioHrLeadReport {
+  id: string; reportDate: string; leadId: string; leadName: string; teamName: string; status: AiStudioReportStatus; sentToHrAt: string;
+  description: string | null; workCompleted: string | null; pendingWork: string | null; blockers: string | null; remarks: string | null;
+  tasks: AiStudioHrTask[]; projectIds: string[];
+  /** The team's day, from the APPROVED member reports of that date only. */
+  teamMembers: number; approvedMemberReports: number; completedTasks: number; pendingTasks: number;
+}
+export interface AiStudioHrTeam { leadId: string | null; leadName: string | null; teamName: string; projects: { id: string; name: string }[]; members: { id: string; name: string; projects: { id: string; name: string }[] }[] }
+export interface AiStudioHrProject { id: string; name: string; status: AiStudioProjectStatus; people: { id: string; name: string; role: 'LEAD' | 'MEMBER'; leadId: string | null }[] }
+export interface AiStudioHrPerformance { from: string; to: string; teams: AiStudioHrTeam[]; projects: AiStudioHrProject[]; memberReports: AiStudioHrMemberReport[]; leadReports: AiStudioHrLeadReport[] }
+export interface AiStudioHrAccess {
+  allowed: boolean;
+  /** The Super Admin names the HR employees who may open it. */
+  canManage: boolean;
+  viewers: { id: string; name: string; email: string; active: boolean; grantedAt: string }[];
+  candidates: { id: string; name: string; email: string }[];
 }
 export interface AiStudioReportPage { items: AiStudioReportSummary[]; total: number; page: number; pageSize: number; counts: Partial<Record<AiStudioReportStatus, number>> }
 export interface AiStudioReportContext {

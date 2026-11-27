@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type {
+import type { AiStudioHrAccess, AiStudioHrPerformance,
   AiStudioTaskDeleteResult, AiStudioAssignees,
   AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
   AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
@@ -94,9 +94,14 @@ export class AiStudioRepository {
   saveDailyReport(id: string | null, i: AiStudioDailyReportInput) {
     return this.rpc<AiStudioReportDetail>('ai_studio_daily_report_save', {
       p_id: id, p_date: i.reportDate, p_tasks: i.taskIds, p_work_completed: i.workCompleted ?? null, p_pending_work: i.pendingWork ?? null,
-      p_blockers: i.blockers ?? null, p_tomorrow_plan: i.tomorrowPlan ?? null, p_remarks: i.remarks ?? null, p_submit: i.submit, p_expected: i.expectedUpdateIds ?? null
+      p_blockers: i.blockers ?? null, p_tomorrow_plan: i.tomorrowPlan ?? null, p_remarks: i.remarks ?? null, p_submit: i.submit, p_expected: i.expectedUpdateIds ?? null,
+      p_description: i.workDescription ?? null
     });
   }
+  // HR's AI Studio Performance (20270302000100): the database checks the caller (the HR employees the Super Admin named, or the Super Admin)
+  hrAccess() { return this.rpc<AiStudioHrAccess>('ai_studio_hr_access_info'); }
+  setHrViewer(profileId: string, allowed: boolean) { return this.rpc<AiStudioHrAccess>('ai_studio_hr_viewer_set', { p_profile: profileId, p_allowed: allowed }); }
+  hrPerformance(from: string | null, to: string | null) { return this.rpc<AiStudioHrPerformance>('ai_studio_hr_performance', { p_from: from, p_to: to }); }
   taskReports(taskId: string) { return this.rpc<AiStudioTaskReportEntry[]>('ai_studio_task_reports', { p_task: taskId }); }
   report(id: string) { return this.rpc<AiStudioReportDetail>('ai_studio_report_get', { p_id: id }); }
   saveReport(id: string | null, i: { projectId: string; taskId?: string | null; reportDate: string; workCompleted?: string | null; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; submit: boolean }) {

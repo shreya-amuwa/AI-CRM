@@ -11248,13 +11248,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 422, 'AI Studio daily report: another member cannot pull this task into their report', q);
   q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, completionNote: 'copy' });
   check(q.status === 422, 'AI Studio daily report: no task text can be sent with the report', q);
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: [dailyUpdates[0]] });
+  // (20270302000100) submitting needs a Daily Work Description of 10-150 words
+  const aiDesc = 'Finished the onboarding task, merged the pull request and updated the project documentation today.';
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: 'Too short' });
+  check(q.status === 422 && /at least 10 words/.test(q.json.error.message), 'AI Studio daily report: a description of fewer than 10 words is refused', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' ') });
+  check(q.status === 422 && /at most 150 words/.test(q.json.error.message), 'AI Studio daily report: a description of more than 150 words is refused', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: [dailyUpdates[0]], workDescription: aiDesc });
   check(q.status === 409, 'AI Studio daily report: a report the author did not see in full is not submitted', q);
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates });
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: aiDesc });
   check(q.status === 201 && q.json.data.kind === 'DAILY' && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.work.length === 1 && q.json.data.workCompleted === null && q.json.data.tomorrowPlan === 'Docs',
     'AI Studio daily report: submitted with no "work completed" text (the task carries the work)', q);
   const daily1 = q.json.data.id;
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], submit: true });
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], submit: true, workDescription: aiDesc });
   check(q.status === 409, 'AI Studio daily report: one report per day (a second click makes none)', q);
   q = await api('ail1', 'GET', `/ai-studio/reports/${daily1}`);
   check(q.status === 200 && q.json.data.frozen === true && q.json.data.summary.tasks === 1 && q.json.data.work[0].entries.length === 2 && q.json.data.canReview === true,
@@ -13769,6 +13775,73 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[tlA, tlB, memA, memB, aiMem]]);
     await db.query(`delete from auth.users where id = any($1::uuid[])`, [[tlA, tlB, memA, memB, aiMem]]);
   }
+}
+
+// --- AI Studio daily report approval to HR, and HR's AI Studio Performance (migration 20270302000100) ---
+{
+  const one = async (sql: string, args: unknown[] = []) => (await db.query(sql, args)).rows[0];
+  const aiDept = (await one(`select id from public.departments where slug = 'ai-studio'`)).id as string;
+  const aiTeamId = (await one(`select id from public.teams where department_id = $1 order by created_at limit 1`, [aiDept])).id as string;
+  const projectId = (await one(`select id from public.ai_studio_projects where status <> 'ARCHIVED' order by name limit 1`)).id as string;
+  const hrTeamId = (await one(`select t.id from public.teams t join public.departments d on d.id = t.department_id where d.slug = 'hr' order by t.created_at limit 1`)).id as string;
+  let r = await api('sa', 'POST', '/users', { email: 'hpx.lead@amuwa.com', fullName: 'HPX Lead', role: 'TEAM_HEAD', teamId: aiTeamId, aiStudioProjectIds: [projectId] });
+  check(r.status === 201, 'AI Studio HR: a Team Lead', r);
+  const leadId = r.json.data.id as string;
+  tokens.set('hpxl', tokenFor(leadId));
+  r = await api('sa', 'POST', '/users', { email: 'hpx.lead2@amuwa.com', fullName: 'HPX Lead Two', role: 'TEAM_HEAD', teamId: aiTeamId, aiStudioProjectIds: [projectId] });
+  tokens.set('hpxl2', tokenFor(r.json.data.id));
+  r = await api('sa', 'POST', '/users', { email: 'hpx.member@amuwa.com', fullName: 'HPX Member', role: 'TEAM_MEMBER', teamId: aiTeamId, aiStudioProjectIds: [projectId], aiStudioLeadId: leadId });
+  check(r.status === 201, 'AI Studio HR: a Team Member of that Team Lead', r);
+  const memberId = r.json.data.id as string;
+  tokens.set('hpxm', tokenFor(memberId));
+  r = await api('sa', 'POST', '/users', { email: 'hpx.hr@amuwa.com', fullName: 'HPX HR Viewer', role: 'TEAM_MEMBER', teamId: hrTeamId,
+    details: { designation: 'HR Assistant', joiningDate: '2026-01-05', dateOfBirth: '1993-03-03', bloodGroup: 'O+', contactNumber: '+91 99887 70001', emergencyContact: '+91 98765 40001' } });
+  check(r.status === 201, 'AI Studio HR: an HR employee', r);
+  const viewerId = r.json.data.id as string;
+  tokens.set('hpxhr', tokenFor(viewerId));
+
+  r = await api('hpxhr', 'GET', '/ai-studio/hr-performance');
+  check(r.status === 403, 'AI Studio HR API: an HR employee nobody named is refused', r);
+  r = await api('hr', 'POST', '/ai-studio/hr-performance/viewers', { profileId: viewerId, allowed: true });
+  check(r.status === 403, 'AI Studio HR API: only the Super Admin names a viewer', r);
+  r = await api('sa', 'POST', '/ai-studio/hr-performance/viewers', { profileId: viewerId, allowed: true });
+  check(r.status === 200 && r.json.data.viewers.some((v: any) => v.id === viewerId), 'AI Studio HR API: the Super Admin names the HR employee', r);
+  r = await api('hpxhr', 'GET', '/ai-studio/hr-performance/access');
+  check(r.status === 200 && r.json.data.allowed === true && r.json.data.canManage === false && r.json.data.viewers.length === 0, 'AI Studio HR API: the named HR employee has access', r);
+  r = await api('hr', 'GET', '/ai-studio/hr-performance/access');
+  check(r.status === 200 && r.json.data.allowed === false, 'AI Studio HR API: another HR employee has none', r);
+
+  const today = (await api('hpxm', 'GET', '/ai-studio/reports/context')).json.data.today as string;
+  const desc = 'Prepared the client onboarding screens, fixed the mobile layout and reviewed the open tasks with the team.';
+  r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: 'Onboarding screens', remarks: 'Good day', workDescription: 'one two', submit: true });
+  check(r.status === 422, 'AI Studio HR API: fewer than 10 words are refused', r);
+  r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: 'Onboarding screens', remarks: 'Good day', workDescription: desc, submit: true });
+  check(r.status === 201 && r.json.data.status === 'PENDING_TL_APPROVAL' && r.json.data.workDescription === desc && !r.json.data.sentToHrAt, 'AI Studio HR API: a valid report waits for the Team Lead', r);
+  const reportId = r.json.data.id as string;
+  r = await api('hpxl2', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
+  check(r.status === 404, 'AI Studio HR API: another team\'s Team Lead cannot approve it', r);
+  r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'REJECT' });
+  check(r.status === 422, 'AI Studio HR API: a rejection needs a reason', r);
+  r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
+  check(r.status === 200 && r.json.data.status === 'PENDING_DH_APPROVAL' && r.json.data.sentToHrAt && r.json.data.tlReviewedAt, 'AI Studio HR API: the Team Lead approves; it is sent to HR', r);
+  r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
+  check(r.status === 409, 'AI Studio HR API: approving twice is refused', r);
+  const notes = (await one(`select count(*)::int as n from public.notifications where recipient_id = $1 and type = 'AI_STUDIO_REPORT_TO_HR' and entity_id = $2`, [viewerId, reportId])).n;
+  check(notes === 1, 'AI Studio HR API: the named HR employee is notified once', notes);
+  r = await api('hpxhr', 'GET', `/ai-studio/hr-performance?from=${today}&to=${today}`);
+  const got = r.json.data?.memberReports?.find((x: any) => x.id === reportId);
+  check(r.status === 200 && got && got.memberName === 'HPX Member' && got.leadName === 'HPX Lead' && got.description === desc && got.approvalStatus === 'APPROVED'
+    && r.json.data.teams.some((t: any) => t.leadId === leadId && t.members.some((m: any) => m.id === memberId)), 'AI Studio HR API: HR sees the approved report with its team and Team Lead', r.json.data?.memberReports);
+  for (const who of ['hr', 'hpxm', 'hpxl']) {
+    r = await api(who, 'GET', '/ai-studio/hr-performance');
+    check(r.status === 403, `AI Studio HR API: ${who} cannot open AI Studio Performance`, r);
+  }
+  r = await api('hpxhr', 'GET', '/ai-studio/hr-performance?from=2026-01-01&to=2025-12-01');
+  check(r.status === 422, 'AI Studio HR API: a reversed period is refused', r);
+  r = await api('sa', 'POST', '/ai-studio/hr-performance/viewers', { profileId: viewerId, allowed: false });
+  r = await api('hpxhr', 'GET', '/ai-studio/hr-performance');
+  check(r.status === 403, 'AI Studio HR API: a removed viewer is refused at once', r);
+  await db.query(`delete from public.ai_studio_daily_reports where id = $1`, [reportId]);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

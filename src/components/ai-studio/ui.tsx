@@ -37,12 +37,19 @@ const REPORT_STYLE: Record<AiStudioReportStatus, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
   SUBMITTED: 'bg-sky-50 text-sky-700',
   PENDING_TL_APPROVAL: 'bg-amber-50 text-amber-700',
-  RETURNED_BY_TL: 'bg-rose-50 text-rose-700',
+  RETURNED_BY_TL: 'bg-orange-50 text-orange-700',
+  REJECTED_BY_TL: 'bg-rose-100 text-rose-800',
   PENDING_DH_APPROVAL: 'bg-violet-50 text-violet-700',
   RETURNED_BY_DH: 'bg-rose-50 text-rose-700',
   APPROVED: 'bg-emerald-50 text-emerald-700'
 };
 export const ReportStatusBadge: React.FC<{ status: AiStudioReportStatus }> = ({ status }) => <span className={`${chip} ${REPORT_STYLE[status]}`}>{AI_STUDIO_REPORT_STATUS_LABELS[status]}</span>;
+/** 20270302000100: the report reached HR's AI Studio Performance (and is still approved: a later return or rejection takes it off). */
+export const isSentToHr = (r: { status: AiStudioReportStatus; sentToHrAt?: string | null }) =>
+  !!r.sentToHrAt && (r.status === 'PENDING_DH_APPROVAL' || r.status === 'APPROVED');
+export const SentToHrBadge: React.FC<{ at?: string | null }> = ({ at }) => (
+  <span className={`${chip} bg-indigo-50 text-indigo-700`} title={at ? `Sent to HR ${new Date(at).toLocaleString('en-IN')}` : undefined} data-testid="sent-to-hr">Sent to HR</span>
+);
 
 const PROJECT_STYLE: Record<AiStudioProjectStatus, string> = {
   ACTIVE: 'bg-emerald-50 text-emerald-700',

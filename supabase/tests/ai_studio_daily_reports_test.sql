@@ -9,6 +9,8 @@
 reset role;
 \i supabase/migrations/20270219000100_ai_studio_consolidated_reports.sql
 \i supabase/migrations/20270219000100_ai_studio_consolidated_reports.sql
+-- (20270302000100) the later migration replaces some of these functions (the description, Reject, Sent to HR): apply it again on top
+\i supabase/migrations/20270302000100_ai_studio_hr_performance.sql
 
 create or replace function test.ist(p_day integer, p_time text) returns timestamptz language sql stable as $$
   select (((now() at time zone 'Asia/Kolkata')::date + p_day) + p_time::time) at time zone 'Asia/Kolkata' $$;
@@ -59,6 +61,9 @@ select test.must_fail($$update public.ai_studio_task_updates set note = 'rewritt
 
 -- ---------------------------------------------------------------------------------------------------------------------------------------------
 \echo '   choosing the tasks for a date'
+-- (20270302000100) submitting a daily report needs a Daily Work Description of 10-150 words
+create or replace function test.desc10() returns text language sql immutable as $$ select 'Worked on the website module, fixed the layout bugs and reviewed the open tasks today.' $$;
+grant execute on function test.desc10() to authenticated;
 set role authenticated;
 select test.login('ai_tm1a');
 create temp table dr_opts as select ai_studio_daily_report_options(test.d(-1)) j;
@@ -115,15 +120,15 @@ select test.check((ai_studio_report_get(test.drep('y')) ->> 'kind') = 'DAILY' an
 select test.must_fail($$select ai_studio_daily_report_save(null, test.d(-1), '{}'::uuid[], 'x', null, null, null, null, false)$$, 'a second report for the same day is refused', 'already have a daily report');
 -- the form showed two of the three entries: submitting is refused, nothing changes
 select test.must_fail(format($$select ai_studio_daily_report_save(%L, test.d(-1), array[test.dtask('DR Website Development'), test.dtask('DR Blockers to be found'), test.dtask('DR Not started')],
-  null, 'Write the tests', null, 'Final testing', null, true, %L::uuid[])$$, test.drep('y'),
+  null, 'Write the tests', null, 'Final testing', null, true, %L::uuid[], p_description => test.desc10())$$, test.drep('y'),
   (select array_agg(e ->> 'id') from jsonb_array_elements((select j from dr_prev) -> 'work') w, jsonb_array_elements(w -> 'entries') e where w ->> 'title' = 'DR Website Development')),
   'a report the author did not see in full is not submitted', 'updated while you were preparing');
 select test.check((ai_studio_report_get(test.drep('y')) ->> 'status') = 'DRAFT', 'it is still a draft');
 select test.check((ai_studio_daily_report_save(test.drep('y'), test.d(-1), array[test.dtask('DR Website Development'), test.dtask('DR Blockers to be found'), test.dtask('DR Not started')],
   null, 'Write the tests', null, 'Final testing', null, true,
-  (select array_agg((e ->> 'id')::uuid) from jsonb_array_elements((select j from dr_prev) -> 'work') w, jsonb_array_elements(w -> 'entries') e)) ->> 'status') = 'PENDING_TL_APPROVAL',
+  (select array_agg((e ->> 'id')::uuid) from jsonb_array_elements((select j from dr_prev) -> 'work') w, jsonb_array_elements(w -> 'entries') e), test.desc10()) ->> 'status') = 'PENDING_TL_APPROVAL',
   'submitted with exactly what the author saw: it goes to their Team Lead (no "work completed" text needed)');
-select test.must_fail(format($$select ai_studio_daily_report_save(%L, test.d(-1), '{}'::uuid[], 'again', null, null, null, null, true)$$, test.drep('y')), 'a second click does not submit again', 'already submitted');
+select test.must_fail(format($$select ai_studio_daily_report_save(%L, test.d(-1), '{}'::uuid[], 'again', null, null, null, null, true, p_description => test.desc10())$$, test.drep('y')), 'a second click does not submit again', 'already submitted');
 reset role;
 select test.check((select count(*) = 3 from public.ai_studio_report_tasks where report_id = test.drep('y')) and (select count(*) = 3 from public.ai_studio_report_task_updates where report_id = test.drep('y')),
   'the report stores 3 task references and 3 history references');
@@ -193,9 +198,9 @@ select test.check((select (w ->> 'progress')::int = 80 from jsonb_array_elements
 
 \echo '   no specific task, and a report needs some work (Test 14)'
 select test.login('ai_tm1a');
-select test.check((ai_studio_daily_report_save(null, test.d(-2), '{}'::uuid[], 'Team meeting and research', null, null, null, null, true) ->> 'status') = 'PENDING_TL_APPROVAL',
+select test.check((ai_studio_daily_report_save(null, test.d(-2), '{}'::uuid[], 'Team meeting and research', null, null, null, null, true, p_description => test.desc10()) ->> 'status') = 'PENDING_TL_APPROVAL',
   'work with no task is submitted with its own description');
-select test.must_fail($$select ai_studio_daily_report_save(null, test.d(-3), array[test.dtask('DR Not started')], null, null, null, null, null, true)$$,
+select test.must_fail($$select ai_studio_daily_report_save(null, test.d(-3), array[test.dtask('DR Not started')], null, null, null, null, null, true, p_description => test.desc10())$$,
   'a report with no recorded work and no description is refused', 'Select a task with work recorded');
 select test.check((ai_studio_daily_report_save(null, test.d(-3), array[test.dtask('DR Not started')], null, null, null, null, null, false) ->> 'status') = 'DRAFT', 'it can still be kept as a draft');
 
@@ -204,13 +209,13 @@ reset role;
 delete from public.ai_studio_daily_reports where author_id = test.id('ai_tm1a') and report_date = test.d(0) and project_id is null;
 set role authenticated;
 select test.login('ai_tm1a');
-insert into dr_t select 't', (ai_studio_daily_report_save(null, test.d(0), array[test.dtask('DR Website Development')], null, null, null, null, null, true) ->> 'id')::uuid;
+insert into dr_t select 't', (ai_studio_daily_report_save(null, test.d(0), array[test.dtask('DR Website Development')], null, null, null, null, null, true, p_description => test.desc10()) ->> 'id')::uuid;
 select test.check((select jsonb_array_length(w -> 'entries') = 1 and w ->> 'completedAt' is not null from jsonb_array_elements(ai_studio_report_get(test.drep('t')) -> 'work') w),
   'today''s report has today''s completion');
 select test.login('ai_tl1');
 select ai_studio_report_review(test.drep('t'), 'RETURN', 'Add the plan for tomorrow');
 select test.login('ai_tm1a');
-select test.check((ai_studio_daily_report_save(test.drep('t'), test.d(0), array[test.dtask('DR Website Development')], null, null, null, 'Start the next module', null, true) ->> 'revision') = '2',
+select test.check((ai_studio_daily_report_save(test.drep('t'), test.d(0), array[test.dtask('DR Website Development')], null, null, null, 'Start the next module', null, true, p_description => test.desc10()) ->> 'revision') = '2',
   'a returned report is corrected and submitted again (revision 2)');
 reset role;
 select test.check((select count(*) = 1 from public.ai_studio_report_task_updates where report_id = test.drep('t')), 'and still references its entry once');

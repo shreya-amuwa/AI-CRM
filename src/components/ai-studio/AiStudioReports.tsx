@@ -8,7 +8,7 @@ import { PageTitle } from '../layout/shell';
 import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipeline/shared';
 import { Card, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../tasks/head/headParts';
 import { notifyAiStudioChanged, peekPendingAiStudio, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
-import { ReportStatusBadge, TableWrap, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
+import { ReportStatusBadge, SentToHrBadge, TableWrap, dateText, dateTimeText, isSentToHr, tdCls, thCls, todayIso, useLoad } from './ui';
 import { DailyReportForm } from './DailyReportForm';
 import { ReportWorkView, WorkSummary } from './ReportWork';
 import { TaskDialog } from './AiStudioTasks';
@@ -166,7 +166,7 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
-  const decide = async (decision: 'APPROVE' | 'RETURN') => {
+  const decide = async (decision: 'APPROVE' | 'RETURN' | 'REJECT') => {
     const parsed = aiStudioReportReviewSchema.safeParse({ decision, comment });
     if (!parsed.success) { setProblem(parsed.error.issues[0]?.message ?? 'Please check the remarks.'); return; }
     setBusy(true);
@@ -197,9 +197,21 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <ReportStatusBadge status={r.status} />
+            {isSentToHr(r) && <SentToHrBadge at={r.sentToHrAt} />}
             <span className="text-slate-500">Submitted {dateTimeText(r.submittedAt)}{r.revision > 1 ? ` · version ${r.revision}` : ''}</span>
             {r.leadName && r.authorRole === 'MEMBER' && <span className="text-slate-500">Team Lead: {r.leadName}</span>}
           </div>
+          {(r.status === 'REJECTED_BY_TL' || r.status === 'RETURNED_BY_TL') && r.tlComment && (
+            <div role="status" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" data-testid="ai-report-decision-reason">
+              <strong>{r.status === 'REJECTED_BY_TL' ? 'Rejected by the Team Lead' : 'Returned for correction'}:</strong> {r.tlComment}
+            </div>
+          )}
+          {r.workDescription && (
+            <div data-testid="ai-report-description">
+              <div className="text-xs font-semibold text-slate-500 mb-1">Daily work description</div>
+              <p className="text-sm text-slate-800 whitespace-pre-wrap break-words">{r.workDescription}</p>
+            </div>
+          )}
           {isDaily(r) ? (
             <>
               {r.summary && <WorkSummary s={r.summary} />}
@@ -229,13 +241,15 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
           {r.canReview && !leadEditing && (
             <div className="rounded-2xl border border-slate-200 p-4 space-y-3" role="group" aria-label="Review this report">
               <h3 className="text-sm font-extrabold text-slate-900">{r.reviewStage === 'TEAM_LEAD' ? 'Team Lead review' : 'Department Head review'}</h3>
-              <Field label="Remarks (needed when you return the report)" htmlFor="ai-rv-comment">
+              <Field label={r.canReject ? 'Remarks (needed when you return or reject the report)' : 'Remarks (needed when you return the report)'} htmlFor="ai-rv-comment">
                 <textarea id="ai-rv-comment" className={textareaCls} rows={3} maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} />
               </Field>
               {problem && <ErrorBanner message={problem} />}
               <div className="flex flex-wrap gap-2">
-                <button type="button" className={primaryBtn} disabled={busy} onClick={() => void decide('APPROVE')}>{r.reviewStage === 'TEAM_LEAD' ? 'Approve and send to the Department Head' : 'Approve (final)'}</button>
-                <button type="button" className={ghostBtn} disabled={busy} onClick={() => void decide('RETURN')}>Return / request changes</button>
+                <button type="button" className={primaryBtn} disabled={busy} onClick={() => void decide('APPROVE')} data-testid="ai-report-approve">{r.reviewStage === 'TEAM_LEAD' ? 'Approve (sent to HR and the Department Head)' : 'Approve (final)'}</button>
+                <button type="button" className={ghostBtn} disabled={busy} onClick={() => void decide('RETURN')} data-testid="ai-report-return">Return for correction</button>
+                {/* 20270302000100: a final "no" with a reason (the employee cannot resubmit it) */}
+                {r.canReject && <button type="button" className={`${ghostBtn} !text-rose-700 !border-rose-200`} disabled={busy} onClick={() => void decide('REJECT')} data-testid="ai-report-reject">Reject</button>}
               </div>
             </div>
           )}
@@ -246,7 +260,7 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
               {r.history.map(h => (
                 <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
                   <div className="font-semibold text-slate-800">
-                    {h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'EDITED' ? 'Edited by the Team Lead' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
+                    {h.action === 'SENT_TO_HR' ? 'Sent to HR' : h.action === 'REJECTED' ? 'Rejected by Team Lead' : h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'EDITED' ? 'Edited by the Team Lead' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
                     <span className="font-normal text-slate-500"> · {h.actorName ?? 'Someone'} · {dateTimeText(h.createdAt)} · {AI_STUDIO_REPORT_STATUS_LABELS[h.toStatus]}</span>
                   </div>
                   {h.comment && <p className="text-slate-600 whitespace-pre-wrap">{h.comment}</p>}
@@ -300,8 +314,10 @@ export const ReportList: React.FC<{
     view === 'department'
       ? [{ id: 'PENDING_DH_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'With Team Leads', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }, { id: '', label: 'All' }]
       : view === 'team'
-      ? [{ id: 'PENDING_TL_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'With Department Head', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }, { id: '', label: 'All' }]
-      : [{ id: '', label: 'All' }, { id: 'DRAFT', label: 'Drafts', count: counts.DRAFT ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'Pending Team Lead', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'Pending Department Head', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }];
+      ? [{ id: 'PENDING_TL_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'Approved · sent to HR', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Final approval', count: counts.APPROVED ?? 0 },
+         { id: 'RETURNED_BY_TL', label: 'Returned', count: counts.RETURNED_BY_TL ?? 0 }, { id: 'REJECTED_BY_TL', label: 'Rejected', count: counts.REJECTED_BY_TL ?? 0 }, { id: '', label: 'All' }]
+      : [{ id: '', label: 'All' }, { id: 'DRAFT', label: 'Drafts', count: counts.DRAFT ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'Pending Team Lead', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'Pending Department Head', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 },
+         { id: 'RETURNED_BY_TL', label: 'Returned', count: (counts.RETURNED_BY_TL ?? 0) + (counts.RETURNED_BY_DH ?? 0) }, { id: 'REJECTED_BY_TL', label: 'Rejected', count: counts.REJECTED_BY_TL ?? 0 }];
   const leads = people.filter(p => p.role === 'TEAM_HEAD');
   const members = people.filter(p => p.role === 'TEAM_MEMBER' || (view === 'department' && p.role === 'TEAM_HEAD'));
   return (
@@ -368,7 +384,7 @@ export const ReportList: React.FC<{
                   </td>
                   <td className={tdCls}>{dateText(r.reportDate)}</td>
                   <td className={tdCls}>{dateTimeText(r.submittedAt)}</td>
-                  <td className={tdCls}><ReportStatusBadge status={r.status} /></td>
+                  <td className={tdCls}><div className="flex flex-wrap gap-1"><ReportStatusBadge status={r.status} />{isSentToHr(r) && <SentToHrBadge at={r.sentToHrAt} />}</div></td>
                   <td className={tdCls}><button type="button" onClick={e => { e.stopPropagation(); setOpenId(r.id); }} className="text-blue-600 hover:underline text-xs font-bold">Open</button></td>
                 </tr>
               ))}
@@ -394,6 +410,8 @@ export const DailyReportsPage: React.FC<{ role: 'LEAD' | 'MEMBER' }> = ({ role }
   const [version, setVersion] = useState(0);
   const projects = useLoad<AiStudioProject[]>(() => aiStudioApi.projects(), []);
   const list = projects.data ?? [];
+  // the Team Lead filters their team's reports by employee (the database returns only their own team)
+  const people = useLoad<AiStudioPerson[]>(() => (role === 'LEAD' ? aiStudioApi.people() : Promise.resolve([])), [role]);
   const tabs: { id: ReportTab; label: string }[] = role === 'MEMBER'
     ? [{ id: 'submit', label: 'Submit Daily Report' }, { id: 'mine', label: 'My Reports' }]
     : [{ id: 'mine', label: 'My Daily Reports' }, { id: 'team', label: 'Team Member Reports' }];
@@ -408,7 +426,7 @@ export const DailyReportsPage: React.FC<{ role: 'LEAD' | 'MEMBER' }> = ({ role }
       {tab === 'mine' && (composing
         ? <DailyReportForm onDone={() => setComposing(false)} onCancel={() => setComposing(false)} />
         : <ReportList key={version} view="mine" projects={list} onNew={() => (role === 'MEMBER' ? setTab('submit') : setComposing(true))} />)}
-      {tab === 'team' && <ReportList view="team" projects={list} waitingStatus="PENDING_TL_APPROVAL" />}
+      {tab === 'team' && <ReportList view="team" projects={list} people={people.data ?? []} waitingStatus="PENDING_TL_APPROVAL" />}
     </div>
   );
 };

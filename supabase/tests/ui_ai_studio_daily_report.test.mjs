@@ -140,6 +140,8 @@ try {
     check(await page.locator('fieldset label').count() === 1, `${label}: the search narrows the list`);
     await page.getByPlaceholder('Search tasks or projects').fill('');
 
+    // (20270302000100) the Daily Work Description (10-150 words) is needed before Submit is enabled
+    await page.fill('[data-testid="daily-description"]', 'Worked on the website module, fixed the layout bugs and reviewed the open tasks today.');
     // nothing picked and nothing typed: the in-app message, no request
     await page.getByRole('button', { name: 'Submit Daily Report' }).click();
     await page.getByText('Select a task with work recorded on this date, or describe the work you completed.').waitFor();
