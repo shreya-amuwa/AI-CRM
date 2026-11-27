@@ -8,7 +8,7 @@ CREDENTIALS.md
 qa-accounts.local.*
 
 # Dependencies
-node_modules/
+node_modules
 
 # Production builds
 dist/
