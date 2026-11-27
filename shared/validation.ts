@@ -3795,7 +3795,8 @@ export const NOTICE_CATEGORY_LABELS: Record<(typeof NOTICE_CATEGORIES)[number], 
   GENERAL: 'General', HR: 'HR', POLICY: 'Policy', EVENT: 'Event', HOLIDAY: 'Holiday / office closure', IT_SYSTEM: 'IT / CRM', OPERATIONS: 'Operations', OTHER: 'Other'
 };
 export const NOTICE_PRIORITIES = ['NORMAL', 'IMPORTANT', 'URGENT'] as const;
-export const NOTICE_AUDIENCES = ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES'] as const;
+// SALES / SUPPORT (20270224000100): one department's Sales or Support function, optionally only the ticked employees of it
+export const NOTICE_AUDIENCES = ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES', 'SALES', 'SUPPORT'] as const;
 export const NOTICE_ROLES = ['DEPARTMENT_HEAD', 'OPERATIONS_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER', 'HR', 'SUPER_ADMIN'] as const;
 const noticeTime = z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter a date and time.' }).nullable().optional());
 export const noticePublishSchema = z.object({
@@ -3815,6 +3816,8 @@ export const noticePublishSchema = z.object({
   .refine(v => v.audienceType !== 'DEPARTMENT' || v.departmentIds.length > 0, { message: 'Choose at least one department.', path: ['departmentIds'] })
   .refine(v => v.audienceType !== 'ROLE' || v.roles.length > 0, { message: 'Choose at least one designation.', path: ['roles'] })
   .refine(v => v.audienceType !== 'EMPLOYEES' || v.employeeIds.length > 0, { message: 'Choose at least one employee.', path: ['employeeIds'] })
+  .refine(v => v.audienceType !== 'SALES' || v.departmentIds.length === 1, { message: 'Choose one Sales department.', path: ['departmentIds'] })
+  .refine(v => v.audienceType !== 'SUPPORT' || v.departmentIds.length === 1, { message: 'Choose one Support department.', path: ['departmentIds'] })
   .refine(v => !v.expiresAt || new Date(v.expiresAt).getTime() > new Date(v.publishAt ?? Date.now()).getTime(), { message: 'The expiry is after the publish date.', path: ['expiresAt'] });
 export const noticeUpdateSchema = z.object({
   title: trimmed(200).min(3, 'Give the notice a title (at least 3 characters).').optional(),

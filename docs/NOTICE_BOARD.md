@@ -83,6 +83,17 @@ Migration `20270202000100_notice_board_restricted_popup.sql` (after `20270131000
 - **Final.** A deleted notice cannot come back: a trigger refuses any later change, so edit, archive and a release of a scheduled notice cannot revive it. There is no undo in the screen; the record stays in the database, so a deletion made by mistake can be restored by a database administrator by hand (the guard trigger `company_notices_deleted_final` has to be switched off for that update).
 - **Repeat.** Deleting again answers `alreadyDeleted: true` (a double click or a retry is not an error).
 
+## Sales and Support audiences (migration `20270224000100_notice_sales_support_audience.sql`)
+
+- **Where.** *Send Notice > Target audience* has two more choices next to Entire company, Specific departments, Specific designations and Selected employees: **Sales** and **Support**. They are the same for the Super Admin, HR and the CRM team; who may publish is unchanged.
+- **Flow.** Choose Sales (or Support), then a department from the dropdown. The employees of that department's Sales (Support) function are listed. Send to the **entire Sales (Support) team of the department**, or choose **Only selected team members** and tick them. Choosing "only selected" without ticking anyone is refused in the form (an empty list would mean the whole team).
+- **Which departments.** Read live from the database, nothing hard-coded: a department is in the Sales list when it has a Sales team (`teams.division`), in the Support list when it has a Support team or a Support side (`departments.facet_of`; Wabatalk is shown as "Wabatalk (D Talk)"). A new department or team appears at once.
+- **Who is in "Wabastore Sales"** (`private.notice_division_members`): the active Team Leads and Team Members of Wabastore's Sales teams, and the active Department Heads of Wabastore's Sales function (home department with side Sales or no side set, or granted that function in Departments & functions). Not Support staff, not HR, not an Operations Head who only supervises the department, not anyone of another department. A newly added Sales employee appears in the list at once.
+- **Stored** as `audience_type = SALES / SUPPORT`, the department in `audience_departments` (exactly one) and the ticked people in `audience_employees` (empty = the whole function). Recipients are resolved when the notice goes out (at once, or at its publish time), into `company_notice_recipients`, so the bell, the push, the unread count, the popup and the acknowledgement work as for every other audience, and nobody is notified twice. As for the other audiences, someone who joins after a notice went out does not receive that notice; a scheduled notice includes them.
+- **Checked in the database** (`notice_publish`), not only in the form: one department, which must be a Sales (Support) department, and every ticked person must belong to that department's Sales (Support) function; otherwise `VALIDATION_ERROR` (HTTP 422).
+- **Who reads it.** Only its recipients, its publisher and the Super Admin. The other publishers see a whole-team notice in *All company notices* like a department notice; a notice for ticked team members only is, like *Selected employees*, not shown to them (`notice_visible`, `notice_receipts`).
+- **Tests:** `supabase/tests/notice_sales_support_test.sql`, the "notice Sales/Support API" checks of `api_integration.test.ts`, and the Sales / Support part of `ui_notice_board.test.mjs`.
+
 ## API
 
 | Route | Who / what |

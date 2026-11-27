@@ -13379,6 +13379,54 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- Notice Board: Sales and Support audiences (migration 20270224000100) ---
+{
+  const key = () => `nsx-${crypto.randomUUID().slice(0, 18)}`;
+  const people = (await db.query(`select p.id, private.base_department(t.department_id) dept, t.division::text division from public.profiles p join public.teams t on t.id = p.team_id
+                                   where p.id = any($1::uuid[])`, [[memberA, supportMember]])).rows as { id: string; dept: string; division: string }[];
+  const a = people.find(x => x.id === memberA)!;
+  const sm = people.find(x => x.id === supportMember)!;
+  check(a.division === 'SALES' && sm.division === 'SUPPORT' && a.dept === sm.dept, 'notice Sales/Support API: fixtures (a Sales and a Support member of one department)', people);
+  const hrDept = (await db.query(`select id from public.departments where slug = 'hr'`)).rows[0].id as string;
+  let r = await api('sa', 'GET', '/notices/audience');
+  const sales = (r.json.data.sales ?? []) as { id: string; employees: { id: string }[] }[];
+  const support = (r.json.data.support ?? []) as { id: string; employees: { id: string }[] }[];
+  check(r.status === 200 && r.json.data.audiences.includes('SALES') && r.json.data.audiences.includes('SUPPORT') && r.json.data.audiences.includes('COMPANY'),
+    'notice Sales/Support API: the Super Admin is offered Sales and Support next to the existing audiences', r);
+  check(sales.some(d => d.id === a.dept && d.employees.some(e => e.id === memberA) && !d.employees.some(e => e.id === supportMember)),
+    'notice Sales/Support API: the Sales list shows the department with its Sales member only', sales);
+  check(support.some(d => d.id === sm.dept && d.employees.some(e => e.id === supportMember) && !d.employees.some(e => e.id === memberA)),
+    'notice Sales/Support API: the Support list shows the department with its Support member only', support);
+  check(!sales.some(d => d.id === hrDept) && !support.some(d => d.id === hrDept), 'notice Sales/Support API: HR is in neither list', { sales, support });
+  r = await api('a', 'GET', '/notices/audience');
+  check(r.status === 200 && r.json.data.canPublish === false && (r.json.data.sales ?? []).length === 0, 'notice Sales/Support API: a Team Member is offered nothing', r);
+  r = await api('a', 'POST', '/notices', { title: 'NSX Not allowed', body: 'x', category: 'GENERAL', audienceType: 'SALES', departmentIds: [a.dept], clientRequestId: key() });
+  check(r.status === 403, 'notice Sales/Support API: a Team Member cannot publish to Sales (403)', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NSX Bad', body: 'x', category: 'GENERAL', audienceType: 'SALES', clientRequestId: key() });
+  check(r.status === 422, 'notice Sales/Support API: Sales needs one department (422)', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NSX Bad', body: 'x', category: 'GENERAL', audienceType: 'SALES', departmentIds: [hrDept], clientRequestId: key() });
+  check(r.status === 422, 'notice Sales/Support API: HR is not a Sales department (422, checked by the database)', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NSX Bad', body: 'x', category: 'GENERAL', audienceType: 'SALES', departmentIds: [a.dept], employeeIds: [supportMember], clientRequestId: key() });
+  check(r.status === 422, 'notice Sales/Support API: a Support member cannot be ticked for a Sales notice (422)', r);
+  r = await api('sa', 'POST', '/notices', { title: 'NSX Sales targets', body: 'This month\'s Sales targets.', category: 'GENERAL', audienceType: 'SALES', departmentIds: [a.dept], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.audience.type === 'SALES' && r.json.data.recipientCount >= 1, 'notice Sales/Support API: the Super Admin publishes to a Sales department', r);
+  const salesNotice = r.json.data.id as string;
+  r = await api('hr', 'POST', '/notices', { title: 'NSX Support shift', body: 'Support shift change.', category: 'HR', audienceType: 'SUPPORT', departmentIds: [sm.dept], employeeIds: [supportMember], clientRequestId: key() });
+  check(r.status === 201 && r.json.data.recipientCount === 1 && r.json.data.publisherRole === 'HR', 'notice Sales/Support API: HR publishes to one ticked Support member', r);
+  const supportNotice = r.json.data.id as string;
+  r = await api('a', 'GET', '/notices?limit=100');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === salesNotice) && !r.json.data.items.some((n: any) => n.id === supportNotice),
+    'notice Sales/Support API: the Sales member sees the Sales notice, not the Support one', r);
+  r = await api('sm', 'GET', '/notices?limit=100');
+  check(r.status === 200 && r.json.data.items.some((n: any) => n.id === supportNotice) && !r.json.data.items.some((n: any) => n.id === salesNotice),
+    'notice Sales/Support API: the Support member sees the Support notice, not the Sales one', r);
+  r = await api('sm', 'GET', `/notices/${salesNotice}`);
+  check(r.status === 404, 'notice Sales/Support API: the Support member cannot open the Sales notice (404)', r);
+  r = await api('a', 'GET', `/notices/${supportNotice}`);
+  check(r.status === 404, 'notice Sales/Support API: the Sales member cannot open the Support notice (404)', r);
+  await db.query(`delete from public.company_notices where title like 'NSX %'`);
+}
+
 // ---------------------------------------------------------------------------
 // Department HR ("HR (Digitree)", 20270223000100): Digitree only, created by the Super Admin; and a probation confirmation that is completed only
 // after its e-mail is sent (a local mock stands in for the e-mail provider: nothing real is sent).
