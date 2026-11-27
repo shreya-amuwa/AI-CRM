@@ -13345,6 +13345,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   });
   const mailsTo = (to: string, subjectPart: string) => outbox.filter(o => o.path === '/emails' && o.body?.to?.[0] === to && String(o.body?.subject).includes(subjectPart));
   try {
+    // earlier sections use up the e-mail provider's recorded quota / pause in this test database: start this section with a fresh provider state
+    await db.query(`update public.email_provider_state set paused_until = null`);
+    await db.query(`delete from public.email_usage_daily`);
     const { rows: [dig] } = await db.query(`select id from public.departments where slug = 'digitree'`);
     const { rows: [digHr] } = await db.query(`select id from public.teams where department_id = $1 and name = 'Digitree HR'`, [dig.id]);
     const { rows: [digSales] } = await db.query(`select id from public.teams where department_id = $1 and division = 'SALES' order by created_at limit 1`, [dig.id]);
