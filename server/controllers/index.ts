@@ -268,7 +268,7 @@ export const meetingsController = {
 };
 
 /** Bugs for the Developers team (20270122000300). */
-// Dashboard Explorer (20270225000100): only the Managing Director (the database checks the caller)
+// Dashboard Explorer (20270226000100): only the Managing Director (the database checks the caller)
 export const dashboardExplorerController = {
   startSession: (async ctx => ok(await svc(ctx).dashboardExplorer.startSession(ctx.req.body), 201)) as Handler,
   endSession: (async ctx => ok(await svc(ctx).dashboardExplorer.endSession(ctx.req.body))) as Handler,
@@ -940,6 +940,8 @@ export const businessAssociateController = {
   createScope: (async ctx => ok(await svc(ctx).ba.createScope(ctx.req.body), 201)) as Handler,
   updateScope: (async ctx => ok(await svc(ctx).ba.updateScope(ctx.params.id, ctx.req.body))) as Handler,
   aiScope: (async ctx => ok(await svc(ctx).ba.aiScope(ctx.params.id, ctx.req.body))) as Handler,
+  research: (async ctx => ok(await svc(ctx).ba.research(ctx.params.id))) as Handler,
+  runResearch: (async ctx => ok(await svc(ctx).ba.runResearch(ctx.params.id, ctx.req.body))) as Handler,
   reviewScope: (async ctx => ok(await svc(ctx).ba.reviewScope(ctx.params.id))) as Handler,
   finalizeScope: (async ctx => ok(await svc(ctx).ba.finalizeScope(ctx.params.id))) as Handler,
   scopeFile: (async ctx => ok(await svc(ctx).ba.scopeFileUrl(ctx.params.id, ctx.req.query))) as Handler,

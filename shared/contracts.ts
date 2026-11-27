@@ -4112,6 +4112,29 @@ export interface BaScope extends BaScopeRow {
   reviewedAt: string | null;
   client?: { name: string; company: string | null };
 }
+// ---- Business Associate: client research (web) — suggestions for the profile fields (20270225000100)
+export interface BaClientResearchUsage {
+  tavilyCredits?: number;
+  tavilySearches?: number;
+  tavilyPages?: number;
+  claudeModel?: string;
+  claudeInputTokens?: number;
+  claudeOutputTokens?: number;
+  claudeWebSearches?: number;
+  estimatedUsd?: number;
+  fallbackReason?: string;
+}
+export interface BaClientResearch {
+  id: string;
+  contactId: string;
+  provider: 'TAVILY' | 'CLAUDE';
+  suggestions: import('./baContent').ResearchSuggestions;
+  sources: import('./baContent').ResearchSource[];
+  usage: BaClientResearchUsage;
+  createdAt: string;
+  /** true when this is a stored result (no new web search was made) */
+  cached: boolean;
+}
 export interface ServicePrice {
   serviceCode: string;
   name: string;
@@ -7611,7 +7634,7 @@ export interface AiStudioTaskDeleteResult { deleted: true; taskId: string; title
 export interface AdsAssignmentDeleteResult { deleted: true; id: string; title: string; memberParts: number }
 
 // ---------------------------------------------------------------------------
-// Dashboard Explorer (migration 20270225000100): the Managing Director's preview audit and dashboard improvement requests
+// Dashboard Explorer (migration 20270226000100): the Managing Director's preview audit and dashboard improvement requests
 // ---------------------------------------------------------------------------
 export interface PreviewSession { sessionId: string; startedAt: string }
 export interface PreviewRecent { dashboardId: string; department: string; viewedAt: string }

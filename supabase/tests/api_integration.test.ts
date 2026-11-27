@@ -6940,6 +6940,65 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 404, 'business associate API: another Business Associate cannot download it', r);
   r = await api('dh', 'GET', `/ba/scope/${scopeId}/file`);
   check(r.status === 200, 'business associate API: the Department Head can', r);
+  // ---- client research on the web (20270225000100): Tavily first, Claude's web search when the Tavily credits are used up
+  {
+    const webCalls: { path: string; body: any; auth: string }[] = [];
+    let tavilyStatus = 200;
+    const web = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+        webCalls.push({ path: req.url || '', body, auth: String(req.headers.authorization || '') });
+        const send = (st: number, x: unknown) => res.writeHead(st, { 'content-type': 'application/json' }).end(JSON.stringify(x));
+        if (req.url === '/search') return tavilyStatus !== 200 ? send(tavilyStatus, { detail: { error: 'limit' } })
+          : send(200, { results: [{ url: 'https://hot.example.com/', title: 'Hot Co', content: 'Hot Co runs restaurants in Pune.' }], usage: { credits: 1 } });
+        if (req.url === '/extract') return send(200, { results: [{ url: 'https://hot.example.com/', raw_content: 'Restaurants with home delivery.' }], usage: { credits: 1 } });
+        const fields = { industry: { value: 'Restaurants', basis: 'VERIFIED', sources: [1] }, marketingChannels: { value: 'Home delivery apps', basis: 'ASSUMPTION', sources: [] } };
+        const sources = body.tools ? [{ url: 'https://hot.example.com/', title: 'Hot Co' }] : undefined;
+        send(200, { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ summary: 'Restaurants in Pune.', fields, missingInformation: [], sources }) }],
+          usage: { input_tokens: 1000, output_tokens: 200, server_tool_use: body.tools ? { web_search_requests: 2 } : undefined } });
+      });
+    });
+    await new Promise<void>(rs => web.listen(0, '127.0.0.1', rs));
+    const base = `http://127.0.0.1:${(web.address() as any).port}`;
+    Object.assign(process.env, { ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_API_BASE_URL: base, TAVILY_API_KEY: 'tvly-test-key', TAVILY_API_BASE_URL: base });
+    try {
+      r = await api('ba1', 'GET', `/ba/contacts/${contactId}/research`);
+      check(r.status === 200 && r.json.data === null, 'client research API: nothing is stored before the first research', r);
+      r = await api('ba2', 'POST', `/ba/contacts/${contactId}/research`, {});
+      check(r.status === 404 && webCalls.length === 0, 'client research API: another Business Associate cannot research this client (no web call is made)', r);
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: 'yes' });
+      check(r.status === 422, 'client research API: the body is checked', r);
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, {});
+      check(r.status === 200 && r.json.data.provider === 'TAVILY' && !r.json.data.cached && r.json.data.suggestions.fields.industry.value === 'Restaurants'
+        && r.json.data.suggestions.fields.marketingChannels.basis === 'ASSUMPTION' && r.json.data.usage.tavilyCredits === 2, 'client research API: Tavily researches the client for about 2 credits; the suggestions keep Verified / Assumption', r);
+      const sentToWeb = JSON.stringify(webCalls.map(c => c.body));
+      check(webCalls.some(c => c.path === '/search' && c.auth === 'Bearer tvly-test-key') && !/@|9811234|\+91/.test(sentToWeb), 'client research API: the Tavily key is used on the server, and no phone number or e-mail leaves the CRM', sentToWeb.slice(0, 400));
+      const n = webCalls.length;
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, {});
+      check(r.status === 200 && r.json.data.cached && webCalls.length === n, 'client research API: a second click within 30 days returns the stored result with no new web call', r);
+      r = await api('dh', 'GET', `/ba/contacts/${contactId}/research`);
+      check(r.status === 200 && r.json.data?.provider === 'TAVILY', 'client research API: the Department Head can read the last research', r);
+      tavilyStatus = 432;
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: true });
+      check(r.status === 200 && r.json.data.provider === 'CLAUDE' && r.json.data.usage.fallbackReason === 'TAVILY_CREDITS_USED_UP' && r.json.data.usage.claudeWebSearches === 2,
+        'client research API: when the Tavily credits are used up, Claude\'s web search takes over', r);
+      const tavilyCallsBefore = webCalls.filter(c => c.path === '/search').length;
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: true });
+      check(r.status === 200 && r.json.data.provider === 'CLAUDE' && webCalls.filter(c => c.path === '/search').length === tavilyCallsBefore, 'client research API: for the rest of the month Tavily is skipped (no wasted calls)', r);
+      await db.query(`update public.ba_research_state set tavily_paused_until = null`);
+      process.env.BA_RESEARCH_FALLBACK = 'none';
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: true });
+      check(r.status === 503 && /used up/.test(r.json.error.message), 'client research API: with the fallback switched off, the user is told the credits are used up', r);
+      check((await db.query(`select tavily_paused_until > now() as p from public.ba_research_state`)).rows[0].p === true, 'client research API: and Tavily is paused even then');
+    } finally {
+      web.close();
+      await db.query(`update public.ba_research_state set tavily_paused_until = null`);
+      await db.query(`delete from public.ba_client_research where contact_id = $1`, [contactId]);
+      for (const k of ['TAVILY_API_KEY', 'TAVILY_API_BASE_URL', 'BA_RESEARCH_FALLBACK']) delete process.env[k];
+    }
+  }
   fake.server.close();
   aiServer.close();
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'ANTHROPIC_API_KEY', 'ANTHROPIC_API_BASE_URL']) delete process.env[k];
@@ -13473,7 +13532,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
-// --- Dashboard Explorer (migration 20270225000100): the Managing Director's preview audit and improvement requests; everyone else refused ---
+// --- Dashboard Explorer (migration 20270226000100): the Managing Director's preview audit and improvement requests; everyone else refused ---
 {
   let r = await api('sa', 'POST', '/dashboard-explorer/sessions', { dashboardId: 'support-department-head', department: 'mpillar', scenario: 'normal' });
   check(r.status === 201 && /^[0-9a-f-]{36}$/.test(r.json.data?.sessionId ?? ''), 'Dashboard Explorer: the Managing Director starts a preview (audited)', r);

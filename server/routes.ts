@@ -558,7 +558,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/meetings/:id/proposal', handler: meetings.answerProposal },
   { method: 'POST', path: '/meetings/:id/response', handler: meetings.respond },
   { method: 'GET', path: '/employee/case-details', handler: employeeCases.myDetails },
-  // Dashboard Explorer (20270225000100): the Managing Director's preview audit and improvement requests (the previews themselves never call the API)
+  // Dashboard Explorer (20270226000100): the Managing Director's preview audit and improvement requests (the previews themselves never call the API)
   { method: 'POST', path: '/dashboard-explorer/sessions', handler: dashboardExplorer.startSession, options: S },
   { method: 'POST', path: '/dashboard-explorer/sessions/end', handler: dashboardExplorer.endSession },
   { method: 'GET', path: '/dashboard-explorer/recent', handler: dashboardExplorer.recent },
@@ -844,6 +844,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/ba/contacts', handler: ba.contacts },
   { method: 'GET', path: '/ba/contacts/:id', handler: ba.contact },
   { method: 'PATCH', path: '/ba/contacts/:id', handler: ba.updateContact },
+  { method: 'GET', path: '/ba/contacts/:id/research', handler: ba.research },
+  { method: 'POST', path: '/ba/contacts/:id/research', handler: ba.runResearch, options: S },
   { method: 'POST', path: '/ba/contacts/:id/notes', handler: ba.addNote },
   { method: 'POST', path: '/ba/contacts/:id/reassign', handler: ba.reassign, options: S },
   { method: 'GET', path: '/ba/contacts/:id/scope', handler: ba.scopes },

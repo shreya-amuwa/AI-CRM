@@ -124,3 +124,28 @@ export const businessProfileSchema = z
   .object(Object.fromEntries(PROFILE_FIELDS.map(f => [f.key, text(2000).optional()])) as Record<ProfileKey, z.ZodOptional<z.ZodString>>)
   .strict();
 export type BusinessProfile = z.infer<typeof businessProfileSchema>;
+
+// ---------------------------------------------------------------------------
+// Client research (web): suggestions for the profile fields, each with where it came from. The Business Associate reviews them; nothing is
+// saved into the profile until they apply and save.
+// ---------------------------------------------------------------------------
+export const RESEARCH_BASIS = ['VERIFIED', 'ASSUMPTION'] as const;
+export const researchSuggestionSchema = z.object({
+  value: text(2000).min(1),
+  basis: z.enum(RESEARCH_BASIS),
+  // 1-based numbers of the entries in "sources"
+  sources: z.array(z.number().int().min(1).max(30)).max(6).default([])
+});
+export const researchSuggestionsSchema = z.object({
+  summary: text(1500).default(''),
+  fields: z
+    .object(Object.fromEntries(PROFILE_FIELDS.map(f => [f.key, researchSuggestionSchema.nullable().optional()])) as Record<ProfileKey, z.ZodOptional<z.ZodNullable<typeof researchSuggestionSchema>>>)
+    .partial()
+    .default({}),
+  // true when the sources may be about another business with a similar name
+  uncertainMatch: z.boolean().default(false),
+  missingInformation: list(12, 300).default([])
+});
+export type ResearchSuggestions = z.infer<typeof researchSuggestionsSchema>;
+export const researchSourceSchema = z.object({ url: z.string().url().max(1000), title: text(300).default('') });
+export type ResearchSource = z.infer<typeof researchSourceSchema>;

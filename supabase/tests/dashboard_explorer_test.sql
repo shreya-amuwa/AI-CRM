@@ -1,5 +1,5 @@
 -- =============================================================================
--- Dashboard Explorer (migration 20270225000100): only the active Managing Director may start a preview, list recent previews and send
+-- Dashboard Explorer (migration 20270226000100): only the active Managing Director may start a preview, list recent previews and send
 -- improvement requests; a CEO, a Department Head and a Team Member are refused. A preview changes no role, no profile, no session; an
 -- improvement request lands in the Developer Team's issues with the dashboard / page / viewport, once per request id, and the Managing
 -- Director is told when its status changes.
@@ -10,8 +10,8 @@
 \set QUIET 1
 \echo '--- Dashboard Explorer'
 reset role;
-\i supabase/migrations/20270225000100_dashboard_explorer.sql
-\i supabase/migrations/20270225000100_dashboard_explorer.sql
+\i supabase/migrations/20270226000100_dashboard_explorer.sql
+\i supabase/migrations/20270226000100_dashboard_explorer.sql
 delete from dev_bugs where source = 'DASHBOARD_EXPLORER' and reporter_id = test.id('sa');
 create temp table dx (k text primary key, v jsonb);
 grant all on dx to authenticated;

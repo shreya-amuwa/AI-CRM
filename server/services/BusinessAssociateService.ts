@@ -1,16 +1,17 @@
 import { z } from 'zod';
 import type {
-  BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ClientDocumentUrl, ServicePrice, TelecallerLead, TelecallerLeadList
+  BaAssignee, BaClientResearch, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ClientDocumentUrl, ServicePrice, TelecallerLead, TelecallerLeadList
 } from '../../shared/contracts.js';
 import { quotationContentSchema, scopeContentSchema, type ScopeSection } from '../../shared/baContent.js';
 import {
-  baAiExtraSchema, baContactUpdateSchema, baContactsQuerySchema, baConvertSchema, baDemoCreateSchema, baDemoStatusSchema, baDemoUpdateSchema, baDemosQuerySchema,
+  baAiExtraSchema, baContactUpdateSchema, baResearchSchema, baContactsQuerySchema, baConvertSchema, baDemoCreateSchema, baDemoStatusSchema, baDemoUpdateSchema, baDemosQuerySchema,
   baDocumentFileQuerySchema, baNoteSchema, baQuotationCreateSchema, baQuotationSchema, baReassignSchema, baScopeAiSchema, baScopeCreateSchema, baScopeSchema, servicePriceSchema,
   telecallerLeadSchema, telecallerLeadUpdateSchema, telecallerLeadsQuerySchema, uuidSchema
 } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { baAiSettings, callAiJson, checkAnswer, QUOTATION_SYSTEM, SCOPE_SYSTEM } from '../ba/ai.js';
+import { researchClient, researchSettings, type ResearchSettings } from '../ba/research.js';
 // pdf-lib is loaded only when a quotation / scope PDF is drawn, not on every start of the API.
 const baPdf = () => import('../ba/pdf.js');
 import type { BusinessAssociateRepository } from '../repositories/BusinessAssociateRepository.js';
@@ -27,7 +28,11 @@ const followUpAt = (date: string | null | undefined) => (date === undefined ? un
  * amount), draws the PDFs from the stored snapshot and stores them privately.
  */
 export class BusinessAssociateService {
-  constructor(private readonly repo: BusinessAssociateRepository, private readonly storage: StorageRepository) {}
+  constructor(
+    private readonly repo: BusinessAssociateRepository,
+    private readonly storage: StorageRepository,
+    private readonly research_: { settings?: () => ResearchSettings; fetch?: typeof fetch } = {}
+  ) {}
 
   home(): Promise<BaHome> { return this.repo.home(); }
   assignees(): Promise<BaAssignee[]> { return this.repo.assignees(); }
@@ -170,6 +175,33 @@ export class BusinessAssociateService {
     if (content.recommendedSolutions) content.recommendedSolutions = content.recommendedSolutions.filter(r => catalogue.has(r.serviceCode));
     if (section) content.missingInformation = [...new Set([...(((doc.content as { missingInformation?: string[] }).missingInformation) ?? []), ...(content.missingInformation ?? [])])].slice(0, 20);
     return this.repo.saveScope(scopeId, null, { content, aiGenerated: true, aiModel: ai.model });
+  }
+
+  // ---- client research (web): suggestions for the profile fields
+  /** The last research of this client, with no web call. */
+  research(contactId: unknown): Promise<BaClientResearch | null> { return this.repo.researchLatest(parse(uuidSchema, contactId)); }
+
+  /**
+   * Researches the client on the web: a stored result of the last 30 days is returned free unless `force`; otherwise Tavily (about 2 credits),
+   * or Claude's web search when Tavily is not set up or its credits are used up (see server/ba/research.ts). Nothing is written into the
+   * profile: the Business Associate applies the suggestions they keep and saves.
+   */
+  async runResearch(contactId: unknown, body: unknown): Promise<BaClientResearch> {
+    const id = parse(uuidSchema, contactId);
+    const { force } = parse(baResearchSchema, body ?? {});
+    const begin = await this.repo.researchBegin(id, force ?? false);
+    if (begin.cached) return begin.cached;
+    const st = (this.research_.settings ?? researchSettings)();
+    const subject = { business: begin.business || '', city: begin.city ?? null, businessCategory: begin.businessCategory ?? null, website: begin.website ?? null, industry: begin.industry ?? null };
+    let out;
+    try {
+      out = await researchClient(st, subject, !!begin.tavilyPaused, this.research_.fetch ?? fetch);
+    } catch (err) {
+      // Tavily said its credits are used up and there is no fallback: remember it, so no more Tavily calls are wasted this month.
+      if ((err as { tavilyFailure?: string }).tavilyFailure === 'TAVILY_CREDITS_USED_UP' && !begin.tavilyPaused) await this.repo.researchPauseTavily(id).catch(() => undefined);
+      throw err;
+    }
+    return this.repo.researchRecord(id, begin.key || '', out);
   }
 
   async finalizeScope(id: unknown): Promise<BaScope> {

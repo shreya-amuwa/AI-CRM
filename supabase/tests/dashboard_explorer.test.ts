@@ -2,7 +2,7 @@
  * Dashboard Explorer (docs/DASHBOARD_EXPLORER.md), without a browser:
  *  - every registry entry's synthetic profile opens the expected dashboard through the PRODUCTION role mapping (toAuthUser), in every
  *    department it can be previewed in - so the preview and production navigation cannot drift apart silently;
- *  - the database allowlist (migration 20270225000100) is the registry;
+ *  - the database allowlist (migration 20270226000100) is the registry;
  *  - the preview frame's headers: sandbox without allow-same-origin, connect-src 'none', framed only by the CRM itself;
  *  - the Worker serves /dashboard-preview/* itself with those headers and never answers the app there;
  *  - the preview build swaps the live modules out (no Supabase client library in the preview bundle) when the bundle is present.
@@ -58,7 +58,7 @@ function check(cond: unknown, label: string, extra?: unknown) {
 
 // ---- the database allowlist is the registry ----------------------------------------------------------------------------------------
 {
-  const sql = readFileSync('supabase/migrations/20270225000100_dashboard_explorer.sql', 'utf8');
+  const sql = readFileSync('supabase/migrations/20270226000100_dashboard_explorer.sql', 'utf8');
   const arr = (fn: string) => {
     const body = sql.slice(sql.indexOf(`function private.${fn}()`));
     return [...body.slice(0, body.indexOf(']::text[]')).matchAll(/'([a-z0-9-]+)'/g)].map(m => m[1]);
