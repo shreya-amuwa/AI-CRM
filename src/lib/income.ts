@@ -1,3 +1,4 @@
+import { reportIfWalletLocked } from './walletLock';
 import { getSupabase } from '../services/supabaseClient';
 
 /**
@@ -77,7 +78,7 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   const db = getSupabase();
   if (!db) throw new Error('The CRM is not connected to its database.');
   const { data, error } = await db.rpc(fn, args);
-  if (error) throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
+  if (error) { reportIfWalletLocked(error.message); throw new Error(error.message.replace(/^[A-Z_]+:\s*/, '')); }
   return data as T;
 }
 

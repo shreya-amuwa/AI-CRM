@@ -1,5 +1,6 @@
 import { getSupabase } from '../services/supabaseClient';
 import { api } from './api/client';
+import { WALLET_LOCKED_EVENT, reportIfWalletLocked } from './walletLock';
 import { rupees } from './income';
 import type { PayoutRequest } from './payouts';
 
@@ -81,14 +82,14 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   const { data, error } = await db.rpc(fn, args);
   if (error) {
     // the database refuses the wallet until the PIN was entered in this sign-in (20270222000100): the PIN screen takes over
-    if (/^WALLET_LOCKED:/.test(error.message) && typeof window !== 'undefined') window.dispatchEvent(new Event(WALLET_LOCKED_EVENT));
+    reportIfWalletLocked(error.message);
     throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
   }
   return data as T;
 }
 
 /** Sent when a wallet read is refused because the Wallet PIN was not entered (or the unlock ran out). */
-export const WALLET_LOCKED_EVENT = 'wallet:locked';
+export { WALLET_LOCKED_EVENT };
 export interface WalletPinStatus { hasPin: boolean; unlocked: boolean; unlockExpiresAt: string | null; lockedUntil: string | null; triesLeft: number }
 export interface WalletPinAnswer { unlocked?: boolean; triesLeft?: number; lockedUntil?: string | null; changed?: boolean; reset?: boolean }
 /** Wallet PIN: one per person, entered once per sign-in; checked and hashed only by the database. */

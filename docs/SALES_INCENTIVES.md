@@ -45,8 +45,11 @@ directly below the caller (`private.incentive_reports`) with what they get now a
 rule form's option lists and how often each rule was earned.
 
 ## Screens
-- **My Income** (`src/components/income/IncomePage.tsx`): Sales Head / Operations Head (`my-income`; Department Income keeps `income`),
-  Team Lead, Telecaller, Business Associate and Sales Team Members. Calls and talk time only for people connected to Crocodial.
+- **My Income moved into the Wallet** (20270223000100, `docs/EMPLOYEE_WALLET.md`): the menu entry is gone from the Sales Head / Operations Head, Team Lead,
+  Telecaller, Business Associate and Sales Team Member dashboards (an old `my-income` / `income` address opens the Wallet; the Sales Head's Department Income
+  keeps `income`). Today, targets and this month's activity are on the Wallet's Overview (`WalletActivity`), withdrawals on its Withdrawals tab.
+  `income_summary`, `income_earnings` and the person's own payout functions need the Wallet PIN once it is set. `IncomePage.tsx` is no longer shown on any
+  dashboard (kept for now: `ui_income` / `ui_payouts` still exercise it).
 - **Incentive setup** (`src/components/income/IncentiveSetup.tsx`): Super Admin (Company > Sales Incentives), Sales heads and Team Leads.
 - The Business Associate's **The client's authorised person attended** tick on completed demos (`ba_demo_set_authorised`; the demo
   record carries `authorisedPersonAttended`).

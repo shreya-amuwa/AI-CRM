@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, Home, IndianRupee, MapPinned, Target } from 'lucide-react';
-import { IncomePage } from '../income/IncomePage';
+import { ClipboardList, Home, MapPinned, Target } from 'lucide-react';
+import { openWallet } from '../wallet/walletEvents';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
 import { DashboardShell, PageTitle, groupNavItems } from '../layout/shell';
@@ -26,8 +26,6 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: 'home', label: 'Home', icon: Home },
   { id: 'tasks', label: 'Tasks', icon: ClipboardList },
   { id: 'leads', label: 'Leads', icon: Target },
-  // sales incentives (20270119000100): what the telecaller has earned
-  { id: 'income', label: 'My Income', icon: IndianRupee },
   // Field Visit: planning and recording visits to leads, inside this same dashboard
   { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV },
   { ...REPORTS_NAV },
@@ -66,6 +64,8 @@ export const TelecallerDashboard: React.FC = () => {
     navigateTo(next === 'home' ? TELECALLER_BASE(userId) : `${TELECALLER_BASE(userId)}/${isFieldVisitPage(next) ? FIELD_VISIT_SEGMENT[next] : next}`);
   };
 
+  // My Income moved into the Wallet (20270223000100): an old /income address opens the Wallet over Home
+  useEffect(() => { if (page === 'income') { go('home'); openWallet(); } }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenReportsRequest(React.useCallback(() => go('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   const reportsBadge = useReportsBadge();
@@ -73,7 +73,7 @@ export const TelecallerDashboard: React.FC = () => {
   // the menu reads in sections, like the Team Member's: Home on top, then Sales, Work and Team
   const groups = groupNavItems(NAV.map(n => (n.id === REPORTS_NAV.id ? { ...n, badge: reportsBadge } : n)), [
     { ids: ['home'] },
-    { label: 'Sales', ids: ['leads', FIELD_VISIT_GROUP_ID, 'income'] },
+    { label: 'Sales', ids: ['leads', FIELD_VISIT_GROUP_ID] },
     { label: 'Work', ids: ['tasks', REPORTS_NAV.id] },
     { label: 'Team', ids: [ISSUES_NAV.id] }
   ]);
@@ -106,7 +106,6 @@ export const TelecallerDashboard: React.FC = () => {
         {page === 'home' && <HomePage go={go} />}
         {page === 'tasks' && <TasksPage key={`tasks-${intent.n}`} initialStatus={intent.status} />}
         {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} scopeFilters openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
-        {page === 'income' && <IncomePage />}
         {page === 'notifications' && <NotificationsPage />}
         {page === 'raise-issue' && <IssuesRoute />}
         {page === 'work-reports' && <ReportsRoute />}
