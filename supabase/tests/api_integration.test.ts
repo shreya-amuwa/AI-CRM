@@ -14021,13 +14021,17 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     r = await api('sa', 'POST', `/lead-tags/${companyTag}/retire`, { retired: true });
     check(r.status === 200 && r.json.data.retired === true, 'lead tags API: the MD retires a tag', r);
     r = await api('a', 'GET', '/lead-tags');
-    check(r.status === 200 && !r.json.data.some((t: any) => t.id === companyTag), 'lead tags API: a retired tag is no longer offered', r);
-    r = await api('sa', 'POST', `/lead-tags/${companyTag}/retire`, { retired: false });
-    check(r.status === 200 && r.json.data.retired === false, 'lead tags API: and restores it', r);
-
+    // leads keep a retired tag, so a member still gets it (to show its label), marked retired; the form never offers it again
+    const retiredListed = r.json?.data?.find((t: any) => t.id === companyTag);
+    check(r.status === 200 && retiredListed?.retired === true && retiredListed?.canManage === false, 'lead tags API: a member still lists a retired tag, marked retired (not theirs to manage)', r);
     r = await api('a', 'POST', '/pipeline/leads', { name: 'Tag Api Lead', company: 'Tag Api Co', phone: leadPhone, leadSource: 'Instagram', services: ['BLUE_TICK'] });
     check(r.status === 201, 'lead tags API: a member creates a lead', r);
     const leadId = r.json.data.id as string;
+    r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: companyTag });
+    check(r.status === 422, 'lead tags API: a retired tag can\'t be set on a lead (422)', r);
+    r = await api('sa', 'POST', `/lead-tags/${companyTag}/retire`, { retired: false });
+    check(r.status === 200 && r.json.data.retired === false, 'lead tags API: and restores it', r);
+
     r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: wbxTag });
     check(r.status === 422, 'lead tags API: setting another department\'s tag on a lead is refused (422)', r);
     r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: companyTag });
