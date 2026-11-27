@@ -202,6 +202,8 @@ export class PipelineService {
     if (actor.role === 'TEAM_MEMBER' && input.ownerId && input.ownerId !== actor.id) {
       throw new AppError('FORBIDDEN', 'You can only add leads to your own pipeline.');
     }
+    // a Department Head belongs to a department, not a team: with no owner chosen the lead is theirs (the database checks they may own it)
+    if (!input.ownerId && actor.role === 'DEPARTMENT_HEAD') input.ownerId = actor.id;
     if (!input.ownerId && !actor.teamId) {
       throw new AppError('VALIDATION_ERROR', 'Choose a lead owner who belongs to a team.', [{ path: 'ownerId', message: 'Required' }]);
     }

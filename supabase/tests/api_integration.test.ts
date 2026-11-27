@@ -13780,6 +13780,49 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// --- A Department Head adds a lead: no owner chosen = themself; or a Team Lead / Team Member of their side; never outside their department ---
+{
+  // a department with a Sales team and no Sales Department Head yet (a department has at most one), and a Sales team of another department
+  const { rows: [salesTeam] } = await db.query(`select t.id, t.department_id from public.teams t
+                                                 where t.division = 'SALES' and not t.is_pool and t.department_id is not null
+                                                   and not exists (select 1 from public.departments d where d.id = t.department_id and d.facet_of is not null)
+                                                   and not exists (select 1 from public.profiles p where p.department_id = t.department_id and p.role = 'DEPARTMENT_HEAD'
+                                                                    and p.status = 'ACTIVE' and coalesce(p.head_division, 'SALES') = 'SALES')
+                                                 order by t.created_at limit 1`);
+  const { rows: [elsewhere] } = await db.query(`select t.id from public.teams t where t.division = 'SALES' and not t.is_pool and t.department_id <> $1 order by t.created_at limit 1`,
+                                               [salesTeam.department_id]);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const head = await mkUser('hloHead', 'api.hlo.head@example.com', 'API HLO Sales Head', { provisioned_role: 'DEPARTMENT_HEAD', provisioned_department_id: salesTeam.department_id, provisioned_head_division: 'SALES' });
+  const lead = await mkUser('hloLead', 'api.hlo.lead@example.com', 'API HLO Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: salesTeam.id });
+  const other = await mkUser('hloOther', 'api.hlo.other@example.com', 'API HLO Other Dept', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: elsewhere.id });
+  const body = (n: number, extra: Record<string, unknown> = {}) => ({ name: `API HLO Customer ${n}`, company: `API HLO Co ${n}`, phone: `+91 98765 4321${n}`, leadSource: 'Google', services: ['STARTER_PACKAGE'], ...extra });
+  try {
+    let r = await api('hloHead', 'POST', '/pipeline/leads', body(1));
+    check(r.status === 201 && r.json.data.ownerId === head, 'head lead owner: a Department Head adds a lead with no owner chosen and it is theirs (was "Choose a lead owner who belongs to a team")', r);
+    const team = (await db.query(`select team_id, department_id from public.customers where id = $1`, [r.json.data.id])).rows[0];
+    check(team.team_id === salesTeam.id && team.department_id === salesTeam.department_id, 'head lead owner: the lead sits in the head\'s department, under a team of their side', team);
+    r = await api('hloHead', 'POST', '/pipeline/leads', body(2, { ownerId: head }));
+    check(r.status === 201 && r.json.data.ownerId === head, 'head lead owner: choosing "Myself" works', r);
+    r = await api('hloHead', 'POST', '/pipeline/leads', body(3, { ownerId: lead }));
+    check(r.status === 201 && r.json.data.ownerId === lead, 'head lead owner: the Department Head gives a lead to a Team Lead of their side', r);
+    r = await api('hloHead', 'POST', '/pipeline/leads', body(4, { ownerId: other }));
+    check(r.status === 403, 'head lead owner: but never to someone of another department (refused by the server)', r);
+    r = await api('hloLead', 'POST', '/pipeline/leads', body(5));
+    check(r.status === 201 && r.json.data.ownerId === lead, 'head lead owner: a Team Lead still owns the leads they add', r);
+    r = await api('hloOther', 'POST', '/pipeline/leads', body(6, { ownerId: head }));
+    check(r.status === 403, 'head lead owner: a Team Member cannot give their lead to the Department Head', r);
+  } finally {
+    await db.query(`delete from public.customers where name like 'API HLO %'`);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[head, lead, other]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[head, lead, other]]);
+  }
+}
+
 // --- AI Studio daily report approval to HR, and HR's AI Studio Performance (migration 20270302000100) ---
 {
   const one = async (sql: string, args: unknown[] = []) => (await db.query(sql, args)).rows[0];

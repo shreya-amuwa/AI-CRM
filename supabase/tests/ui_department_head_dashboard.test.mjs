@@ -199,6 +199,36 @@ try {
   check(await page.getByTestId('lead-total').isVisible(), 'and the page returns to the list');
   await page.close();
 
+  // ================= My Leads > Add lead (the Sales Department Head's own pipeline): a Department Head has no team, so the form asks who owns the lead,
+  // with Myself chosen first; the request carries the owner (it once carried none and the server answered "Choose a lead owner who belongs to a team")
+  page = await open();
+  await page.evaluate(() => { window.__profile = { id: '00000000-0000-4000-8000-0000000000d1', role: 'DEPARTMENT_HEAD', fullName: 'Dev Head', teamId: null }; window.mountMyLeadsAdd(); });
+  await page.getByRole('heading', { name: 'Lead owner' }).waitFor();
+  const myOpts = await page.getByLabel('Assign this lead to').locator('option').allInnerTexts();
+  check(/Myself \(Department Head\)/.test(myOpts[0]) && myOpts.length === 3 && await page.getByLabel('Assign this lead to').inputValue() === '00000000-0000-4000-8000-0000000000d1',
+    'My Leads: a Department Head\'s Add lead offers Myself (chosen) and their Team Leads / Team Members', myOpts);
+  await page.getByLabel('Customer Name *').fill('Pooja');
+  await page.getByLabel('Business name *').fill('Pops Studio');
+  await page.getByLabel('Mobile number *').fill('7208285641');
+  await page.getByRole('checkbox', { name: /AI Calling/ }).first().click();
+  const mySrc = page.locator('#lead-leadSource');
+  await mySrc.click();
+  await page.getByRole('option', { name: 'Referral' }).first().click().catch(async () => { await mySrc.fill('Referral'); });
+  await page.getByLabel('Subscription plan *').fill('Growth');
+  await page.getByLabel('Subscription duration *').selectOption({ index: 1 });
+  await page.getByLabel('Subscription amount (₹) *').fill('12000');
+  const createdBefore = await page.evaluate(() => window.__created.length);
+  await page.getByRole('button', { name: 'Save lead' }).click();
+  await page.waitForFunction(n => window.__created.length > n, createdBefore);
+  const sentMine = await page.evaluate(() => window.__created[window.__created.length - 1]);
+  check(sentMine.ownerId === '00000000-0000-4000-8000-0000000000d1', 'My Leads: the lead is sent with the Department Head as its owner', sentMine);
+  await page.close();
+  page = await open();
+  await page.evaluate(() => { window.__profile = { id: 'tl-1', role: 'TEAM_HEAD', fullName: 'Tara Lead', teamId: 't1' }; window.mountMyLeadsAdd(); });
+  await page.getByLabel('Customer Name *').waitFor();
+  check(await page.getByRole('heading', { name: 'Lead owner' }).count() === 0, 'My Leads: a Team Lead\'s Add lead is unchanged (they own what they add)');
+  await page.close();
+
   // ================= Add lead: the same form as the Team Lead's, a refreshed list and statistics, and one lead per submit
   page = await open();
   await page.evaluate(() => window.mountTlForm());
