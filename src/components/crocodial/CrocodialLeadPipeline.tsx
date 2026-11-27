@@ -146,7 +146,11 @@ export const CrocodialLeadPipeline: React.FC<{ connectionId: string }> = ({ conn
                         {creating === m.status ? (
                           <TagForm tag={null} departments={o.departments.map(d => ({ id: d.departmentId, name: d.name }))} canCompanyWide={false} initialLabel={m.status} submitLabel="Create tag and map"
                             onClose={() => setCreating(null)}
-                            onSaved={async saved => { await crocodialApi.setStatusMappingTag(connectionId, m.status, saved.id, false); setCreating(null); setFlash(`“${m.status}” mapped to the new tag “${saved.label}”.`); reloadTags(); load(); }} />
+                            onSaved={async saved => {
+                              setCreating(null); reloadTags();
+                              try { await crocodialApi.setStatusMappingTag(connectionId, m.status, saved.id, false); setFlash(`“${m.status}” mapped to the new tag “${saved.label}”.`); load(); }
+                              catch (e) { setFlash(''); setError(`Tag “${saved.label}” was created, but mapping failed: ${errText(e)} Pick it in the select.`); }
+                            }} />
                         ) : (
                           <button type="button" className="text-[11px] font-semibold text-[#2F5BEA] hover:underline" disabled={busy !== null} onClick={() => setCreating(m.status)}>Create a tag from this status</button>
                         )}

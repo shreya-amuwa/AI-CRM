@@ -56,7 +56,11 @@ function api(req, res, body) {
   if (p === '/crocodial/connections/c1/lead-links') return ok(res, LINKS);
   if (p === '/crocodial/connections/c1/lead-import') { mode = body.mode; return ok(res, { mode: body.mode }); }
   if (p === '/lead-tags' && req.method === 'GET') return ok(res, TAGS);
-  if (p === '/lead-tags' && req.method === 'POST') return ok(res, { ...TAGS[1], id: 'tg-new-hot', label: body.label, stage: body.stage, departmentIds: body.departmentIds });
+  if (p === '/lead-tags' && req.method === 'POST') {
+    const t = { ...TAGS[1], id: 'tg-new-hot', label: body.label, stage: body.stage, departmentIds: body.departmentIds };
+    if (!TAGS.some(x => x.id === t.id)) TAGS.push(t);
+    return ok(res, t);
+  }
   if (p === '/crocodial/connections/c1/status-mappings') {
     if (tagFail) { res.writeHead(422, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ success: false, error: { code: 'VALIDATION_ERROR', message: "That tag can't be used in every department of this connection." } })); }
     return ok(res, { status: body.status, tagId: body.tagId, ignored: body.ignore });
@@ -93,7 +97,7 @@ try {
     const errors = [];
     page.on('pageerror', e => errors.push(String(e)));
     page.on('dialog', d => { errors.push('native dialog: ' + d.message()); d.dismiss(); });
-    calls = []; mode = 'PREVIEW';
+    calls = []; mode = 'PREVIEW'; TAGS.splice(4);
     await page.goto(base);
     await page.evaluate(() => window.mountPipeline());
     await page.getByRole('button', { name: /Leads in the CRM pipeline/ }).click();
@@ -125,6 +129,14 @@ try {
     check(await page.getByTestId('croc-lead-pipeline').isVisible(), `${label}: a refused mapping shows inline, the screen stays`);
     tagFail = false;
     // create a tag from the status
+    // the tag is created but mapping it is refused: the form closes, the tag is in the select, the message says what happened
+    tagFail = true;
+    await page.getByRole('button', { name: 'Create a tag from this status' }).first().click();
+    await page.getByRole('button', { name: 'Create tag and map' }).click();
+    await page.getByText(/Tag “hot lead” was created, but mapping failed: .*Pick it in the select/).waitFor();
+    check(await page.getByRole('button', { name: 'Create tag and map' }).count() === 0, `${label}: after a failed mapping the form closes (no duplicate-create retry)`);
+    tagFail = false;
+    check(await page.getByLabel('Lead tag for hot lead').locator('option', { hasText: 'hot lead' }).count() === 1, `${label}: the created tag is already in the select`);
     await page.getByRole('button', { name: 'Create a tag from this status' }).first().click();
     check(await page.getByLabel('Label').inputValue() === 'hot lead', `${label}: the tag form is pre-filled with the status label`);
     check(await page.getByRole('checkbox', { name: 'M Pillar' }).isChecked(), `${label}: the connection's departments are the default`);
