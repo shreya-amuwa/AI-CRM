@@ -41,7 +41,8 @@ export function useOpenIssuesRequest(show: () => void) {
 /** HR: a notification opens HR's Employee Issues / Meeting Requests section on the case it is about. */
 export const OPEN_HR_CASE_EVENT = 'crm:open-hr-case';
 export interface OpenHrCaseDetail {
-  section: 'issues' | 'meetings' | 'reviews';
+  // 'ai-studio' (20270302000100): HR > AI Studio Performance
+  section: 'issues' | 'meetings' | 'reviews' | 'ai-studio';
   id?: string;
 }
 let pendingHr: OpenHrCaseDetail | null = null;
@@ -96,6 +97,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
     return true;
   }
   if (n.entityType === 'ai_studio_task') { openAiStudio({ kind: 'task', id: n.entityId ?? undefined }); return true; }
+  // a report that reached HR (or the access given) opens HR > AI Studio Performance, never the AI Studio dashboard HR has no part in
+  if (n.type === 'AI_STUDIO_REPORT_TO_HR' || n.type === 'AI_STUDIO_REPORT_TO_HR_LEAD' || n.type === 'AI_STUDIO_REPORT_HR_ACCESS') { openHrCase({ section: 'ai-studio' }); return true; }
   if (n.entityType === 'ai_studio_report') { openAiStudio({ kind: 'report', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'ai_studio_project') { openAiStudio({ kind: 'task' }); return true; }
   if (n.entityType === 'work_report' || n.entityType === 'work_report_package') {

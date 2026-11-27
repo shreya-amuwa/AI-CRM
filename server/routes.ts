@@ -423,6 +423,10 @@ export const routes: RouteDef[] = [
   { method: 'DELETE', path: '/ai-studio/reports/:id', handler: aiStudio.deleteDraft },
   { method: 'POST', path: '/ai-studio/reports/:id/review', handler: aiStudio.reviewReport, options: S },
   { method: 'POST', path: '/ai-studio/reports/:id/lead-edit', handler: aiStudio.leadEditReport, options: S },
+  // HR's AI Studio Performance (20270302000100): the HR employees the Super Admin named, and the Super Admin (the database decides)
+  { method: 'GET', path: '/ai-studio/hr-performance/access', handler: aiStudio.hrAccess },
+  { method: 'POST', path: '/ai-studio/hr-performance/viewers', handler: aiStudio.setHrViewer, options: S },
+  { method: 'GET', path: '/ai-studio/hr-performance', handler: aiStudio.hrPerformance },
   { method: 'GET', path: '/ai-studio/tasks/:id/reports', handler: aiStudio.taskReports },
   { method: 'GET', path: '/ai-studio/daily-reports/options', handler: aiStudio.dailyReportOptions },
   { method: 'POST', path: '/ai-studio/daily-reports/preview', handler: aiStudio.dailyReportPreview },

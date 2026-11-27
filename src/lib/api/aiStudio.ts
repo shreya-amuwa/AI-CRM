@@ -1,6 +1,8 @@
 import type {
   AiStudioTaskDeleteResult, AiStudioAssignees,
-  AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
+  AiStudioDailyReportOptions,
+  AiStudioHrAccess,
+  AiStudioHrPerformance, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
   AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
 } from '../../../shared/contracts';
 import { api } from './client';
@@ -27,6 +29,8 @@ export interface AiStudioDailyReportForm {
   blockers?: string;
   tomorrowPlan?: string;
   remarks?: string;
+  /** 20270302000100: the Daily Work Description (10-150 words to submit). */
+  workDescription?: string;
   submit: boolean;
   expectedUpdateIds?: string[];
 }
@@ -58,7 +62,11 @@ export const aiStudioApi = {
   createReport: (r: AiStudioReportForm) => api.post<AiStudioReportDetail>('/ai-studio/reports', r),
   updateReport: (id: string, r: AiStudioReportForm) => api.patch<AiStudioReportDetail>(`/ai-studio/reports/${id}`, r),
   deleteDraft: (id: string) => api.delete<null>(`/ai-studio/reports/${id}`),
-  review: (id: string, decision: 'APPROVE' | 'RETURN', comment?: string) => api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/review`, { decision, comment }),
+  review: (id: string, decision: 'APPROVE' | 'RETURN' | 'REJECT', comment?: string) => api.post<AiStudioReportDetail>(`/ai-studio/reports/${id}/review`, { decision, comment }),
+  // HR's AI Studio Performance (20270302000100)
+  hrAccess: () => api.get<AiStudioHrAccess>('/ai-studio/hr-performance/access'),
+  setHrViewer: (profileId: string, allowed: boolean) => api.post<AiStudioHrAccess>('/ai-studio/hr-performance/viewers', { profileId, allowed }),
+  hrPerformance: (from?: string, to?: string) => api.get<AiStudioHrPerformance>('/ai-studio/hr-performance', { from, to }),
   dailyReportOptions: (date: string) => api.get<AiStudioDailyReportOptions>('/ai-studio/daily-reports/options', { date }),
   dailyReportPreview: (reportDate: string, taskIds: string[]) => api.post<AiStudioDailyReportPreview>('/ai-studio/daily-reports/preview', { reportDate, taskIds }),
   createDailyReport: (r: AiStudioDailyReportForm) => api.post<AiStudioReportDetail>('/ai-studio/daily-reports', r),
