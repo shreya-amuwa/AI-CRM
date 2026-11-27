@@ -19,7 +19,7 @@ create table if not exists hp_r (name text primary key, id uuid);
 grant all on hp_r to authenticated;
 create or replace function test.hr(p_name text) returns uuid language sql stable as $$ select id from hp_r where name = p_name $$;
 create or replace function test.hrow(p_name text) returns public.ai_studio_daily_reports language sql stable security definer set search_path = '' as $$
-  select * from public.ai_studio_daily_reports where id = (select id from hp_r where name = p_name) $$;
+  select * from public.ai_studio_daily_reports where id = (select id from public.hp_r where name = p_name) $$;
 create or replace function test.hnotes(p_person text, p_type text, p_report uuid) returns bigint language sql stable security definer set search_path = '' as $$
   select count(*) from public.notifications where recipient_id = test.id(p_person) and type = p_type and entity_id = p_report $$;
 -- the report's history as people read it (SENT_TO_HR comes from its own record), and the rows HR received
@@ -146,7 +146,7 @@ select test.login('ai_tm2a');
 select test.must_fail($$select ai_studio_daily_report_save(test.hr('m2x'), test.hd(-21), '{}'::uuid[], 'x', null, null, null, null, true, p_description => test.words(12))$$,
   'a rejected report cannot be resubmitted', 'already submitted');
 select test.login('ai_dh');
-select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT', 'no')$$, 'the Department Head returns, never rejects', 'Only the Team Lead rejects');
+select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT', 'Not needed today')$$, 'the Department Head returns, never rejects', 'Only the Team Lead rejects');
 
 \echo '   the Team Lead report'
 select test.login('ai_tl1');
@@ -160,7 +160,7 @@ select test.check(test.hnotes('hrp_viewer', 'AI_STUDIO_REPORT_TO_HR_LEAD', test.
 set role authenticated;
 select test.login('hrp_viewer');
 create temp table hp_v as select ai_studio_hr_performance(test.hd(-30), test.hd(0)) as j;
-select test.check((select count(*) = 1 from jsonb_array_elements(j -> 'memberReports') x, hp_v where x ->> 'id' = test.hr('m1')::text
+select test.check((select count(*) = 1 from hp_v, jsonb_array_elements(j -> 'memberReports') x where x ->> 'id' = test.hr('m1')::text
                     and x ->> 'memberName' = 'AI Member 1B' and x ->> 'leadName' = 'AI Lead One' and x ->> 'teamName' = 'AI Lead One''s team'
                     and x ->> 'approvalStatus' = 'APPROVED' and x ->> 'approvedAt' is not null and x ->> 'description' like 'Built the onboarding screens%'
                     and x ->> 'workCompleted' = 'Wrote the onboarding screens' and x ->> 'pendingWork' = 'The tests' and x ->> 'blockers' = 'Waiting for the API keys' and x ->> 'remarks' = 'Good day'),
