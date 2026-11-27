@@ -397,9 +397,11 @@ begin
     update public.customers c set lead_tag_id = private.lead_tag_seed(c.lead_status) where c.lead_tag_id = v_id and c.lifecycle_stage <> 'LEAD';
   end if;
   if v_depts is distinct from v_old_depts then
-    -- leads in departments the tag no longer covers: the seed of the same stage
+    -- leads in departments the tag no longer covers: the seed of the same stage. Coverage only, not lead_tag_usable: that is false for
+    -- every lead of a retired tag, and leads keep a retired tag.
     update public.customers c set lead_tag_id = private.lead_tag_seed(c.lead_status)
-     where c.lead_tag_id = v_id and not private.lead_tag_usable(v_id, c.department_id);
+     where c.lead_tag_id = v_id and v_scope = 'DEPARTMENTS'
+       and not exists (select 1 from unnest(v_depts) d where d = private.base_department(c.department_id));
   end if;
 
   if v_new.label <> v_old.label then v_changes := v_changes || jsonb_build_object('label', jsonb_build_object('from', v_old.label, 'to', v_new.label)); end if;

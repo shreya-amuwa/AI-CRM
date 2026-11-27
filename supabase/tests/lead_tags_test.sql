@@ -366,6 +366,22 @@ select test.login('lt_wab_tm');
 select test.check(test.lt_listed('LT Cold') is not null, 'and is listed again');
 select set_config('request.jwt.claims', '', false);
 
+\echo '   narrowing a retired tag'
+select test.lt_mk_lead('lt_wab_tm', '+919877100104');
+select test.lt_mk_lead('lt_wbx_tm', '+919877100105');
+select test.login('lt_ceo_a');
+select public.lead_tag_save('{"label":"LT Wide","colour":"indigo","stage":"INTERESTED"}');
+select set_config('request.jwt.claims', '', false);
+update customers set lead_tag_id = test.lt_tag('LT Wide') where phone in ('+919877100104', '+919877100105');
+select test.login('lt_ceo_a');
+select public.lead_tag_retire(test.lt_tag('LT Wide'), true);
+select public.lead_tag_save(format('{"id":"%s","label":"LT Wide","colour":"indigo","stage":"INTERESTED","departmentIds":["%s"]}', test.lt_tag('LT Wide'), test.dept('whatsbox'))::jsonb);
+select set_config('request.jwt.claims', '', false);
+select test.check((select lead_tag_id = test.lt_tag('LT Wide') from test.lt_lead('+919877100105')),
+  'narrowing a retired tag: its lead in a department still listed keeps it (leads keep a retired tag)');
+select test.check((select lead_tag_id = test.lt_seed('INTERESTED') and lead_status = 'INTERESTED' from test.lt_lead('+919877100104')),
+  'and its lead in the department taken away gets the seed of the same stage');
+
 \echo '   every action is audited'
 select test.check((select count(*) = 1 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action = 'LEAD_TAG_CREATED' and a.entity_type = 'lead_tag'
                      and a.entity_id = test.lt_tag('Hot') and a.actor_id = test.id('lt_ceo_a')), 'creating "Hot": LEAD_TAG_CREATED');
