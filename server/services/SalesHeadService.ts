@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
+  SalesForwardAssignee, SalesForwardResult, SalesIncome, SalesLeadAssignee, SalesReceivedSheet, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import {
-  TELECALLER_SHEET_MAX_BYTES, salesInboundAssignSchema, salesIncomeQuerySchema, salesLeadSheetSchema, salesLeadsQuerySchema, salesReportsQuerySchema,
+  TELECALLER_SHEET_MAX_BYTES, salesInboundAssignSchema, salesSheetForwardSchema, salesIncomeQuerySchema, salesLeadSheetSchema, salesLeadsQuerySchema, salesReportsQuerySchema,
   salesRoleListQuerySchema, salesRolePersonQuerySchema, salesRoleSchema,
   salesTaskCreateSchema, salesTasksQuerySchema, telecallerSheetSourceSchema, uuidSchema
 } from '../../shared/validation.js';
@@ -39,6 +39,13 @@ export class SalesHeadService {
   /** Check a sheet (commit false: the preview) or assign it (commit true). */
   assignSheet(body: unknown): Promise<SalesSheetCheck> { return this.repo.assignSheet(parse(salesLeadSheetSchema, body)); }
 
+  /** A Department Head's sheets received from the CEO, who they can forward one to, and forwarding its open leads (20270303000100). */
+  received(): Promise<SalesReceivedSheet[]> { return this.repo.received(); }
+  forwardAssignees(sheetId: string): Promise<SalesForwardAssignee[]> { return this.repo.forwardAssignees(parse(uuidSchema, sheetId)); }
+  forward(sheetId: string, body: unknown): Promise<SalesForwardResult> {
+    const { assigneeId, count } = parse(salesSheetForwardSchema, body);
+    return this.repo.forward(parse(uuidSchema, sheetId), assigneeId, count ?? null);
+  }
   /** The rows left out of one uploaded sheet (the database checks it is a sheet of the caller's department). */
   sheetIssues(sheetId: string): Promise<SalesSheetIssues> { return this.repo.sheetIssues(parse(uuidSchema, sheetId)); }
 

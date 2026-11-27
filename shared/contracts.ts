@@ -4176,7 +4176,11 @@ export interface SalesLeadAssignee {
   name: string;
   team: string;
   teamId: string;
-  role: 'Team Lead' | 'Team Member';
+  role: 'Team Lead' | 'Team Member' | 'Department Head';
+  /** (20270303000100) DEPARTMENT_HEAD is offered to a Sales CEO only; the department is the recipient's */
+  kind?: 'DEPARTMENT_HEAD' | 'TEAM_LEAD' | 'TEAM_MEMBER' | 'TELECALLER';
+  departmentId?: string;
+  department?: string;
   subRole: SalesSubRole | null;
   /** TELECALLER: the contacts go to their call list; LEADS: the rows become leads in their own pipeline (20270101000400) */
   mode: 'TELECALLER' | 'LEADS';
@@ -4215,6 +4219,25 @@ export interface SalesSheetCheck {
   summary: { rows: number; valid: number; invalid: number; duplicates: number };
   preview: { row: number; name: string; company: string | null; phone: string; email: string | null; remarks: string | null }[];
 }
+// ---- Sales CEO -> Department Head (20270303000100): the sheets a Department Head received, and who they can forward them to
+export interface SalesReceivedSheet {
+  id: string;
+  fileName: string;
+  note: string | null;
+  assignedAt: string;
+  assignedBy: string | null;
+  /** "CEO", or the uploader's role */
+  assignedByRole: string | null;
+  departmentId: string;
+  department: string | null;
+  valid: number;
+  /** still leads, still owned by the Department Head */
+  openWithMe: number;
+  forwarded: number;
+  converted: number;
+}
+export interface SalesForwardAssignee { id: string; name: string; team: string; role: string; openLeads: number }
+export interface SalesForwardResult { moved: number; assignee: { id: string; name: string; role: string } }
 export interface SalesSheet {
   id: string;
   fileName: string;
@@ -4230,8 +4253,10 @@ export interface SalesSheet {
   invalid: number;
   duplicates: number;
   status: 'ASSIGNED';
-  /** Telecaller, Team Lead or Team Member (20270101000400) */
+  /** Telecaller, Team Lead, Team Member or Department Head (20270101000400, 20270303000100) */
   assigneeRole?: string;
+  departmentId?: string;
+  department?: string;
   /** whether the left-out rows are kept with the sheet (sheets from before 20270101000400: no) */
   issuesKept?: boolean;
   hasSourceFile: boolean;
@@ -6716,8 +6741,12 @@ export interface CrocodialLeadActivity {
 export interface CrocodialRefreshCapabilities {
   kind: 'EMPLOYEE' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'SUPER_ADMIN';
   active: boolean;
-  /** Crocodial is switched on for the caller's own department's Sales */
+  /** Crocodial is switched on for a Sales department the caller works in or covers (20270303000100: a head's / CEO's scopes too) */
   rollout: boolean;
+  /** (20270303000100) show the Crocodial menu: a manager whose Sales departments have Crocodial on (even before anyone is connected), or a connected person */
+  eligible?: boolean;
+  /** (20270303000100) the Sales departments with Crocodial on that a Department Head / CEO / Super Admin covers */
+  enabledDepartments?: { departmentId: string; name: string }[];
   self: { state: 'CONNECTED' | 'NOT_MAPPED' | 'PENDING_APPROVAL' | 'NOT_ENABLED'; lastSyncAt?: string | null };
   team: { people: number } | null;
   departments: { departmentId: string; name: string; people: number; lastSyncAt: string | null }[];

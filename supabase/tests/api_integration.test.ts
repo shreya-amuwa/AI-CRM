@@ -13895,6 +13895,50 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sales CEO -> Sales Department Head lead assignment (20270303000100)
+// ---------------------------------------------------------------------------
+{
+  const shDept = (await db.query(`select department_id from public.profiles where id = $1`, [salesHeadId])).rows[0].department_id as string;
+  r = await api('sa', 'POST', '/users', { email: 'api.sales.ceo@amuwa.com', fullName: 'API Sales CEO', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: shDept, headDivision: 'SALES', operationsHead: true });
+  check(r.status === 201 && r.json.data.isOperationsHead === true, 'sales CEO API: a Sales CEO is created', r);
+  const ceoId = r.json.data.id as string;
+  tokens.set('ceo', tokenFor(ceoId));
+  tokens.set('sh', tokenFor(salesHeadId));
+  try {
+    r = await api('ceo', 'GET', '/sales-head/lead-assignees');
+    check(r.status === 200 && r.json.data[0]?.role === 'Department Head' && r.json.data.some((x: any) => x.id === salesHeadId && x.role === 'Department Head' && x.departmentId === shDept && x.department)
+      && !r.json.data.some((x: any) => x.id === ceoId), 'sales CEO API: the CEO is offered the Sales Department Head first, with the department (not themselves)', r);
+    r = await api('sh', 'GET', '/sales-head/lead-assignees');
+    check(r.status === 200 && !r.json.data.some((x: any) => x.role === 'Department Head'), 'sales CEO API: a Department Head is not offered Department Heads', r);
+    const rows = [{ row: 2, name: 'CEO Api One', phone: '9870077001' }, { row: 3, name: 'CEO Api Two', phone: '9870077002', email: 'two@ceoapi.example' }];
+    const hash = crypto.createHash('sha256').update('ceo-api-sheet').digest('hex');
+    r = await api('ceo', 'POST', '/sales-head/sheets', { assigneeId: salesHeadId, fileName: 'ceo-api.csv', hash, rows, commit: false, departmentId: shDept });
+    check(r.status === 422, 'sales CEO API: a department sent by the browser is refused (the server takes it from the recipient)', r);
+    r = await api('ceo', 'POST', '/sales-head/sheets', { assigneeId: salesHeadId, fileName: 'ceo-api.csv', note: 'API fair', hash, rows, commit: true });
+    check(r.status === 200 && r.json.data.committed && r.json.data.assignee.role === 'Department Head' && r.json.data.assignee.departmentId === shDept,
+      'sales CEO API: the CEO assigns the sheet to the Sales Department Head', r);
+    r = await api('ceo', 'POST', '/sales-head/sheets', { assigneeId: salesHeadId, fileName: 'ceo-api.csv', hash, rows, commit: true });
+    check(r.status === 409, 'sales CEO API: a double submit is refused (no duplicate leads)', r);
+    r = await api('sh', 'GET', '/sales-head/received-sheets');
+    const got = r.json.data?.find((x: any) => x.fileName === 'ceo-api.csv');
+    check(r.status === 200 && got && got.assignedBy === 'API Sales CEO' && got.assignedByRole === 'CEO' && got.openWithMe === 2, 'sales CEO API: the Department Head sees who assigned the sheet, and 2 open leads', r);
+    r = await api('sh', 'GET', `/sales-head/received-sheets/${got.id}/assignees`);
+    check(r.status === 200 && r.json.data.some((x: any) => x.id === memberA), 'sales CEO API: the head can forward to their Sales Team Members', r);
+    r = await api('sh', 'POST', `/sales-head/received-sheets/${got.id}/forward`, { assigneeId: memberA, count: 0 });
+    check(r.status === 422, 'sales CEO API: the forward body is checked', r);
+    r = await api('ceo', 'POST', `/sales-head/received-sheets/${got.id}/forward`, { assigneeId: memberA });
+    check(r.status === 404, 'sales CEO API: only the receiving head forwards it', r);
+    r = await api('sh', 'POST', `/sales-head/received-sheets/${got.id}/forward`, { assigneeId: memberA, count: 1 });
+    check(r.status === 200 && r.json.data.moved === 1, 'sales CEO API: one lead is forwarded to a Team Member', r);
+    const owners = (await db.query(`select owner_id from public.customers where phone in ('9870077001', '9870077002') order by phone`)).rows.map((x: any) => x.owner_id);
+    check(owners.length === 2 && owners.includes(memberA) && owners.includes(salesHeadId), 'sales CEO API: the same two lead records, one now with the member (no copy)', owners);
+  } finally {
+    await db.query(`delete from public.customers where phone in ('9870077001', '9870077002')`);
+    await db.query(`delete from public.sales_lead_sheets where file_name = 'ceo-api.csv'`);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

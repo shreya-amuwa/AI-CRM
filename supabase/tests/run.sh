@@ -248,4 +248,5 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/notice_sales_support_test.sql 2>&1
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/dashboard_explorer_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/support_recharges_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/task_delete_hierarchy_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/sales_ceo_assignment_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_lead_links_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
