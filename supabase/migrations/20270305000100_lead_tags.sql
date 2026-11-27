@@ -157,8 +157,14 @@ declare
   v_base uuid := private.base_department(old.department_id);
   v_tags uuid[];
 begin
-  -- nothing lost while they still run its Sales side another way (another row for the same base department, or their home department)
-  if private.scope_covers(old.profile_id, v_base, 'SALES') then
+  -- nothing lost while another of their CEO rows still gives the Sales side of the same base department (as scopes_of reads a row: a
+  -- facet is its own side, else the row's division, else the person's). Only these rows count: the home department and department_access
+  -- grants are still in place when operations_scope_apply deletes rows (it changes them afterwards), so they must not keep the department.
+  if exists (select 1 from public.operations_head_departments o
+               join public.departments d on d.id = o.department_id
+               join public.profiles p on p.id = o.profile_id
+              where o.profile_id = old.profile_id and coalesce(d.facet_of, d.id) = v_base
+                and coalesce(d.facet_division, o.division, p.head_division, 'SALES') = 'SALES') then
     return null;
   end if;
   with removed as (

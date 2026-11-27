@@ -29,14 +29,21 @@ begin
     perform test.create_auth_user('lt_dg_tm', 'lt.dg.tm@example.com', '{"full_name":"LT Digitree Member"}', jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER',
       'provisioned_team_id', test.team('digitree', 'Sales')));
   end if;
+  if not exists (select 1 from test.users where name = 'lt_ceo_c') then
+    perform test.create_auth_user('lt_ceo_c', 'lt.ceo.c@example.com', '{"full_name":"LT CEO C"}', jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'DEPARTMENT_HEAD',
+      'provisioned_department_id', test.dept('wabastore'), 'provisioned_operations_head', true));
+  end if;
 end $$;
-update profiles set status = 'ACTIVE', is_operations_head = true where id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'));
+update profiles set status = 'ACTIVE', is_operations_head = true where id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'), test.id('lt_ceo_c'));
 update profiles set status = 'ACTIVE' where id in (test.id('lt_wab_tm'), test.id('lt_wbx_tm'), test.id('lt_dg_tm'));
-delete from operations_head_departments where profile_id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'));
+delete from operations_head_departments where profile_id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'), test.id('lt_ceo_c'));
 insert into operations_head_departments (profile_id, department_id, division) values
   (test.id('lt_ceo_a'), test.dept('wabastore'), null), (test.id('lt_ceo_a'), test.dept('whatsbox'), null),
   (test.id('lt_ceo_b'), test.dept('whatsbox'), null), (test.id('lt_ceo_b'), test.dept('digitree'), null),
-  (test.id('lt_ceo_sup'), test.dept('whatsbox'), 'SUPPORT');
+  (test.id('lt_ceo_sup'), test.dept('whatsbox'), 'SUPPORT'),
+  (test.id('lt_ceo_c'), test.dept('wabastore'), null), (test.id('lt_ceo_c'), test.dept('whatsbox'), null);
+-- a re-run starts lt_ceo_c from its home department again (operations_scope_apply below moves it)
+update profiles set department_id = test.dept('wabastore') where id = test.id('lt_ceo_c');
 delete from customers where phone like '+9198771%';
 delete from lead_tag_departments where tag_id in (select id from lead_tags where label like 'LT %');
 delete from lead_tags where label like 'LT %';
@@ -89,10 +96,12 @@ insert into lead_tags (label, colour, stage, scope, created_by) values
   ('LT Wab only', 'red', 'CONTACTED', 'DEPARTMENTS', test.id('lt_ceo_a')),
   ('LT Wab and Wbx', 'violet', 'INTERESTED', 'DEPARTMENTS', test.id('lt_ceo_a')),
   ('LT Retired', 'slate', 'CONTACTED', 'COMPANY', null),
-  ('LT B Wbx', 'blue', 'NEW', 'DEPARTMENTS', test.id('lt_ceo_b'));
+  ('LT B Wbx', 'blue', 'NEW', 'DEPARTMENTS', test.id('lt_ceo_b')),
+  ('LT C Wab and Wbx', 'amber', 'INTERESTED', 'DEPARTMENTS', test.id('lt_ceo_c'));
 insert into lead_tag_departments (tag_id, department_id) values
   (test.lt_tag('LT Wab only'), test.dept('wabastore')), (test.lt_tag('LT Wab and Wbx'), test.dept('wabastore')), (test.lt_tag('LT Wab and Wbx'), test.dept('whatsbox')),
-  (test.lt_tag('LT B Wbx'), test.dept('whatsbox'));
+  (test.lt_tag('LT B Wbx'), test.dept('whatsbox')),
+  (test.lt_tag('LT C Wab and Wbx'), test.dept('wabastore')), (test.lt_tag('LT C Wab and Wbx'), test.dept('whatsbox'));
 update lead_tags set retired_at = now() where label = 'LT Retired';
 select test.lt_mk_lead('lt_wab_tm', '+919877100001');
 select test.lt_mk_lead('lt_wab_tm', '+919877100002');
@@ -101,6 +110,8 @@ select test.lt_mk_lead('lt_wab_tm', '+919877100004');
 select test.lt_mk_lead('lt_wbx_tm', '+919877100005');
 select test.lt_mk_lead('lt_dg_tm', '+919877100006');
 select test.lt_mk_lead('lt_wab_tm', '+919877100007', '{"leadStatus":"CONTACTED"}');
+select test.lt_mk_lead('lt_wab_tm', '+919877100008');
+update customers set lead_tag_id = test.lt_tag('LT C Wab and Wbx') where phone = '+919877100008';
 select test.check((select lead_tag_id = test.lt_seed('NEW') and lead_status = 'NEW' from test.lt_lead('+919877100001')), 'create_lead with no tag -> the seed tag of NEW');
 select test.check((select lead_tag_id = test.lt_seed('CONTACTED') from test.lt_lead('+919877100007')), 'a lead created with a status gets the seed tag of that stage');
 
@@ -148,11 +159,23 @@ select test.check((select lead_tag_id = test.lt_seed('INTERESTED') and lead_stat
   'its Wabastore leads are re-seeded to the seed of the same stage');
 select test.check((select lead_tag_id = test.lt_tag('LT Wab and Wbx') from test.lt_lead('+919877100005')), 'its Whatsbox lead keeps the tag');
 select test.check((select lead_tag_id = test.lt_tag('Demo done') from test.lt_lead('+919877100001')), 'a company-wide tag in Wabastore is untouched');
--- the other CEO's home department is Whatsbox: without their Whatsbox row they still run it, so nothing is lost
+-- only the CEO's own department rows count: the other CEO's home department is Whatsbox, yet without their Whatsbox row it leaves their tag
 delete from operations_head_departments where profile_id = test.id('lt_ceo_b') and department_id = test.dept('whatsbox');
-select test.check(exists (select 1 from lead_tag_departments where tag_id = test.lt_tag('LT B Wbx') and department_id = test.dept('whatsbox')),
-  'a CEO who still runs the department another way (home department) keeps it on their tag');
+select test.check(not exists (select 1 from lead_tag_departments where tag_id = test.lt_tag('LT B Wbx')),
+  'the home department does not keep a department on a CEO''s tag');
 insert into operations_head_departments (profile_id, department_id, division) values (test.id('lt_ceo_b'), test.dept('whatsbox'), null);
+-- the real path: the Super Admin changes a CEO's departments (operations_scope_apply deletes the rows first, then moves the home department)
+select test.check((select department_id = test.dept('wabastore') from profiles where id = test.id('lt_ceo_c')), 'a CEO whose home department is Wabastore');
+select test.login('sa');
+select private.operations_scope_apply(test.id('lt_ceo_c'), array[test.dept('whatsbox')], '{}'::uuid[]);
+select set_config('request.jwt.claims', '', false);
+select test.check((select department_id = test.dept('whatsbox') from profiles where id = test.id('lt_ceo_c'))
+                  and not exists (select 1 from operations_head_departments where profile_id = test.id('lt_ceo_c') and department_id = test.dept('wabastore')),
+  'is moved to Whatsbox only');
+select test.check((select array_agg(department_id) = array[test.dept('whatsbox')] from lead_tag_departments where tag_id = test.lt_tag('LT C Wab and Wbx')),
+  'their tag no longer lists Wabastore');
+select test.check((select lead_tag_id = test.lt_seed('INTERESTED') and lead_status = 'INTERESTED' from test.lt_lead('+919877100008')),
+  'and its Wabastore lead gets the seed of the same stage');
 
 \echo '   who runs a department'
 insert into operations_head_departments (profile_id, department_id, division) values (test.id('lt_ceo_a'), test.dept('wabastore'), null);
@@ -181,4 +204,4 @@ select set_config('request.jwt.claims', '', false);
 delete from customers where phone like '+9198771%';
 delete from lead_tag_departments where tag_id in (select id from lead_tags where label like 'LT %');
 delete from lead_tags where label like 'LT %';
-delete from operations_head_departments where profile_id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'));
+delete from operations_head_departments where profile_id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'), test.id('lt_ceo_c'));
