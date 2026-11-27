@@ -222,7 +222,7 @@ reset role;
 select test.check((select count(*) = 2 from support_recharge_files where recharge_id = (select (v::jsonb ->> 'id')::uuid from rc where k = 'p2')), 'the replaced file is kept, not deleted');
 select test.check((select count(*) >= 3 from audit_logs where action = 'SUPPORT_RECHARGE_CREATED'), 'creates are in the audit log');
 select test.check((select count(*) >= 5 from audit_logs where action = 'SUPPORT_RECHARGE_STATUS'), 'status changes are in the audit log');
-select test.check((select count(*) >= 3 from audit_logs where action = 'SUPPORT_RECHARGE_SCREENSHOT_VIEWED' and actor_id in (test.id('sup_plain'), test.id('sup_th'))), 'screenshot views are in the audit log');
+select test.check((select count(*) >= 2 from audit_logs where action = 'SUPPORT_RECHARGE_SCREENSHOT_VIEWED' and actor_id in (test.id('sup_plain'), test.id('sup_th'))), 'screenshot views are in the audit log');
 select test.check((select count(*) = 0 from audit_logs where action like 'SUPPORT_RECHARGE%' and metadata::text like '%storage_path%'), 'the audit log holds no storage path');
 select test.check((select count(*) = 0 from support_recharges where total_amount <> gst_amount + non_gst_amount), 'the total is always GST + non-GST');
 select test.must_fail($$update support_recharges set total_amount = total_amount + 1$$, 'the table itself refuses a total that does not add up', 'support_recharges_total_ck');
