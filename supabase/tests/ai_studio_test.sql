@@ -121,7 +121,8 @@ select test.login('sa');
 -- (20270302000100) the approval of a member without a Team Lead also sends the report to HR: one more history entry, "Sent to HR"
 select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r1')) ->> 'status') = 'APPROVED'
               and (select count(*) = 3 from jsonb_array_elements(ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history') h where h ->> 'action' <> 'SENT_TO_HR')
-              and (select count(*) = 1 from jsonb_array_elements(ai_studio_report_get((select id from ai_t where name = 'e_r1')) -> 'history') h where h ->> 'action' = 'SENT_TO_HR'),
+              -- (this suite runs the first AI Studio migration again, whose older report view shows no "Sent to HR" entry: read the send record itself)
+              and test.sq($q$select count(*) = 1 from ai_studio_report_hr_sends where report_id = (select id from ai_t where name = 'e_r1')$q$)::boolean,
   'an approved report keeps its status and history (and records that it was sent to HR)');
 select test.check((ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'status') = 'PENDING_DH_APPROVAL' and (ai_studio_report_get((select id from ai_t where name = 'e_r2')) ->> 'canReview')::boolean, 'a pending report still waits for the Super Admin');
 select test.login('ai_e1');
