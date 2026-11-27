@@ -27,6 +27,7 @@ import {
   ticketFilesController as ticketFiles,
   employeeCasesController as employeeCases,
   bugsController as bugs,
+  dashboardExplorerController as dashboardExplorer,
   noticesController as notices,
   meetingsController as meetings,
   leadWhatsAppController as leadWhatsApp,
@@ -557,6 +558,12 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/meetings/:id/proposal', handler: meetings.answerProposal },
   { method: 'POST', path: '/meetings/:id/response', handler: meetings.respond },
   { method: 'GET', path: '/employee/case-details', handler: employeeCases.myDetails },
+  // Dashboard Explorer (20270225000100): the Managing Director's preview audit and improvement requests (the previews themselves never call the API)
+  { method: 'POST', path: '/dashboard-explorer/sessions', handler: dashboardExplorer.startSession, options: S },
+  { method: 'POST', path: '/dashboard-explorer/sessions/end', handler: dashboardExplorer.endSession },
+  { method: 'GET', path: '/dashboard-explorer/recent', handler: dashboardExplorer.recent },
+  { method: 'POST', path: '/dashboard-explorer/improvements', handler: dashboardExplorer.suggest, options: S },
+  { method: 'GET', path: '/dashboard-explorer/improvements', handler: dashboardExplorer.requests },
   // Bugs for the Developers team (20270122000300): an employee reports and follows their own; only the developers open the Bugs section
   { method: 'GET', path: '/bugs/access', handler: bugs.access },
   { method: 'POST', path: '/bugs', handler: bugs.submit, options: S },

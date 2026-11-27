@@ -16,7 +16,7 @@ import { automationSettings } from '../server/automations/config.js';
 import proxyHandler from '../api/proxy.js';
 import webhookHandler from '../api/webhook.js';
 import { runNodeStyleHandler } from './nodeHandler.js';
-import { withSecurityHeaders } from './securityHeaders.js';
+import { withPreviewHeaders, withSecurityHeaders } from './securityHeaders.js';
 
 /*
  * The few Workers runtime shapes used here, written out instead of loading @cloudflare/workers-types, whose global Request / URL /
@@ -80,6 +80,13 @@ export async function handleRequest(request: Request, env: WorkerEnv, ctx?: Work
   }
   if (pathname === '/api/webhook' || pathname === '/api/webhooks' || pathname.startsWith('/api/webhooks/')) {
     return withSecurityHeaders(await runNodeStyleHandler(webhookHandler, withPlatformHeaders(request)));
+  }
+  // Dashboard Explorer's preview frame: its own files with its own (stricter, sandboxed) headers; a missing file is a 404, never the app
+  if (pathname === '/dashboard-preview' || pathname.startsWith('/dashboard-preview/')) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return withPreviewHeaders(new Response('Method not allowed.', { status: 405, headers: { Allow: 'GET, HEAD' } }));
+    const file = pathname === '/dashboard-preview' || pathname === '/dashboard-preview/' ? new URL('/dashboard-preview/index.html', request.url) : new URL(request.url);
+    const res = await env.ASSETS.fetch(new Request(file, { method: request.method, headers: request.headers }));
+    return withPreviewHeaders(res.status === 404 ? notFound() : res);
   }
   // A missing file under these must stay a 404: answering index.html there turns a stale script link into a confusing page error.
   if (pathname === '/api' || pathname.startsWith('/api/') || pathname.startsWith('/assets/') || pathname.startsWith('/ocr/')) {

@@ -39,7 +39,7 @@ export interface SignUpInput {
   teamId?: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: AuthUser | null;
   /** The profile the dashboards see: for a Department Head with several scopes, the department and function they are working in. */
   profile: Profile | null;

@@ -13471,6 +13471,36 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     mailMock.close();
     for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'AUTOMATION_DISPATCH_SECRET']) delete process.env[k];
   }
+// --- Dashboard Explorer (migration 20270225000100): the Managing Director's preview audit and improvement requests; everyone else refused ---
+{
+  let r = await api('sa', 'POST', '/dashboard-explorer/sessions', { dashboardId: 'support-department-head', department: 'mpillar', scenario: 'normal' });
+  check(r.status === 201 && /^[0-9a-f-]{36}$/.test(r.json.data?.sessionId ?? ''), 'Dashboard Explorer: the Managing Director starts a preview (audited)', r);
+  const sessionId = r.json.data.sessionId;
+  r = await api('sa', 'POST', '/dashboard-explorer/sessions', { dashboardId: 'login-as-employee', department: 'mpillar' });
+  check(r.status === 422, 'Dashboard Explorer: a dashboard outside the registry is refused before the database (422)', r);
+  r = await api('sa', 'GET', '/dashboard-explorer/recent');
+  check(r.status === 200 && r.json.data.some((x: any) => x.dashboardId === 'support-department-head' && x.department === 'mpillar'), 'Dashboard Explorer: recently viewed lists it', r.json.data);
+  r = await api('sa', 'POST', '/dashboard-explorer/sessions/end', { sessionId });
+  check(r.status === 200 && r.json.data.ended === true, 'Dashboard Explorer: the preview end is recorded', r);
+  const body = { dashboardId: 'support-department-head', department: 'mpillar', page: '/admin/dashboard/mpillar', pageTitle: 'Overview', viewport: 'tablet', title: 'API check: overdue tickets first',
+                 description: 'Show escalations above the statistics (API integration check).', priority: 'LOW', clientRequestId: `api-dx-${Date.now()}` };
+  r = await api('sa', 'POST', '/dashboard-explorer/improvements', body);
+  check(r.status === 201 && /^BUG-/.test(r.json.data?.reference ?? '') && r.json.data.duplicate === false, 'Dashboard Explorer: an improvement request is filed with the Developer Team', r);
+  const again = await api('sa', 'POST', '/dashboard-explorer/improvements', body);
+  check(again.status === 201 && again.json.data.duplicate === true && again.json.data.id === r.json.data.id, 'Dashboard Explorer: the same request sent twice is filed once', again);
+  r = await api('sa', 'POST', '/dashboard-explorer/improvements', { ...body, title: 'x', clientRequestId: `api-dx-bad-${Date.now()}` });
+  check(r.status === 422, 'Dashboard Explorer: a request without a proper title is refused (422)', r);
+  r = await api('sa', 'GET', '/dashboard-explorer/improvements');
+  check(r.status === 200 && r.json.data.some((x: any) => x.title === body.title && x.viewport === 'tablet' && x.page === 'Overview'), 'Dashboard Explorer: the Managing Director sees the request with its page and viewport', r.json.data);
+  for (const who of ['dh', 'th']) {
+    r = await api(who, 'POST', '/dashboard-explorer/sessions', { dashboardId: 'sales-team-lead', department: 'wabastore' });
+    check(r.status === 403, `Dashboard Explorer: a ${who === 'dh' ? 'Department Head' : 'Team Lead'} cannot start a preview (403)`, r);
+    r = await api(who, 'GET', '/dashboard-explorer/improvements');
+    check(r.status === 403, `Dashboard Explorer: a ${who === 'dh' ? 'Department Head' : 'Team Lead'} cannot read the Managing Director's requests (403)`, r);
+  }
+  r = await api(null, 'GET', '/dashboard-explorer/recent');
+  check(r.status === 401, 'Dashboard Explorer: a signed-out caller is refused (401)', r);
+  await db.query(`delete from public.dev_bugs where source = 'DASHBOARD_EXPLORER' and title like 'API check:%'`);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

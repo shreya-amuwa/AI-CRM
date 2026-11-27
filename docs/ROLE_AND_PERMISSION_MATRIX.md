@@ -84,3 +84,13 @@ Details live with each feature:
 
 Those documents were written before the rename and may still say "Super Admin" or "Operations Head": read them as "Managing Director"
 and "CEO".
+
+## Dashboard Explorer (docs/DASHBOARD_EXPLORER.md)
+
+| Who | Dashboard Explorer | Improvement requests |
+| --- | --- | --- |
+| Managing Director (`SUPER_ADMIN`, active) | Previews every position's dashboard with demonstration data in an isolated frame (no employee account, session or record) | Sends and follows them |
+| CEO (`DEPARTMENT_HEAD` + `is_operations_head`) | No | No |
+| Department Head, Team Lead, Team Member | No | No |
+
+The database functions check the caller (`private.dashboard_explorer_actor`); the CEO flag grants nothing here.
