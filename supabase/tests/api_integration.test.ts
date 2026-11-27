@@ -13361,7 +13361,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     tokens.set('dhr', tokenFor(r.json.data.id));
 
     // two overdue confirmations (Digitree, Wabastore): Digitree's employee is a real account so the e-mail has an address
-    r = await api('sa', 'POST', '/users', { email: 'dig.api.emp@example.com', fullName: 'Digi Api Emp', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: digSales.id, details: det('Team Member', '+91 99887 76602') });
+    // the joining date matches the cycle's (the scheduler closes a cycle whose employee's joining date differs)
+    const { rows: [{ joined }] } = await db.query(`select to_char(private.hr_today() - 200, 'YYYY-MM-DD') as joined`);
+    r = await api('sa', 'POST', '/users', { email: 'dig.api.emp@example.com', fullName: 'Digi Api Emp', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: digSales.id, details: { ...det('Team Member', '+91 99887 76602'), joiningDate: joined } });
     check(r.status === 201, 'Department HR: a Digitree employee exists', r);
     const empId = r.json.data.id;
     await db.query(`insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date, probation_end)
