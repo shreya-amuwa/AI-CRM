@@ -7,6 +7,7 @@ import { taskReportsApi } from '../../lib/api/taskReports';
 import { officeToday } from '../../lib/officeTime';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
 import { dateLabel, Stat, timeLabel } from './reportUi';
+import { Paged } from '../common/Paged';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
@@ -172,8 +173,9 @@ const HistoryPanel: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
     <Card className="p-4 space-y-2">
       <div className="flex items-center justify-between" data-testid="task-report-history"><h3 className="text-sm font-bold text-slate-900">Approval history</h3><button type="button" className={btn.secondary} onClick={onClose}>Close</button></div>
       {err ? <ErrorBanner message={err} /> : !d ? <Spinner /> : (
+        <Paged items={d.history} noun="entries">{rows => (
         <ol className="space-y-1.5 text-xs">
-          {d.history.map((h, i) => (
+          {rows.map((h, i) => (
             <li key={i} className="rounded-lg bg-slate-50 px-3 py-2">
               <span className="font-semibold text-slate-800">{h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'APPROVED' ? 'Approved' : h.action === 'EDITED' ? 'Edited by the Team Lead' : 'Returned for correction'}</span>
               {h.by ? ` by ${h.by}` : ''} · {timeLabel(h.at)} · revision {h.revision}{h.remarks ? <> · “{h.remarks}”</> : null}
@@ -181,6 +183,7 @@ const HistoryPanel: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
             </li>
           ))}
         </ol>
+        )}</Paged>
       )}
     </Card>
   );

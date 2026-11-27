@@ -23,6 +23,7 @@ import { documentsApi, pipelineApi } from '../../../lib/api/endpoints';
 import { acceptFor, MIME_LABEL, uploadChecklistFile } from '../../../lib/checklistUpload';
 import { btn, categoryDot, Dialog, ErrorBanner, inputCls, money, Pill, shortDate } from './shared';
 import { CustomerInvoices } from '../../invoices/invoiceShared';
+import { Paged } from '../../common/Paged';
 
 /** 'addon': the Technical Consultant collects the add-on documents and verifies them (both actions). */
 export type ChecklistMode = 'sales' | 'review' | 'addon';
@@ -444,8 +445,9 @@ const ChecklistCard: React.FC<{
             <History className="w-3.5 h-3.5" /> Previous versions ({history.length})
           </button>
           {showHistory && (
+            <Paged items={history} noun="entries">{rows => (
             <ul className="mt-2 space-y-1.5">
-              {history.map(d => (
+              {rows.map(d => (
                 <li key={d.id} className="flex items-center justify-between gap-2 text-[11px] text-slate-600">
                   <span className="truncate">
                     v{d.version} · {d.originalFileName} · {shortDate(d.uploadedAt)}
@@ -463,6 +465,7 @@ const ChecklistCard: React.FC<{
                 </li>
               ))}
             </ul>
+            )}</Paged>
           )}
         </div>
       )}

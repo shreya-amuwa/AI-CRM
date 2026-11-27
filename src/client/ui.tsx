@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { AlertTriangle, Inbox, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Inbox, Loader2, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import type { Loaded } from './hooks';
 import type { ClientTicketStatus, ServiceRequestStatus } from '../../shared/contracts';
 import { lockScroll } from '../lib/scrollLock';
+import { pageOf } from '../lib/paging';
 
 // ---- formatting ----
 export const inr = (n: number | null | undefined): string =>
@@ -242,3 +243,30 @@ export const Modal: React.FC<{ title: string; onClose: () => void; children: Rea
     </div>
   );
 };
+
+/**
+ * Long feeds (notifications, plan history) show one page at a time, newest first, with Previous / Next below; no buttons when
+ * everything fits on one page. Same paging rule as the staff CRM (src/components/common/Paged.tsx).
+ */
+export function ClientPaged<T>({ items, pageSize = 10, children }: { items: readonly T[]; pageSize?: number; children: (rows: T[]) => React.ReactNode }): React.ReactElement {
+  const [page, setPage] = React.useState(1);
+  const view = pageOf(items, page, pageSize);
+  React.useEffect(() => { if (view.page !== page) setPage(view.page); }, [view.page, page]);
+  const from = items.length ? (view.page - 1) * pageSize + 1 : 0;
+  const to = Math.min(items.length, view.page * pageSize);
+  return (
+    <>
+      {children(view.rows)}
+      {view.pages > 1 && (
+        <nav className="cd-pager" aria-label="Pages">
+          <span className="cd-small muted" aria-live="polite">{from}–{to} of {items.length}</span>
+          <span className="cd-pager-btns">
+            <Button variant="outline" small onClick={() => setPage(view.page - 1)} disabled={view.page <= 1} aria-label="Previous page"><ChevronLeft size={16} aria-hidden /> Previous</Button>
+            <span className="cd-small">Page {view.page} of {view.pages}</span>
+            <Button variant="outline" small onClick={() => setPage(view.page + 1)} disabled={view.page >= view.pages} aria-label="Next page">Next <ChevronRight size={16} aria-hidden /></Button>
+          </span>
+        </nav>
+      )}
+    </>
+  );
+}

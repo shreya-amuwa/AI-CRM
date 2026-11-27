@@ -7,6 +7,7 @@ import {
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner, longDateTime, usePipelineRealtime, notifyPipelineChanged } from '../../team-member/pipeline/shared';
+import { Paged } from '../../common/Paged';
 
 /**
  * The two workflow statuses of ONE customer: the Technical Consultant's (technical verification, add-on services, purchase tracking, technical
@@ -167,8 +168,9 @@ export const WorkflowStatusPanel: React.FC<{ customerId: string; onChanged?: () 
           <History className="w-3.5 h-3.5" aria-hidden="true" /> {showHistory ? 'Hide' : 'Show'} history ({w.history.length})
         </button>
         {showHistory && (
+          <Paged items={w.history} noun="entries">{rows => (
           <ol className="mt-2 space-y-1.5 text-xs text-slate-700" data-testid="workflow-history">
-            {w.history.map((h, i) => (
+            {rows.map((h, i) => (
               <li key={i} className="flex flex-wrap gap-x-2">
                 <span className="text-slate-400 tabular-nums">{longDateTime(h.at)}</span>
                 <b>{h.track === 'TECHNICAL_CONSULTANT' ? 'Technical Consultant' : 'Meta Verifier'}</b>
@@ -177,6 +179,7 @@ export const WorkflowStatusPanel: React.FC<{ customerId: string; onChanged?: () 
               </li>
             ))}
           </ol>
+          )}</Paged>
         )}
       </div>
     </section>

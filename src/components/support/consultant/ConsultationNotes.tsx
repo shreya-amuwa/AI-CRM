@@ -4,6 +4,7 @@ import type { ConsultantNote } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner, inputCls, Spinner, useServiceCatalog, usePipelineRealtime } from '../../team-member/pipeline/shared';
+import { Paged } from '../../common/Paged';
 
 const stamp = (iso: string) =>
   new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -122,8 +123,9 @@ export const ConsultationNotes: React.FC<{ customerId: string; canWrite: boolean
       ) : notes && notes.length === 0 ? (
         <p className="py-6 text-center text-sm text-slate-500">{canWrite ? 'No notes yet. Add the first one after your conversation with the customer.' : 'The consultant has not written any notes yet.'}</p>
       ) : (
+        <Paged items={notes} noun="notes">{rows => (
         <ul className="mt-4 space-y-3" aria-label="Consultation notes">
-          {notes?.map(n => (
+          {rows.map(n => (
             <li key={n.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60">
               {editing?.id === n.id ? (
                 <form
@@ -166,6 +168,7 @@ export const ConsultationNotes: React.FC<{ customerId: string; canWrite: boolean
             </li>
           ))}
         </ul>
+        )}</Paged>
       )}
     </section>
   );

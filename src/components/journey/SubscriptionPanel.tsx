@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { btn, Field, inputCls, todayIso } from '../team-member/pipeline/shared';
 import { checkTerms, emptyTerms, TermsFields, termsFrom, type TermsDraft, type TermsErrors } from './SubscriptionTerms';
+import { Paged } from '../common/Paged';
 
 /**
  * The subscription of each service, as the team works with it:
@@ -251,8 +252,9 @@ export const SubscriptionPanel: React.FC<{ customerId: string; onChanged?: () =>
             <History className="w-4 h-4" aria-hidden="true" /> History ({data.history.length})
           </button>
           {showHistory && (
+            <Paged items={data.history} noun="entries">{rows => (
             <ul className="mt-2 space-y-1.5 text-xs text-slate-600">
-              {data.history.map(h => (
+              {rows.map(h => (
                 <li key={h.id} className="border border-slate-100 rounded-lg px-3 py-2">
                   <b className="text-slate-800">{ACTION[h.action]}</b> · {h.service} · {h.by ?? 'system'} · {fmtAt(h.at)}
                   {h.action === 'DATES_CORRECTED' && <> — {fmt(String(h.old?.startedOn ?? ''))} → {fmt(String(h.new?.startedOn ?? ''))} (expiry {fmt(String(h.old?.expiresOn ?? ''))} → {fmt(String(h.new?.expiresOn ?? ''))})</>}
@@ -261,6 +263,7 @@ export const SubscriptionPanel: React.FC<{ customerId: string; onChanged?: () =>
                 </li>
               ))}
             </ul>
+            )}</Paged>
           )}
         </div>
       )}

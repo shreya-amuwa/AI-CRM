@@ -4,7 +4,7 @@ import type { ClientNotification } from '../../shared/contracts';
 import { clientApi } from './api';
 import { errorMessage } from '../lib/api/client';
 import { notificationTarget, useShell } from './shell';
-import { Button, Card, EmptyState, ErrorState, LoadingBlock, PageHeader, fmtDateTime } from './ui';
+import { Button, Card, ClientPaged, EmptyState, ErrorState, LoadingBlock, PageHeader, fmtDateTime } from './ui';
 
 const PAGE = 20;
 
@@ -59,7 +59,7 @@ export const Notifications: React.FC = () => {
       ) : (
         <div className="cd-stack" style={{ gap: 10 }}>
           {error && <div className="cd-banner danger" role="alert">{error}</div>}
-          {items.map(n => (
+          <ClientPaged items={items}>{rows => rows.map(n => (
             <Card key={n.id} small className={n.readAt ? '' : 'cd-unread'} onClick={() => void open(n)}>
               <div className="cd-between" style={{ alignItems: 'flex-start' }}>
                 <div style={{ minWidth: 0 }}>
@@ -70,7 +70,7 @@ export const Notifications: React.FC = () => {
                 {!n.readAt && <button className="cd-link" onClick={e => { e.stopPropagation(); void markRead([n.id]); }} style={{ flexShrink: 0 }}>Mark read</button>}
               </div>
             </Card>
-          ))}
+          ))}</ClientPaged>
           {items.length < total && <div style={{ textAlign: 'center' }}><Button variant="outline" loading={more} onClick={loadMore}>Show older notifications</Button></div>}
         </div>
       )}

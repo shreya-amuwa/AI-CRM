@@ -21,6 +21,7 @@ import { AssigneePicker, CrossTeamBadge, WorkloadSummary } from './AssigneePicke
 import { notifyAiStudioChanged, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
 import { TaskReportsPanel } from './TaskReportsPanel';
 import { PRIORITY_LABELS, PriorityBadge, ProgressBar, TASK_STATUS_LABELS, TableWrap, TaskStatusBadge, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
+import { Paged } from '../common/Paged';
 
 const linkLines = (text: string) => text.split('\n').map(l => l.trim()).filter(Boolean);
 
@@ -115,8 +116,9 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
           {mode === 'edit' && <EditForm task={task} onCancel={() => setMode('view')} onDone={changed} />}
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 mb-2">History</h3>
+            <Paged items={task.history} noun="entries">{rows => (
             <ol className="space-y-2">
-              {task.history.map(h => (
+              {rows.map(h => (
                 <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
                   <div className="font-semibold text-slate-800">
                     {h.kind === 'ASSIGNED' ? 'Assigned' : h.kind === 'EDITED' ? 'Task changed' : `${TASK_STATUS_LABELS[h.status]} · ${h.progress}%`}
@@ -126,6 +128,7 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
                 </li>
               ))}
             </ol>
+            )}</Paged>
           </div>
           <TaskReportsPanel taskId={task.id} />
           <div className="flex justify-end"><button type="button" className={ghostBtn} onClick={onClose}>Close</button></div>

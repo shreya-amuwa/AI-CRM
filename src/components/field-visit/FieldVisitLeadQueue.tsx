@@ -9,6 +9,7 @@ import { PageTitle } from '../layout/shell';
 import { Card, Dialog, ErrorBanner, Field, Pager, Pill, Spinner, btn, inputCls, useDebounced } from '../team-member/pipeline/shared';
 import { EmptyState } from '../telecaller/ui';
 import { agoText, useNow } from './TrackingBits';
+import { Paged } from '../common/Paged';
 
 const STATUS_TABS = [
   { id: 'PENDING', label: 'Pending assignment' },
@@ -126,11 +127,13 @@ export const FieldVisitLeadQueuePage: React.FC = () => {
                   {l.history.length > 1 && (
                     <details className="text-[11px] text-slate-600">
                       <summary className="cursor-pointer font-semibold">Assignment history ({l.history.length})</summary>
+                      <Paged items={l.history} noun="entries">{rows => (
                       <ol className="mt-1 space-y-0.5">
-                        {l.history.map((h, i) => (
+                        {rows.map((h, i) => (
                           <li key={i}>{new Date(h.at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}: {h.assignedTo ?? '-'} by {h.assignedBy ?? '-'}{h.note ? ` (${h.note})` : ''}</li>
                         ))}
                       </ol>
+                      )}</Paged>
                     </details>
                   )}
                 </li>

@@ -3,6 +3,7 @@ import { Lock } from 'lucide-react';
 import type { CaseEvent, EmployeeIssue, EmployeeMeeting, IssuePriority, IssueStatus, MeetingStatus } from '../../../shared/contracts';
 import { ISSUE_PRIORITY_LABELS, ISSUE_STATUS_LABELS, MEETING_STATUS_LABELS } from '../../../shared/contracts';
 import { Pill, type Tone } from '../team-member/pipeline/shared';
+import { Paged } from '../common/Paged';
 
 /** Shared pieces of the employee page (Raise an Issue) and HR's two sections (Employee Issues, Meeting Requests). */
 export const whenLabel = (iso: string | null | undefined) =>
@@ -55,8 +56,9 @@ const statusText = (s: string | null, forEmployee: boolean) => (!s ? '' : forEmp
 
 /** The activity history, oldest first. HR-only notes carry a lock so HR never mistakes one for something the employee reads. */
 export const CaseTimeline: React.FC<{ events: CaseEvent[]; forEmployee?: boolean }> = ({ events, forEmployee = false }) => (
+  <Paged items={events} noun="entries">{rows => (
   <ol className="space-y-3" aria-label="Activity history" data-testid="case-timeline">
-    {events.map(e => (
+    {rows.map(e => (
       <li key={e.id} className={`rounded-xl border p-3 text-xs ${e.visibility === 'HR' ? 'border-amber-200 bg-amber-50/60' : e.side === 'HR' ? 'border-indigo-100 bg-indigo-50/40' : e.side === 'DEVELOPER' ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200 bg-white'}`} data-kind={e.kind}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500">
           <span className="font-semibold text-slate-700">{KIND_LABEL[e.kind] ?? e.kind}</span>
@@ -71,6 +73,7 @@ export const CaseTimeline: React.FC<{ events: CaseEvent[]; forEmployee?: boolean
       </li>
     ))}
   </ol>
+  )}</Paged>
 );
 
 export const Detail: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (

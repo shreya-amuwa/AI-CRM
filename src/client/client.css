@@ -618,3 +618,7 @@ html[data-vshort='1'] .cd-chat-card .ch-head, html[data-vshort='1'] .cd-chat-tab
   .cd-manual-article { padding: 20px 16px; }
   .cd-manual-article h2 { font-size: 20px !important; }
 }
+
+/* Paged feeds (ClientPaged in ui.tsx) */
+.cd-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding-top: 12px; margin-top: 8px; border-top: 1px solid var(--border); }
+.cd-pager-btns { display: inline-flex; align-items: center; gap: 8px; }

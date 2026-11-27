@@ -7,6 +7,7 @@ import type { PerformanceHistoryEntry, PerformanceMetrics, PerformanceReport } f
 import { Card, CardHead, ghostBtn, LoadingLine, primaryBtn, StatCard, type StatTone } from '../tasks/head/headParts';
 import { OutcomeBar, WeeklyChart } from './PerformanceCharts';
 import { periodLabel } from './periods';
+import { Paged } from '../common/Paged';
 
 export const INSUFFICIENT = 'Insufficient data';
 const val = (v: number | null | undefined, suffix = '') => (v === null || v === undefined ? INSUFFICIENT : `${v}${suffix}`);
@@ -218,8 +219,9 @@ export const ReportView: React.FC<{ reportKey: PerformanceReportKey; title: stri
           <Card>
             <CardHead title="Report history" hint="A new version is kept only when the task figures changed" right={<History className="w-4 h-4 text-slate-400" aria-hidden="true" />} />
             {!history || history.length === 0 ? <p className="px-5 pb-5 text-sm text-slate-500">No earlier versions.</p> : (
+              <Paged items={history} noun="entries">{rows => (
               <ul className="px-5 pb-5 divide-y divide-slate-100">
-                {history.map(h => (
+                {rows.map(h => (
                   <li key={h.version} className="py-2.5 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-bold text-slate-900">Version {h.version}{h.version === report.version ? ' (current)' : ''}</span>
@@ -229,6 +231,7 @@ export const ReportView: React.FC<{ reportKey: PerformanceReportKey; title: stri
                   </li>
                 ))}
               </ul>
+              )}</Paged>
             )}
           </Card>
         </>

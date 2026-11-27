@@ -4,6 +4,7 @@ import { VERIFICATION_OUTCOMES, type VerificationNote, type VerificationOutcome 
 import { errorMessage } from '../../../lib/api/client';
 import { workflowApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner, inputCls, Pill, Spinner, usePipelineRealtime, type Tone } from '../../team-member/pipeline/shared';
+import { Paged } from '../../common/Paged';
 
 const OUTCOME_LABEL: Record<VerificationOutcome, string> = {
   NOTE: 'Note',
@@ -96,8 +97,9 @@ export const VerificationNotes: React.FC<{ customerId: string; canWrite: boolean
       {!notes && !error && <Spinner label="Loading notes…" />}
       {notes && notes.length === 0 && <p className="text-sm text-slate-500">No notes yet.</p>}
       {notes && notes.length > 0 && (
+        <Paged items={notes} noun="notes">{rows => (
         <ul className="space-y-2">
-          {notes.map(n => (
+          {rows.map(n => (
             <li key={n.id} className="rounded-xl border border-slate-200 px-3 py-2 text-sm">
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <Pill tone={OUTCOME_TONE[n.outcome]}>{OUTCOME_LABEL[n.outcome]}</Pill>
@@ -108,6 +110,7 @@ export const VerificationNotes: React.FC<{ customerId: string; canWrite: boolean
             </li>
           ))}
         </ul>
+        )}</Paged>
       )}
     </section>
   );

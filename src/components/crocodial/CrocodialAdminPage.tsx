@@ -7,6 +7,7 @@ import { ApiError } from '../../lib/api/client';
 import { crocodialApi, usersApi } from '../../lib/api/endpoints';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
 import { confirmAction, promptInput } from '../feedback/AppFeedback';
+import { Paged } from '../common/Paged';
 
 /**
  * Super Admin > Crocodial Integration. The read-only connector to Crocodial (a calling CRM), switched on step by step:
@@ -382,9 +383,11 @@ export const CrocodialAdminPage: React.FC = () => {
       <Card className="p-4 space-y-2">
         <h2 className="text-sm font-bold text-slate-900">History</h2>
         {!data.audit.length ? <p className="text-xs text-slate-500">No changes yet.</p> : (
+          <Paged items={data.audit} noun="changes">{rows => (
           <ul className="text-xs divide-y divide-slate-100" data-testid="croc-audit">
-            {data.audit.map((a, i) => <li key={i} className="py-1.5"><span className="text-slate-500">{when(a.at)}</span> · {a.action === 'CROCODIAL_MAPPING_COUNT_FROM_SET' ? 'activity start date changed' : a.action.replace(/^CROCODIAL_/, '').replace(/_/g, ' ').toLowerCase()} · {a.actorName ?? 'system'}</li>)}
+            {rows.map((a, i) => <li key={i} className="py-1.5"><span className="text-slate-500">{when(a.at)}</span> · {a.action === 'CROCODIAL_MAPPING_COUNT_FROM_SET' ? 'activity start date changed' : a.action.replace(/^CROCODIAL_/, '').replace(/_/g, ' ').toLowerCase()} · {a.actorName ?? 'system'}</li>)}
           </ul>
+          )}</Paged>
         )}
       </Card>
     </div>
