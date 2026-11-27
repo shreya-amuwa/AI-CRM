@@ -4,6 +4,7 @@ import type { LeadStatus, PipelineCounts, ServiceCatalogItem } from '../../../..
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { listenToTables } from '../../../lib/realtimeShared';
+import { lockScroll } from '../../../lib/scrollLock';
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -312,6 +313,8 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
   closeRef.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
+    // the page behind must not scroll while the dialog is open (given back when the last dialog / drawer closes)
+    const release = lockScroll();
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button')?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -322,17 +325,20 @@ export const Dialog: React.FC<{ title: string; description?: string; onClose: ()
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
+      release();
       previous?.focus?.();
     };
   }, [persistent]);
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => !persistent && e.target === e.currentTarget && onClose()}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`w-full ${wide ? 'max-w-5xl' : size === 'xl' ? 'max-w-3xl' : size === 'lg' ? 'max-w-xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-5 space-y-4`}>
+    // crm-dialog-layer / crm-dialog-panel (src/index.css): the layer is exactly the visible screen (dvh, safe areas) and never scrolls; the panel is the one
+    // scroll area (top to bottom, nothing sideways), so a long report or form is fully reachable on a phone
+    <div className="crm-dialog-layer fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40" onMouseDown={e => !persistent && e.target === e.currentTarget && onClose()}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId} className={`crm-dialog-panel w-full min-w-0 ${wide ? 'max-w-5xl' : size === 'xl' ? 'max-w-3xl' : size === 'lg' ? 'max-w-xl' : 'max-w-md'} max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-xl p-4 sm:p-5 space-y-4`}>
         <div>
-          <h2 id={titleId} className="text-base font-bold text-slate-900">
+          <h2 id={titleId} className="text-base font-bold text-slate-900 break-words">
             {title}
           </h2>
-          {description && <p className="text-xs text-slate-500 mt-1">{description}</p>}
+          {description && <p className="text-xs text-slate-500 mt-1 break-words">{description}</p>}
         </div>
         {children}
       </div>

@@ -7,7 +7,7 @@ understand every workspace and send improvement requests to the CRM Development 
 It is **not** "log in as". No employee account, session, token or record is used, created or changed. The Managing Director's own session stays
 exactly as it was, and nothing a preview does can reach the live CRM.
 
-Migration: `20270226000100_dashboard_explorer.sql` (audit and improvement requests only).
+Migration: `20270301000100_dashboard_explorer.sql` (audit and improvement requests only).
 
 ## What the Managing Director sees
 
@@ -181,7 +181,7 @@ screen size and build are captured automatically.
 
 ## Rollout
 
-1. Run `supabase/migrations/20270226000100_dashboard_explorer.sql` in the Supabase SQL editor. It is safe to run twice.
+1. Run `supabase/migrations/20270301000100_dashboard_explorer.sql` in the Supabase SQL editor. It is safe to run twice.
 2. Deploy. `npm run build` builds the preview bundle, and `wrangler.jsonc` sends `/dashboard-preview/*` to the Worker for its headers.
 
 Before the migration runs, the Explorer list opens but starting a preview shows the server's error, and no frame opens.

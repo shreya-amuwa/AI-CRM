@@ -41,25 +41,25 @@ const ledger = () => {
 };
 const mask = (m: any) => m;
 const month = (ym: string, inc: number, bon: number, rev: number, wd: number) => ({ month: ym, incentives: inc, reversed: rev, bonuses: bon, adjustments: 0, withdrawn: wd });
-// the Wallet PIN (20270222000100): by default set and unlocked, so the wallet's own checks run as before; the PIN section of the test changes it
-state.pin = { hasPin: true, pin: '482913', unlocked: true, fails: 0, lockedUntil: null as string | null, code: 'ABCD2345' };
+// the Wallet PIN (20270222000100, 4 digits since 20270228000100): by default set and unlocked, so the wallet's own checks run as before; the PIN section of the test changes it
+state.pin = { hasPin: true, pin: '4829', unlocked: true, fails: 0, lockedUntil: null as string | null, code: 'ABCD2345', legacy: false };
 const locked = () => { if (!state.pin.unlocked) fail('WALLET_LOCKED: Enter your Wallet PIN.'); };
 const pinCheck = (p: string, c: string) => {
-  if (!/^[0-9]{6}$/.test(p ?? '')) fail('VALIDATION_ERROR: The PIN must be exactly 6 digits.');
+  if (!/^[0-9]{4}$/.test(p ?? '')) fail('VALIDATION_ERROR: The PIN must be exactly 4 digits.');
   if (p !== c) fail('VALIDATION_ERROR: The two PINs do not match.');
-  if (/^(.)\1{5}$/.test(p) || p === '123456') fail('VALIDATION_ERROR: Choose a PIN that is harder to guess (not the same digit six times or a simple sequence).');
+  if (/^(.)\1{3}$/.test(p) || p === '1234') fail('VALIDATION_ERROR: Choose a PIN that is harder to guess (not the same digit four times or a simple sequence).');
 };
 const handlers: Record<string, (a: any) => any> = {
-  wallet_pin_status: () => ({ hasPin: state.pin.hasPin, unlocked: state.pin.unlocked, unlockExpiresAt: null, lockedUntil: state.pin.lockedUntil, triesLeft: 5 - state.pin.fails }),
+  wallet_pin_status: () => ({ hasPin: state.pin.hasPin, legacy: state.pin.legacy, pinLength: state.pin.legacy ? 6 : 4, unlocked: state.pin.unlocked && !state.pin.legacy, unlockExpiresAt: null, lockedUntil: state.pin.lockedUntil, triesLeft: 5 - state.pin.fails }),
   wallet_pin_set: (a: any) => { pinCheck(a.p_pin, a.p_confirm); if (state.pin.hasPin) fail('CONFLICT: Your Wallet PIN is already set.'); Object.assign(state.pin, { hasPin: true, pin: a.p_pin, unlocked: true }); return { unlocked: true }; },
   wallet_pin_unlock: (a: any) => {
     if (state.pin.lockedUntil) return { unlocked: false, triesLeft: 0, lockedUntil: state.pin.lockedUntil };
-    if (a.p_pin === state.pin.pin) { Object.assign(state.pin, { unlocked: true, fails: 0 }); return { unlocked: true, triesLeft: 5 }; }
+    if (a.p_pin === state.pin.pin) { if (state.pin.legacy) return { unlocked: false, mustChange: true, triesLeft: 5 }; Object.assign(state.pin, { unlocked: true, fails: 0 }); return { unlocked: true, triesLeft: 5 }; }
     state.pin.fails++;
     if (state.pin.fails >= 5) { state.pin.fails = 0; state.pin.lockedUntil = '2026-11-21T10:15:00Z'; return { unlocked: false, triesLeft: 0, lockedUntil: state.pin.lockedUntil }; }
     return { unlocked: false, triesLeft: 5 - state.pin.fails };
   },
-  wallet_pin_change: (a: any) => { pinCheck(a.p_new, a.p_confirm); if (a.p_old !== state.pin.pin) { state.pin.fails++; return { unlocked: false, changed: false, triesLeft: 5 - state.pin.fails }; } state.pin.pin = a.p_new; return { unlocked: true, changed: true }; },
+  wallet_pin_change: (a: any) => { pinCheck(a.p_new, a.p_confirm); if (a.p_old !== state.pin.pin) { state.pin.fails++; return { unlocked: false, changed: false, triesLeft: 5 - state.pin.fails }; } state.pin.pin = a.p_new; state.pin.legacy = false; state.pin.unlocked = true; return { unlocked: true, changed: true }; },
   wallet_pin_lock: () => { state.pin.unlocked = false; return null; },
   wallet_pin_reset_finish: (a: any) => { pinCheck(a.p_pin, a.p_confirm); if (String(a.p_code).toUpperCase() !== state.pin.code) return { reset: false, triesLeft: 4 }; Object.assign(state.pin, { pin: a.p_pin, unlocked: true, lockedUntil: null, fails: 0 }); return { reset: true, unlocked: true }; },
   wallet_summary: () => {

@@ -22,7 +22,7 @@ changed, and nothing existing was removed. It is therefore a **minor** release.
   no network access and cannot read the Managing Director's session, and no employee account is used. The preview offers a permanent PREVIEW MODE
   toolbar, desktop / tablet / mobile widths, scenarios, simulated actions and Reset. "Suggest improvement" files a Developer Team feature request
   with the dashboard, page and screen size, and the Managing Director follows its status. Only an active Managing Director may use it, and
-  previews are audited. Migration `20270226000100_dashboard_explorer.sql`. First version: overview data for the core Sales and Support
+  previews are audited. Migration `20270301000100_dashboard_explorer.sql`. First version: overview data for the core Sales and Support
   dashboards; other department pages say they have no demonstration data yet.
 
 * **AI Studio: cross-team task assignment** (docs/AI_STUDIO_CROSS_TEAM.md). A Team Lead on a project can give a task of that project to a member of

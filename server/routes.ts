@@ -25,6 +25,7 @@ import {
   clientWorkflowController as clientWork,
   chatController as chat,
   ticketFilesController as ticketFiles,
+  supportRechargesController as recharges,
   employeeCasesController as employeeCases,
   bugsController as bugs,
   dashboardExplorerController as dashboardExplorer,
@@ -558,7 +559,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/meetings/:id/proposal', handler: meetings.answerProposal },
   { method: 'POST', path: '/meetings/:id/response', handler: meetings.respond },
   { method: 'GET', path: '/employee/case-details', handler: employeeCases.myDetails },
-  // Dashboard Explorer (20270226000100): the Managing Director's preview audit and improvement requests (the previews themselves never call the API)
+  // Dashboard Explorer (20270301000100): the Managing Director's preview audit and improvement requests (the previews themselves never call the API)
   { method: 'POST', path: '/dashboard-explorer/sessions', handler: dashboardExplorer.startSession, options: S },
   { method: 'POST', path: '/dashboard-explorer/sessions/end', handler: dashboardExplorer.endSession },
   { method: 'GET', path: '/dashboard-explorer/recent', handler: dashboardExplorer.recent },
@@ -629,6 +630,16 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/support/ticket-uploads/:id/complete', handler: ticketFiles.completeUpload },
   { method: 'POST', path: '/support/ticket-uploads/:id/abort', handler: ticketFiles.abortUpload },
   { method: 'GET', path: '/support/ticket-attachments/:id/url', handler: ticketFiles.attachmentUrl },
+  // Support Recharges (Panel / Message): the database decides who sees and changes what; the screenshot is private (signed, short-lived links)
+  { method: 'GET', path: '/support/recharges', handler: recharges.list },
+  { method: 'POST', path: '/support/recharges', handler: recharges.create, options: S },
+  { method: 'POST', path: '/support/recharge-uploads', handler: recharges.beginUpload, options: S },
+  { method: 'POST', path: '/support/recharge-uploads/:id/complete', handler: recharges.completeUpload },
+  { method: 'POST', path: '/support/recharge-uploads/:id/abort', handler: recharges.abortUpload },
+  { method: 'GET', path: '/support/recharge-files/:id/url', handler: recharges.screenshotUrl },
+  { method: 'GET', path: '/support/recharges/:id', handler: recharges.get },
+  { method: 'POST', path: '/support/recharges/:id/update', handler: recharges.update, options: S },
+  { method: 'POST', path: '/support/recharges/:id/status', handler: recharges.setStatus, options: S },
   { method: 'POST', path: '/support/tickets/:id/client-reply', handler: clientWork.replyToTicket },
   { method: 'GET', path: '/accounts/finance/summary', handler: finance.summary },
   { method: 'GET', path: '/accounts/finance/departments', handler: finance.departments },

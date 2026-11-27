@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ImprovementRequestResult, ImprovementRequestRow, PreviewRecent, PreviewSession } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
-/** Dashboard Explorer (20270226000100): each call is a database function that accepts only the active Managing Director. */
+/** Dashboard Explorer (20270301000100): each call is a database function that accepts only the active Managing Director. */
 export class DashboardExplorerRepository {
   constructor(private readonly db: SupabaseClient) {}
   private async rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {

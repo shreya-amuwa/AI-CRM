@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Headset, LayoutDashboard, ListChecks, PackageCheck, Receipt, Target, UserCheck, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/shell';
@@ -28,8 +28,9 @@ import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
+import { RechargesPage } from '../recharges/RechargesPage';
 
-export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | 'work-reports' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar';
+export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | 'work-reports' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar' | 'recharges';
 
 const PIPELINE_PAGES: readonly string[] = ['leads', 'potential', 'onboarding', 'part-payments'];
 
@@ -53,6 +54,7 @@ const NAV: { id: SupportPage; label: string; icon: React.ElementType }[] = [
   { id: 'client-calendar', label: 'Client calendar', icon: CalendarPlus },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
+  { id: 'recharges', label: 'Recharges', icon: Receipt },
   { id: 'raise-issue', label: ISSUES_NAV.label, icon: ISSUES_NAV.icon },
   { id: 'chat', label: CHAT_NAV.label, icon: CHAT_NAV.icon },
   { id: 'notifications', label: 'Notification Center', icon: Bell }
@@ -119,7 +121,7 @@ export const SupportMemberDashboard: React.FC = () => {
     NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n.id === 'work-reports' ? { ...n, badge: reportsBadge } : n)),
     [
       { ids: ['customers'] },
-      { label: 'Work', ids: ['tasks', 'work-reports', 'tickets', 'delivery', 'invoices'] },
+      { label: 'Work', ids: ['tasks', 'work-reports', 'tickets', 'delivery', 'invoices', 'recharges'] },
       { label: 'Customers', ids: ['my-clients', 'add-customer', 'import', 'client-documents', 'client-calendar'] },
       { label: 'My Leads', ids: ['leads', 'potential', 'onboarding', 'part-payments'] },
       { label: 'Team', ids: ['raise-issue', 'chat', 'notifications'] }
@@ -191,6 +193,8 @@ export const SupportMemberDashboard: React.FC = () => {
         <ChatRoute />
       ) : page === 'raise-issue' ? (
         <IssuesRoute />
+      ) : page === 'recharges' ? (
+        <RechargesPage />
       ) : page === 'work-reports' ? (
         <ReportsRoute />
       ) : page === 'notifications' ? (

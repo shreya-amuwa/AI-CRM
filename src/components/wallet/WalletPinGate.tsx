@@ -1,25 +1,29 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Lock, ShieldCheck } from 'lucide-react';
+import { WALLET_LEGACY_PIN_LENGTH, WALLET_PIN_LENGTH } from '../../../shared/validation';
 import { WALLET_LOCKED_EVENT, walletPinApi, type WalletPinAnswer, type WalletPinStatus } from '../../lib/wallet';
 import { Notice } from './walletParts';
 
 /**
- * The Wallet PIN screen in front of every employee's Wallet (20270222000100; docs/EMPLOYEE_WALLET.md "Wallet PIN"). First open: set a 6-digit PIN
- * twice. Afterwards: enter it once per sign-in (15 minutes, renewed while the wallet is used). Forgot PIN: a one-time code is e-mailed and typed here
+ * The Wallet PIN screen in front of every employee's Wallet (20270222000100, 4 digits since 20270228000100; docs/EMPLOYEE_WALLET.md "Wallet PIN"). First open: set a 4-digit PIN
+ * twice. A person whose PIN is still the old 6 digits sees "Update your Wallet PIN": their current PIN, then a new 4-digit one (nothing is bypassed; the wallet stays closed until then). Afterwards: enter it once per sign-in (15 minutes, renewed while the wallet is used). Forgot PIN: a one-time code is e-mailed and typed here
  * with a new PIN. The database checks and hashes the PIN and refuses the wallet's data until it was entered: this screen is the way in, not the lock.
  */
-type View = 'loading' | 'error' | 'set' | 'enter' | 'forgot' | 'open';
+type View = 'loading' | 'error' | 'set' | 'enter' | 'upgrade' | 'forgot' | 'open';
+// the screen only checks the digits (the input lets nothing else in); "too easy" is the database's answer, shown as it is
+const okPin = (v: string) => /^[0-9]{4}$/.test(v);
 const time = (iso: string) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
 const msg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 const field = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-lg tracking-[0.5em] text-center font-bold focus:outline-none focus:ring-2 focus:ring-blue-500';
 const primary = 'inline-flex w-full items-center justify-center gap-2 min-h-11 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50';
 const link = 'text-sm font-semibold text-blue-700 hover:underline disabled:opacity-50';
 
-const PinInput: React.FC<{ id: string; label: string; value: string; onChange: (v: string) => void; autoFocus?: boolean }> = ({ id, label, value, onChange, autoFocus }) => (
+/** A masked PIN box: digits only (a letter or symbol never gets in), the numeric keypad on a phone, exactly `length` digits (4; the old 6 only for a legacy current PIN). */
+const PinInput: React.FC<{ id: string; label: string; value: string; onChange: (v: string) => void; autoFocus?: boolean; length?: number }> = ({ id, label, value, onChange, autoFocus, length = WALLET_PIN_LENGTH }) => (
   <div>
     <label htmlFor={id} className="block text-xs font-semibold text-slate-700 mb-1">{label}</label>
-    <input id={id} type="password" inputMode="numeric" autoComplete="off" maxLength={6} pattern="[0-9]{6}" value={value} autoFocus={autoFocus}
-      onChange={e => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))} className={field} />
+    <input id={id} type="password" inputMode="numeric" autoComplete="off" maxLength={length} pattern={`[0-9]{${length}}`} value={value} autoFocus={autoFocus} data-testid={id}
+      onChange={e => onChange(e.target.value.replace(/\D/g, '').slice(0, length))} className={field} />
   </div>
 );
 
@@ -51,7 +55,7 @@ export const WalletPinGate: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const s = await walletPinApi.status();
       setStatus(s);
-      setView(!s.hasPin ? 'set' : s.unlocked ? 'open' : 'enter');
+      setView(!s.hasPin ? 'set' : s.legacy ? 'upgrade' : s.unlocked ? 'open' : 'enter');
     } catch (e) {
       setError(msg(e, 'Your wallet could not be opened.')); setView('error');
     }
@@ -88,10 +92,10 @@ export const WalletPinGate: React.FC<{ children: React.ReactNode }> = ({ childre
           <form className="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-4 space-y-3" aria-label="Change Wallet PIN" data-testid="wallet-pin-change"
             onSubmit={e => { e.preventDefault(); void run(() => walletPinApi.change(oldPin, pin, confirm), r => { if (r?.changed) { clear(); setChanging(false); setInfo('Your Wallet PIN was changed.'); } else if (r) wrong(r); }); }}>
             <PinInput id="wp-old" label="Current PIN" value={oldPin} onChange={setOldPin} autoFocus />
-            <PinInput id="wp-new" label="New PIN (6 digits)" value={pin} onChange={setPin} />
+            <PinInput id="wp-new" label="New PIN (4 digits)" value={pin} onChange={setPin} />
             <PinInput id="wp-new2" label="New PIN again" value={confirm} onChange={setConfirm} />
             {error && <Notice tone="error">{error}</Notice>}
-            <button type="submit" className={primary} disabled={busy || oldPin.length !== 6 || pin.length !== 6 || confirm.length !== 6}>{busy ? 'Saving…' : 'Change PIN'}</button>
+            <button type="submit" className={primary} disabled={busy || oldPin.length !== WALLET_PIN_LENGTH || !okPin(pin) || confirm !== pin}>{busy ? 'Saving…' : 'Change PIN'}</button>
           </form>
         )}
         {info && !changing && <Notice tone="ok">{info}</Notice>}
@@ -110,27 +114,43 @@ export const WalletPinGate: React.FC<{ children: React.ReactNode }> = ({ childre
         </Card>
       )}
       {view === 'set' && (
-        <Card title="Set your Wallet PIN" hint="Choose 6 digits. You will enter this PIN each time you sign in and open your wallet.">
+        <Card title="Set your Wallet PIN" hint="Choose 4 digits. You will enter this PIN each time you sign in and open your wallet.">
           <form className="space-y-3" aria-label="Set Wallet PIN"
             onSubmit={e => { e.preventDefault(); void run(() => walletPinApi.set(pin, confirm), () => { clear(); setInfo('Your Wallet PIN is set.'); setView('open'); }); }}>
             <PinInput id="wp-set" label="New PIN" value={pin} onChange={setPin} autoFocus />
             <PinInput id="wp-set2" label="Confirm PIN" value={confirm} onChange={setConfirm} />
-            {confirm.length === 6 && pin !== confirm && <p className="text-xs text-rose-700" role="alert">The two PINs do not match.</p>}
+            {confirm.length === WALLET_PIN_LENGTH && pin !== confirm && <p className="text-xs text-rose-700" role="alert">The two PINs do not match.</p>}
             {error && <Notice tone="error">{error}</Notice>}
-            <button type="submit" className={primary} disabled={busy || pin.length !== 6 || pin !== confirm}><KeyRound className="h-4 w-4" aria-hidden /> {busy ? 'Saving…' : 'Set PIN'}</button>
-            <p className="text-[11px] text-slate-500">Not the same digit six times or a simple sequence like 123456. Nobody from Amuwa will ever ask for it.</p>
+            <button type="submit" className={primary} disabled={busy || !okPin(pin) || pin !== confirm}><KeyRound className="h-4 w-4" aria-hidden /> {busy ? 'Saving…' : 'Set PIN'}</button>
+            <p className="text-[11px] text-slate-500">Not the same digit four times or a simple sequence like 1234. Nobody from Amuwa will ever ask for it.</p>
           </form>
         </Card>
       )}
       {view === 'enter' && (
         <Card title="Enter your Wallet PIN" hint="Your income and incentives are protected by your PIN.">
           <form className="space-y-3" aria-label="Enter Wallet PIN"
-            onSubmit={e => { e.preventDefault(); void run(() => walletPinApi.unlock(pin), r => { if (r?.unlocked) { clear(); setView('open'); } else if (r) wrong(r); }); }}>
+            onSubmit={e => { e.preventDefault(); void run(() => walletPinApi.unlock(pin), r => { if (r?.unlocked) { clear(); setView('open'); } else if (r?.mustChange) { clear(); setView('upgrade'); } else if (r) wrong(r); }); }}>
             {info && <Notice tone="info">{info}</Notice>}
             {status?.lockedUntil && !error && <Notice tone="warn">Too many wrong PINs. Your wallet is locked until {time(status.lockedUntil)}.</Notice>}
             <PinInput id="wp-pin" label="PIN" value={pin} onChange={setPin} autoFocus />
             {error && <Notice tone="error">{error}</Notice>}
-            <button type="submit" className={primary} disabled={busy || pin.length !== 6}>{busy ? 'Checking…' : 'Unlock wallet'}</button>
+            <button type="submit" className={primary} disabled={busy || pin.length !== WALLET_PIN_LENGTH}>{busy ? 'Checking…' : 'Unlock wallet'}</button>
+            <div className="text-center"><button type="button" className={link} onClick={() => { clear(); setError(null); setInfo(null); setView('forgot'); }}>Forgot PIN?</button></div>
+          </form>
+        </Card>
+      )}
+      {view === 'upgrade' && (
+        <Card title="Update your Wallet PIN" hint="Wallet PINs are now 4 digits. Enter your current 6-digit PIN, then choose a new 4-digit PIN. Your wallet stays closed until you do.">
+          <form className="space-y-3" aria-label="Update Wallet PIN" data-testid="wallet-pin-upgrade"
+            onSubmit={e => { e.preventDefault(); void run(() => walletPinApi.change(oldPin, pin, confirm), r => { if (r?.changed) { clear(); setInfo('Your new 4-digit Wallet PIN is set.'); setView('open'); } else if (r) wrong(r); }); }}>
+            {status?.lockedUntil && !error && <Notice tone="warn">Too many wrong PINs. Your wallet is locked until {time(status.lockedUntil)}.</Notice>}
+            <PinInput id="wp-up-old" label="Current PIN (6 digits)" value={oldPin} onChange={setOldPin} autoFocus length={WALLET_LEGACY_PIN_LENGTH} />
+            <PinInput id="wp-up-new" label="New PIN (4 digits)" value={pin} onChange={setPin} />
+            <PinInput id="wp-up-new2" label="New PIN again" value={confirm} onChange={setConfirm} />
+            {confirm.length === WALLET_PIN_LENGTH && pin !== confirm && <p className="text-xs text-rose-700" role="alert">The two PINs do not match.</p>}
+            {error && <Notice tone="error">{error}</Notice>}
+            <button type="submit" className={primary} disabled={busy || oldPin.length !== WALLET_LEGACY_PIN_LENGTH || !okPin(pin) || pin !== confirm}>{busy ? 'Saving…' : 'Update PIN'}</button>
+            <p className="text-[11px] text-slate-500">Not the same digit four times or a simple sequence like 1234.</p>
             <div className="text-center"><button type="button" className={link} onClick={() => { clear(); setError(null); setInfo(null); setView('forgot'); }}>Forgot PIN?</button></div>
           </form>
         </Card>
@@ -153,10 +173,10 @@ export const WalletPinGate: React.FC<{ children: React.ReactNode }> = ({ childre
               <input id="wp-code" autoComplete="one-time-code" maxLength={12} value={code} onChange={e => setCode(e.target.value.toUpperCase())}
                 className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-base font-bold tracking-widest text-center uppercase focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
-            <PinInput id="wp-r1" label="New PIN (6 digits)" value={pin} onChange={setPin} />
+            <PinInput id="wp-r1" label="New PIN (4 digits)" value={pin} onChange={setPin} />
             <PinInput id="wp-r2" label="New PIN again" value={confirm} onChange={setConfirm} />
             {error && <Notice tone="error">{error}</Notice>}
-            <button type="submit" className={primary} disabled={busy || code.trim().length < 8 || pin.length !== 6 || pin !== confirm}>{busy ? 'Saving…' : 'Set new PIN'}</button>
+            <button type="submit" className={primary} disabled={busy || code.trim().length < 8 || !okPin(pin) || pin !== confirm}>{busy ? 'Saving…' : 'Set new PIN'}</button>
             <div className="text-center"><button type="button" className={link} onClick={() => { clear(); setError(null); setInfo(null); void load(); }}>Back</button></div>
           </form>
         </Card>

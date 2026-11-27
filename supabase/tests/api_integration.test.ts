@@ -13536,7 +13536,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
-// --- Dashboard Explorer (migration 20270226000100): the Managing Director's preview audit and improvement requests; everyone else refused ---
+// --- Dashboard Explorer (migration 20270301000100): the Managing Director's preview audit and improvement requests; everyone else refused ---
 {
   let r = await api('sa', 'POST', '/dashboard-explorer/sessions', { dashboardId: 'support-department-head', department: 'mpillar', scenario: 'normal' });
   check(r.status === 201 && /^[0-9a-f-]{36}$/.test(r.json.data?.sessionId ?? ''), 'Dashboard Explorer: the Managing Director starts a preview (audited)', r);
@@ -13566,6 +13566,153 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api(null, 'GET', '/dashboard-explorer/recent');
   check(r.status === 401, 'Dashboard Explorer: a signed-out caller is refused (401)', r);
   await db.query(`delete from public.dev_bugs where source = 'DASHBOARD_EXPLORER' and title like 'API check:%'`);
+}
+
+// --- Support Recharges (migration 20270228000200): Panel / Message recharges with a private payment screenshot ---
+{
+  const mkUser = async (tag: string, role: string, teamId: string) => {
+    const u = await api('sa', 'POST', '/users', { email: `${tag}@amuwa.com`, fullName: `Recharge ${tag}`, password: 'Sup3rSecret!', role, teamId });
+    check(u.status === 201, `recharges API: ${tag} is created`, u);
+    tokens.set(tag, tokenFor(u.json.data.id));
+    return u.json.data.id as string;
+  };
+  await mkUser('rcm', 'TEAM_MEMBER', support.id);
+  await mkUser('rcm2', 'TEAM_MEMBER', support.id);
+  await mkUser('rcl', 'TEAM_HEAD', support.id);
+  const png = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5f645400000000049454e44ae426082', 'hex'), Buffer.alloc(600, 0)]);
+  const put = (t: any, body: Buffer, type: string) =>
+    fetch(`${GW}/storage/v1/object/upload/sign/${t.bucket}/${t.path}?token=${t.token}`, { method: 'PUT', headers: { 'content-type': type, 'x-upsert': 'false' }, body });
+  const shot = async (who: string, name = 'proof.png') => {
+    let x = await api(who, 'POST', '/support/recharge-uploads', { fileName: name, mimeType: 'image/png', sizeBytes: png.length });
+    check(x.status === 201 && x.json.data.bucket === 'support-recharge-files' && !x.json.data.path.includes('..'), 'recharges API: an upload is booked in the private bucket', x);
+    const t = x.json.data;
+    check((await put(t, png, 'image/png')).status === 200, 'recharges API: the screenshot reaches storage');
+    x = await api(who, 'POST', `/support/recharge-uploads/${t.attachment.id}/complete`);
+    check(x.status === 200 && x.json.data.id === t.attachment.id, 'recharges API: the upload is completed after the stored file was looked at', x);
+    return t.attachment.id as string;
+  };
+  const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+  const form = (name: string, extra: Record<string, unknown> = {}) => ({ customerName: name, rechargeDate: today, gstAmount: 118, gstDetails: '18% GST', nonGstAmount: 500.5, nonGstDetails: 'wallet', ...extra });
+
+  let r = await api(null, 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 401, 'recharges API: not for visitors', r);
+  r = await api('a', 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 403, 'recharges API: a Sales member cannot list recharges', r);
+  r = await api('a', 'POST', '/support/recharge-uploads', { fileName: 'proof.png', mimeType: 'image/png', sizeBytes: 100 });
+  check(r.status === 403, 'recharges API: ... nor upload a screenshot', r);
+  r = await api('rcm', 'GET', '/support/recharges');
+  check(r.status === 422, 'recharges API: a list needs a kind', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=BOTH');
+  check(r.status === 422, 'recharges API: ... and a valid one', r);
+  r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'proof.gif', mimeType: 'image/gif', sizeBytes: 100 });
+  check(r.status === 422, 'recharges API: a GIF is not accepted as proof', r);
+  r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'proof.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
+  check(r.status === 422, 'recharges API: an executable is not accepted', r);
+  r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'big.png', mimeType: 'image/png', sizeBytes: 5 * 1024 * 1024 + 1 });
+  check(r.status === 422, 'recharges API: a file over 5 MB is refused', r);
+  r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'proof.png', mimeType: 'image/png', sizeBytes: png.length });
+  const orphan = r.json.data;
+  r = await api('rcm', 'POST', `/support/recharge-uploads/${orphan.attachment.id}/complete`);
+  check(r.status === 422, 'recharges API: completing an upload that never arrived is refused', r);
+  const fake = Buffer.from('not an image at all, just text pretending to be a picture. '.repeat(20));
+  r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'fake.png', mimeType: 'image/png', sizeBytes: fake.length });
+  const fk = r.json.data;
+  await put(fk, fake, 'image/png');
+  r = await api('rcm', 'POST', `/support/recharge-uploads/${fk.attachment.id}/complete`);
+  check(r.status === 422, 'recharges API: a text file renamed .png is refused after it was looked at', r);
+
+  const f1 = await shot('rcm');
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha'), screenshotId: null });
+  check(r.status === 422, 'recharges API: the screenshot is required', r);
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { totalAmount: 5 }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a total that is not GST + non-GST is refused', r);
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { gstAmount: -1 }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a negative amount is refused', r);
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { gstAmount: 0, nonGstAmount: 0 }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a zero total is refused', r);
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { rechargeDate: '2999-01-01' }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a date in the future is refused', r);
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { departmentId: crypto.randomUUID() }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a department named in the request is not accepted', r);
+  const reqId = crypto.randomUUID();
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { totalAmount: 618.5 }), screenshotId: f1, requestId: reqId });
+  check(r.status === 201 && r.json.data.kind === 'PANEL' && r.json.data.status === 'PENDING' && r.json.data.totalAmount === 618.5 && /^PRC-\d{5}$/.test(r.json.data.reference), 'recharges API: a Panel recharge is created Pending', r);
+  const p1 = r.json.data.id as string;
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha'), screenshotId: f1, requestId: reqId });
+  check(r.status === 201 && r.json.data.id === p1, 'recharges API: the same request id returns the record already saved', r);
+  const f2 = await shot('rcm', 'msg.png');
+  r = await api('rcm', 'POST', '/support/recharges', { kind: 'MESSAGE', ...form('RCX Beta', { gstAmount: 0, nonGstAmount: 200 }), screenshotId: f2 });
+  check(r.status === 201 && /^MRC-\d{5}$/.test(r.json.data.reference), 'recharges API: a Message recharge has its own references', r);
+  const m1 = r.json.data.id as string;
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.total === 1 && r.json.data.items[0].customerName === 'RCX Alpha' && r.json.data.summary.totalAmount === 618.5 && r.json.data.summary.pending === 1, 'recharges API: the Panel list and its summary', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=MESSAGE');
+  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === m1 && r.json.data.summary.totalGst === 0, 'recharges API: the Message list is separate', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&search=alp&status=PENDING&from=2020-01-01&to=2999-01-01&min=1&max=1000&limit=5&offset=0');
+  check(r.status === 200 && r.json.data.total === 1, 'recharges API: search, status, date and amount filters with pagination', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&search=zzzz');
+  check(r.status === 200 && r.json.data.total === 0 && r.json.data.items.length === 0, 'recharges API: an empty result', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&from=2026-02-01&to=2026-01-01');
+  check(r.status === 422, 'recharges API: a "from" date after the "to" date is refused', r);
+
+  // who sees and opens what
+  r = await api('rcm2', 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 200 && r.json.data.total === 0, 'recharges API: another Support member sees none of them', r);
+  r = await api('rcm2', 'GET', `/support/recharges/${p1}`);
+  check(r.status === 404, 'recharges API: ... nor opens one by its id', r);
+  r = await api('rcl', 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.role === 'LEAD', "recharges API: the Team Lead sees the team's recharges", r);
+  r = await api('dh', 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.role === 'HEAD', "recharges API: the Department Head sees the department's recharges", r);
+  r = await api('sa', 'GET', '/support/recharges?kind=PANEL');
+  check(r.status === 200 && r.json.data.total >= 1 && r.json.data.canCreate === false, 'recharges API: the Super Admin sees all and does not record', r);
+
+  // the screenshot: private, opened through a short-lived link, checked on every request
+  r = await api('rcm', 'GET', `/support/recharge-files/${f1}/url`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'recharges API: the recorder gets a short-lived link', r);
+  const dl = await fetch(r.json.data.url);
+  check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(png), 'recharges API: and the file is the one that was uploaded');
+  r = await api('rcl', 'GET', `/support/recharge-files/${f1}/url?action=download`);
+  check(r.status === 200 && r.json.data.fileName === 'proof.png', 'recharges API: the Team Lead opens it', r);
+  r = await api('rcm2', 'GET', `/support/recharge-files/${f1}/url`);
+  check(r.status === 404, 'recharges API: another Support member cannot open it even with the id', r);
+  r = await api('a', 'GET', `/support/recharge-files/${f1}/url`);
+  check(r.status === 403, 'recharges API: a Sales member cannot', r);
+  r = await api(null, 'GET', `/support/recharge-files/${f1}/url`);
+  check(r.status === 401, 'recharges API: a visitor cannot', r);
+  const direct = await fetch(`${GW}/storage/v1/object/sign/support-recharge-files/anything`, { method: 'POST', headers: { authorization: `Bearer ${tokens.get('rcm')}`, 'content-type': 'application/json' }, body: JSON.stringify({ expiresIn: 60 }) });
+  check(direct.status >= 400, 'recharges API: the bucket cannot be signed with a user token (private)');
+  check((await db.query(`select public from storage.buckets where id = 'support-recharge-files'`)).rows[0]?.public === false, 'recharges API: the bucket is not public');
+
+  // editing and status
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/update`, form('RCX Alpha Two', { gstAmount: 100, nonGstAmount: 50 }));
+  check(r.status === 200 && r.json.data.customerName === 'RCX Alpha Two' && r.json.data.totalAmount === 150, 'recharges API: the recorder edits a Pending recharge', r);
+  r = await api('rcm2', 'POST', `/support/recharges/${p1}/update`, form('RCX Hack'));
+  check(r.status === 404, 'recharges API: another member cannot edit it', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/status`, { status: 'VERIFIED' });
+  check(r.status === 403, 'recharges API: a member cannot change the status', r);
+  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'REJECTED' });
+  check(r.status === 422, 'recharges API: rejecting needs a reason', r);
+  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'DONE' });
+  check(r.status === 422, 'recharges API: an unknown status is refused', r);
+  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'VERIFIED', note: 'matches the bank' });
+  check(r.status === 200 && r.json.data.status === 'VERIFIED' && r.json.data.statusNote === 'matches the bank', 'recharges API: the Team Lead verifies', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/update`, form('RCX Alpha Two'));
+  check(r.status === 403, 'recharges API: the recorder cannot edit it after it is Verified', r);
+  r = await api('dh', 'POST', `/support/recharges/${p1}/status`, { status: 'COMPLETED' });
+  check(r.status === 200 && r.json.data.status === 'COMPLETED', 'recharges API: the Department Head completes it', r);
+  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'PENDING' });
+  check(r.status === 403, 'recharges API: a Completed recharge is final for the Team Lead', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL');
+  check(r.json.data.summary.completed === 1 && r.json.data.summary.pending === 0, 'recharges API: the summary follows the statuses', r);
+  r = await api('sa', 'POST', `/support/recharges/${p1}/status`, { status: 'REJECTED', note: 'duplicate payment' });
+  check(r.status === 200 && r.json.data.status === 'REJECTED', 'recharges API: the Super Admin can change any status', r);
+  r = await api('sa', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Super'), screenshotId: f1 });
+  check(r.status === 403, 'recharges API: the Super Admin does not record recharges', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action in ('SUPPORT_RECHARGE_CREATED', 'SUPPORT_RECHARGE_STATUS', 'SUPPORT_RECHARGE_SCREENSHOT_VIEWED')`)).rows[0].n >= 5, 'recharges API: creating, status changes and screenshot views are audited');
+  check((await db.query(`select count(*)::int n from public.support_recharges where total_amount <> gst_amount + non_gst_amount`)).rows[0].n === 0, 'recharges API: the stored totals always add up');
+  await db.query(`update public.support_recharge_files set recharge_id = null where file_name in ('proof.png', 'msg.png', 'fake.png')`);
+  await db.query(`delete from public.support_recharges where customer_name like 'RCX %'`);
 }
 
 // --- Deleting an assigned task by team and department (migration 20270225000100) ---

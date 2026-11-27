@@ -120,6 +120,8 @@ try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 try {
   for (const [label, viewport] of [['desktop', { width: 1280, height: 900 }], ['phone 390', { width: 390, height: 844 }], ['phone 320', { width: 320, height: 640 }]]) {
     const ctx = await browser.newContext({ viewport, timezoneId: 'Asia/Kolkata', deviceScaleFactor: SHOTS ? 2 : 1 });
+    // the fake API's "today" is 26 Nov 2026: the page's clock is pinned to it, so the test does not depend on the day it is run
+    await ctx.clock.setFixedTime(new Date('2026-11-26T08:00:00Z'));
     const page = await ctx.newPage();
     const errors = [];
     let nativeDialogs = 0;
@@ -223,6 +225,18 @@ try {
     check(/Additional remarks from AI Member 1A/.test(dlgText) && /Write the tests/.test(dlgText) && /Final testing/.test(dlgText), `${label}: the employee's own remarks are shown apart from the task work`);
     check(await dlg.getByRole('button', { name: 'Approve (final)' }).isVisible(), `${label}: the existing review buttons are there`);
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${label}: the report has no sideways scrolling`);
+    // 12b. the report pop-up on a phone: it fits the visible screen, is the one scroll area (the layer and the page behind are locked), and its end is reachable
+    const geo = await page.evaluate(() => {
+      const d = document.querySelector('[role="dialog"]'); const r = d.getBoundingClientRect(); const layer = d.parentElement;
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, vw: innerWidth, vh: innerHeight, sw: d.scrollWidth, cw: d.clientWidth, layerScrolls: layer.scrollHeight > layer.clientHeight + 1, locked: document.body.style.overflow };
+    });
+    check(geo.top >= 0 && geo.bottom <= geo.vh && geo.left >= 0 && geo.right <= geo.vw, `${label}: the report pop-up fits the visible screen`, geo);
+    check(geo.sw <= geo.cw, `${label}: nothing inside the report is wider than the pop-up`, geo);
+    check(geo.locked === 'hidden' && !geo.layerScrolls, `${label}: the page behind is locked and the dimmed layer is not a second scroll area`, geo);
+    await dlg.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    const closeBox = await dlg.getByRole('button', { name: 'Close' }).last().boundingBox();
+    check(closeBox && closeBox.y >= 0 && closeBox.y + closeBox.height <= geo.vh && closeBox.x + closeBox.width <= geo.vw, `${label}: scrolled to the end, the Close button is on screen`, closeBox);
+    await dlg.evaluate(el => { el.scrollTop = 0; });
     if (SHOTS && label !== 'phone 320') await page.screenshot({ path: path.join(SHOTS, `daily-report-review-${label.replace(' ', '-')}.png`), fullPage: true });
 
     check(nativeDialogs === 0, `${label}: no browser alert or confirm`);

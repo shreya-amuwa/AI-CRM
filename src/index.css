@@ -272,6 +272,46 @@ code, pre, kbd {
 }
 
 /*
+ * The shared Dialog (team-member/pipeline/shared.tsx: reports, forms, recharges, customer details...). It must not scroll twice: the generic rule above
+ * made the dimmed layer a scroll area AND the panel inside it one (a swipe moved the layer, or the page behind, instead of the report). Here the layer is
+ * exactly the visible screen (dvh, so the browser's address bar does not hide the bottom; padding keeps clear of the notch, the home bar and the rounded
+ * corners) and does not scroll; the panel is the only scroll area, top to bottom, never sideways, and does not pass its scrolling on to the page.
+ */
+.crm-dialog-layer.fixed.inset-0.items-center {
+  align-items: center;
+  overflow: hidden;
+  height: 100vh;
+  height: 100dvh;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+  overscroll-behavior: contain;
+}
+.crm-dialog-layer.fixed.inset-0.items-center > .crm-dialog-panel {
+  margin: 0;
+  max-height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  overflow-wrap: break-word;
+}
+/* long words, links and numbers wrap instead of pushing the panel wider; a wide table or code block keeps its own sideways scroll inside the panel */
+.crm-dialog-panel :where(img, video, canvas, svg) { max-width: 100%; height: auto; }
+.crm-dialog-panel :where(table) { max-width: 100%; }
+.crm-dialog-panel :where(pre) { max-width: 100%; overflow-x: auto; white-space: pre-wrap; }
+@media (max-width: 639px) {
+  .crm-dialog-layer.fixed.inset-0.items-center {
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+  }
+}
+
+/*
  * Phones: "100vh" is the page height with the browser's address bar hidden, so the bottom of a full-height panel (the last menu
  * entries, a dialog's buttons) sat behind the bar. "dvh" is the height that is really visible. Browsers that do not know it keep
  * the vh values from the component classes.
@@ -288,6 +328,25 @@ code, pre, kbd {
   html .h-\[85vh\] { height: 85dvh; }
   html .h-\[88vh\] { height: 88dvh; }
   html .min-h-screen { min-height: 100dvh; }
+  /* the rest of the vh heights the pop-ups, lists and panels use (each one is "the visible height" on a phone, not "with the address bar hidden") */
+  html .max-h-\[85vh\] { max-height: 85dvh; }
+  html .max-h-\[70vh\] { max-height: 70dvh; }
+  html .max-h-\[60vh\] { max-height: 60dvh; }
+  html .max-h-\[55vh\] { max-height: 55dvh; }
+  html .max-h-\[40vh\] { max-height: 40dvh; }
+  html .h-\[78vh\] { height: 78dvh; }
+  html .h-\[70vh\] { height: 70dvh; }
+  html .h-\[60vh\] { height: 60dvh; }
+  html .min-h-\[calc\(100vh-61px\)\] { min-height: calc(100dvh - 61px); }
+  html .h-\[calc\(100vh-14rem\)\] { height: calc(100dvh - 14rem); }
+  @media (min-width: 640px) {
+    html .sm\:max-h-\[85vh\] { max-height: 85dvh; }
+    html .sm\:max-h-\[72vh\] { max-height: 72dvh; }
+    html .sm\:h-\[88vh\] { height: 88dvh; }
+  }
+  @media (min-width: 768px) {
+    html .md\:h-\[92vh\] { height: 92dvh; }
+  }
 }
 
 /* In-app feedback (src/components/feedback/AppFeedback.tsx): short entrances, none with reduced motion (motion-safe:) */

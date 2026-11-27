@@ -4019,3 +4019,77 @@ export const globalSearchSchema = z
   .object({ q: z.string().max(200), limit: z.number().int().min(1).max(20).optional() })
   .strict();
 export const searchRecordParamsSchema = z.object({ type: z.enum(['employee', 'customer', 'lead', 'ticket', 'department']), id: uuidSchema }).strict();
+
+// ---------------------------------------------------------------------------
+// Wallet PIN (migration 20270228000100): exactly 4 digits. The database checks and hashes it; these are the same rules for the screen and the tests.
+// ---------------------------------------------------------------------------
+export const WALLET_PIN_LENGTH = 4;
+export const WALLET_LEGACY_PIN_LENGTH = 6;
+export const walletPinSchema = z.string().regex(/^[0-9]{4}$/, 'The PIN must be exactly 4 digits.')
+  .refine(v => !/^(.)\1{3}$/.test(v) && !['0123', '1234', '2345', '3456', '4567', '5678', '6789', '3210', '4321', '5432', '6543', '7654', '8765', '9876'].includes(v),
+    { message: 'Choose a PIN that is harder to guess (not the same digit four times or a simple sequence).' });
+/** An existing 6-digit PIN, accepted only as the CURRENT PIN while it is replaced by a 4-digit one. */
+export const walletLegacyPinSchema = z.string().regex(/^[0-9]{6}$/, 'Enter your current 6-digit PIN.');
+export const walletNewPinSchema = z.object({ pin: walletPinSchema, confirm: z.string() }).strict()
+  .refine(v => v.pin === v.confirm, { message: 'The two PINs do not match.', path: ['confirm'] });
+
+// ---------------------------------------------------------------------------
+// Support Recharges (migration 20270228000200): Panel and Message recharges with a payment screenshot. The database re-checks every rule.
+// ---------------------------------------------------------------------------
+export const RECHARGE_KINDS = ['PANEL', 'MESSAGE'] as const;
+export const RECHARGE_STATUSES = ['PENDING', 'VERIFIED', 'COMPLETED', 'REJECTED'] as const;
+export const RECHARGE_PROOF_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'] as const;
+export const RECHARGE_MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const rechargeKindSchema = z.enum(RECHARGE_KINDS, { errorMap: () => ({ message: 'Choose Panel Recharge or Message Recharge.' }) });
+export const rechargeStatusSchema = z.enum(RECHARGE_STATUSES, { errorMap: () => ({ message: 'Choose a valid status.' }) });
+/** A money amount: a number with at most 2 decimals, never negative. */
+const rechargeAmount = z.coerce.number({ invalid_type_error: 'Amounts must be numbers.' }).min(0, 'Amounts cannot be negative.').max(100000000, 'Amounts cannot be more than 10 crore.')
+  .refine(v => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, 'Amounts can have at most 2 decimal places.');
+const rechargeText = (max: number, message: string) => z.string().trim().max(max, message).optional().nullable().transform(v => (v ? v : null));
+const rechargeFields = z.object({
+  customerName: z.string().trim().min(2, 'Enter the customer name (2 to 150 characters).').max(150, 'The customer name is too long.'),
+  rechargeDate: isoDate,
+  gstAmount: rechargeAmount.default(0),
+  gstDetails: rechargeText(500, 'GST details can be at most 500 characters.'),
+  nonGstAmount: rechargeAmount.default(0),
+  nonGstDetails: rechargeText(500, 'Non-GST details can be at most 500 characters.'),
+  /** Optional: when sent it must equal GST + non-GST (the database always computes it). */
+  totalAmount: rechargeAmount.optional(),
+  remarks: rechargeText(1000, 'Remarks can be at most 1000 characters.'),
+  screenshotId: uuidSchema.optional().nullable().transform(v => v ?? null)
+});
+const rechargeTotals = (v: { gstAmount: number; nonGstAmount: number; totalAmount?: number }, ctx: z.RefinementCtx) => {
+  const sum = Math.round(v.gstAmount * 100 + v.nonGstAmount * 100) / 100;
+  if (sum <= 0) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'Enter the GST amount, the non-GST amount or both (the total must be above zero).' });
+  if (v.totalAmount !== undefined && Math.abs(v.totalAmount - sum) > 0.001) ctx.addIssue({ code: 'custom', path: ['totalAmount'], message: 'The total recharge amount must equal the GST amount plus the non-GST amount.' });
+};
+export const rechargeBodySchema = rechargeFields.strict().superRefine(rechargeTotals);
+export const rechargeCreateSchema = rechargeFields.extend({ kind: rechargeKindSchema, requestId: uuidSchema.optional() }).strict().superRefine(rechargeTotals)
+  .refine(v => !!v.screenshotId, { message: 'Upload the screenshot of the payment.', path: ['screenshotId'] });
+export const rechargeStatusBodySchema = z
+  .object({ status: rechargeStatusSchema, note: z.string().trim().max(500, 'The note can be at most 500 characters.').optional().nullable().transform(v => (v ? v : null)) })
+  .strict()
+  .refine(v => v.status !== 'REJECTED' || (v.note ?? '').length >= 3, { message: 'Say why the recharge is rejected.', path: ['note'] });
+export const rechargeListQuerySchema = z
+  .object({
+    kind: rechargeKindSchema,
+    search: z.string().trim().max(100).optional(),
+    status: z.union([z.literal(''), rechargeStatusSchema]).optional(),
+    from: isoDate.optional().or(z.literal('')),
+    to: isoDate.optional().or(z.literal('')),
+    min: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
+    max: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    offset: z.coerce.number().int().min(0).max(100000).default(0)
+  })
+  .strict()
+  .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The "from" date must not be after the "to" date.', path: ['to'] })
+  .refine(v => v.min === undefined || v.max === undefined || v.min <= v.max, { message: 'The minimum amount must not be above the maximum.', path: ['max'] });
+/** The payment proof: an image or a PDF, at most 5 MB. */
+export const rechargeUploadSchema = z
+  .object({
+    fileName: z.string().trim().min(1, 'The file needs a name.').max(200),
+    mimeType: z.enum(RECHARGE_PROOF_TYPES, { errorMap: () => ({ message: 'The payment proof must be an image (PNG, JPEG or WebP) or a PDF.' }) }),
+    sizeBytes: z.coerce.number().int().positive().max(RECHARGE_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
+  })
+  .strict();

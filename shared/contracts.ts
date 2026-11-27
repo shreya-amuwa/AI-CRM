@@ -7638,7 +7638,7 @@ export interface AiStudioTaskDeleteResult { deleted: true; taskId: string; title
 export interface AdsAssignmentDeleteResult { deleted: true; id: string; title: string; memberParts: number }
 
 // ---------------------------------------------------------------------------
-// Dashboard Explorer (migration 20270226000100): the Managing Director's preview audit and dashboard improvement requests
+// Dashboard Explorer (migration 20270301000100): the Managing Director's preview audit and dashboard improvement requests
 // ---------------------------------------------------------------------------
 export interface PreviewSession { sessionId: string; startedAt: string }
 export interface PreviewRecent { dashboardId: string; department: string; viewedAt: string }
@@ -7646,4 +7646,63 @@ export interface ImprovementRequestResult { id: string; reference: string; statu
 export interface ImprovementRequestRow {
   id: string; reference: string; title: string; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; status: DevBugStatus;
   dashboardId: string | null; department: string | null; page: string | null; viewport: string | null; resolutionNote: string | null; createdAt: string; updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Support Recharges (migration 20270228000200)
+// ---------------------------------------------------------------------------
+export type RechargeKind = 'PANEL' | 'MESSAGE';
+export type RechargeStatus = 'PENDING' | 'VERIFIED' | 'COMPLETED' | 'REJECTED';
+export interface SupportRecharge {
+  id: string;
+  reference: string;
+  kind: RechargeKind;
+  customerName: string;
+  rechargeDate: string;
+  gstAmount: number;
+  gstDetails: string | null;
+  nonGstAmount: number;
+  nonGstDetails: string | null;
+  totalAmount: number;
+  status: RechargeStatus;
+  remarks: string | null;
+  statusNote: string | null;
+  statusAt: string | null;
+  statusByName: string | null;
+  createdById: string;
+  createdByName: string | null;
+  teamName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  screenshot: { id: string; name: string; mime: string; size: number } | null;
+  /** decided by the database for the signed-in person */
+  canEdit: boolean;
+  nextStatuses: RechargeStatus[];
+}
+export interface SupportRechargeSummary {
+  totalRecharges: number;
+  totalAmount: number;
+  totalGst: number;
+  totalNonGst: number;
+  pending: number;
+  verified: number;
+  completed: number;
+  rejected: number;
+}
+export interface SupportRechargeList {
+  items: SupportRecharge[];
+  total: number;
+  limit: number;
+  offset: number;
+  summary: SupportRechargeSummary;
+  role: 'SUPER_ADMIN' | 'HEAD' | 'LEAD' | 'MEMBER';
+  canCreate: boolean;
+}
+export interface RechargeUploadTicket {
+  attachment: { id: string; name: string; mime: string; size: number };
+  bucket: string;
+  path: string;
+  provider: 'R2' | 'SUPABASE';
+  token: string;
+  upload?: { url: string; headers: Record<string, string> };
 }
