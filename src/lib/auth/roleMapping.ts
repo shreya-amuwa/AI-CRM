@@ -18,6 +18,13 @@ export function toAuthUser(profile: Profile): AuthUser {
       departmentId: departmentSlug, position: profile.position || undefined, profile
     };
   }
+  // A department's own HR (HR (Digitree)): placed in that department, HR of it only. Their own dashboard; the database filters every HR call to it.
+  if (isDepartmentHr(profile)) {
+    return {
+      id: profile.id, name: profile.fullName, email: profile.email, avatar: profile.avatarUrl || undefined, role: 'hr-department',
+      departmentId: departmentSlug, position: profile.position || undefined, profile
+    };
+  }
   // AI Studio: the Department Head, the Team Leads and the Team Members of the department open the AI Studio dashboard (which of the three is decided by the
   // role in the profile, and every permission by the database)
   if (isAiStudioStaff(profile)) {
@@ -159,6 +166,11 @@ export function isHrRecruiter(p: Pick<Profile, 'role' | 'department' | 'hrSubRol
   return isHrStaff(p) && p.hrSubRole === 'HR_RECRUITER';
 }
 
+/** The HR of ONE business department (designation Department HR, e.g. HR (Digitree)): a Team Member placed in that department, never HR staff. */
+export function isDepartmentHr(p: Pick<Profile, 'role' | 'department' | 'hrSubRole'>): boolean {
+  return p.role === 'TEAM_MEMBER' && p.hrSubRole === 'HR_DEPARTMENT' && !!p.department?.slug && p.department.slug !== 'hr';
+}
+
 export function isHrStaff(p: Pick<Profile, 'role' | 'department'>): boolean {
   return (p.role === 'TEAM_MEMBER' || p.role === 'TEAM_HEAD') && p.department?.slug === 'hr';
 }
@@ -276,6 +288,7 @@ export function defaultDashboardLabel(
   }
   // HR and Accounts staff open their department's own dashboard.
   if (departmentSlug === 'hr' && hrSubRole === 'HR_RECRUITER' && role !== 'SUPER_ADMIN') return `HR Recruiter Dashboard${dept}`;
+  if (hrSubRole === 'HR_DEPARTMENT' && role === 'TEAM_MEMBER') return `HR Dashboard${dept} (this department only)`;
   if (departmentSlug === 'hr' && role === 'DEPARTMENT_HEAD') return `HR Department Head Dashboard${dept}`;
   if (departmentSlug === 'hr') return `HR Dashboard${dept}`;
   // AI Design Studio staff open the AI Design Studio dashboard (its own sidebar, the same for its Team Lead and Team Member)

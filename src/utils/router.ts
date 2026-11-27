@@ -2,7 +2,7 @@ import { AuthUser } from '../types/crm';
 
 export interface ParsedRoute {
   path: string;
-  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'design-studio' | 'unified' | 'admin' | 'department-hub' | 'login' | 'unknown';
+  type: 'team-member' | 'support-member' | 'team-lead' | 'support-lead' | 'accounts-staff' | 'technical-support' | 'meta-verifier' | 'telecaller' | 'hr-recruiter' | 'hr-department' | 'business-associate' | 'sales-role' | 'sales-head' | 'ai-studio' | 'design-studio' | 'unified' | 'admin' | 'department-hub' | 'login' | 'unknown';
   paramId?: string; // memberId or deptId
 }
 
@@ -53,6 +53,12 @@ export const parseCurrentRoute = (): ParsedRoute => {
   const hrrMatch = path.match(/^\/hr-recruiter\/dashboard\/([^/]+)(?:\/[^/]+){0,2}$/);
   if (hrrMatch) {
     return { path, type: 'hr-recruiter', paramId: hrrMatch[1] };
+  }
+
+  // 1a2a2. /hr-department/dashboard/:id[/:page] - a department's own HR (e.g. HR (Digitree)) only
+  const hrdMatch = path.match(/^\/hr-department\/dashboard\/([^/]+)(?:\/[^/]+)?$/);
+  if (hrdMatch) {
+    return { path, type: 'hr-department', paramId: hrdMatch[1] };
   }
 
   // 1a2b. /telecaller/dashboard/:id[/:page] - Sales Telecallers only
@@ -193,6 +199,8 @@ export const getRedirectForRole = (user: AuthUser | null): string => {
       return `/support-lead/dashboard/${user.id}`;
     case 'hr-recruiter':
       return `/hr-recruiter/dashboard/${user.id}`;
+    case 'hr-department':
+      return `/hr-department/dashboard/${user.id}`;
     case 'design-studio':
       return `/ai-design-studio/dashboard/${user.id}`;
     case 'telecaller':
@@ -338,6 +346,14 @@ export const validateRouteAccess = (
       return { allowed: true };
     }
     return { allowed: false, redirectTo: `/hr-recruiter/dashboard/${user.id}` };
+  }
+
+  // A department's HR (e.g. HR (Digitree)) opens only their own department HR dashboard: no other HR dashboard, department or person.
+  if (user.role === 'hr-department') {
+    if (route.type === 'hr-department' && route.paramId === user.id) {
+      return { allowed: true };
+    }
+    return { allowed: false, redirectTo: `/hr-department/dashboard/${user.id}` };
   }
 
   // A Telecaller opens only their own Telecaller dashboard (never a Sales member's or anyone else's).

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Business Associate: client research on the web (migration 20270223000100). Who may research which contact, what is handed to the web search
+-- Business Associate: client research on the web (migration 20270224000100). Who may research which contact, what is handed to the web search
 -- (no phone, no e-mail), the 30-day stored result, the daily limit, the "Tavily credits used up" pause, and who reads the last result.
 -- Runs after the Business Associate suite (uses its contact "Hot Customer", by then assigned to BA Beta).
 -- =============================================================================
