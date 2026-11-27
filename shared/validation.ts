@@ -1972,6 +1972,8 @@ export const baQuotationCreateSchema = baQuotationSchema.extend({ contactId: uui
 export const baAiExtraSchema = z.object({ instructions: optionalText(600) }).strict();
 export const baQuotationAiSchema = baAiExtraSchema;
 export const baScopeAiSchema = baAiExtraSchema.extend({ section: z.enum(SCOPE_SECTIONS).optional() });
+// Business Associate: client research (web). force = search again even when a result of the last 30 days is stored.
+export const baResearchSchema = z.object({ force: z.boolean().optional() }).strict();
 
 const instant = z.string().datetime({ offset: true, message: 'Enter a valid date and time.' });
 const baDemoFields = z.object({

@@ -4103,6 +4103,29 @@ export interface BaScope extends BaScopeRow {
   reviewedAt: string | null;
   client?: { name: string; company: string | null };
 }
+// ---- Business Associate: client research (web) — suggestions for the profile fields (20270223000100)
+export interface BaClientResearchUsage {
+  tavilyCredits?: number;
+  tavilySearches?: number;
+  tavilyPages?: number;
+  claudeModel?: string;
+  claudeInputTokens?: number;
+  claudeOutputTokens?: number;
+  claudeWebSearches?: number;
+  estimatedUsd?: number;
+  fallbackReason?: string;
+}
+export interface BaClientResearch {
+  id: string;
+  contactId: string;
+  provider: 'TAVILY' | 'CLAUDE';
+  suggestions: import('./baContent').ResearchSuggestions;
+  sources: import('./baContent').ResearchSource[];
+  usage: BaClientResearchUsage;
+  createdAt: string;
+  /** true when this is a stored result (no new web search was made) */
+  cached: boolean;
+}
 export interface ServicePrice {
   serviceCode: string;
   name: string;

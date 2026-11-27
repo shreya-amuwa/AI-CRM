@@ -73,3 +73,44 @@ leads are the ones in *My Leads* (the Home buttons that point at Leads open *My 
 
 ## Lead filters
 The **Leads** page of the Leads group has the same five filters as the Telecaller's: All Leads, My Leads, Department Leads (read-only), To Accounts and Returned by Accounts, with counts. See `docs/TELECALLER.md` ("Lead filters").
+
+## Client research on the web (migration 20270223000100)
+
+**Where:** Business Associate → Scope of Project → open a version → **A. Client and business profile** → **Research the client online**.
+The panel suggests the profile fields (sections A and B). Each suggestion shows **Verified** (a source says it) or **Assumption**, with its
+numbered source links. **Use** / **Replace** fills one field, **Fill N empty fields** fills only the empty ones. Nothing is saved until the
+Business Associate saves the draft, and the saved profile is then shared with quotations, as before.
+
+**What is sent to the web:** the business (company) name, city, business category, the website and industry already typed. Never phone
+numbers, e-mail addresses, the street address or notes (checked in the database tests). Phone numbers and e-mails that a web page shows are
+removed from the suggestions.
+
+**Cost control:**
+
+| Step | Cost |
+|---|---|
+| A stored result (same company, city and website, last 30 days) | free, no web call |
+| Tavily: 1 basic search (6 results, short snippets, `auto_parameters` off) | 1 credit |
+| Tavily: 1 basic extract of the client's own site (home, /about, /services; missing pages are not charged) | 1 credit |
+| Claude fills the fields from those snippets (no web search) | about 3-6k input and 1-2k output tokens |
+| **Total per client with Tavily** | **about 2 credits + about $0.02-0.03 of Claude (~₹2-3)** |
+| Fallback: Claude's own web search (at most 3 searches) | $0.01 per search + about 15-40k input tokens: **about $0.08-0.15 (~₹7-13)** |
+
+* At most **15 new researches per person per day** (India time); stored results do not count.
+* "Search again" asks for confirmation, because it spends credits.
+* Each result stores what it used (`usage`: Tavily credits, Claude tokens and searches, an estimate in dollars), shown under the panel.
+
+**Fallback:** Tavily is tried first. When it is not set up, does not answer, or says its credits are used up (HTTP 432 / 433), Claude's web
+search is used (`BA_RESEARCH_FALLBACK=claude`, the default; `none` switches it off). After "credits used up", Tavily is skipped until the
+1st of next month (India time), so no failed Tavily calls are wasted (`ba_research_state`).
+
+**Set-up (server only, never `VITE_`):** `TAVILY_API_KEY` (Cloudflare: `wrangler secret put TAVILY_API_KEY`; Vercel: Project → Settings →
+Environment Variables), plus the existing `ANTHROPIC_API_KEY`. Optional: `BA_RESEARCH_FALLBACK`, `BA_RESEARCH_CLAUDE_SEARCHES` (1-5, default 3),
+`BA_RESEARCH_MODEL` (default `BA_AI_MODEL`), `BA_RESEARCH_TAVILY_TIMEOUT_MS`.
+
+**API:** `GET /api/v1/ba/contacts/:id/research` (the last result, no web call; the contact's readers) and
+`POST /api/v1/ba/contacts/:id/research` `{ force?: boolean }` (the contact's Business Associate only).
+
+**Tests:** `supabase/tests/ba_client_research_test.sql` (access, what is searched, 30-day reuse, daily limit, Tavily pause),
+`supabase/tests/ba_research.test.ts` (Tavily calls and credits, fallbacks, answer cleaning) and the "client research API" checks in
+`api_integration.test.ts`.

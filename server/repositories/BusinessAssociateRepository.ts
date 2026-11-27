@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  BaAssignee, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice, TelecallerLead, TelecallerLeadList
+  BaAssignee, BaClientResearch, BaContactDetail, BaContactList, BaDemo, BaHome, BaQuotation, BaQuotationRow, BaScope, BaScopeRow, ServicePrice, TelecallerLead, TelecallerLeadList
 } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
@@ -48,6 +48,16 @@ export class BusinessAssociateRepository {
     return this.rpc<BaDemo>('ba_demo_status', { p_id: id, p_status: status, p_feedback: feedback ?? null, p_follow_up: followUp ?? null });
   }
 
+  // client research (web)
+  researchBegin(contactId: string, force: boolean) { return this.rpc<ResearchBegin>('ba_research_begin', { p_contact: contactId, p_force: force }); }
+  researchRecord(contactId: string, key: string, r: { provider: string; suggestions: unknown; sources: unknown; usage: unknown; tavilyExhausted: boolean }) {
+    return this.rpc<BaClientResearch>('ba_research_record', {
+      p_contact: contactId, p_key: key, p_provider: r.provider, p_suggestions: r.suggestions, p_sources: r.sources, p_usage: r.usage, p_tavily_exhausted: r.tavilyExhausted
+    });
+  }
+  researchPauseTavily(contactId: string) { return this.rpc<null>('ba_research_pause_tavily', { p_contact: contactId }); }
+  researchLatest(contactId: string) { return this.rpc<BaClientResearch | null>('ba_research_latest', { p_contact: contactId }); }
+
   scopeContext(contactId: string) { return this.rpc<ScopeContext>('ba_scope_context', { p_contact: contactId }); }
   scopes(contactId: string) { return this.rpc<BaScopeRow[]>('ba_scope_list', { p_contact: contactId }); }
   scope(id: string) { return this.rpc<BaScope>('ba_scope_get', { p_id: id }); }
@@ -70,6 +80,16 @@ export interface FileRecord { bucket: string; path: string; provider: string; re
 export interface StoredFile { bucket: string; path: string; provider: string | null; fileName: string }
 const fileArgs = (id: string, f: FileRecord) => ({ p_id: id, p_bucket: f.bucket, p_path: f.path, p_provider: f.provider, p_ref: f.reference, p_etag: f.etag, p_size: f.size });
 
+export interface ResearchBegin {
+  cached: BaClientResearch | null;
+  key?: string;
+  business?: string;
+  city?: string | null;
+  businessCategory?: string | null;
+  website?: string | null;
+  industry?: string | null;
+  tavilyPaused?: boolean;
+}
 export interface ScopeContext {
   contactId: string;
   client: { name: string; company: string | null; address: string | null; city: string | null; businessCategory: string | null; leadSource: string | null; notes: string | null };
