@@ -73,7 +73,9 @@ failure to notify never blocks Accounts or a withdrawal. Clicking one opens the 
 
 ## Wallet PIN (migration `20270222000100_wallet_pin.sql`)
 Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
-- **First open:** the Wallet asks for a 6-digit PIN, entered twice. Not the same digit six times or a simple sequence (123456, 654321, 012345, 543210).
+- **PIN length: 4 digits** (migration `20270228000100_wallet_pin_four_digits.sql`; it was 6). Exactly 4 digits: 3, 5 or 6 digits, letters and symbols are refused by the database (`private.wallet_pin_check`), by the screen (the box only takes digits, masked, numeric keypad on a phone) and by the shared rule `walletPinSchema` (`shared/validation.ts`).
+- **First open:** the Wallet asks for a 4-digit PIN, entered twice. Not the same digit four times or a simple run (1234, 4321, 0123, 3210 ...).
+- **People who already have a 6-digit PIN (legacy).** `wallet_pins.pin_length` is 6 for every existing PIN and 4 for every new one. Nobody is locked out and nothing is bypassed: the Wallet stays closed for them (also in a session that was already open) and the screen shows **Update your Wallet PIN**: the current 6-digit PIN (verified against its hash, same 5-tries / 15-minute lock) and a new 4-digit PIN (`wallet_pin_change`). Entering the old PIN on the normal unlock opens nothing (`mustChange`). **Forgot PIN** (the e-mailed code) also ends the legacy state. The legacy branch can be removed when `select count(*) from wallet_pins where pin_length <> 4` is 0.
 - **Afterwards:** the PIN is entered once per sign-in. The unlock is kept for that sign-in session (the access token's `session_id`) for 15 minutes,
   renewed while the Wallet is used; signing in again, or another device, asks again. **Lock wallet** ends it at once.
 - **Wrong PINs:** 5 lock the Wallet for 15 minutes (`WALLET_PIN_LOCKED` in the audit log).

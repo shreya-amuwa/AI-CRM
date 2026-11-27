@@ -89,8 +89,9 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
 
 /** Sent when a wallet read is refused because the Wallet PIN was not entered (or the unlock ran out). */
 export const WALLET_LOCKED_EVENT = 'wallet:locked';
-export interface WalletPinStatus { hasPin: boolean; unlocked: boolean; unlockExpiresAt: string | null; lockedUntil: string | null; triesLeft: number }
-export interface WalletPinAnswer { unlocked?: boolean; triesLeft?: number; lockedUntil?: string | null; changed?: boolean; reset?: boolean }
+/** legacy: the PIN is still the old 6 digits: the wallet stays closed until it is changed to 4 digits (20270228000100) */
+export interface WalletPinStatus { hasPin: boolean; legacy?: boolean; pinLength?: number; unlocked: boolean; unlockExpiresAt: string | null; lockedUntil: string | null; triesLeft: number }
+export interface WalletPinAnswer { unlocked?: boolean; mustChange?: boolean; triesLeft?: number; lockedUntil?: string | null; changed?: boolean; reset?: boolean }
 /** Wallet PIN: one per person, entered once per sign-in; checked and hashed only by the database. */
 export const walletPinApi = {
   status: () => rpc<WalletPinStatus>('wallet_pin_status'),

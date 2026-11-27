@@ -344,6 +344,19 @@ export const ticketFilesController = {
   attachmentUrl: (async ctx => ok(await svc(ctx).ticketFiles.attachmentUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+/** Support Recharges (20270228000200): Panel and Message recharges with a payment screenshot; the database decides who sees and changes what. */
+export const supportRechargesController = {
+  list: (async ctx => ok(await svc(ctx).supportRecharges.list(ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).supportRecharges.get(ctx.params.id))) as Handler,
+  create: (async ctx => ok(await svc(ctx).supportRecharges.create(ctx.req.body), 201)) as Handler,
+  update: (async ctx => ok(await svc(ctx).supportRecharges.update(ctx.params.id, ctx.req.body))) as Handler,
+  setStatus: (async ctx => ok(await svc(ctx).supportRecharges.setStatus(ctx.params.id, ctx.req.body))) as Handler,
+  beginUpload: (async ctx => ok(await svc(ctx).supportRecharges.beginUpload(ctx.req.body), 201)) as Handler,
+  completeUpload: (async ctx => ok(await svc(ctx).supportRecharges.completeUpload(ctx.params.id))) as Handler,
+  abortUpload: (async ctx => ok(await svc(ctx).supportRecharges.abortUpload(ctx.params.id))) as Handler,
+  screenshotUrl: (async ctx => ok(await svc(ctx).supportRecharges.screenshotUrl(ctx.params.id, ctx.req.query))) as Handler
+};
+
 export const notificationsController = {
   list: (async ctx => ok(await svc(ctx).notifications.list(ctx.req.query))) as Handler,
   unreadCount: (async ctx => ok(await svc(ctx).notifications.unreadCount())) as Handler,

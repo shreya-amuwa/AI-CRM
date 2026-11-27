@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LineChart,
   Megaphone,
+  Receipt,
   ReceiptIndianRupee,
   TrendingUp,
   Trophy,
@@ -59,6 +60,7 @@ import { HeadAttendancePage } from '../department-head/HeadAttendancePage';
 import { HeadLeadsPage } from '../department-head/HeadLeadsPage';
 import { HeadCustomersPage, supportTeamPeople } from '../department-head/HeadCustomersPage';
 import { HeadInvoicesPage } from '../department-head/HeadInvoicesPage';
+import { RechargesPage } from '../recharges/RechargesPage';
 import { TeamAttendanceSummary } from '../attendance/TeamAttendance';
 
 /**
@@ -134,6 +136,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
           ...(!isAccounts ? [{ id: 'leads', label: 'Leads', icon: UserPlus }] : []),
           { id: 'customers', label: 'Customers', icon: Users },
           ...(!isAccounts ? [{ id: 'invoices', label: 'Invoices', icon: FileText }] : []),
+          // Panel / Message recharges of the Support side (the database decides which records a head sees)
+          ...(supportSide && !isAccounts ? [{ id: 'recharges', label: 'Recharges', icon: Receipt }] : []),
           { id: 'import', label: 'Import Customers', icon: FileSpreadsheet },
           { id: 'support', label: 'Support Desk', icon: Headset },
           { id: 'notices', label: 'Client Notices', icon: Megaphone }
@@ -226,6 +230,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
         <HeadCustomersPage initialSearch={customerQuery} waitingForLead={waiting} onOpenHandovers={() => go('clients')} addCustomerPeople={supportPeople} />
       )}
       {nav === 'invoices' && !isAccounts && <HeadInvoicesPage />}
+      {nav === 'recharges' && supportSide && <RechargesPage />}
       {nav === 'team-attendance' && <HeadAttendancePage />}
       {nav === 'notices' && <ClientNotices />}
       {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}

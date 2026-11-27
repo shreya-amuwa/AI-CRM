@@ -176,7 +176,7 @@ try {
     await ctx.close();
   }
 
-  // ---- the Wallet PIN (20270222000100): set on first open, entered afterwards, wrong tries, forgot, change, lock
+  // ---- the Wallet PIN (20270222000100; 4 digits since 20270228000100): set on first open, entered afterwards, wrong tries, forgot, change, lock
   for (const [label, viewport] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 800 }]]) {
     const ctx = await browser.newContext({ viewport, timezoneId: 'Asia/Kolkata' });
     const page = await ctx.newPage();
@@ -186,16 +186,16 @@ try {
     await page.evaluate(() => { Object.assign(window.__state.pin, { hasPin: false, unlocked: false }); window.mountWallet(); });
     await page.getByRole('heading', { name: 'Set your Wallet PIN' }).waitFor();
     check((await page.getByTestId('wallet-card').count()) === 0 && (await calls(page, 'wallet_summary')).length === 0, `${label} PIN: first open asks for a PIN and loads nothing of the wallet`);
-    await page.getByLabel('New PIN').fill('482913');
-    await page.getByLabel('Confirm PIN').fill('482914');
+    await page.getByLabel('New PIN').fill('4829');
+    await page.getByLabel('Confirm PIN').fill('4825');
     check(/do not match/.test(await text(page, '[data-testid="wallet-pin-card"]')) && await page.getByRole('button', { name: /Set PIN/ }).isDisabled(), `${label} PIN: a mismatch is shown and Set PIN waits`);
-    await page.getByLabel('New PIN').fill('111111');
-    await page.getByLabel('Confirm PIN').fill('111111');
+    await page.getByLabel('New PIN').fill('1111');
+    await page.getByLabel('Confirm PIN').fill('1111');
     await page.getByRole('button', { name: /Set PIN/ }).click();
     await page.getByText(/harder to guess/).waitFor();
     check(true, `${label} PIN: an easy PIN is refused with the database's reason`);
-    await page.getByLabel('New PIN').fill('482913');
-    await page.getByLabel('Confirm PIN').fill('482913');
+    await page.getByLabel('New PIN').fill('4829');
+    await page.getByLabel('Confirm PIN').fill('4829');
     await page.getByRole('button', { name: /Set PIN/ }).click();
     await page.getByTestId('wallet-card').waitFor();
     check(/Wallet unlocked/.test(await page.innerText('body')), `${label} PIN: after setting it the wallet opens`);
@@ -203,12 +203,12 @@ try {
     await page.evaluate(() => { window.__state.pin.unlocked = false; window.mountWallet(); });
     await page.getByRole('heading', { name: 'Enter your Wallet PIN' }).waitFor();
     check((await page.getByTestId('wallet-card').count()) === 0, `${label} PIN: a set PIN must be entered before anything is shown`);
-    await page.getByLabel('PIN', { exact: true }).fill('000000');
+    await page.getByLabel('PIN', { exact: true }).fill('0000');
     await page.getByRole('button', { name: 'Unlock wallet' }).click();
     await page.getByText(/Wrong PIN\. 4 tries left/).waitFor();
     check(true, `${label} PIN: a wrong PIN says how many tries are left`);
     for (let i = 0; i < 4; i++) {
-      await page.getByLabel('PIN', { exact: true }).fill('000000');
+      await page.getByLabel('PIN', { exact: true }).fill('0000');
       await page.getByRole('button', { name: 'Unlock wallet' }).click();
       await page.waitForFunction(n => window.__calls.filter(c => c.fn === 'wallet_pin_unlock').length >= n, i + 2);
     }
@@ -219,24 +219,24 @@ try {
     await page.getByRole('button', { name: 'E-mail me a code' }).click();
     await page.getByText(/Code sent/).waitFor();
     await page.getByLabel('Code from the e-mail').fill('abcd2345');
-    await page.getByLabel('New PIN (6 digits)').fill('846201');
-    await page.getByLabel('New PIN again').fill('846201');
+    await page.getByLabel('New PIN (4 digits)').fill('8462');
+    await page.getByLabel('New PIN again').fill('8462');
     await page.getByRole('button', { name: 'Set new PIN' }).click();
     await page.getByTestId('wallet-card').waitFor();
-    check(await page.evaluate(() => window.__state.pin.pin) === '846201', `${label} PIN: Forgot PIN: the e-mailed code and a new PIN open the wallet`);
+    check(await page.evaluate(() => window.__state.pin.pin) === '8462', `${label} PIN: Forgot PIN: the e-mailed code and a new PIN open the wallet`);
     // change and lock
     await page.getByRole('button', { name: 'Change PIN' }).click();
-    await page.getByLabel('Current PIN').fill('846201');
-    await page.getByLabel('New PIN (6 digits)').fill('739164');
-    await page.getByLabel('New PIN again').fill('739164');
+    await page.getByLabel('Current PIN').fill('8462');
+    await page.getByLabel('New PIN (4 digits)').fill('7391');
+    await page.getByLabel('New PIN again').fill('7391');
     await page.getByTestId('wallet-pin-change').getByRole('button', { name: 'Change PIN' }).click();
     await page.getByText('Your Wallet PIN was changed.').waitFor();
-    check(await page.evaluate(() => window.__state.pin.pin) === '739164', `${label} PIN: Change PIN with the current PIN`);
+    check(await page.evaluate(() => window.__state.pin.pin) === '7391', `${label} PIN: Change PIN with the current PIN`);
     await page.getByRole('button', { name: 'Lock wallet' }).click();
     await page.getByRole('heading', { name: 'Enter your Wallet PIN' }).waitFor();
     check((await page.getByTestId('wallet-card').count()) === 0, `${label} PIN: Lock wallet hides it again`);
     // the unlock runs out while the wallet is open: back to the PIN screen
-    await page.getByLabel('PIN', { exact: true }).fill('739164');
+    await page.getByLabel('PIN', { exact: true }).fill('7391');
     await page.getByRole('button', { name: 'Unlock wallet' }).click();
     await page.getByTestId('wallet-card').waitFor();
     await page.evaluate(() => { window.__state.pin.unlocked = false; });
@@ -245,7 +245,51 @@ try {
     check(/locked/.test(await text(page, '[data-testid="wallet-pin-card"]')), `${label} PIN: when the database says locked, the PIN screen comes back`);
     if (label === 'phone') check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone PIN: no sideways scrolling');
     check(errors.length === 0, `${label} PIN: no script errors`, errors);
-    await page.evaluate(() => Object.assign(window.__state.pin, { hasPin: true, pin: '482913', unlocked: true, fails: 0, lockedUntil: null }));
+    await page.evaluate(() => Object.assign(window.__state.pin, { hasPin: true, pin: '4829', unlocked: true, fails: 0, lockedUntil: null }));
+    await ctx.close();
+  }
+
+  // ---- the 4-digit PIN box, and a person whose PIN is still the old 6 digits (20270228000100)
+  for (const [label, viewport] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 800 }]]) {
+    const ctx = await browser.newContext({ viewport, timezoneId: 'Asia/Kolkata' });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    await page.goto(base);
+    await page.evaluate(() => { Object.assign(window.__state.pin, { hasPin: false, unlocked: false, legacy: false }); window.mountWallet(); });
+    await page.getByRole('heading', { name: 'Set your Wallet PIN' }).waitFor();
+    const box = page.getByLabel('New PIN', { exact: true });
+    check(await box.getAttribute('type') === 'password' && await box.getAttribute('inputmode') === 'numeric' && await box.getAttribute('maxlength') === '4' && await box.getAttribute('pattern') === '[0-9]{4}',
+      `${label} 4-digit PIN: the box is masked, numeric on a phone, 4 characters`);
+    await box.pressSequentially('ab12cd3456');
+    check(await box.inputValue() === '1234', `${label} 4-digit PIN: letters never get in and the 5th digit is ignored`, await box.inputValue());
+    await box.fill('');
+    await box.pressSequentially('12-3');
+    check(await box.inputValue() === '123', `${label} 4-digit PIN: symbols never get in`);
+    await page.getByLabel('Confirm PIN').fill('123');
+    check(await page.getByRole('button', { name: /Set PIN/ }).isDisabled(), `${label} 4-digit PIN: 3 digits cannot be submitted`);
+    await box.fill('4829'); await page.getByLabel('Confirm PIN').fill('4829');
+    check(await page.getByRole('button', { name: /Set PIN/ }).isEnabled(), `${label} 4-digit PIN: 4 digits can`);
+    // an old 6-digit PIN: the wallet stays closed, the person updates it
+    await page.evaluate(() => { Object.assign(window.__state.pin, { hasPin: true, pin: '482913', unlocked: false, legacy: true, fails: 0, lockedUntil: null }); window.__calls.length = 0; window.mountWallet(); });
+    await page.getByRole('heading', { name: 'Update your Wallet PIN' }).waitFor();
+    check((await page.getByTestId('wallet-card').count()) === 0 && (await calls(page, 'wallet_summary')).length === 0, `${label} legacy PIN: nothing of the wallet is loaded or shown`);
+    const old = page.getByLabel('Current PIN (6 digits)');
+    check(await old.getAttribute('maxlength') === '6' && await old.getAttribute('inputmode') === 'numeric' && await old.getAttribute('type') === 'password', `${label} legacy PIN: the current PIN box takes the old 6 digits, masked`);
+    check(await page.getByLabel('New PIN (4 digits)').getAttribute('maxlength') === '4', `${label} legacy PIN: the new PIN is 4 digits`);
+    if (label === 'phone') check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone legacy PIN: no sideways scrolling');
+    await old.fill('111222'); await page.getByLabel('New PIN (4 digits)').fill('5173'); await page.getByLabel('New PIN again').fill('5173');
+    await page.getByRole('button', { name: 'Update PIN' }).click();
+    await page.getByText(/Wrong PIN\. 4 tries left/).waitFor();
+    check((await page.getByTestId('wallet-card').count()) === 0, `${label} legacy PIN: a wrong current PIN changes nothing and counts`);
+    await old.fill('482913'); await page.getByLabel('New PIN (4 digits)').fill('5173'); await page.getByLabel('New PIN again').fill('5173');
+    await page.getByRole('button', { name: 'Update PIN' }).click();
+    await page.getByTestId('wallet-card').waitFor();
+    const ch = (await calls(page, 'wallet_pin_change')).pop();
+    check(ch?.args?.p_old === '482913' && ch?.args?.p_new === '5173' && await page.evaluate(() => window.__state.pin.pin === '5173' && window.__state.pin.legacy === false),
+      `${label} legacy PIN: the current PIN and a new 4-digit one open the wallet, and the PIN is now a 4-digit one`, ch);
+    check(errors.length === 0, `${label} 4-digit PIN: no script errors`, errors);
+    await page.evaluate(() => Object.assign(window.__state.pin, { hasPin: true, pin: '4829', unlocked: true, fails: 0, lockedUntil: null, legacy: false }));
     await ctx.close();
   }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Gauge, Headset, LineChart, PackageCheck, Target, UserCheck, UserPlus, Users } from 'lucide-react';
+import { Bell, CalendarPlus, ClipboardList, FileSpreadsheet, FileText, FolderCheck, Gauge, Headset, LineChart, PackageCheck, Receipt, Target, UserCheck, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { DashboardShell, groupNavItems, type ShellNavGroup } from '../layout/shell';
@@ -32,6 +32,7 @@ import { usePipelineCounts } from '../team-member/pipeline/shared';
 import { DeliveryQueue } from '../delivery/DeliveryQueue';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { PerformanceHub } from '../performance/PerformanceHub';
+import { RechargesPage } from '../recharges/RechargesPage';
 
 /** The team's leads: a team lead sees every lead of their team's members (the database decides), without the inbound enquiries strip. */
 const SupportTeamLeads: React.FC = () => {
@@ -39,7 +40,7 @@ const SupportTeamLeads: React.FC = () => {
   return <PipelineWorkspace section="leads" counts={counts} ownOnly onNavigate={() => undefined} />;
 };
 
-export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'performance' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'chat' | 'raise-issue' | 'work-reports' | 'notifications';
+export type SupportLeadPage = 'dashboard' | 'customers' | 'import' | 'leads' | 'delivery' | 'client-documents' | 'client-calendar' | 'tasks' | 'performance' | 'tickets' | 'invoices' | 'handovers' | 'team' | 'chat' | 'raise-issue' | 'work-reports' | 'recharges' | 'notifications';
 
 /**
  * Support Team Lead sidebar. Its own configuration: nothing here is shared with
@@ -59,6 +60,7 @@ const NAV: { id: SupportLeadPage; label: string; icon: React.ElementType }[] = [
   { id: 'work-reports', label: REPORTS_NAV.label, icon: REPORTS_NAV.icon },
   { id: 'tickets', label: 'Tickets', icon: Headset },
   { id: 'invoices', label: 'Invoices', icon: FileText },
+  { id: 'recharges', label: 'Recharges', icon: Receipt },
   { id: 'handovers', label: 'Client Hand-overs', icon: UserCheck },
   { id: 'team', label: 'Team Members & Access', icon: UserPlus },
   { id: 'raise-issue', label: ISSUES_NAV.label, icon: ISSUES_NAV.icon },
@@ -138,7 +140,7 @@ export const SupportLeadDashboard: React.FC = () => {
     NAV.map(n => (n.id === 'notifications' ? { ...n, badge: unreadCount } : n.id === 'chat' ? { ...n, badge: chatUnread } : n.id === 'work-reports' ? { ...n, badge: reportsBadge } : n)),
     [
       { ids: ['dashboard'] },
-      { label: 'Work', ids: ['tasks', 'performance', 'work-reports', 'tickets', 'delivery', 'invoices'] },
+      { label: 'Work', ids: ['tasks', 'performance', 'work-reports', 'tickets', 'delivery', 'invoices', 'recharges'] },
       { label: 'Customers', ids: ['customers', 'handovers', 'import', 'leads', 'client-documents', 'client-calendar'] },
       { label: 'Team', ids: ['team', 'raise-issue', 'chat', 'notifications'] }
     ]
@@ -180,6 +182,7 @@ export const SupportLeadDashboard: React.FC = () => {
       {page === 'performance' && <PerformanceHub mode="TEAM_LEAD" />}
       {page === 'tickets' && <LeadTickets />}
       {page === 'invoices' && <LeadInvoices />}
+      {page === 'recharges' && <RechargesPage />}
       {page === 'handovers' && <HandoverBoard role="TEAM_HEAD" />}
       {page === 'chat' && <ChatRoute />}
       {page === 'raise-issue' && <IssuesRoute />}
