@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Wallet PIN everywhere the person's money is read (PR 2 of the Incentive & Wallet work; docs/EMPLOYEE_WALLET.md "Wallet PIN"). Run after
--- 20270220000100_wallet_pin.sql. Safe to run twice; no data is changed.
+-- 20270222000100_wallet_pin.sql. Safe to run twice; no data is changed.
 --
 -- "My Income" leaves the Sales dashboards: everything it showed is in the Wallet. Its database functions stay (nothing is deleted) but, like the
 -- Wallet's, they now need the Wallet PIN of this sign-in: income_summary, income_earnings, and the person's own withdrawal functions (through

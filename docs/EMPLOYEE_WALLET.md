@@ -71,7 +71,7 @@ failure to notify never blocks Accounts or a withdrawal. Clicking one opens the 
 - **HR screen for the report and credits.** HR can read the report through the database function; a screen for HR (and HR entering credits) is a follow-up.
 - **Team Lead / Department Head views** of their team's wallets (see above).
 
-## Wallet PIN (migration `20270220000100_wallet_pin.sql`)
+## Wallet PIN (migration `20270222000100_wallet_pin.sql`)
 Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
 - **First open:** the Wallet asks for a 6-digit PIN, entered twice. Not the same digit six times or a simple sequence (123456, 654321, 012345, 543210).
 - **Afterwards:** the PIN is entered once per sign-in. The unlock is kept for that sign-in session (the access token's `session_id`) for 15 minutes,
@@ -84,7 +84,7 @@ Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
   `wallet_monthly` refuse with `WALLET_LOCKED` until the PIN was entered (`private.wallet_me()`), so the browser cannot skip the screen. Set, change, lock-out
   and reset are audited, never with the PIN or code.
 - **The Managing Director** has no employee wallet and no PIN. Accounts' and HR's wallet screens (credits, report) are not behind a PIN.
-- **My Income is in the Wallet** (migration `20270221000100_wallet_pin_income.sql`): the My Income menu entry is gone from every Sales dashboard; today's
+- **My Income is in the Wallet** (migration `20270223000100_wallet_pin_income.sql`): the My Income menu entry is gone from every Sales dashboard; today's
   incentives, targets and this month's activity are on Overview (**Incentives and activity**). `income_summary`, `income_earnings` and the person's own
   withdrawal functions (`private.payout_me`) need the Wallet PIN of this sign-in once the person has set one (`private.wallet_pin_ok`); before a PIN is set
   there is nothing to protect, and the Wallet asks for one first. Any of them answering `WALLET_LOCKED` brings the PIN screen back (`src/lib/walletLock.ts`).

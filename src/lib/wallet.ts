@@ -81,7 +81,7 @@ async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T
   if (!db) throw new Error('The CRM is not connected to its database.');
   const { data, error } = await db.rpc(fn, args);
   if (error) {
-    // the database refuses the wallet until the PIN was entered in this sign-in (20270220000100): the PIN screen takes over
+    // the database refuses the wallet until the PIN was entered in this sign-in (20270222000100): the PIN screen takes over
     reportIfWalletLocked(error.message);
     throw new Error(error.message.replace(/^[A-Z_]+:\s*/, ''));
   }

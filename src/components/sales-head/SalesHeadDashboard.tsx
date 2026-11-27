@@ -90,7 +90,7 @@ export const SalesHeadDashboard: React.FC = () => {
     const seg = next === 'overview' && operationsHead ? 'overview' : PATHS[next];
     navigateTo(seg ? `${SALES_HEAD_BASE(userId)}/${seg}` : SALES_HEAD_BASE(userId));
   };
-  // My Income moved into the Wallet (20270221000100): an old /my-income address opens the Wallet over the home page
+  // My Income moved into the Wallet (20270223000100): an old /my-income address opens the Wallet over the home page
   useEffect(() => { if (page === 'my-income') { go(home); openWallet(); } }, [page]);  // eslint-disable-line react-hooks/exhaustive-deps
   const openPerson = (list: 'telecallers' | 'business-associates', id: string) => {
     setPage(list);

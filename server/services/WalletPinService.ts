@@ -8,7 +8,7 @@ import { unwrap } from '../repositories/base.js';
 import { recordSecurityEvent } from '../security/events.js';
 
 /**
- * "Forgot PIN" on the Wallet (migration 20270220000100). The database makes a one-time code for the signed-in employee (only the service role may ask,
+ * "Forgot PIN" on the Wallet (migration 20270222000100). The database makes a one-time code for the signed-in employee (only the service role may ask,
  * so a browser can never get a code without the e-mail); this e-mails it. The code is never returned, logged or stored in clear. The person types it
  * in the Wallet with a new PIN (wallet_pin_reset_finish, which checks it belongs to them).
  */

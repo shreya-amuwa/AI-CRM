@@ -4,7 +4,7 @@ import { WALLET_LOCKED_EVENT, walletPinApi, type WalletPinAnswer, type WalletPin
 import { Notice } from './walletParts';
 
 /**
- * The Wallet PIN screen in front of every employee's Wallet (20270220000100; docs/EMPLOYEE_WALLET.md "Wallet PIN"). First open: set a 6-digit PIN
+ * The Wallet PIN screen in front of every employee's Wallet (20270222000100; docs/EMPLOYEE_WALLET.md "Wallet PIN"). First open: set a 6-digit PIN
  * twice. Afterwards: enter it once per sign-in (15 minutes, renewed while the wallet is used). Forgot PIN: a one-time code is e-mailed and typed here
  * with a new PIN. The database checks and hashes the PIN and refuses the wallet's data until it was entered: this screen is the way in, not the lock.
  */

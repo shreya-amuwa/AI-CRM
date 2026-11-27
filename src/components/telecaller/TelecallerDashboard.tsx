@@ -64,7 +64,7 @@ export const TelecallerDashboard: React.FC = () => {
     navigateTo(next === 'home' ? TELECALLER_BASE(userId) : `${TELECALLER_BASE(userId)}/${isFieldVisitPage(next) ? FIELD_VISIT_SEGMENT[next] : next}`);
   };
 
-  // My Income moved into the Wallet (20270221000100): an old /income address opens the Wallet over Home
+  // My Income moved into the Wallet (20270223000100): an old /income address opens the Wallet over Home
   useEffect(() => { if (page === 'income') { go('home'); openWallet(); } }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => go('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenReportsRequest(React.useCallback(() => go('work-reports'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps

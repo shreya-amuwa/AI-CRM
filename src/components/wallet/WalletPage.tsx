@@ -16,7 +16,7 @@ import { WalletActivity } from './WalletActivity';
  * adjustments are entered by Accounts and approved by a second person. Salary is shown as EXPECTED only until payroll is recorded in the CRM; it is never
  * part of what can be withdrawn.
  */
-/** The wallet behind its PIN (20270220000100): nothing below is loaded until the PIN was entered in this sign-in. */
+/** The wallet behind its PIN (20270222000100): nothing below is loaded until the PIN was entered in this sign-in. */
 export const WalletPage: React.FC = () => <WalletPinGate><WalletContent /></WalletPinGate>;
 
 type Tab = 'overview' | 'earnings' | 'incentives' | 'salary' | 'withdrawals' | 'transactions';

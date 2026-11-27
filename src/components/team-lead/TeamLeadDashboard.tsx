@@ -63,7 +63,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
   const sales = profile?.team?.division === 'SALES';
   // a remembered Income page of a Team Lead who is not in Sales (or has moved) opens the overview instead of a blank page
   React.useEffect(() => { if (profile && !sales && nav === 'incentive-setup') setNav('overview'); }, [profile, sales, nav]); // eslint-disable-line react-hooks/exhaustive-deps
-  // My Income moved into the Wallet (20270221000100): a remembered My Income page opens the Wallet over the overview
+  // My Income moved into the Wallet (20270223000100): a remembered My Income page opens the Wallet over the overview
   React.useEffect(() => { if (nav === 'my-income') { setNav('overview'); openWallet(); } }, [nav]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups: ShellNavGroup[] = useMemo(
