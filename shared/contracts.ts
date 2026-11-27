@@ -560,6 +560,24 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 export const LEAD_STATUSES = ['NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY'] as const;
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
+/** Lead tags (migration 20270305000100): every lead has one tag, which counts as one lead status (its stage). */
+export const LEAD_TAG_COLOURS = ['slate', 'blue', 'indigo', 'violet', 'green', 'amber', 'orange', 'red'] as const;
+export type LeadTagColour = (typeof LEAD_TAG_COLOURS)[number];
+export interface LeadTag {
+  id: string;
+  label: string;
+  colour: LeadTagColour;
+  /** The lead status the tag counts as. */
+  stage: LeadStatus;
+  scope: 'COMPANY' | 'DEPARTMENTS';
+  departmentIds: string[];
+  retired: boolean;
+  /** The basic tag of its stage: company-wide, keeps its stage, never retired. */
+  seed: boolean;
+  leadCount: number;
+  canManage: boolean;
+}
+
 export const PAYMENT_FILTERS = ['AWAITING', 'PART_PAID', 'OVERDUE', 'PAID'] as const;
 export type PaymentFilter = (typeof PAYMENT_FILTERS)[number];
 

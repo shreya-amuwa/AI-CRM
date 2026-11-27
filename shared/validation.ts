@@ -32,6 +32,7 @@ import {
   INVOICE_STAGES,
   TAX_TREATMENTS,
   LEAD_STATUSES,
+  LEAD_TAG_COLOURS,
   LEAD_SCOPES,
   FIELD_VISIT_FILTERS,
   LEAD_VISIT_STATUSES,
@@ -4142,3 +4143,17 @@ export const rechargeUploadSchema = z
     sizeBytes: z.coerce.number().int().positive().max(RECHARGE_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
   })
   .strict();
+
+/** Lead tags (20270305000100). The database checks who may manage which tag, duplicates and departments again. */
+export const leadTagListQuerySchema = z.object({ departmentId: uuidSchema.optional().or(z.literal('').transform(() => undefined)) }).strict();
+export const leadTagSaveSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    label: z.string().trim().min(1, 'Give the tag a label.').max(40, 'Keep the label to 40 characters.'),
+    colour: z.enum(LEAD_TAG_COLOURS, { errorMap: () => ({ message: 'Choose one of the tag colours.' }) }),
+    stage: z.enum(LEAD_STATUSES, { errorMap: () => ({ message: 'Choose the stage the tag counts as.' }) }),
+    departmentIds: z.array(uuidSchema).max(20, 'Choose up to 20 departments.').optional()
+  })
+  .strict();
+export const leadTagRetireSchema = z.object({ retired: z.boolean() }).strict();
+export const leadTagSetSchema = z.object({ tagId: uuidSchema }).strict();

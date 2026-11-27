@@ -62,6 +62,8 @@ import { BugRepository } from '../repositories/BugRepository.js';
 import { DashboardExplorerService } from './DashboardExplorerService.js';
 import { DashboardExplorerRepository } from '../repositories/DashboardExplorerRepository.js';
 import { NoticeService } from './NoticeService.js';
+import { LeadTagService } from './LeadTagService.js';
+import { LeadTagRepository } from '../repositories/LeadTagRepository.js';
 import { NoticeRepository } from '../repositories/NoticeRepository.js';
 import { HrAwardService } from './HrAwardService.js';
 import { HrAwardRepository } from '../repositories/HrAwardRepository.js';
@@ -152,6 +154,8 @@ export function createServices(db: SupabaseClient) {
     // Dashboard Explorer (20270301000100): the Managing Director's preview audit and improvement requests
     dashboardExplorer: new DashboardExplorerService(new DashboardExplorerRepository(db)),
     notices: new NoticeService(new NoticeRepository(db)),
+    // Lead tags (20270305000100)
+    leadTags: new LeadTagService(new LeadTagRepository(db)),
     hrAwards: new HrAwardService(new HrAwardRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     crocodial: new CrocodialService(new CrocodialRepository(db)),

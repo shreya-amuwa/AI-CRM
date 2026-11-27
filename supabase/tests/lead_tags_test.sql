@@ -45,11 +45,12 @@ insert into operations_head_departments (profile_id, department_id, division) va
 -- a re-run starts lt_ceo_c from its home department again (operations_scope_apply below moves it)
 update profiles set department_id = test.dept('wabastore') where id = test.id('lt_ceo_c');
 delete from customers where phone like '+9198771%';
-delete from lead_tag_departments where tag_id in (select id from lead_tags where label like 'LT %');
-delete from lead_tags where label like 'LT %';
+delete from lead_tag_departments where tag_id in (select id from lead_tags where label like 'LT %' or created_by in (select id from test.users where name like 'lt\_%'));
+delete from lead_tags where label like 'LT %' or created_by in (select id from test.users where name like 'lt\_%');
 
-create or replace function test.lt_tag(p_label text) returns uuid language sql stable as $$ select id from public.lead_tags where label = p_label $$;
-create or replace function test.lt_seed(p_stage text) returns uuid language sql stable as $$ select id from public.lead_tags where seed_stage = p_stage $$;
+-- security definer: also used while signed in as the authenticated role, which cannot read the tag tables
+create or replace function test.lt_tag(p_label text) returns uuid language sql stable security definer set search_path = '' as $$ select id from public.lead_tags where label = p_label $$;
+create or replace function test.lt_seed(p_stage text) returns uuid language sql stable security definer set search_path = '' as $$ select id from public.lead_tags where seed_stage = p_stage $$;
 create or replace function test.lt_lead(p_phone text) returns public.customers language sql stable as $$ select * from public.customers where phone = p_phone $$;
 create or replace function test.lt_mk_lead(p_owner text, p_phone text, p_fields jsonb default '{}') returns uuid language plpgsql as $$
 declare v uuid;
@@ -201,7 +202,190 @@ select test.must_fail($$select * from lead_tag_departments$$, 'nor lead_tag_depa
 reset role;
 select set_config('request.jwt.claims', '', false);
 
+-- ---------------------------------------------------------------------------
+-- Managing tags (lead_tags_list / lead_tag_save / lead_tag_retire / lead_tag_set)
+-- ---------------------------------------------------------------------------
+create or replace function test.lt_fails_exactly(p_sql text, p_label text, p_message text) returns void language plpgsql as $$
+begin
+  begin
+    execute p_sql;
+  exception when others then
+    if sqlerrm <> p_message then raise exception 'TEST FAILED: % (got: %)', p_label, sqlerrm; end if;
+    raise notice 'ok - % [%]', p_label, sqlerrm;
+    return;
+  end;
+  raise exception 'TEST FAILED: % (statement succeeded)', p_label;
+end $$;
+-- the list as the signed-in person sees it: one tag by label (null when absent)
+create or replace function test.lt_listed(p_label text, p_department uuid default null) returns jsonb language sql as $$
+  select e from jsonb_array_elements(public.lead_tags_list(p_department)) e where e ->> 'label' = p_label
+$$;
+grant execute on all functions in schema test to anon, authenticated;
+create temp table lt_audit_from as select coalesce(max(created_at), '-infinity') as at from audit_logs;
+grant select on lt_audit_from to authenticated;
+
+\echo '   managing tags: a CEO creates a tag for the departments they run'
+select test.login('lt_ceo_a');
+select test.check((select (r ->> 'scope') = 'DEPARTMENTS' and (r ->> 'stage') = 'INTERESTED' and (r ->> 'colour') = 'red' and (r ->> 'label') = 'Hot'
+                          and (r ->> 'canManage')::boolean and not (r ->> 'seed')::boolean and not (r ->> 'retired')::boolean
+                     from (select public.lead_tag_save('{"label":"  Hot ","colour":"red","stage":"INTERESTED"}') r) x),
+  'a CEO creates "Hot" (the label is trimmed)');
+select test.check((select array_agg(department_id order by department_id) = (select array_agg(d order by d) from unnest(array[test.dept('wabastore'), test.dept('whatsbox')]) d)
+                     from lead_tag_departments where tag_id = test.lt_tag('Hot')),
+  'its departments default to every department the CEO runs (Wabastore and Whatsbox)');
+select test.check((select created_by = test.id('lt_ceo_a') and scope = 'DEPARTMENTS' from lead_tags where id = test.lt_tag('Hot')), 'and it is theirs');
+select test.lt_fails_exactly(format($$select public.lead_tag_save('{"id":"%s","label":"Hot","colour":"red","stage":"INTERESTED","departmentIds":["%s","%s","%s"]}')$$,
+    test.lt_tag('Hot'), test.dept('wabastore'), test.dept('whatsbox'), test.dept('digitree')),
+  'the CEO cannot add Digitree, which they do not run', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.lt_fails_exactly(format($$select public.lead_tag_save('{"label":"LT Elsewhere","colour":"red","stage":"NEW","departmentIds":["%s"]}')$$, test.dept('digitree')),
+  'nor create a tag there', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.lt_fails_exactly($$select public.lead_tag_save('{"label":"LT Company try","colour":"red","stage":"NEW","departmentIds":[]}')$$,
+  'a CEO cannot make a company-wide tag', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.lt_fails_exactly(format($$select public.lead_tag_save('{"id":"%s","label":"Newer","colour":"slate","stage":"NEW"}')$$, test.lt_seed('NEW')),
+  'nor rename a company-wide tag', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.must_fail($$select public.lead_tag_save('{"label":"   ","colour":"red","stage":"NEW"}')$$, 'an empty label is refused', '^VALIDATION_ERROR: ');
+select test.must_fail($$select public.lead_tag_save(jsonb_build_object('label', repeat('x', 41), 'colour', 'red', 'stage', 'NEW'))$$, 'a label over 40 characters is refused', '^VALIDATION_ERROR: ');
+select test.must_fail($$select public.lead_tag_save('{"label":"LT Pink","colour":"pink","stage":"NEW"}')$$, 'a colour outside the palette is refused', '^VALIDATION_ERROR: ');
+select test.must_fail($$select public.lead_tag_save('{"label":"LT Lost","colour":"red","stage":"LOST"}')$$, 'an unknown stage is refused', '^VALIDATION_ERROR: ');
+select test.must_fail($$select public.lead_tag_save('{"id":"00000000-0000-0000-0000-000000000000","label":"LT None","colour":"red","stage":"NEW"}')$$, 'an unknown tag', '^NOT_FOUND: ');
+
+\echo '   another CEO sharing one department'
+select test.login('lt_ceo_b');
+select test.check((select not (test.lt_listed('Hot', test.dept('whatsbox')) ->> 'canManage')::boolean), 'the other CEO sees "Hot" in Whatsbox, not as theirs to manage');
+select test.lt_fails_exactly(format($$select public.lead_tag_save('{"id":"%s","label":"Hotter","colour":"red","stage":"INTERESTED"}')$$, test.lt_tag('Hot')),
+  'they cannot rename it (it is not all theirs)', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.lt_fails_exactly(format($$select public.lead_tag_retire('%s', true)$$, test.lt_tag('Hot')),
+  'nor retire it', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.must_fail($$select public.lead_tag_save('{"label":" hot ","colour":"blue","stage":"NEW"}')$$, '" hot " in Whatsbox is a duplicate (case-insensitive)', '^CONFLICT: ');
+select test.must_fail($$select public.lead_tag_save('{"label":"interested","colour":"blue","stage":"NEW"}')$$, 'so is the label of a company-wide tag', '^CONFLICT: ');
+select test.check((select (r ->> 'label') = 'hot' from (select public.lead_tag_save(format('{"label":"hot","colour":"blue","stage":"NEW","departmentIds":["%s"]}', test.dept('digitree'))::jsonb) r) x),
+  'but "hot" only in Digitree, where "Hot" is not visible, is allowed');
+select test.check((select count(*) = 1 from lead_tags where label = 'hot' and created_by = test.id('lt_ceo_b')), 'it is saved');
+
+\echo '   nobody else manages tags'
+select test.login('tm_a');
+select test.lt_fails_exactly($$select public.lead_tag_save('{"label":"LT Mine","colour":"red","stage":"NEW"}')$$,
+  'a team member cannot save a tag', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.lt_fails_exactly(format($$select public.lead_tag_retire('%s', true)$$, test.lt_tag('Demo done')),
+  'nor retire one', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.login('sh_head');
+select test.lt_fails_exactly($$select public.lead_tag_save('{"label":"LT Mine","colour":"red","stage":"NEW"}')$$,
+  'nor can a plain Department Head', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+select test.login('lt_ceo_sup');
+select test.lt_fails_exactly($$select public.lead_tag_save('{"label":"LT Mine","colour":"red","stage":"NEW"}')$$,
+  'nor a Support-only CEO', 'FORBIDDEN: Only the Managing Director or the department''s Operations Head can manage lead tags.');
+
+\echo '   the Managing Director'
+select test.login('sa');
+select test.lt_fails_exactly(format($$select public.lead_tag_retire('%s', true)$$, test.lt_seed('NEW')),
+  'retiring the New seed is refused', 'VALIDATION_ERROR: A stage''s basic tag can''t be retired.');
+select test.must_fail(format($$select public.lead_tag_save('{"id":"%s","label":"New","colour":"slate","stage":"CONTACTED"}')$$, test.lt_seed('NEW')),
+  'a seed keeps its stage', '^VALIDATION_ERROR: ');
+select test.must_fail($$select public.lead_tag_save('{"label":"HOT","colour":"red","stage":"NEW"}')$$, 'a company-wide "HOT" would be a duplicate of "Hot"', '^CONFLICT: ');
+select test.check((select (r ->> 'scope') = 'COMPANY' and (r ->> 'departmentIds') = '[]' and (r ->> 'canManage')::boolean
+                     from (select public.lead_tag_save('{"label":"LT Company","colour":"green","stage":"READY_TO_BUY"}') r) x),
+  'the MD creates a company-wide tag (no departments)');
+select test.check((select (r ->> 'scope') = 'DEPARTMENTS' and jsonb_array_length(r -> 'departmentIds') = 1
+                     from (select public.lead_tag_save(format('{"label":"LT MD Digitree","colour":"amber","stage":"NEW","departmentIds":["%s"]}', test.dept('digitree'))::jsonb) r) x),
+  'and a tag for one department');
+select test.check((select (r ->> 'label') = 'Newly met' from (select public.lead_tag_save(format('{"id":"%s","label":"Newly met","colour":"slate","stage":"NEW"}', test.lt_seed('NEW'))::jsonb) r) x),
+  'the MD renames a seed');
+select public.lead_tag_save(format('{"id":"%s","label":"New","colour":"slate","stage":"NEW"}', test.lt_seed('NEW'))::jsonb);
+select test.check((select jsonb_array_length(public.lead_tags_list()) = (select count(*) from lead_tags)), 'the MD lists every tag');
+
+\echo '   tagging a lead (lead_tag_set: the lead''s own rules decide who may)'
+reset role;
+select set_config('request.jwt.claims', '', false);
+select test.lt_mk_lead('lt_wab_tm', '+919877100101');
+select test.lt_mk_lead('lt_wbx_tm', '+919877100102');
+select test.lt_mk_lead('lt_dg_tm', '+919877100103');
+set role authenticated;
+select test.login('lt_wab_tm');
+select public.lead_tag_set((test.lt_lead('+919877100101')).id, test.lt_tag('Hot'));
+select test.check((select lead_tag_id = test.lt_tag('Hot') and lead_status = 'INTERESTED' from test.lt_lead('+919877100101')), 'a Wabastore member tags their lead "Hot"');
+reset role;
+select set_config('request.jwt.claims', '', false);
+create temp table lt_ids as select phone, id from customers where phone in ('+919877100102', '+919877100103');
+grant select on lt_ids to authenticated;
+set role authenticated;
+select test.login('lt_wab_tm');
+select test.must_fail(format($$select public.lead_tag_set('%s', '%s')$$, (select id from lt_ids where phone = '+919877100102'), test.lt_tag('Hot')),
+  'they cannot tag another member''s lead', '^NOT_FOUND: ');
+select test.login('lt_dg_tm');
+select test.lt_fails_exactly(format($$select public.lead_tag_set('%s', '%s')$$, (select id from lt_ids where phone = '+919877100103'), test.lt_tag('Hot')),
+  'a Digitree lead cannot take a Wabastore / Whatsbox tag', 'VALIDATION_ERROR: That tag can''t be used in this lead''s department.');
+select test.login('lt_wbx_tm');
+select public.lead_tag_set((select id from lt_ids where phone = '+919877100102'), test.lt_tag('Hot'));
+reset role;
+select set_config('request.jwt.claims', '', false);
+select test.check((select lead_tag_id = test.lt_tag('Hot') from test.lt_lead('+919877100102')), 'a Whatsbox member tags theirs too');
+
+\echo '   a stage change moves the tag''s leads; narrowing re-seeds the leads left outside'
+select test.login('lt_ceo_a');
+select test.check((test.lt_listed('Hot') ->> 'leadCount')::int = 2, 'the CEO sees 2 leads using "Hot"');
+select public.lead_tag_save(format('{"id":"%s","label":"Hot","colour":"orange","stage":"CONTACTED"}', test.lt_tag('Hot'))::jsonb);
+select test.check((select count(*) = 2 from customers where phone in ('+919877100101', '+919877100102') and lead_tag_id = test.lt_tag('Hot') and lead_status = 'CONTACTED'),
+  'changing "Hot" from INTERESTED to CONTACTED moves its leads'' lead_status (they keep the tag)');
+select test.check((select array_length(array_agg(department_id), 1) = 2 from lead_tag_departments where tag_id = test.lt_tag('Hot')), 'saving without departments keeps them');
+select public.lead_tag_save(format('{"id":"%s","label":"Hot","colour":"orange","stage":"CONTACTED","departmentIds":["%s"]}', test.lt_tag('Hot'), test.dept('whatsbox'))::jsonb);
+select test.check((select lead_tag_id = test.lt_seed('CONTACTED') and lead_status = 'CONTACTED' from test.lt_lead('+919877100101')),
+  'narrowing "Hot" to Whatsbox gives its Wabastore lead the seed of the same stage');
+select test.check((select lead_tag_id = test.lt_tag('Hot') from test.lt_lead('+919877100102')), 'its Whatsbox lead keeps "Hot"');
+
+\echo '   who sees which tags'
+select test.login('lt_wab_tm');
+select test.check(test.lt_listed('Hot') is null and test.lt_listed('hot') is null and test.lt_listed('LT MD Digitree') is null,
+  'a Wabastore member does not see other departments'' tags');
+select test.check(test.lt_listed('Demo done') is not null and test.lt_listed('LT Company') is not null and not (test.lt_listed('Demo done') ->> 'canManage')::boolean,
+  'but sees the company-wide tags, read-only');
+select test.check(test.lt_listed('Hot', test.dept('whatsbox')) is null, 'and cannot list another department''s tags by asking for it');
+select test.login('lt_wbx_tm');
+select test.check(test.lt_listed('Hot') is not null and test.lt_listed('hot') is null, 'a Whatsbox member sees "Hot"');
+select test.login('lt_ceo_b');
+select test.check((test.lt_listed('Hot') ->> 'canManage')::boolean and test.lt_listed('hot') is not null and test.lt_listed('LT MD Digitree') is not null,
+  'now that "Hot" is Whatsbox only, the Whatsbox / Digitree CEO may manage it, and sees their Digitree tags');
+select test.check(test.lt_listed('hot', test.dept('whatsbox')) is null and test.lt_listed('Hot', test.dept('whatsbox')) is not null, 'a department filter narrows the list');
+
+\echo '   retire and restore'
+select test.login('lt_ceo_a');
+select public.lead_tag_save('{"label":"LT Cold","colour":"slate","stage":"NEW"}');
+select test.check((select (r ->> 'retired')::boolean from (select public.lead_tag_retire(test.lt_tag('LT Cold'), true) r) x), 'a CEO retires their tag');
+select test.check((test.lt_listed('LT Cold') ->> 'retired')::boolean, 'it stays in the CEO''s list, marked retired');
+select test.login('lt_wab_tm');
+select test.check(test.lt_listed('LT Cold') is null, 'a retired tag is absent from the lists of non-managers');
+set role authenticated;
+select test.must_fail(format($$select public.lead_tag_set('%s', '%s')$$, (select id from public.customers where phone = '+919877100101'), test.lt_tag('LT Cold')),
+  'and cannot be chosen', '^VALIDATION_ERROR: ');
+reset role;
+select test.login('lt_ceo_a');
+select public.lead_tag_save('{"label":"lt cold","colour":"blue","stage":"NEW"}');
+select test.must_fail(format($$select public.lead_tag_retire('%s', false)$$, test.lt_tag('LT Cold')), 'restoring it while an active "lt cold" exists is a duplicate', '^CONFLICT: ');
+select public.lead_tag_retire(test.lt_tag('lt cold'), true);
+select test.check((select not (r ->> 'retired')::boolean from (select public.lead_tag_retire(test.lt_tag('LT Cold'), false) r) x), 'then it can be restored');
+select test.login('lt_wab_tm');
+select test.check(test.lt_listed('LT Cold') is not null, 'and is listed again');
+select set_config('request.jwt.claims', '', false);
+
+\echo '   every action is audited'
+select test.check((select count(*) = 1 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action = 'LEAD_TAG_CREATED' and a.entity_type = 'lead_tag'
+                     and a.entity_id = test.lt_tag('Hot') and a.actor_id = test.id('lt_ceo_a')), 'creating "Hot": LEAD_TAG_CREATED');
+select test.check((select count(*) = 2 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action = 'LEAD_TAG_UPDATED' and a.entity_id = test.lt_tag('Hot')),
+  'its stage change and its narrowing: LEAD_TAG_UPDATED');
+select test.check((select count(*) = 2 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action = 'LEAD_TAG_UPDATED' and a.entity_id = test.lt_seed('NEW')
+                     and a.actor_id = test.id('sa')), 'the seed''s rename and its rename back');
+select test.check((select count(*) = 1 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action = 'LEAD_TAG_RETIRED' and a.entity_id = test.lt_tag('LT Cold')
+                     and (a.metadata ->> 'retired')::boolean), 'retiring "LT Cold": LEAD_TAG_RETIRED');
+select test.check((select count(*) = 1 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action = 'LEAD_TAG_RETIRED' and a.entity_id = test.lt_tag('LT Cold')
+                     and not (a.metadata ->> 'retired')::boolean), 'restoring it is recorded too');
+select test.check(not exists (select 1 from audit_logs a, lt_audit_from f where a.created_at >= f.at and a.action like 'LEAD_TAG_%' and a.entity_id = test.lt_seed('READY_TO_BUY')),
+  'refused attempts change nothing and record nothing');
+
+\echo '   the functions are not open to anonymous callers'
+select test.check(not has_function_privilege('anon', 'public.lead_tags_list(uuid)', 'execute') and not has_function_privilege('anon', 'public.lead_tag_save(jsonb)', 'execute')
+                  and not has_function_privilege('anon', 'public.lead_tag_retire(uuid, boolean)', 'execute') and not has_function_privilege('anon', 'public.lead_tag_set(uuid, uuid)', 'execute'),
+  'anon cannot run them');
+
 delete from customers where phone like '+9198771%';
-delete from lead_tag_departments where tag_id in (select id from lead_tags where label like 'LT %');
-delete from lead_tags where label like 'LT %';
+delete from lead_tag_departments where tag_id in (select id from lead_tags where label like 'LT %' or created_by in (select id from test.users where name like 'lt\_%'));
+delete from lead_tags where label like 'LT %' or created_by in (select id from test.users where name like 'lt\_%');
 delete from operations_head_departments where profile_id in (test.id('lt_ceo_a'), test.id('lt_ceo_b'), test.id('lt_ceo_sup'), test.id('lt_ceo_c'));
