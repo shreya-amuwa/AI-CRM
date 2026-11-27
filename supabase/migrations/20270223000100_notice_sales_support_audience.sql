@@ -151,7 +151,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
                                     'team', (select t.name from public.teams t where t.id = p.team_id)) order by p.full_name)
                                   from public.profiles p
                                  where p.id in (select m.profile_id from private.notice_division_members(dd.department_id, p_division) m)
-                                   and p.id <> auth.uid()), '[]'::jsonb))
+                                   and p.id is distinct from auth.uid()), '[]'::jsonb))
          order by dd.name), '[]'::jsonb)
     from private.notice_division_departments(p_division) dd
 $$;

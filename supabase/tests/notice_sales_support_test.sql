@@ -43,6 +43,9 @@ create or replace function test.ns_opt_has(p_div text, p_dept text, p_person tex
   select exists (select 1 from jsonb_array_elements(test.ns_opt(p_div, p_dept) -> 'employees') e where (e ->> 'id')::uuid = test.id(p_person)) $$;
 create or replace function test.ns_inbox(p_title text) returns boolean language sql as $$
   select exists (select 1 from jsonb_array_elements(notice_list('INBOX', p_limit => 100) -> 'items') x where x ->> 'title' = p_title) $$;
+-- does a (base) department have a team of this division? read as the table owner (the publisher's own row-level security hides other departments' teams)
+create or replace function test.ns_has_team(p_dept uuid, p_div text) returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.teams t where private.base_department(t.department_id) = p_dept and t.division::text = p_div) $$;
 grant execute on all functions in schema test to anon, authenticated, service_role;
 
 -- Whatsbox people: two Sales members and a Sales lead, one Support member
@@ -86,8 +89,7 @@ begin
     if test.ns_opt('SALES', 'hr') is not null or test.ns_opt('SUPPORT', 'hr') is not null then
       raise exception 'TEST FAILED: % sees HR (no Sales or Support team) under Sales or Support', r;
     end if;
-    if exists (select 1 from jsonb_array_elements(o -> 'sales') x join public.departments d on d.id = (x ->> 'id')::uuid
-                where not exists (select 1 from public.teams t where private.base_department(t.department_id) = d.id and t.division = 'SALES')) then
+    if exists (select 1 from jsonb_array_elements(o -> 'sales') x where not test.ns_has_team((x ->> 'id')::uuid, 'SALES')) then
       raise exception 'TEST FAILED: % sees a Sales department that has no Sales team', r;
     end if;
     if not (test.ns_opt_has('SALES', 'whatsbox', 'ns_s1') and test.ns_opt_has('SALES', 'whatsbox', 'ns_sl') and not test.ns_opt_has('SALES', 'whatsbox', 'ns_p1')
@@ -101,7 +103,7 @@ begin
   raise notice 'ok - Super Admin, HR and the CRM team: Sales lists only Sales departments with their Sales people, Support only Support departments with theirs';
 end $$;
 select test.login('sa');
-select test.check(test.ns_opt('SUPPORT', 'dtalk') ->> 'name' = 'Wabatalk (D Talk)', 'a Support side is shown by its own name under its base department (Wabatalk = D Talk Support)');
+select test.check(test.ns_opt('SUPPORT', 'dtalk') ->> 'name' = (select 'Wabatalk (' || name || ')' from departments where slug = 'dtalk'), 'a Support side is shown by its own name under its base department (Wabatalk = D Talk Support)');
 select test.check(not exists (select 1 from jsonb_array_elements(notice_audience_options() -> 'support') x where (x ->> 'id')::uuid = test.dept('wabatalk')),
   'and not twice (the side itself is not a second entry)');
 select test.check(not test.ns_opt_has('SALES', 'whatsbox', 'sa'), 'the publisher is not offered as their own recipient');
