@@ -13375,14 +13375,17 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 // ---------------------------------------------------------------------------
 {
   const outbox: { path: string; body: any }[] = [];
-  const failNext: Record<string, number[]> = {};
+  // a refusal aimed at ONE e-mail (recipient + subject): other e-mails sent at the same moment (a reminder, a background notification) must not use it up
+  const failFor: { to: string; subject: string; status: number }[] = [];
   const mailMock = http.createServer((req, res) => {
     let raw = '';
     req.on('data', c => (raw += c));
     req.on('end', () => {
       const path = (req.url || '').split('?')[0];
-      outbox.push({ path, body: raw ? JSON.parse(raw) : null });
-      const status = failNext[path]?.shift() ?? 200;
+      const body = raw ? JSON.parse(raw) : null;
+      outbox.push({ path, body });
+      const hit = path === '/emails' ? failFor.findIndex(f => body?.to?.[0] === f.to && String(body?.subject).includes(f.subject)) : -1;
+      const status = hit >= 0 ? failFor.splice(hit, 1)[0].status : 200;
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(status < 300 ? { id: `dhr-msg-${outbox.length}` } : { message: 'Refused' }));
     });
@@ -13447,7 +13450,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
       'Department HR API: the overdue reminder goes to the Department Head (or says there is none) and confirms nobody', r);
 
     // Confirm, the e-mail provider refuses: NOT confirmed, still overdue, the reason is shown
-    failNext['/emails'] = [422];
+    failFor.push({ to: 'dig.api.emp@example.com', subject: 'Employment Confirmation', status: 422 });
     r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/confirm`, { note: 'Reviewed with the Digitree head' });
     check(r.status === 200 && r.json.data.status === 'CONFIRMING' && r.json.data.overdue === true && r.json.data.email?.status === 'FAILED' && /422/.test(r.json.data.email.error),
       'Department HR API: when the confirmation e-mail fails, the employee is not confirmed and stays overdue', r);
