@@ -55,7 +55,7 @@ export function scopeText(r: Pick<SetupRule, 'scopeType' | 'scopeValue'>, o: Inc
 // ---------------------------------------------------------------------------------------------------------------------------------
 interface FormState {
   name: string; eventType: IncentiveEvent; serviceCode: string; amount: string; targetUnits: string; scopeType: IncentiveScope; scopeValue: string; monthlyCap: string;
-  /** Support business only (20270222000100): a fixed amount or a percentage of each payment, and the business the month must reach first */
+  /** Support business only (20270224000100): a fixed amount or a percentage of each payment, and the business the month must reach first */
   amountType: AmountType; minMonthlyBusiness: string;
 }
 const blank: FormState = { name: '', eventType: 'SALE_PAID', serviceCode: '', amount: '', targetUnits: '', scopeType: 'OPERATIONS_HEAD', scopeValue: '', monthlyCap: '', amountType: 'FIXED', minMonthlyBusiness: '' };

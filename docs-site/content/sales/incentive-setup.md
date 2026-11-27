@@ -6,7 +6,7 @@ group: Income
 roles: [Super Admin, Operations Head, Department Head, Team Lead]
 audience: internal
 status: verified
-sources: [src/components/income/IncentiveSetup.tsx, supabase/migrations/20270222000100_support_incentives.sql, src/components/business-associate/DemoSchedulePage.tsx, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
+sources: [src/components/income/IncentiveSetup.tsx, supabase/migrations/20270224000100_support_incentives.sql, src/components/business-associate/DemoSchedulePage.tsx, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
 related: [sales/my-income, sales/business-associate-workspace]
 updated: 2026-11-26
 ---

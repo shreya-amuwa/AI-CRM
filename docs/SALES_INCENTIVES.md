@@ -81,7 +81,7 @@ Design: `docs/superpowers/specs/2026-11-21-incentive-payouts-design.md`.
   `POST /internal/razorpay/payouts`. The request id is the `X-Payout-Idempotency` key. Settings: `docs/GO_LIVE_RUNBOOK.md` § RazorpayX.
 - Tests: `payouts_razorpay_test.sql`, the RazorpayX stand-in block of `api_integration.test.ts`, `ui_payouts.test.mjs`.
 
-## Support business (migration `20270222000100_support_incentives.sql`)
+## Support business (migration `20270224000100_support_incentives.sql`)
 The Super Admin's **Incentive** page (renamed from *Sales Incentives*; titled **Incentive Management**, button **+ Create Incentive**) also sets
 incentives for Support staff: **For: Support business**.
 - **Who:** a Support department, a Support team, or one person in a Support team (the database refuses anyone else).

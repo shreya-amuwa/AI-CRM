@@ -7,7 +7,7 @@ import { getSupabase } from '../services/supabaseClient';
  * head and Team Lead sets the amount for the people directly below them.
  */
 export type IncentiveEvent = 'SALE_PAID' | 'DEMO_COMPLETED' | 'VISIT_COMPLETED' | 'SUPPORT_BUSINESS';
-/** Support business rules (20270222000100) may pay a percentage of the payment; every other rule is a fixed amount. */
+/** Support business rules (20270224000100) may pay a percentage of the payment; every other rule is a fixed amount. */
 export type AmountType = 'FIXED' | 'PERCENT';
 export type IncentiveScope = 'OPERATIONS_HEAD' | 'LEVEL' | 'SUB_ROLE' | 'DEPARTMENT' | 'TEAM' | 'PERSON';
 export type EarningRole = 'CLOSER' | 'TELECALLER' | 'BUSINESS_ASSOCIATE' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'PARTICIPANT';

@@ -103,7 +103,7 @@ declare
   v_type text := coalesce(nullif(btrim(p ->> 'amountType'), ''), 'FIXED');
   v_min numeric;
 begin
-  -- Support business (20270222000100): a fixed amount per verified payment, or a percentage of it; optionally only once the person's business that month
+  -- Support business (20270224000100): a fixed amount per verified payment, or a percentage of it; optionally only once the person's business that month
   -- reaches a minimum. Every other kind of rule is a fixed amount.
   if v_type not in ('FIXED', 'PERCENT') or (v_type = 'PERCENT' and v_event is distinct from 'SUPPORT_BUSINESS') then
     raise exception 'VALIDATION_ERROR: Choose a fixed amount, or a percentage (Support business only).' using errcode = 'P0001';

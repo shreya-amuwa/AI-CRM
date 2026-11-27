@@ -1,5 +1,5 @@
 -- =============================================================================
--- Support incentives (migration 20270222000100): a "Support business" rule pays a Support person for the payments Accounts verifies on the customers they
+-- Support incentives (migration 20270224000100): a "Support business" rule pays a Support person for the payments Accounts verifies on the customers they
 -- look after - a fixed amount or a percentage, optionally only from a monthly business minimum, within a monthly cap - once per payment, reversed with the
 -- payment, credited to their Wallet. Only the Super Admin sets rules; Sales rules are unchanged. Reuses import_test's Support members sup_b (customer
 -- 9000000103) and sup_plain (9000000101). Synthetic data only; safe to run again.
@@ -9,8 +9,8 @@
 \echo '--- 153. Support incentives'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270222000100_support_incentives.sql
-\i supabase/migrations/20270222000100_support_incentives.sql
+\i supabase/migrations/20270224000100_support_incentives.sql
+\i supabase/migrations/20270224000100_support_incentives.sql
 create temp table si (k text primary key, v text);
 grant all on si to authenticated;
 insert into si select 'start', start_after_days::text from incentive_settings where id;

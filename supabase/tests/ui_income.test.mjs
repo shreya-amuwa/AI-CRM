@@ -112,7 +112,7 @@ try {
   check(created.amount === 500 && created.serviceCode === 'WEB' && created.scopeType === 'OPERATIONS_HEAD' && created.targetUnits === 100, 'the Super Admin creates the ₹500 rule for the Operations Head', JSON.stringify(created));
   check(await page.getByTestId('rule-row').filter({ hasText: 'Website 500' }).count() === 1, 'the new rule is listed');
 
-  // a Support incentive (20270222000100): a percentage of each payment, with a monthly business minimum, for a Support department
+  // a Support incentive (20270224000100): a percentage of each payment, with a monthly business minimum, for a Support department
   await page.getByRole('button', { name: 'Create Incentive' }).first().click();
   const sform = page.getByRole('form', { name: 'Create Incentive' });
   await sform.getByLabel('Name', { exact: true }).fill('Support renewals');
