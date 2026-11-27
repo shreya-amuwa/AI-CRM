@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CrocodialConnectionHealth } from './CrocodialConnectionHealth';
+import { CrocodialLeadPipeline } from './CrocodialLeadPipeline';
 import { CheckCircle2, PlugZap, RefreshCw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
 import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
@@ -372,6 +373,7 @@ export const CrocodialAdminPage: React.FC = () => {
                   const rs = r.connections[0]?.resources ?? [];
                   setFlash(rs.length ? `Sync: ${rs.map(x => `${RESOURCE_LABEL[x.resource]} ${x.outcome === 'DONE' ? `${x.rows} rows` : x.outcome === 'PARTIAL' ? 'continues on the next run' : x.outcome.toLowerCase()}`).join(' · ')}.` : (r.connections[0]?.error ?? r.note ?? 'Nothing to sync.'));
                 })} />
+              <CrocodialLeadPipeline connectionId={c.id} />
             </div>
           );
         })}

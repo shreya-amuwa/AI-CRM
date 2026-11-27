@@ -109,7 +109,8 @@ try {
     check(await page.getByText('Connect rate 55.7%').isVisible() && await page.getByText('973', { exact: true }).isVisible(), `${label}: the totals`);
     const totals = page.getByLabel('Totals');
     check(await totals.getByText('400', { exact: true }).isVisible() && await totals.getByText('700', { exact: true }).isVisible()
-      && !(await totals.getByText(/Follow-ups/).count()), `${label}: not connected and unique numbers (counted once across people); no follow-up counter`);
+      && await totals.getByText('Incoming calls').isVisible() && await totals.getByText('Missed calls').isVisible() && await totals.getByText('Overdue follow-ups').isVisible(),
+      `${label}: not connected and unique numbers (counted once across people); incoming, missed and follow-up figures for managers (20270304000100)`);
     check((await page.getByTestId('croc-team-table').locator('thead th').allTextContents()).join('|') === 'Employee|Team|Total calls|Connected|Not connected|Rate|Unique numbers|Talk time|Demos (CRM)|',
       `${label}: the table has the shared call figures`);
     check(await page.getByRole('row', { name: /New Person/ }).getByText('Not available yet (not synced)').isVisible(), `${label}: shown as not available, not zero`);

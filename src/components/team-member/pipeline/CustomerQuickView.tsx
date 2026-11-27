@@ -9,6 +9,7 @@ import { fmtDate, fmtDateTime, MoneyTiles, PaymentHistory, PaymentStatusBadge, W
 import { ErrorBanner, Loading, Modal } from '../../support-member/SupportParts';
 import { ActivityCard } from './LeadForms';
 import { LeadWhatsAppStatus } from '../../leads/LeadWhatsApp';
+import { CrocodialLeadActivityCard } from '../../crocodial/CrocodialLeadActivityCard';
 import { ServiceChips, useServiceCatalog } from './shared';
 
 /** A customer's details in a pop-up (opened by clicking a row). Read-only. */
@@ -79,6 +80,7 @@ export const CustomerQuickView: React.FC<{ id: string; title?: string; onClose: 
             </div>
           )}
           <LeadWhatsAppStatus customerId={id} />
+          <CrocodialLeadActivityCard customerId={id} />
           <ActivityCard activities={c.activities} title="Last activities" />
           <div className="flex justify-end"><DeleteCustomerButton customerId={id} name={c.company || c.name} onDeleted={onClose} /></div>
         </div>

@@ -157,6 +157,127 @@ Sync All My Departments (CEO; the Super Admin's is Sync All Departments). The ru
   Department Head's entry is "Department Crocodial Activity". "My Crocodial Activity" / "My Crocodial Leads" appear only with a mapping.
 - **A Support-only CEO** covers no Sales department: no menu, and a refresh is refused ("Nobody you oversee here is connected").
 
+## Leads in the CRM pipeline (migration `20270304000100_crocodial_crm_lead_links.sql`)
+
+Leads assigned in Crocodial can become ordinary CRM leads of the right person. This is controlled per department and starts **Off**.
+
+**Flow:**
+1. A CEO or Department Head assigns a lead in Crocodial.
+2. The scheduled sync (or anyone's "Sync") reads it.
+3. `assigned_to.id` and the connection give the **approved mapping**: `connection_id` + external user id, never a name. The same id on another account is another person.
+4. Reconciliation (`croc_reconcile`) then finds or creates the CRM lead.
+5. The owner sees it in their pipeline. The Department Head, CEO and Super Admin see it through the usual lead rules.
+6. Later Crocodial changes update the same linked record.
+
+**Switch per department** (Super Admin → Crocodial Integration → a connection → *Leads in the CRM pipeline*):
+- **Off:** nothing is linked.
+- **Preview:** every lead gets a planned outcome. No CRM record is changed.
+- **Import:** leads are created and linked.
+
+Review the preview before importing. Historical leads are imported only after that review.
+
+**Matching and holds.** The database works these out; one link per (connection, external lead).
+
+| Case | Result |
+|---|---|
+| No CRM record with the same phone (last 10 digits) or e-mail **in the same department** | A new lead, owned by the mapped person, source "Crocodial", activity "Imported from Crocodial" |
+| One such record, still a lead, same owner | Linked (no copy) |
+| One such record, a lead of another owner | **Owner conflict**: held for a decision |
+| One such record past the lead stage (onboarding, customer…) | **Protected**: linked for reference, never changed or downgraded |
+| Several such records | **Ambiguous**: held, candidates listed |
+| Assignee without an approved mapping | **Unmapped assignee**: held, never given to someone else |
+| Mapped person inactive or outside the department's Sales | **Out of scope**: held |
+
+**Sources of truth.**
+- Crocodial decides the external status, assignee, calls, follow-ups and remarks.
+- The CRM keeps payments, invoices, Accounts-verified values, onboarding, services, incentives, portal access and its own assignments.
+
+**What is written to a CRM lead.** Only for a lead still at LEAD:
+- the owner, while `assignment_mode` is `EXTERNAL`;
+- `lead_status`, through the **status mapping**;
+- the next follow-up date.
+
+**Ownership.**
+- Changing the owner of an imported lead in the CRM switches the link to **CRM override**. The next sync never moves it back.
+- The difference between the two owners is shown on the lead and in the monitor. The Super Admin can hand it back to Crocodial.
+- Ownership changes seen by a sync are kept in `crocodial_lead_owner_history`. The time is when the CRM saw the change. Crocodial does not say who assigned a lead, and `created_by` is kept separately, never treated as the assigner.
+
+**Status mapping** (per connection; unknown statuses are listed in the monitor and change nothing):
+
+| CRM disposition | `lead_status` | Note |
+|---|---|---|
+| New | NEW | |
+| Contacted | CONTACTED | |
+| Follow-up | CONTACTED | |
+| Interested | INTERESTED | |
+| Demo scheduled | INTERESTED | no demo record is created; demo metrics still come only from CRM demos |
+| Not interested | CONTACTED | lifecycle unchanged |
+| Lost | CONTACTED | lifecycle unchanged |
+| Converted | READY_TO_BUY | **never** changes the lifecycle; Accounts verification stays the only way to a customer |
+| Ignore | none | |
+
+**Freshness, duplicates and deletions.**
+- An older copy of a lead never replaces a newer one (`external_updated_at`).
+- A CRM edit newer than the last Crocodial change is kept.
+- Runs are serialised per connection (advisory lock). The customer and its link are written in one transaction.
+- The link is unique per (connection, external lead), so repeated or overlapping runs never create duplicates.
+- A lead Crocodial stops returning is marked missing at the source. Nothing in the CRM is deleted.
+
+**Automations.** Imported or re-assigned leads never send the welcome WhatsApp. The trigger skips them inside reconciliation (`app.suppress_lead_automations`), and works as before everywhere else.
+
+**Lead fields kept** (`TO_STORE.leads`):
+- as before;
+- plus e-mail (for matching), interest, budget, deal value, products, import batch, call due date, expected close date and AI call status;
+- plus only the **custom fields whose keys the Super Admin lists** for the connection (`crocodial_connections.custom_field_keys`).
+
+The new fields are read defensively. A field of an unexpected shape is dropped and never fails the row. The field names follow the Outbound API guide; confirm them with a live read before switching Import on.
+
+**Running it.**
+- After each leads read, `runCrocodialSync` runs `croc_reconcile` in batches of 200 within the same time budget. What is left continues on the next run, since the work queue is the link table itself.
+- A refresh says "Up to date" only once the leads are reconciled; until then it says "Partially synced".
+- Super Admin: **Reconcile now**.
+
+**Monitor** (Super Admin):
+- links per state, ownership differences, unknown statuses, Crocodial users with leads but no mapping;
+- leads missing at the source;
+- last complete read per resource, the last reconciliation (looked at / created / updated / waiting / duration) and rate-limited runs.
+
+**Resolution** (`croc_lead_link_resolve`, audited):
+- **Link to** a candidate of the same department;
+- **Ignore** (stays ignored);
+- **Look again**;
+- **Let Crocodial assign it again**.
+
+**The lead page** (`croc_lead_activity`) shows a *Crocodial activity* section to whoever may see the lead:
+- the external reference and status, the Crocodial owner, the CRM owner and any difference;
+- calls (outgoing / incoming / missed, connected, talk time, last call);
+- call history, credited to the person who **made** each call at that time and not the lead's owner;
+- remarks, follow-ups and the assignment history seen by the CRM;
+- the last sync, and a stale warning after 24 hours.
+
+Calls and remarks are read from the Crocodial tables; nothing is copied.
+
+**API:**
+- `GET`/`POST /api/v1/crocodial/connections/:id/reconcile`
+- `GET .../lead-links?status=`
+- `POST .../lead-import`
+- `POST .../status-mappings`
+- `POST /api/v1/crocodial/lead-links/:id/resolve`
+- `GET /api/v1/crocodial/lead-activity/:customerId`
+
+**Rollout for the M Pillar Sales pilot:**
+1. Run the migration.
+2. Map every Crocodial status that appears under *unknown*.
+3. Approve the mappings of the people who own leads.
+4. Set M Pillar to **Preview** and press *Reconcile now*.
+5. Review the counts and the held leads (ambiguous, conflicts).
+6. Switch to **Import**.
+
+**Rollback:**
+- Set Import back to Off. Imported leads stay as normal CRM leads, and their links stop changing.
+- Redeploy the previous app.
+- The database part is additive. `croc_sync_store`, `private.lead_wa_after_owner` and `private.croc_refresh_connection_state` can be restored from `20270127000100_crocodial_sync_quiet.sql`, `20270104000200_lead_assignment_whatsapp.sql` and `20270204000100_crocodial_scoped_refresh.sql`.
+
 ## How the client talks to Crocodial (`server/crocodial/client.ts`)
 
 - **Requests.** GET only, to `https://app.crocodial.app/api/datalake/outbound`. The token goes in the `Authorization: Bearer` header only.
@@ -440,7 +561,7 @@ Unique leads and unique numbers are now counted once across the people listed.
 | | My Crocodial leads (assigned, never called) | 1 | removed: it duplicated the "My Crocodial Leads" section just below it |
 | Crocodial management view (Team Lead, heads, Super Admin) | Total calls, Connected, Not connected, Rate, Unique numbers, Talk time | 1 | shown, per person and in total |
 | | Demos (CRM) completed / scheduled | 2 | shown |
-| | Unique leads, follow-ups, overdue | 1 | removed from the table and the totals |
+| | Unique leads, follow-ups, overdue | 1 | removed from the table; **back in the totals since `20270304000100`** (the CEO dashboard asks for them): incoming, missed, average call duration, follow-ups completed / pending / overdue, plus "Leads assigned now" (assigned, new, contacted, not contacted, follow-up due, status breakdown; point in time, each lead once) |
 | Sales head › Telecaller List and dashboard | the five call figures, connect rate, the call log | 1 | shown (none for a person not connected: "Not connected to Crocodial") |
 | | Leads created, Converted to a Business Associate, the leads list | 2, 3 | shown |
 | | Calls logged, contacts called, reached, not reached yet, unique numbers, reach rate (all from the CRM contact sheets) | 4 | removed: CRM sheet counters presented as call figures |
@@ -469,7 +590,7 @@ yet (phase 2). When they are built, they will read calls and demos only through 
 
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`, then `20270303000100_sales_ceo_lead_assignment.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`, then `20270303000100_sales_ceo_lead_assignment.sql`, then `20270304000100_crocodial_crm_lead_links.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

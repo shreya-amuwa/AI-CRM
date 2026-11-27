@@ -8,6 +8,7 @@ import { ApiError, errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { fmtDate, PaymentHistory, rupees, WorkflowBadge } from '../../payments/PaymentBits';
 import { ConversationSection } from './LeadConversations';
+import { CrocodialLeadActivityCard } from '../../crocodial/CrocodialLeadActivityCard';
 import { LeadWhatsAppStatus } from '../../leads/LeadWhatsApp';
 import {
   blockDecimals,
@@ -1074,6 +1075,9 @@ export const EditLeadView: React.FC<{
 
       {/* the welcome WhatsApp about our services (sent once when the lead got its sales person) */}
       <LeadWhatsAppStatus customerId={id} />
+
+      {/* Crocodial calls, follow-ups and remarks of a lead linked to Crocodial (nothing otherwise) */}
+      <CrocodialLeadActivityCard customerId={id} />
 
       {/* 6 · Last activities - full width, at the bottom */}
       <ActivityCard activities={lead.activities} title="Last activities" />

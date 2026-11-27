@@ -1,14 +1,16 @@
 import type {
-  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity
+  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialReconcileRun, CrocodialTeamLeads
 } from '../../shared/contracts.js';
 import {
-  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, crocodialRefreshSchema, uuidSchema
+  crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, crocodialRefreshSchema, uuidSchema,
+  crocodialLeadImportSchema, crocodialStatusMappingSchema, crocodialLinksQuerySchema, crocodialLinkResolveSchema, crocodialTeamLeadsQuerySchema
 } from '../../shared/validation.js';
 import { crocodialToken } from '../crocodial/client.js';
 import { credentialCheck, reportRuntime, runtimeInfo } from '../crocodial/runtime.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
-import { runCrocodialSync } from '../crocodial/sync.js';
+import { reconcileLeads, runCrocodialSync } from '../crocodial/sync.js';
+import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import type { CrocodialRepository } from '../repositories/CrocodialRepository.js';
 
@@ -137,6 +139,39 @@ export class CrocodialService {
   /** "Sync now": the database checks the caller and the limit first; the run stops starting pages after 50 s (enough for a first read of
    * about 40 pages; Sync now has no page cap) and does the weekly full re-read when it is due. Anything left continues with the next
    * scheduled run (hourly by default). */
+  // ---- the CRM lead pipeline (20270304000100); the database checks the Super Admin on every call
+  reconcileOverview(id: string): Promise<CrocodialReconcileOverview> { return this.repo.reconcileOverview(parse(uuidSchema, id)); }
+  leadLinks(id: string, query: unknown): Promise<CrocodialLeadLinkList> {
+    const q = parse(crocodialLinksQuerySchema, query ?? {});
+    return this.repo.leadLinks(parse(uuidSchema, id), q.status ?? null, q.page, q.pageSize);
+  }
+  leadLinkResolve(id: string, body: unknown) {
+    const b = parse(crocodialLinkResolveSchema, body ?? {});
+    return this.repo.leadLinkResolve(parse(uuidSchema, id), b.action, b.customerId ?? null);
+  }
+  leadImportSet(id: string, body: unknown) {
+    const b = parse(crocodialLeadImportSchema, body ?? {});
+    return this.repo.leadImportSet(parse(uuidSchema, id), b.departmentId, b.mode);
+  }
+  statusMappingSet(id: string, body: unknown) {
+    const b = parse(crocodialStatusMappingSchema, body ?? {});
+    return this.repo.statusMappingSet(parse(uuidSchema, id), b.status, b.disposition);
+  }
+  /** "Reconcile now": the Super Admin check is the overview call (as the signed-in user); the batches run with the service key. */
+  async reconcileNow(id: string): Promise<CrocodialReconcileRun> {
+    const connectionId = parse(uuidSchema, id);
+    await this.repo.reconcileOverview(connectionId);
+    if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', 'The server has no service key.');
+    return reconcileLeads(getServiceClient(), connectionId, Date.now() + 25_000);
+  }
+  /** Managers' lead ownership figures (the database limits them to the people the caller may see). */
+  teamLeads(query: unknown): Promise<CrocodialTeamLeads> {
+    const q = parse(crocodialTeamLeadsQuerySchema, query ?? {});
+    return this.repo.teamLeads(q.departmentId ?? null, q.teamId ?? null);
+  }
+  /** The lead page's Crocodial activity (whoever may see the lead). */
+  leadActivity(customerId: string): Promise<CrocodialLeadActivity> { return this.repo.leadActivity(parse(uuidSchema, customerId)); }
+
   async syncNow(id: string): Promise<CrocodialSyncRunResult> {
     const c = await this.repo.syncRequest(parse(uuidSchema, id));
     const r = await runCrocodialSync({ connectionId: c.id, budgetMs: 50_000, env: this.env });

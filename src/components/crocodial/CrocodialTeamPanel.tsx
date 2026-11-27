@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, PhoneCall } from 'lucide-react';
-import type { CrocodialRefreshCapabilities, CrocodialTeamActivity } from '../../../shared/contracts';
+import type { CrocodialRefreshCapabilities, CrocodialTeamActivity, CrocodialTeamLeads } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi } from '../../lib/api/endpoints';
 import { CrocodialActivityPanel } from './CrocodialActivity';
@@ -127,9 +127,12 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
   const [error, setError] = useState('');
   const [open, setOpen] = useState<{ id: string; name: string } | null>(null);
   const [caps, setCaps] = useState<CrocodialRefreshCapabilities | null>(null);
+  const [leads, setLeads] = useState<CrocodialTeamLeads | null>(null);
   const load = useCallback(() => {
     setError('');
     crocodialApi.teamActivity({ from, to, teamId: team || undefined, departmentId: dept || undefined }).then(setData).catch(e => setError(errText(e)));
+    // who owns which lead now (an older server without it: the section is simply not shown)
+    crocodialApi.teamLeads({ teamId: team || undefined, departmentId: dept || undefined }).then(setLeads, () => setLeads(null));
   }, [from, to, team, dept]);
   useEffect(load, [load]);
   // which refresh buttons this person has (the database decides from their role, scopes and approved mappings)
@@ -142,6 +145,10 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
     return [...m.entries()];
   }, [data]);
   const maxDay = Math.max(1, ...(data?.daily ?? []).map(d => d.made));
+  const extra = useMemo(() => {
+    const ok = (data?.people ?? []).filter(p => p.available && p.calls);
+    return { incoming: ok.reduce((n, p) => n + (p.calls?.incoming ?? 0), 0), missed: ok.reduce((n, p) => n + (p.calls?.missed ?? 0), 0) };
+  }, [data]);
   // people without a team: Department Heads sit above teams, so name them rather than calling them "No team"
   const noTeam = (data?.people ?? []).filter(p => !p.teamId);
   const noTeamLabel = noTeam.length && noTeam.every(p => p.role === 'DEPARTMENT_HEAD') ? (noTeam.length === 1 ? 'Department Head' : 'Department Heads') : 'No team';
@@ -210,6 +217,30 @@ export const CrocodialTeamPanel: React.FC<{ title?: string }> = ({ title = 'Croc
               <Card label="Unique numbers" value={t.uniqueNumbers ?? '—'} hint="Each number once, whoever called it" />
               <Card label="Talk time" value={hours(t.talkSeconds)} />
               <Card label="Demos (CRM)" value={`${t.demosCompleted} / ${t.demosScheduled}`} hint="completed / scheduled" />
+              {/* (20270304000100) incoming and missed calls are separate from outgoing; an unknown connection is never counted as failed */}
+              <Card label="Incoming calls" value={extra.incoming} />
+              <Card label="Missed calls" value={extra.missed} />
+              <Card label="Avg call duration" value={t.connected ? hours(Math.round(t.talkSeconds / t.connected)) : '—'} hint="Talk time per connected call" />
+              <Card label="Follow-ups completed" value={t.followupsCompleted} hint={`${t.followupsScheduled} scheduled`} />
+              <Card label="Follow-ups pending" value={Math.max(0, t.followupsScheduled - t.followupsCompleted)} />
+              <Card label="Overdue follow-ups" value={t.followupsOverdue} />
+            </div>
+          ) : null}
+          {leads && leads.connectedEmployees ? (
+            <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2" aria-label="Lead ownership" data-testid="croc-team-leads">
+              <h2 className="text-sm font-bold text-slate-800">Leads assigned now <span className="font-normal text-slate-500 text-xs">(point in time, each lead once; the period above applies to calls only)</span></h2>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <Card label="Assigned leads" value={leads.totals.assigned} />
+                <Card label="New leads" value={leads.totals.newLeads} />
+                <Card label="Contacted" value={leads.totals.contacted} />
+                <Card label="Not contacted" value={leads.totals.notContacted} />
+                <Card label="Follow-up due" value={leads.totals.followupDue} />
+              </div>
+              {leads.statuses.length ? (
+                <ul className="flex flex-wrap gap-1.5 text-[11px]" aria-label="Lead status distribution">
+                  {leads.statuses.map(s => <li key={`${s.status}-${s.disposition}`} className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">{s.status}{s.disposition ? ` (${s.disposition.replace(/_/g, ' ').toLowerCase()})` : ''}: <b>{s.leads}</b></li>)}
+                </ul>
+              ) : null}
             </div>
           ) : null}
           {data.daily.length ? (

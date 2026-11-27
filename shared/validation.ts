@@ -3497,6 +3497,24 @@ export const crocodialActivityQuerySchema = z
 export const crocodialRefreshSchema = z
   .object({ scope: z.enum(['SELF', 'TEAM', 'DEPARTMENT', 'ALL']), departmentId: uuidSchema.optional() })
   .strict();
+// ---- Crocodial -> CRM lead pipeline (20270304000100)
+export const CROCODIAL_DISPOSITIONS = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'INTERESTED', 'DEMO_SCHEDULED', 'NOT_INTERESTED', 'LOST', 'CONVERTED', 'IGNORE'] as const;
+export const crocodialLeadImportSchema = z.object({ departmentId: uuidSchema, mode: z.enum(['OFF', 'PREVIEW', 'IMPORT']) }).strict();
+export const crocodialStatusMappingSchema = z
+  .object({ status: z.string().trim().min(1, 'Enter the Crocodial status.').max(80), disposition: z.enum(CROCODIAL_DISPOSITIONS).nullable() })
+  .strict();
+export const crocodialLinksQuerySchema = z
+  .object({
+    status: z.enum(['LINKED', 'PENDING_CREATE', 'PENDING_LINK', 'UNMAPPED_ASSIGNEE', 'OUT_OF_SCOPE', 'NOT_ENABLED', 'AMBIGUOUS', 'OWNER_CONFLICT', 'PROTECTED', 'IGNORED', 'FAILED']).optional(),
+    page: z.coerce.number().int().min(1).max(10_000).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(50)
+  })
+  .strict();
+export const crocodialTeamLeadsQuerySchema = z.object({ departmentId: uuidSchema.optional(), teamId: uuidSchema.optional() }).strict();
+export const crocodialLinkResolveSchema = z
+  .object({ action: z.enum(['LINK', 'IGNORE', 'RETRY', 'RELEASE_OVERRIDE']), customerId: uuidSchema.optional() })
+  .strict()
+  .refine(v => v.action !== 'LINK' || !!v.customerId, { message: 'Choose the CRM record to link.', path: ['customerId'] });
 export const crocodialLeadsQuerySchema = z
   .object({
     profileId: uuidSchema.optional(),
