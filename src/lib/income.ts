@@ -6,7 +6,9 @@ import { getSupabase } from '../services/supabaseClient';
  * the database, which decides who may read and set what: a person reads only their own earnings; the Super Admin sets the rules; each sales
  * head and Team Lead sets the amount for the people directly below them.
  */
-export type IncentiveEvent = 'SALE_PAID' | 'DEMO_COMPLETED' | 'VISIT_COMPLETED';
+export type IncentiveEvent = 'SALE_PAID' | 'DEMO_COMPLETED' | 'VISIT_COMPLETED' | 'SUPPORT_BUSINESS';
+/** Support business rules (20270224000100) may pay a percentage of the payment; every other rule is a fixed amount. */
+export type AmountType = 'FIXED' | 'PERCENT';
 export type IncentiveScope = 'OPERATIONS_HEAD' | 'LEVEL' | 'SUB_ROLE' | 'DEPARTMENT' | 'TEAM' | 'PERSON';
 export type EarningRole = 'CLOSER' | 'TELECALLER' | 'BUSINESS_ASSOCIATE' | 'TEAM_LEAD' | 'DEPARTMENT_HEAD' | 'OPERATIONS_HEAD' | 'PARTICIPANT';
 
@@ -29,6 +31,7 @@ export interface IncentiveRule {
   id: string; name: string; eventType: IncentiveEvent; serviceCode: string | null; serviceName: string | null; amount: number;
   targetUnits: number | null; scopeType: IncentiveScope; scopeValue: string | null; monthlyCap: number | null;
   activeFrom: string; activeTo: string | null; endedAt: string | null; active: boolean;
+  amountType?: AmountType; minMonthlyBusiness?: number | null;
 }
 export interface GivenRow { recipientId: string; name: string; level: string; amount: number; kept: number }
 /** current: not stopped and not past its end date (a rule that starts later is current, though not yet active). */
@@ -51,9 +54,10 @@ export interface IncentiveSetupData {
 export interface RuleInput {
   name: string; eventType: IncentiveEvent; serviceCode?: string | null; amount: number; targetUnits?: number | null;
   scopeType: IncentiveScope; scopeValue?: string | null; monthlyCap?: number | null;
+  amountType?: AmountType; minMonthlyBusiness?: number | null;
 }
 
-export const EVENT_LABEL: Record<IncentiveEvent, string> = { SALE_PAID: 'Sale paid', DEMO_COMPLETED: 'Demo completed', VISIT_COMPLETED: 'Field visit completed' };
+export const EVENT_LABEL: Record<IncentiveEvent, string> = { SALE_PAID: 'Sale paid', DEMO_COMPLETED: 'Demo completed', VISIT_COMPLETED: 'Field visit completed', SUPPORT_BUSINESS: 'Support business' };
 export const ROLE_LABEL: Record<EarningRole, string> = {
   CLOSER: 'Your sale', TELECALLER: 'Telecaller share', BUSINESS_ASSOCIATE: 'Business Associate share', TEAM_LEAD: 'Team Lead share',
   DEPARTMENT_HEAD: 'Department Head share', OPERATIONS_HEAD: 'CEO share', PARTICIPANT: 'Reward'

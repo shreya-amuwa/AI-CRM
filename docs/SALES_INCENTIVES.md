@@ -80,3 +80,19 @@ Design: `docs/superpowers/specs/2026-11-21-incentive-payouts-design.md`.
 - API: `GET /payouts/razorpay/status`, `POST /payouts/:id/razorpay {tds}`, `POST /payouts/:id/razorpay/check`, and the signed webhook
   `POST /internal/razorpay/payouts`. The request id is the `X-Payout-Idempotency` key. Settings: `docs/GO_LIVE_RUNBOOK.md` § RazorpayX.
 - Tests: `payouts_razorpay_test.sql`, the RazorpayX stand-in block of `api_integration.test.ts`, `ui_payouts.test.mjs`.
+
+## Support business (migration `20270224000100_support_incentives.sql`)
+The Super Admin's **Incentive** page (renamed from *Sales Incentives*; titled **Incentive Management**, button **+ Create Incentive**) also sets
+incentives for Support staff: **For: Support business**.
+- **Who:** a Support department, a Support team, or one person in a Support team (the database refuses anyone else).
+- **What counts as business:** each customer payment Accounts verifies on a customer the person looks after: the customer's owner, or its onboarding
+  team member, when they are in a Support team (`private.support_carers`).
+- **How much:** **Fixed amount per payment**, or **Percentage of each payment** (`amount_type` FIXED / PERCENT, at most 100%). Optional
+  **monthly cap per person** and **monthly business minimum** (`min_monthly_business`): nothing is earned until that person's verified business that office month
+  reaches it; the payment that reaches it and every later one that month earn.
+- **When:** at once, in the same trigger as sales incentives (`private.earn_support_payment`), once per payment and rule (`SUP:<payment>`); reversed when the payment
+  leaves Verified. Credited to the person's Wallet like every incentive. The 15-day start period applies as for sales.
+- **Editing:** a new amount, amount type, minimum or audience starts a new version from now on (earnings already recorded keep their amount); stop and delete work as
+  for other rules. Audited (`INCENTIVE_RULE_CREATED` with `amountType`).
+- Sales, demo and field visit rules are unchanged and always a fixed amount.
+- Tests: `supabase/tests/support_incentives_test.sql`, the Support part of `ui_income.test.mjs`.

@@ -35,7 +35,7 @@ const setup = () => {
     options: admin ? {
       services: [{ code: 'WA_API', name: 'WhatsApp API' }, { code: 'WEB', name: 'Website' }],
       operationsHeads: [{ id: OH, name: 'Omkar Ops' }],
-      departments: [{ id: 'dep-1', name: 'Sales' }], teams: [{ id: 'team-1', name: 'Sales A', departmentId: 'dep-1' }], people: [{ id: 'm1', name: 'Meera Member' }]
+      departments: [{ id: 'dep-1', name: 'Sales' }, { id: 'dep-2', name: 'Support' }], teams: [{ id: 'team-1', name: 'Sales A', departmentId: 'dep-1' }], people: [{ id: 'm1', name: 'Meera Member' }]
     } : null
   };
 };
@@ -51,7 +51,7 @@ const handlers: Record<string, (a: any) => any> = {
     const p = a.p;
     if (p.eventType === 'SALE_PAID' && (!p.serviceCode || !p.scopeValue)) fail('VALIDATION_ERROR: A sales incentive needs a product and the Operations Head it is given to.');
     const id = `r-${++n}`;
-    state.rules.unshift({ id, name: p.name, eventType: p.eventType, serviceCode: p.serviceCode ?? null, amount: p.amount, targetUnits: p.targetUnits ?? null, scopeType: p.scopeType, scopeValue: p.scopeValue, monthlyCap: p.monthlyCap ?? null, endedAt: null, active: true, earned: 0 });
+    state.rules.unshift({ id, name: p.name, eventType: p.eventType, serviceCode: p.serviceCode ?? null, amount: p.amount, targetUnits: p.targetUnits ?? null, scopeType: p.scopeType, scopeValue: p.scopeValue, monthlyCap: p.monthlyCap ?? null, amountType: p.amountType ?? 'FIXED', minMonthlyBusiness: p.minMonthlyBusiness ?? null, endedAt: null, active: true, earned: 0 });
     return id;
   },
   incentive_rule_update: a => {
