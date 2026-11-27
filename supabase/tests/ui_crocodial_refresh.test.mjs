@@ -1,5 +1,5 @@
-// Browser test of the scoped Crocodial refresh (20270204000100): "Refresh My Data" for an employee, "Refresh My Team" for a Team Lead,
-// "Refresh Selected Department" / "Refresh My Departments" for an Operations Head; the request names only a scope (never a person), the
+// Browser test of the scoped Crocodial refresh (20270204000100): "Sync My Data" for an employee, "Sync My Team" for a Team Lead,
+// "Sync Selected Department" / "Sync All My Departments" for an Operations Head; the request names only a scope (never a person), the
 // button follows the request and says "up to date" only when the read has finished, the figures reload, a token problem is reported
 // without details, and an employee without a mapping is told so. Desktop and phone width. The API is a fake.
 import { createRequire } from 'node:module';
@@ -91,11 +91,11 @@ try {
     page.on('pageerror', e => errors.push(String(e)));
     const msg = () => page.getByTestId('croc-refresh-message').first();
 
-    // ---- an employee: Refresh My Data
+    // ---- an employee: Sync My Data
     reset('employee');
     await page.goto(base);
     await page.evaluate(() => window.mountSelf());
-    const btn = page.getByRole('button', { name: 'Refresh My Data' });
+    const btn = page.getByRole('button', { name: 'Sync My Data' });
     await btn.waitFor();
     check(await page.getByTestId('croc-last-synced').first().getByText(/Last synced: 2\d minutes ago/).isVisible(), `${label}: employee: "Last synced" is shown`);
     const loadsBefore = state.activityLoads;
@@ -112,9 +112,9 @@ try {
     reset('employee', 'TOKEN_MISSING');
     await page.goto(base);
     await page.evaluate(() => window.mountSelf());
-    await page.getByRole('button', { name: 'Refresh My Data' }).click();
+    await page.getByRole('button', { name: 'Sync My Data' }).click();
     await page.getByText(/connection needs the administrator/).waitFor({ timeout: 15_000 });
-    check(!(await page.getByText(/CROCODIAL_TOKEN|secret/i).count()) && await page.getByRole('button', { name: 'Refresh My Data' }).isEnabled(),
+    check(!(await page.getByText(/CROCODIAL_TOKEN|secret/i).count()) && await page.getByRole('button', { name: 'Sync My Data' }).isEnabled(),
       `${label}: a token problem is reported to the employee without details`);
 
     // not connected
@@ -130,14 +130,14 @@ try {
     await page.waitForTimeout(500);
     check(!(await page.getByTestId('croc-not-connected').count()) && !(await page.getByTestId('crocodial-activity').count()), `${label}: outside the rollout nothing is shown`);
 
-    // ---- a Team Lead: Refresh My Team
+    // ---- a Team Lead: Sync My Team
     reset('lead');
     await page.goto(base);
     await page.evaluate(() => window.mountTeam());
-    await page.getByRole('button', { name: 'Refresh My Team' }).waitFor();
+    await page.getByRole('button', { name: 'Sync My Team' }).waitFor();
     check(await page.getByText(/My Team Crocodial Activity/).isVisible() && await page.getByTestId('croc-refresh-bar').getByText(/Connected employees: 2/).isVisible()
-      && !(await page.getByRole('button', { name: 'Refresh My Data' }).count()), `${label}: Team Lead: team count, Refresh My Team, no Refresh My Data without a mapping`);
-    await page.getByRole('button', { name: 'Refresh My Team' }).click();
+      && !(await page.getByRole('button', { name: 'Sync My Data' }).count()), `${label}: Team Lead: team count, Sync My Team, no Sync My Data without a mapping`);
+    await page.getByRole('button', { name: 'Sync My Team' }).click();
     await page.getByText('Your team’s Crocodial data is up to date.').waitFor({ timeout: 15_000 });
     check(JSON.stringify(state.posts[0]) === '{"scope":"TEAM"}', `${label}: Team Lead: the request is the TEAM scope only`, state.posts);
 
@@ -145,21 +145,21 @@ try {
     reset('ops');
     await page.goto(base);
     await page.evaluate(() => window.mountTeam());
-    await page.getByRole('button', { name: 'Refresh My Departments' }).waitFor();
-    check(await page.getByText(/Operations Crocodial Activity/).isVisible() && await page.getByText(/Authorized departments: 2 · Connected employees: 3/).isVisible(),
+    await page.getByRole('button', { name: 'Sync All My Departments' }).waitFor();
+    check(await page.getByText(/CEO Crocodial Activity/).isVisible() && await page.getByText(/Authorized departments: 2 · Connected employees: 3/).isVisible(),
       `${label}: Operations Head: departments and connected employees from approved mappings`);
     await page.getByLabel('Department').selectOption(D2);
-    await page.getByRole('button', { name: 'Refresh Selected Department' }).waitFor();
+    await page.getByRole('button', { name: 'Sync Selected Department' }).waitFor();
     await page.waitForTimeout(300);
     const lastTeam = [...state.calls].reverse().find(c => c.path === '/crocodial/team-activity');
     check(lastTeam.query.departmentId === D2, `${label}: choosing a department filters the figures`, lastTeam.query);
-    await page.getByRole('button', { name: 'Refresh Selected Department' }).click();
+    await page.getByRole('button', { name: 'Sync Selected Department' }).click();
     await page.getByText('This department’s Crocodial data is up to date.').waitFor({ timeout: 15_000 });
-    check(JSON.stringify(state.posts[0]) === JSON.stringify({ scope: 'DEPARTMENT', departmentId: D2 }), `${label}: Refresh Selected Department sends that department (checked by the database)`, state.posts);
+    check(JSON.stringify(state.posts[0]) === JSON.stringify({ scope: 'DEPARTMENT', departmentId: D2 }), `${label}: Sync Selected Department sends that department (checked by the database)`, state.posts);
     state.polls = 0;
-    await page.getByRole('button', { name: 'Refresh My Departments' }).click();
+    await page.getByRole('button', { name: 'Sync All My Departments' }).click();
     await page.getByText('Crocodial data for your departments is up to date.').waitFor({ timeout: 15_000 });
-    check(JSON.stringify(state.posts[1]) === '{"scope":"ALL"}', `${label}: Refresh My Departments`, state.posts);
+    check(JSON.stringify(state.posts[1]) === '{"scope":"ALL"}', `${label}: Sync All My Departments`, state.posts);
     check(errors.length === 0, `${label}: no script errors`, errors);
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${label}: the page does not scroll sideways`);
     await ctx.close();

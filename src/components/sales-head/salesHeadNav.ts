@@ -76,7 +76,8 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
         label: 'Crocodial',
         items: [
           ...(o.crocodialSelf ? [{ id: 'crocodial-me', label: 'My Crocodial Activity', icon: PhoneCall }, { id: 'crocodial-leads', label: 'My Crocodial Leads', icon: ListChecks }] : []),
-          ...(o.crocodialTeam ? [{ id: 'crocodial', label: 'Team Crocodial Activity', icon: Users }] : [])
+          // a CEO's overview covers every Sales department they are assigned (department, team and employee drill-down, refresh, sync status)
+          ...(o.crocodialTeam ? [{ id: 'crocodial', label: o.operationsHead ? 'Crocodial Overview' : 'Department Crocodial Activity', icon: Users }] : [])
         ]
       }] : []),
       {

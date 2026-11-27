@@ -171,3 +171,54 @@ Clicking a name opens the person's full-page dashboard at `/sales-head/dashboard
 - The "sales roles API" block of `api_integration.test.ts`.
 - `sales_role_dashboards.test.ts`: the field map against the sync and the tables, addresses, export, roll-ups.
 - `ui_sales_role_dashboards.test.mjs`: the screens.
+
+## Sales CEO → Sales Department Head (migration `20270303000100_sales_ceo_lead_assignment.sql`)
+
+**The bug.** A Sales CEO (a Department Head marked as CEO, with several departments) opening **Leads → Lead Assign** was offered the Team Leads of
+the active department, never the Sales Department Heads: `sales_lead_assignees` / `sales_lead_sheet_assign` only knew the active department.
+
+**Now, for a Sales CEO** (an active CEO with at least one department covered for Sales; a Support-only CEO is refused):
+
+| Step | What happens |
+|---|---|
+| Recipients | The Sales Department Heads of every department the CEO covers for Sales come first (name, department, open leads), then the Sales Team Leads / Team Members of those departments and the active department's Telecallers, as before. Never a Support head, the head of a department they do not cover, another CEO or themselves. A department choice narrows the list when there are several. |
+| Department | Always the recipient's own department, worked out by the database. The browser never sends one (an extra field is refused). A head whose home is another department is not offered, because their leads would land there. |
+| Upload | The same Excel/CSV checks as before: required name, valid phone and e-mail, duplicates in the sheet and in that department's CRM, the same file never twice per department, and a preview that saves nothing. The confirmation shows the recipient, the department and the note. |
+| Commit | The valid rows become leads owned by the Department Head, in that department. Each lead records "assigned by &lt;CEO&gt;"; the sheet keeps the CEO as uploader. The Department Head is notified in the Notification Center ("… assigned to you by &lt;CEO&gt;"). Audit: `SALES_LEAD_SHEET_ASSIGNED` with the department and `byCeo`. |
+| History | The CEO's upload history lists the sheets of their departments (with the department) and any sheet they uploaded. |
+
+**The Department Head's side** (Lead Assign page, **Sheets assigned to you**):
+- Each sheet shows who assigned it and when, how many leads are still with them, and how many were forwarded or converted.
+- **Forward leads** gives the open ones (all, or a number, oldest first) to a Sales Team Lead or Team Member of that department.
+- The same customer records change owner, so nothing is copied. The member is notified, and each lead records `LEAD_FORWARDED`.
+- Audit: `SALES_LEAD_SHEET_FORWARDED`.
+- A single lead can still be reassigned from the lead itself, as before.
+
+**Unchanged:**
+- A Department Head's own Lead Assign (their Team Leads, Team Members and Telecallers).
+- The Telecaller call-list workflow.
+- The rule that a Business Associate, Influencer, Visit Sales or Business Partner is not offered sheets.
+
+**How the owner check allows it.**
+- `private.can_assign_customer_owner` also accepts a head whose scope covers the owner's department for Sales.
+- This applies only inside `sales_lead_sheet_assign` / `sales_sheet_forward`, which set the department for that one transaction.
+- The setting cannot be reached through the API.
+
+**API:**
+- `GET /api/v1/sales-head/received-sheets`
+- `GET /api/v1/sales-head/received-sheets/:id/assignees`
+- `POST /api/v1/sales-head/received-sheets/:id/forward`, with the body `{ assigneeId, count? }`
+
+**Tests:**
+- `supabase/tests/sales_ceo_assignment_test.sql` (39 checks)
+- the "sales CEO API" checks in `api_integration.test.ts`
+- `sales_head_nav.test.ts`
+
+**Rollback.**
+- Redeploy the previous app.
+- To undo the database part, re-run the earlier definitions of:
+  - `sales_lead_assignees`, `sales_lead_sheet_assign`, `sales_lead_sheet_issues` and `sales_lead_sheets_list` from `20270101000400_sales_sheet_upload_members.sql`;
+  - `sales_lead_sheet_source_begin` from `20261121000100_sales_department_head.sql`;
+  - `private.can_assign_customer_owner` from `20261220000200_department_head_leads.sql`;
+  - `croc_refresh_capabilities` from `20270204000100_crocodial_scoped_refresh.sql`.
+- The new functions can stay unused.

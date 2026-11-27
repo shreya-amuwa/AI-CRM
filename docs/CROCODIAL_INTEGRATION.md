@@ -140,6 +140,23 @@ they could already see (`private.croc_can_view`, unchanged): refreshing never wi
 - **API:** `GET /api/v1/crocodial/refresh-capabilities`, `POST /api/v1/crocodial/refresh` (`{ scope, departmentId? }`),
   `GET /api/v1/crocodial/refresh/:id`, and (Super Admin) `GET /api/v1/crocodial/connection-health`.
 
+## Sales CEO access and "Sync" buttons (migration `20270303000100_sales_ceo_lead_assignment.sql`)
+
+The buttons are now called **Sync**: Sync My Data, Sync My Team (Team Lead), Sync Department Data (Department Head), Sync Selected Department and
+Sync All My Departments (CEO; the Super Admin's is Sync All Departments). The rules above are unchanged; this only fixes when the menu shows.
+
+- **Before:** the dashboards showed the Crocodial menu only when today's team figures had a connected person, and `rollout` looked at the
+  person's home department only. A CEO whose home department is not M Pillar, or whose people were not mapped yet, lost the whole menu, and a
+  failed request hid it too.
+- **Now:** `croc_refresh_capabilities` also returns `eligible` and `enabledDepartments` (the Sales departments with Crocodial switched on that
+  the caller covers through their home, team, Department Head scopes or CEO departments). The menu (`useCrocodialNav`) shows for a manager
+  whenever `eligible` is true, even with nobody connected and without a mapping of their own; it is reloaded when the active department
+  changes. A failed request keeps a manager's menu, and the page shows the error and Try again. An empty overview says which departments have
+  Crocodial on and that the employees' accounts still need approval.
+- **CEO menu:** "Crocodial Overview" (all their Sales departments, a department choice, team and employee drill-down, Sync buttons); a
+  Department Head's entry is "Department Crocodial Activity". "My Crocodial Activity" / "My Crocodial Leads" appear only with a mapping.
+- **A Support-only CEO** covers no Sales department: no menu, and a refresh is refused ("Nobody you oversee here is connected").
+
 ## How the client talks to Crocodial (`server/crocodial/client.ts`)
 
 - **Requests.** GET only, to `https://app.crocodial.app/api/datalake/outbound`. The token goes in the `Authorization: Bearer` header only.
@@ -452,7 +469,7 @@ yet (phase 2). When they are built, they will read calls and demos only through 
 
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`, then `20270303000100_sales_ceo_lead_assignment.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.
