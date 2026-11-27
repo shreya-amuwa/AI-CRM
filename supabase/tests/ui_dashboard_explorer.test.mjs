@@ -162,6 +162,8 @@ try {
   check(cleared, 'Reset demo data throws the simulated change away');
 
   // ---- Suggest Improvement --------------------------------------------------------------------------------------------------------
+  // the frame reports its page within 350 ms of a change; wait for the dashboard's page (not the "/" the preview starts from)
+  await toolbar.getByText(/Page: Dashboard/).waitFor({ timeout: 10000 });
   await page.getByRole('button', { name: 'Suggest improvement' }).click();
   const dialog = page.getByRole('dialog', { name: 'Suggest an improvement' });
   await dialog.waitFor();

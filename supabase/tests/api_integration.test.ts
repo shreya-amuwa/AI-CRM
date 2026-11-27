@@ -13471,6 +13471,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     mailMock.close();
     for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'AUTOMATION_DISPATCH_SECRET']) delete process.env[k];
   }
+}
+
 // --- Dashboard Explorer (migration 20270225000100): the Managing Director's preview audit and improvement requests; everyone else refused ---
 {
   let r = await api('sa', 'POST', '/dashboard-explorer/sessions', { dashboardId: 'support-department-head', department: 'mpillar', scenario: 'normal' });
