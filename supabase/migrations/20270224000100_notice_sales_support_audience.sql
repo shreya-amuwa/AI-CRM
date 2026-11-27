@@ -1,5 +1,5 @@
 -- =============================================================================
--- Notice Board: "Sales" and "Support" audiences (docs/NOTICE_BOARD.md). Run after 20270222000100_wallet_pin.sql. Additive and safe to run twice.
+-- Notice Board: "Sales" and "Support" audiences (docs/NOTICE_BOARD.md). Run after 20270223000100_department_hr_and_confirmation_email.sql. Additive and safe to run twice.
 --
 -- Send Notice gets two more audiences next to Entire company / Departments / Designations / Selected employees:
 --   SALES    one department's Sales function: every Sales employee of that department, or only the ones the publisher ticks;
@@ -83,7 +83,7 @@ returns table (profile_id uuid) language sql stable security definer set search_
                                  or ('OPERATIONS_HEAD' = any (p_roles) and p.role = 'DEPARTMENT_HEAD' and p.is_operations_head)
                                  or ('HR' = any (p_roles) and exists (select 1 from public.departments d where d.id = p.department_id and d.slug = 'hr')))
            when 'EMPLOYEES' then p.id = any (p_employees)
-           -- (20270223000100) one function of one department, optionally only the ticked people of it
+           -- (20270224000100) one function of one department, optionally only the ticked people of it
            when 'SALES' then p.id in (select m.profile_id from unnest(p_departments) x(id) cross join lateral private.notice_division_members(x.id, 'SALES') m)
                              and (cardinality(p_employees) = 0 or p.id = any (p_employees))
            when 'SUPPORT' then p.id in (select m.profile_id from unnest(p_departments) x(id) cross join lateral private.notice_division_members(x.id, 'SUPPORT') m)
@@ -102,7 +102,7 @@ returns boolean language sql stable security definer set search_path = '' as $$
     or coalesce(private.notice_publisher_role() = 'SUPER_ADMIN', false)
     or (n.status <> 'SCHEDULED' and exists (select 1 from public.company_notice_recipients r where r.notice_id = n.id and r.profile_id = auth.uid()))
     -- the other publishers see the company's notices (not one addressed to selected employees only)
-    -- (20270223000100) nor a Sales / Support notice for ticked employees only
+    -- (20270224000100) nor a Sales / Support notice for ticked employees only
     or (n.status <> 'SCHEDULED' and n.audience_type <> 'EMPLOYEES' and cardinality(n.audience_employees) = 0 and private.notice_publisher_role() is not null)), false)
 $$;
 
@@ -115,7 +115,7 @@ begin
   select * into n from public.company_notices where id = p_id;
   -- (20270202000100) the notice managers (Super Admin, HR, CRM team) see the receipts of every company-wide notice, and of their own
   -- (20270205000100) a deleted notice is not found
-  -- (20270223000100) a Sales / Support notice for ticked employees only counts as "selected employees"
+  -- (20270224000100) a Sales / Support notice for ticked employees only counts as "selected employees"
   if n.id is null or n.status = 'DELETED' or not (n.publisher_id = auth.uid() or coalesce(private.notice_publisher_role() = 'SUPER_ADMIN', false)
                           or (private.notice_publisher_role() is not null and n.audience_type <> 'EMPLOYEES' and cardinality(n.audience_employees) = 0)) then
     raise exception 'NOT_FOUND: Notice not found.' using errcode = 'P0002';
@@ -176,13 +176,13 @@ begin
                      'departmentId', private.base_department(p.department_id)) order by p.full_name)
                    from public.profiles p where p.status = 'ACTIVE' and p.id <> auth.uid()
                    ), '[]'::jsonb),
-    -- (20270223000100) the Sales / Support departments, each with the people of that function (read live: a new department or employee shows at once)
+    -- (20270224000100) the Sales / Support departments, each with the people of that function (read live: a new department or employee shows at once)
     'sales', private.notice_division_options('SALES'),
     'support', private.notice_division_options('SUPPORT'));
 end $$;
 
 -- ---------------------------------------------------------------------------
--- 6. Publishing (copy of 20270131000200; changed where marked 20270223000100)
+-- 6. Publishing (copy of 20270131000200; changed where marked 20270224000100)
 -- ---------------------------------------------------------------------------
 create or replace function public.notice_publish(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -232,7 +232,7 @@ begin
   if exists (select 1 from unnest(v_emps) e where not exists (select 1 from public.profiles x where x.id = e and x.status = 'ACTIVE')) then
     raise exception 'VALIDATION_ERROR: Choose the employees from the list.' using errcode = '22023';
   end if;
-  -- (20270223000100) Sales / Support: one department of that function; ticked people only from its function
+  -- (20270224000100) Sales / Support: one department of that function; ticked people only from its function
   if v_type in ('SALES', 'SUPPORT') then
     if cardinality(v_depts) <> 1 then
       raise exception 'VALIDATION_ERROR: Choose one % department.', initcap(v_type) using errcode = '22023';

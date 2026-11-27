@@ -1,5 +1,5 @@
 -- =============================================================================
--- Notice Board: the Sales and Support audiences (migration 20270223000100).
+-- Notice Board: the Sales and Support audiences (migration 20270224000100).
 -- Runs after notice_board_delete_test.sql. Uses the people of earlier suites: sa (Super Admin), hr_head (HR), dv_ashish (CRM team), tm_a / th_wab (Wabastore
 -- Sales), dh_wbx (Whatsbox Department Head, no side set), ga_s / ga_p / ds_s / ds_p (D Talk Sales / Support heads and members, department_scopes_test) and
 -- creates its own Whatsbox people (ns_*). Own notices have titles 'NS %'. "22023" -> HTTP 422, "42501" -> 403, "P0002" -> 404.
@@ -10,8 +10,8 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 -- earlier suites run older copies of the notice functions again: this migration is applied last, twice (it must be safe to run twice)
-\i supabase/migrations/20270223000100_notice_sales_support_audience.sql
-\i supabase/migrations/20270223000100_notice_sales_support_audience.sql
+\i supabase/migrations/20270224000100_notice_sales_support_audience.sql
+\i supabase/migrations/20270224000100_notice_sales_support_audience.sql
 delete from company_notices where title like 'NS %';
 create or replace function test.ns_fail(p_sql text, p_label text, p_state text) returns void language plpgsql as $$
 begin

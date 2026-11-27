@@ -21,7 +21,7 @@ check(!noticePublishSchema.safeParse({ ...base, audienceType: 'ROLE' }).success 
 check(!noticePublishSchema.safeParse({ ...base, audienceType: 'ROLE', roles: ['CEO'] }).success, 'only the known designations');
 check(!noticePublishSchema.safeParse({ ...base, audienceType: 'EMPLOYEES' }).success && noticePublishSchema.safeParse({ ...base, audienceType: 'EMPLOYEES', employeeIds: [id] }).success,
   'selected employees: at least one');
-// Sales / Support (20270223000100): exactly one department; the ticked team members are optional (none = the whole function)
+// Sales / Support (20270224000100): exactly one department; the ticked team members are optional (none = the whole function)
 const id2 = '22222222-2222-4222-8222-222222222222';
 for (const t of ['SALES', 'SUPPORT']) {
   check(!noticePublishSchema.safeParse({ ...base, audienceType: t }).success && !noticePublishSchema.safeParse({ ...base, audienceType: t, departmentIds: [id, id2] }).success

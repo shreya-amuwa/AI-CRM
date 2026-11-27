@@ -193,7 +193,14 @@ export const customerActivityCreateSchema = z
 export const assignableRoleSchema = z.enum(['DEPARTMENT_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER']);
 
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
-export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member', 'HR Assistant', 'HR Recruiter', 'HR Admin Head'] as const;
+export const DESIGNATIONS = ['Operations Head', 'Department Head', 'Team Lead', 'Team Member', 'HR Assistant', 'HR Recruiter', 'HR Admin Head', 'Department HR'] as const;
+/**
+ * Department HR ("HR (Digitree)", migration 20270223000100): the HR of ONE business department. Stored as a Team Member placed in that department's
+ * General HR team; their HR scope is that department only (the database filters every HR function it opens for them). Only the Super Admin creates one.
+ */
+export const DEPARTMENT_HR_DESIGNATION = 'Department HR' as const;
+/** The departments the Super Admin's form offers a Department HR for, with the team the member is placed in (created by the migration). */
+export const DEPARTMENT_HR_OPTIONS = [{ departmentSlug: 'digitree', label: 'HR (Digitree)', teamName: 'Digitree HR' }] as const;
 /**
  * The three designations of the HR department, and the existing role each one is (no new role system): HR Assistant and HR Recruiter are Team Members of HR,
  * HR Admin Head is the Department Head of HR. The database enforces the same rule (private.designation_problem); this copy lets the forms and the server say it first.
@@ -209,6 +216,10 @@ export const HR_DESIGNATION_ROLE: Record<HrDesignation, 'TEAM_MEMBER' | 'DEPARTM
  */
 export function designationProblem(a: { departmentSlug?: string | null; role: string; designation?: string | null; operationsHead?: boolean }): string | null {
   const { departmentSlug, role, designation, operationsHead } = a;
+  if (designation === DEPARTMENT_HR_DESIGNATION) {
+    if (!departmentSlug || departmentSlug === 'hr' || departmentSlug === 'accounts') return 'HR (department) is for an HR employee placed in one business department (for example Digitree), not in HR or Accounts.';
+    return role === 'TEAM_MEMBER' && !operationsHead ? null : 'HR (department) is a designation of a Team Member.';
+  }
   if (!designation) return departmentSlug === 'hr' && !operationsHead ? 'Choose HR Assistant, HR Recruiter or HR Admin Head for an HR employee.' : null;
   if (isHrDesignation(designation)) {
     if (departmentSlug !== 'hr') return 'HR Assistant, HR Recruiter and HR Admin Head are designations of the HR department only.';
@@ -3782,7 +3793,7 @@ export const NOTICE_CATEGORY_LABELS: Record<(typeof NOTICE_CATEGORIES)[number], 
   GENERAL: 'General', HR: 'HR', POLICY: 'Policy', EVENT: 'Event', HOLIDAY: 'Holiday / office closure', IT_SYSTEM: 'IT / CRM', OPERATIONS: 'Operations', OTHER: 'Other'
 };
 export const NOTICE_PRIORITIES = ['NORMAL', 'IMPORTANT', 'URGENT'] as const;
-// SALES / SUPPORT (20270223000100): one department's Sales or Support function, optionally only the ticked employees of it
+// SALES / SUPPORT (20270224000100): one department's Sales or Support function, optionally only the ticked employees of it
 export const NOTICE_AUDIENCES = ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES', 'SALES', 'SUPPORT'] as const;
 export const NOTICE_ROLES = ['DEPARTMENT_HEAD', 'OPERATIONS_HEAD', 'TEAM_HEAD', 'TEAM_MEMBER', 'HR', 'SUPER_ADMIN'] as const;
 const noticeTime = z.preprocess(v => (v === '' ? null : v), z.string().datetime({ offset: true, message: 'Enter a date and time.' }).nullable().optional());

@@ -19,7 +19,7 @@ const PEOPLE = [
   { id: '00000000-0000-4000-8000-0000000000e3', name: 'Anita Accounts', role: 'TEAM_MEMBER', department: 'Accounts', departmentId: '00000000-0000-4000-8000-00000000d002' }
 ];
 const DEPTS = [{ id: '00000000-0000-4000-8000-00000000d001', name: 'Wabastore' }, { id: '00000000-0000-4000-8000-00000000d002', name: 'Accounts' }];
-// Sales / Support (20270223000100): Wabastore's Sales function is Priya, its Support function Ravi; Accounts has neither
+// Sales / Support (20270224000100): Wabastore's Sales function is Priya, its Support function Ravi; Accounts has neither
 const DIVISIONS: Record<string, { id: string; name: string; employees: { id: string; name: string; role: string; team: string }[] }[]> = {
   SALES: [{ id: DEPTS[0].id, name: 'Wabastore', employees: [{ id: PEOPLE[0].id, name: PEOPLE[0].name, role: 'TEAM_MEMBER', team: 'Sales' }] }],
   SUPPORT: [{ id: DEPTS[0].id, name: 'Wabastore', employees: [{ id: PEOPLE[1].id, name: PEOPLE[1].name, role: 'TEAM_MEMBER', team: 'Support' }] }]

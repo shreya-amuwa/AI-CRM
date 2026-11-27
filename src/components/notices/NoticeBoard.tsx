@@ -302,7 +302,7 @@ const SendNotice: React.FC<{ options: NoticeAudienceOptions; onOpen: (id: string
   const [roles, setRoles] = useState<string[]>([]);
   const [emps, setEmps] = useState<string[]>([]);
   const [empSearch, setEmpSearch] = useState('');
-  // Sales / Support (20270223000100): one department of that function, then the whole function or only the ticked team members
+  // Sales / Support (20270224000100): one department of that function, then the whole function or only the ticked team members
   const [divDept, setDivDept] = useState('');
   const [divWhole, setDivWhole] = useState(true);
   const [divEmps, setDivEmps] = useState<string[]>([]);

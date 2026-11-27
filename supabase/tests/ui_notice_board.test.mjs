@@ -225,7 +225,7 @@ try {
   check(!(await page.locator('[role="tab"]:has-text("Today\'s overview")').count()), 'an employee has no Today\'s overview');
   await page.close();
 
-  // ---- Sales and Support (20270223000100): the Super Admin, HR and the CRM team each get the two new audiences
+  // ---- Sales and Support (20270224000100): the Super Admin, HR and the CRM team each get the two new audiences
   for (const who of ['sa', 'hr', 'crm']) {
     const pg = await newPage();
     await mount(pg, who);

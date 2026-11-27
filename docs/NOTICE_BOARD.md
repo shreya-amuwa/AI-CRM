@@ -83,7 +83,7 @@ Migration `20270202000100_notice_board_restricted_popup.sql` (after `20270131000
 - **Final.** A deleted notice cannot come back: a trigger refuses any later change, so edit, archive and a release of a scheduled notice cannot revive it. There is no undo in the screen; the record stays in the database, so a deletion made by mistake can be restored by a database administrator by hand (the guard trigger `company_notices_deleted_final` has to be switched off for that update).
 - **Repeat.** Deleting again answers `alreadyDeleted: true` (a double click or a retry is not an error).
 
-## Sales and Support audiences (migration `20270223000100_notice_sales_support_audience.sql`)
+## Sales and Support audiences (migration `20270224000100_notice_sales_support_audience.sql`)
 
 - **Where.** *Send Notice > Target audience* has two more choices next to Entire company, Specific departments, Specific designations and Selected employees: **Sales** and **Support**. They are the same for the Super Admin, HR and the CRM team; who may publish is unchanged.
 - **Flow.** Choose Sales (or Support), then a department from the dropdown. The employees of that department's Sales (Support) function are listed. Send to the **entire Sales (Support) team of the department**, or choose **Only selected team members** and tick them. Choosing "only selected" without ticking anyone is refused in the form (an empty list would mean the whole team).

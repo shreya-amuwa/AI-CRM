@@ -16,7 +16,8 @@ import {
   uuidSchema,
   verifierDepartmentsSchema,
   offboardSchema,
-  reassignResolveSchema
+  reassignResolveSchema,
+  DEPARTMENT_HR_DESIGNATION
 } from '../../shared/validation.js';
 import type { Actor } from '../auth/authenticate.js';
 import { assertCanAssignRole, assertManager, assertNotSuperAdminTarget } from '../authz/policies.js';
@@ -79,6 +80,10 @@ export class UserService {
     else await this.profiles.assertCanCreate(input.role, input.departmentId, input.teamId, input.headDivision);
     // The department decides the designations: an HR employee is an HR Assistant, an HR Recruiter or an HR Admin Head (the Department Head of HR) and nothing
     // else, and an HR designation is refused anywhere else. Checked by the database BEFORE the account exists (and again when the details are saved).
+    // Department HR (e.g. HR (Digitree)): HR access to one department, so only the Super Admin gives it (the database checks the caller again).
+    if (input.details?.designation === DEPARTMENT_HR_DESIGNATION && actor.role !== 'SUPER_ADMIN') {
+      throw new AppError('FORBIDDEN', 'Only the Super Admin can create a department HR member.');
+    }
     await this.profiles.assertDesignationAllowed({ role: input.role, departmentId: homeDepartment, teamId: input.teamId, designation: input.details?.designation, operationsHead: input.operationsHead });
     // AI Studio: a new Team Lead / Team Member needs a project (and a Team Member a Team Lead on it), checked BEFORE the account exists. Nothing happens
     // for another department.

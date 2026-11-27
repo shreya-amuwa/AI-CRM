@@ -858,7 +858,10 @@ export const hrApi = {
   // Probation confirmation approvals (HR staff only). The HR e-mails themselves are sent by the server's daily scheduler.
   probation: () => api.get<HrProbationCycle[]>('/hr/email-automation/probation'),
   confirmProbation: (id: string, body: { effectiveDate?: string; note?: string } = {}) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/confirm`, body),
-  dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note })
+  dismissProbation: (id: string, note: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/dismiss`, { note }),
+  // the employee is Confirmed only once their confirmation e-mail is sent (20270223000100): retry it, or remind the approvers of an overdue one
+  retryProbationEmail: (id: string) => api.post<HrProbationCycle>(`/hr/email-automation/probation/${id}/retry-email`, {}),
+  remindOverdueProbation: (id: string) => api.post<HrProbationCycle & { reminded: number }>(`/hr/email-automation/probation/${id}/remind-overdue`, {})
 };
 
 /** NDA and Experience Letter: made by the server on the official templates, kept per employee (HR staff only). */

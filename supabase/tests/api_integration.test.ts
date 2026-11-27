@@ -5715,7 +5715,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, { effectiveDate: 'soon' });
   check(r.status === 422, 'HR automation API: an invalid date is refused', r);
   r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, { note: 'Reviewed with the Department Head' });
-  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.approvedAt && r.json.data.note === 'Reviewed with the Department Head', 'HR automation API: HR approves the confirmation (date and status recorded)', r);
+  // the employee is Confirmed only once the confirmation e-mail is sent (20270223000100): before the end date it waits, CONFIRMING
+  check(r.status === 200 && r.json.data.status === 'CONFIRMING' && r.json.data.approvedAt && r.json.data.note === 'Reviewed with the Department Head' && r.json.data.email?.status === 'PENDING',
+    'HR automation API: HR approves the confirmation (date recorded; confirmed once the e-mail is sent)', r);
   check(hrMail('hrbd.prob@example.com', 'Employment Confirmation – Amuwa Corporation').length === 0, 'HR automation API: the confirmation e-mail waits for the end of the probation period');
   await db.query(`update public.hr_email_events set send_after = now() - interval '1 minute' where kind in ('CONFIRMATION_EMPLOYEE', 'CONFIRMATION_HR') and status = 'PENDING'`);
   await hrRun();
@@ -13318,7 +13320,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
-// --- Notice Board: Sales and Support audiences (migration 20270223000100) ---
+// --- Notice Board: Sales and Support audiences (migration 20270224000100) ---
 {
   const key = () => `nsx-${crypto.randomUUID().slice(0, 18)}`;
   const people = (await db.query(`select p.id, private.base_department(t.department_id) dept, t.division::text division from public.profiles p join public.teams t on t.id = p.team_id
@@ -13364,6 +13366,111 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('a', 'GET', `/notices/${supportNotice}`);
   check(r.status === 404, 'notice Sales/Support API: the Sales member cannot open the Support notice (404)', r);
   await db.query(`delete from public.company_notices where title like 'NSX %'`);
+}
+
+// ---------------------------------------------------------------------------
+// Department HR ("HR (Digitree)", 20270223000100): Digitree only, created by the Super Admin; and a probation confirmation that is completed only
+// after its e-mail is sent (a local mock stands in for the e-mail provider: nothing real is sent).
+// ---------------------------------------------------------------------------
+{
+  const outbox: { path: string; body: any }[] = [];
+  const failNext: Record<string, number[]> = {};
+  const mailMock = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', c => (raw += c));
+    req.on('end', () => {
+      const path = (req.url || '').split('?')[0];
+      outbox.push({ path, body: raw ? JSON.parse(raw) : null });
+      const status = failNext[path]?.shift() ?? 200;
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(status < 300 ? { id: `dhr-msg-${outbox.length}` } : { message: 'Refused' }));
+    });
+  });
+  await new Promise<void>(rs => mailMock.listen(0, rs));
+  Object.assign(process.env, {
+    AUTOMATION_MODE: 'live', EMAIL_PROVIDER: 'resend', EMAIL_API_KEY: 're_dhr_secret_key', EMAIL_API_BASE_URL: `http://127.0.0.1:${(mailMock.address() as any).port}`,
+    EMAIL_FROM: 'Amuwa Corporation <meta@amuwa.com>', AUTOMATION_DISPATCH_SECRET: 'dispatch-secret-0123456789'
+  });
+  const mailsTo = (to: string, subjectPart: string) => outbox.filter(o => o.path === '/emails' && o.body?.to?.[0] === to && String(o.body?.subject).includes(subjectPart));
+  try {
+    // earlier sections use up the e-mail provider's recorded quota / pause in this test database: start this section with a fresh provider state
+    await db.query(`update public.email_provider_state set paused_until = null`);
+    await db.query(`delete from public.email_usage_daily`);
+    const { rows: [dig] } = await db.query(`select id from public.departments where slug = 'digitree'`);
+    const { rows: [digHr] } = await db.query(`select id from public.teams where department_id = $1 and name = 'Digitree HR'`, [dig.id]);
+    const { rows: [digSales] } = await db.query(`select id from public.teams where department_id = $1 and division = 'SALES' order by created_at limit 1`, [dig.id]);
+    const det = (designation: string, phone: string) => ({ designation, joiningDate: '2025-01-05', dateOfBirth: '1991-05-06', bloodGroup: 'O+', contactNumber: phone, emergencyContact: '+91 98765 43211' });
+    const body = { email: 'dhr.api@amuwa.com', fullName: 'Digitree HR Api', password: 'Sup3rSecret!', role: 'TEAM_MEMBER' };
+
+    let r = await api('dh', 'POST', '/users', { ...body, teamId: digHr.id, details: det('Department HR', '+91 99887 76601') });
+    check(r.status === 403 && (await db.query(`select 1 from public.profiles where email = 'dhr.api@amuwa.com'`)).rowCount === 0, 'Department HR: only the Super Admin can create one (no account is left)', r);
+    r = await api('sa', 'POST', '/users', { ...body, teamId: digSales.id, details: det('Department HR', '+91 99887 76601') });
+    check(r.status === 422, 'Department HR: never in a Sales team', r);
+    r = await api('sa', 'POST', '/users', { ...body, teamId: digHr.id, details: det('Department HR', '+91 99887 76601') });
+    check(r.status === 201 && r.json.data.department?.slug === 'digitree' && r.json.data.hrSubRole === 'HR_DEPARTMENT' && r.json.data.defaultDashboard === 'hr-department',
+      'Department HR: the Super Admin creates HR (Digitree): placed in Digitree, the department HR dashboard', r);
+    tokens.set('dhr', tokenFor(r.json.data.id));
+
+    // two overdue confirmations (Digitree, Wabastore): Digitree's employee is a real account so the e-mail has an address
+    // the joining date matches the cycle's (the scheduler closes a cycle whose employee's joining date differs)
+    const { rows: [{ joined }] } = await db.query(`select to_char(private.hr_today() - 200, 'YYYY-MM-DD') as joined`);
+    r = await api('sa', 'POST', '/users', { email: 'dig.api.emp@example.com', fullName: 'Digi Api Emp', password: 'Sup3rSecret!', role: 'TEAM_MEMBER', teamId: digSales.id, details: { ...det('Team Member', '+91 99887 76602'), joiningDate: joined } });
+    check(r.status === 201, 'Department HR: a Digitree employee exists', r);
+    const empId = r.json.data.id;
+    await db.query(`insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date, probation_end)
+                    values ($1::text, $3::uuid, 'Digi Api Emp', 'dig.api.emp@example.com', 'DIG-API', $2, 'Digitree Infotech', private.hr_today() - 200, private.hr_today() - 9),
+                           ('HR:API-WAB', null, 'Waba Api Emp', 'waba.api.emp@example.com', 'WAB-API', (select id from public.departments where slug = 'wabastore'), 'Wabastore', private.hr_today() - 200, private.hr_today() - 9)`,
+      [empId, dig.id, empId]);
+    r = await api('dhr', 'GET', '/hr/email-automation/probation');
+    const mine = r.json.data?.find((c: any) => c.employeeName === 'Digi Api Emp');
+    check(r.status === 200 && r.json.data.length >= 1 && r.json.data.every((c: any) => c.department === 'Digitree Infotech') && mine?.overdue === true && mine.canDecide === true,
+      'Department HR API: the probation list holds Digitree only, the overdue employee is decidable', r.json);
+    const wab = (await db.query(`select id from public.hr_probation_cycles where employee_key = 'HR:API-WAB'`)).rows[0].id;
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${wab}/confirm`, {});
+    check(r.status === 403, 'Department HR API: another department\'s confirmation cannot be confirmed by its id', r);
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${wab}/remind-overdue`, {});
+    check(r.status === 403, 'Department HR API: nor reminded', r);
+    r = await api('dhr', 'GET', '/hr/email-automation/probation', undefined, undefined, { 'X-Active-Department': (await db.query(`select id from public.departments where slug = 'wabastore'`)).rows[0].id });
+    check(r.status === 200 && r.json.data.every((c: any) => c.department === 'Digitree Infotech'), 'Department HR API: a department header changes nothing', r.json);
+    for (const path of ['/hr/email-automation/overview', '/hr/email-automation/history', '/hr/paid-leave']) {
+      r = await api('dhr', 'GET', path);
+      check(r.status === 403, `Department HR API: the company-wide ${path} is refused`, r);
+    }
+    r = await api('hr', 'GET', '/hr/email-automation/probation');
+    check(r.status === 200 && r.json.data.some((c: any) => c.department === 'Digitree Infotech') && r.json.data.some((c: any) => c.department === 'Wabastore'),
+      'HR head API: the existing HR head keeps every department and sees Digitree', r.json);
+
+    // the overdue action reminds; it confirms nobody
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/remind-overdue`, {});
+    check((r.status === 200 && r.json.data.reminded >= 1 && r.json.data.status === 'PENDING') || (r.status === 422 && /no active Department Head/.test(r.json.error.message)),
+      'Department HR API: the overdue reminder goes to the Department Head (or says there is none) and confirms nobody', r);
+
+    // Confirm, the e-mail provider refuses: NOT confirmed, still overdue, the reason is shown
+    failNext['/emails'] = [422];
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/confirm`, { note: 'Reviewed with the Digitree head' });
+    check(r.status === 200 && r.json.data.status === 'CONFIRMING' && r.json.data.overdue === true && r.json.data.email?.status === 'FAILED' && /422/.test(r.json.data.email.error),
+      'Department HR API: when the confirmation e-mail fails, the employee is not confirmed and stays overdue', r);
+    check((await db.query(`select status from public.hr_probation_cycles where id = $1`, [mine.id])).rows[0].status === 'CONFIRMING', 'Department HR API: and the database agrees');
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/confirm`, {});
+    check(r.status === 409, 'Department HR API: clicking Confirm again is refused (no second confirmation)', r);
+
+    // Retry: the same e-mail goes out, then the employee is confirmed and leaves the overdue list
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/retry-email`, {});
+    check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.overdue === false && r.json.data.email?.status === 'SENT',
+      'Department HR API: Retry sends the confirmation e-mail, and only then is the employee confirmed', r);
+    const sent = mailsTo('dig.api.emp@example.com', 'Employment Confirmation');
+    check(sent.length === 2, 'Department HR API: two requests reached the provider for the employee (the refused one and the delivery)', sent.length);
+    r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/retry-email`, {});
+    check(r.status === 200 && r.json.data.status === 'APPROVED', 'Department HR API: a late Retry click changes nothing', r);
+    await dispatch('dispatch-secret-0123456789');
+    check(mailsTo('dig.api.emp@example.com', 'Employment Confirmation').length === 2 && (await db.query(`select count(*)::int as n from public.hr_email_events where event_key = $1`, [`CONFIRMATION_EMPLOYEE:${mine.id}`])).rows[0].n === 1,
+      'Department HR API: no duplicate confirmation e-mail, even after the scheduler runs');
+    r = await api('dhr', 'GET', '/hr/email-automation/probation');
+    check(r.json.data.find((c: any) => c.id === mine.id)?.overdue === false, 'Department HR API: the confirmed employee is no longer overdue', r.json);
+  } finally {
+    mailMock.close();
+    for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'AUTOMATION_DISPATCH_SECRET']) delete process.env[k];
+  }
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

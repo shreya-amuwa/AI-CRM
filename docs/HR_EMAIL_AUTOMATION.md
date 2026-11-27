@@ -153,3 +153,22 @@ select kind, recipient_email, status, attempts, last_error, sent_at, send_after
 
 The HR API routes under `/api/v1/hr/email-automation/*` (overview, history, cards, retry, run, data-issues) are kept for scripts and support; no screen calls
 them except the probation list / approve / close.
+
+## Confirmed only after the confirmation e-mail is sent (migration `20270223000100`)
+
+* **Confirm** (HR dashboard > Probation Confirmations) validates the record (still undecided, valid effective date, employee still active), records who
+  and when, and queues the existing confirmation e-mails; the record becomes **CONFIRMING**, not Confirmed. The server sends the e-mails straight away
+  when the probation has ended (otherwise on the end date, as before).
+* The record becomes **Confirmed** (`APPROVED`), the HR record turns Full-Time and `EMPLOYEE_CONFIRMED` is audited **only when the employee's
+  `CONFIRMATION_EMPLOYEE` e-mail is recorded SENT** (trigger on `hr_email_events`), whoever sent it (the click or the scheduler).
+* If the e-mail fails or is skipped, the record stays CONFIRMING and, past its end date, **stays in the overdue list**, with the reason. **Retry e-mail**
+  (`POST /api/v1/hr/email-automation/probation/:id/retry-email`) re-queues the same e-mail row (reading the employee's address again): no second
+  confirmation and no second e-mail can be created (unique event keys, row locks). A second Confirm is refused (409).
+* The confirmation status (`hr_probation_cycles.status`) and the e-mail status (`hr_email_events`) are kept separately; the list shows both
+  (`status`, `email.status`, `email.error`, `overdue`).
+* **Overdue reminder** (beside Confirm, `POST .../probation/:id/remind-overdue`): an in-CRM reminder to the employee's Department Head(s) and the
+  department's HR. It never confirms anybody. An unread reminder is not repeated.
+* **Close** also works for a CONFIRMING record whose e-mail cannot go out; its unsent e-mails are dropped.
+* `AUTOMATION_MODE=dry_run` / `off`: nothing is really sent, so nobody becomes Confirmed; the page says why. Set `live` in production.
+* Paid leave, which starts from the confirmation, follows the same rule (it reads `APPROVED` only).
+* Department HR (for example HR (Digitree), see [DEPARTMENT_HR.md](DEPARTMENT_HR.md)) sees and decides its own department's confirmations only.
