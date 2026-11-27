@@ -6940,6 +6940,65 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 404, 'business associate API: another Business Associate cannot download it', r);
   r = await api('dh', 'GET', `/ba/scope/${scopeId}/file`);
   check(r.status === 200, 'business associate API: the Department Head can', r);
+  // ---- client research on the web (20270225000100): Tavily first, Claude's web search when the Tavily credits are used up
+  {
+    const webCalls: { path: string; body: any; auth: string }[] = [];
+    let tavilyStatus = 200;
+    const web = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', c => chunks.push(c));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+        webCalls.push({ path: req.url || '', body, auth: String(req.headers.authorization || '') });
+        const send = (st: number, x: unknown) => res.writeHead(st, { 'content-type': 'application/json' }).end(JSON.stringify(x));
+        if (req.url === '/search') return tavilyStatus !== 200 ? send(tavilyStatus, { detail: { error: 'limit' } })
+          : send(200, { results: [{ url: 'https://hot.example.com/', title: 'Hot Co', content: 'Hot Co runs restaurants in Pune.' }], usage: { credits: 1 } });
+        if (req.url === '/extract') return send(200, { results: [{ url: 'https://hot.example.com/', raw_content: 'Restaurants with home delivery.' }], usage: { credits: 1 } });
+        const fields = { industry: { value: 'Restaurants', basis: 'VERIFIED', sources: [1] }, marketingChannels: { value: 'Home delivery apps', basis: 'ASSUMPTION', sources: [] } };
+        const sources = body.tools ? [{ url: 'https://hot.example.com/', title: 'Hot Co' }] : undefined;
+        send(200, { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({ summary: 'Restaurants in Pune.', fields, missingInformation: [], sources }) }],
+          usage: { input_tokens: 1000, output_tokens: 200, server_tool_use: body.tools ? { web_search_requests: 2 } : undefined } });
+      });
+    });
+    await new Promise<void>(rs => web.listen(0, '127.0.0.1', rs));
+    const base = `http://127.0.0.1:${(web.address() as any).port}`;
+    Object.assign(process.env, { ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_API_BASE_URL: base, TAVILY_API_KEY: 'tvly-test-key', TAVILY_API_BASE_URL: base });
+    try {
+      r = await api('ba1', 'GET', `/ba/contacts/${contactId}/research`);
+      check(r.status === 200 && r.json.data === null, 'client research API: nothing is stored before the first research', r);
+      r = await api('ba2', 'POST', `/ba/contacts/${contactId}/research`, {});
+      check(r.status === 404 && webCalls.length === 0, 'client research API: another Business Associate cannot research this client (no web call is made)', r);
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: 'yes' });
+      check(r.status === 422, 'client research API: the body is checked', r);
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, {});
+      check(r.status === 200 && r.json.data.provider === 'TAVILY' && !r.json.data.cached && r.json.data.suggestions.fields.industry.value === 'Restaurants'
+        && r.json.data.suggestions.fields.marketingChannels.basis === 'ASSUMPTION' && r.json.data.usage.tavilyCredits === 2, 'client research API: Tavily researches the client for about 2 credits; the suggestions keep Verified / Assumption', r);
+      const sentToWeb = JSON.stringify(webCalls.map(c => c.body));
+      check(webCalls.some(c => c.path === '/search' && c.auth === 'Bearer tvly-test-key') && !/@|9811234|\+91/.test(sentToWeb), 'client research API: the Tavily key is used on the server, and no phone number or e-mail leaves the CRM', sentToWeb.slice(0, 400));
+      const n = webCalls.length;
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, {});
+      check(r.status === 200 && r.json.data.cached && webCalls.length === n, 'client research API: a second click within 30 days returns the stored result with no new web call', r);
+      r = await api('dh', 'GET', `/ba/contacts/${contactId}/research`);
+      check(r.status === 200 && r.json.data?.provider === 'TAVILY', 'client research API: the Department Head can read the last research', r);
+      tavilyStatus = 432;
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: true });
+      check(r.status === 200 && r.json.data.provider === 'CLAUDE' && r.json.data.usage.fallbackReason === 'TAVILY_CREDITS_USED_UP' && r.json.data.usage.claudeWebSearches === 2,
+        'client research API: when the Tavily credits are used up, Claude\'s web search takes over', r);
+      const tavilyCallsBefore = webCalls.filter(c => c.path === '/search').length;
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: true });
+      check(r.status === 200 && r.json.data.provider === 'CLAUDE' && webCalls.filter(c => c.path === '/search').length === tavilyCallsBefore, 'client research API: for the rest of the month Tavily is skipped (no wasted calls)', r);
+      await db.query(`update public.ba_research_state set tavily_paused_until = null`);
+      process.env.BA_RESEARCH_FALLBACK = 'none';
+      r = await api('ba1', 'POST', `/ba/contacts/${contactId}/research`, { force: true });
+      check(r.status === 503 && /used up/.test(r.json.error.message), 'client research API: with the fallback switched off, the user is told the credits are used up', r);
+      check((await db.query(`select tavily_paused_until > now() as p from public.ba_research_state`)).rows[0].p === true, 'client research API: and Tavily is paused even then');
+    } finally {
+      web.close();
+      await db.query(`update public.ba_research_state set tavily_paused_until = null`);
+      await db.query(`delete from public.ba_client_research where contact_id = $1`, [contactId]);
+      for (const k of ['TAVILY_API_KEY', 'TAVILY_API_BASE_URL', 'BA_RESEARCH_FALLBACK']) delete process.env[k];
+    }
+  }
   fake.server.close();
   aiServer.close();
   for (const k of ['STORAGE_PROVIDER', 'R2_ENDPOINT', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET', 'ANTHROPIC_API_KEY', 'ANTHROPIC_API_BASE_URL']) delete process.env[k];
@@ -13245,8 +13304,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     check(r.status === 403, 'task deletion: a Team Member\'s direct API call is rejected (403)', r);
     r = await api('tdOther', 'DELETE', `/work-tasks/${wt.id}`);
     check(r.status === 403 || r.status === 404, 'task deletion: another Team Lead cannot delete it', r);
-    r = await api('sa', 'DELETE', `/work-tasks/${wt.id}`);
-    check(r.status === 403, 'task deletion: the Super Admin\'s access is unchanged (403)', r);
+    // 20270225000100: the Super Admin heads AI Studio and may delete its tasks (this one is kept for the Team Lead below; the full rules are in the block at the end)
+    r = await api('sa', 'GET', `/work-tasks/${wt.id}/delete-preview`);
+    check(r.status === 200 && r.json.data.canDelete === true, 'task deletion: the Super Admin, as AI Studio\'s Department Head, may delete an AI Studio task', r);
     r = await api('tdLead', 'DELETE', '/work-tasks/not-a-uuid');
     check(r.status === 422 || r.status === 400, 'task deletion: a malformed id is refused before the database', r);
     r = await api('tdLead', 'GET', `/work-tasks/${wt.id}/delete-preview`);
@@ -13374,14 +13434,17 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 // ---------------------------------------------------------------------------
 {
   const outbox: { path: string; body: any }[] = [];
-  const failNext: Record<string, number[]> = {};
+  // a refusal aimed at ONE e-mail (recipient + subject): other e-mails sent at the same moment (a reminder, a background notification) must not use it up
+  const failFor: { to: string; subject: string; status: number }[] = [];
   const mailMock = http.createServer((req, res) => {
     let raw = '';
     req.on('data', c => (raw += c));
     req.on('end', () => {
       const path = (req.url || '').split('?')[0];
-      outbox.push({ path, body: raw ? JSON.parse(raw) : null });
-      const status = failNext[path]?.shift() ?? 200;
+      const body = raw ? JSON.parse(raw) : null;
+      outbox.push({ path, body });
+      const hit = path === '/emails' ? failFor.findIndex(f => body?.to?.[0] === f.to && String(body?.subject).includes(f.subject)) : -1;
+      const status = hit >= 0 ? failFor.splice(hit, 1)[0].status : 200;
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(status < 300 ? { id: `dhr-msg-${outbox.length}` } : { message: 'Refused' }));
     });
@@ -13446,7 +13509,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
       'Department HR API: the overdue reminder goes to the Department Head (or says there is none) and confirms nobody', r);
 
     // Confirm, the e-mail provider refuses: NOT confirmed, still overdue, the reason is shown
-    failNext['/emails'] = [422];
+    failFor.push({ to: 'dig.api.emp@example.com', subject: 'Employment Confirmation', status: 422 });
     r = await api('dhr', 'POST', `/hr/email-automation/probation/${mine.id}/confirm`, { note: 'Reviewed with the Digitree head' });
     check(r.status === 200 && r.json.data.status === 'CONFIRMING' && r.json.data.overdue === true && r.json.data.email?.status === 'FAILED' && /422/.test(r.json.data.email.error),
       'Department HR API: when the confirmation e-mail fails, the employee is not confirmed and stays overdue', r);
@@ -13618,6 +13681,62 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check((await db.query(`select count(*)::int n from public.support_recharges where total_amount <> gst_amount + non_gst_amount`)).rows[0].n === 0, 'recharges API: the stored totals always add up');
   await db.query(`update public.support_recharge_files set recharge_id = null where file_name in ('proof.png', 'msg.png', 'fake.png')`);
   await db.query(`delete from public.support_recharges where customer_name like 'RCX %'`);
+}
+
+// --- Deleting an assigned task by team and department (migration 20270225000100) ---
+{
+  const { rows: [salesTeam] } = await db.query(`select t.id, t.department_id from public.teams t join public.departments d on d.id = t.department_id
+                                                 where d.slug = 'wabastore' and t.division = 'SALES' order by t.created_at limit 1`);
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const tlA = await mkUser('tdhLeadA', 'api.tdh.lead.a@example.com', 'API TDH Lead A', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: salesTeam.id });
+  const tlB = await mkUser('tdhLeadB', 'api.tdh.lead.b@example.com', 'API TDH Lead B', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: salesTeam.id });
+  const memA = await mkUser('tdhMemA', 'api.tdh.mem.a@example.com', 'API TDH Member A', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: salesTeam.id });
+  const memB = await mkUser('tdhMemB', 'api.tdh.mem.b@example.com', 'API TDH Member B', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: salesTeam.id });
+  const aiMem = await mkUser('tdhAiMem', 'api.tdh.ai.mem@example.com', 'API TDH AI Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [tlA, memA]);
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [tlB, memB]);
+  const mkTask = async (title: string, by: string, to: string, team = salesTeam) => (await db.query(
+    `insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id) values ($1, $2, $3, $4, $5) returning id`, [team.department_id, team.id, title, by, to])).rows[0].id as string;
+  try {
+    // the Team Lead: their own member's tasks, whoever gave them; nobody else's
+    const fromSa = await mkTask('API TDH from the Super Admin', sa.id, memA);
+    const fromOther = await mkTask('API TDH from another lead', tlB, memA);
+    const otherTeam = await mkTask('API TDH other team', sa.id, memB);
+    let r = await api('tdhLeadA', 'GET', `/work-tasks/${fromSa}/delete-preview`);
+    check(r.status === 200 && r.json.data.canDelete === true, 'task deletion by team: the Team Lead may delete a task the Super Admin gave their member', r);
+    r = await api('tdhLeadB', 'DELETE', `/work-tasks/${fromSa}`);
+    check(r.status === 403 || r.status === 404, 'task deletion by team: another Team Lead of the department cannot delete it (rejected by the server)', r);
+    r = await api('tdhLeadA', 'DELETE', `/work-tasks/${fromSa}`);
+    check(r.status === 200 && r.json.data.deleted === true, 'task deletion by team: the Team Lead deletes it', r);
+    r = await api('tdhLeadA', 'DELETE', `/work-tasks/${fromOther}`);
+    check(r.status === 200 && r.json.data.deleted === true, 'task deletion by team: the Team Lead deletes a task another Team Lead gave their member', r);
+    r = await api('tdhLeadA', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 403 || r.status === 404, 'task deletion by team: the Team Lead cannot delete another Team Lead\'s team task, even by its id', r);
+    r = await api('tdhMemB', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 403, 'task deletion by team: a Team Member\'s direct API call is still rejected (403)', r);
+    // the Super Admin: AI Studio only
+    r = await api('sa', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 403, 'task deletion by team: the Super Admin cannot delete a Sales task (403)', r);
+    const aiTask = await mkTask('API TDH AI Studio task', tlA, aiMem, aiTeam);
+    r = await api('sa', 'DELETE', `/work-tasks/${aiTask}`);
+    check(r.status === 200 && r.json.data.deleted === true, 'task deletion by team: the Super Admin deletes an AI Studio task, whoever gave it', r);
+    r = await api('tdhLeadB', 'DELETE', `/work-tasks/${otherTeam}`);
+    check(r.status === 200, 'task deletion by team: the member\'s own Team Lead deletes the task the Super Admin gave', r);
+    const left = (await db.query(`select count(*)::int n from public.work_tasks where title like 'API TDH %'`)).rows[0].n;
+    check(left === 0, 'task deletion by team: exactly the allowed deletes happened', left);
+    const audited = (await db.query(`select count(*)::int n from public.audit_logs where action = 'TASK_DELETED' and metadata #>> '{task,title}' like 'API TDH %'`)).rows[0].n;
+    check(audited === 4, 'task deletion by team: every delete is in the audit log', audited);
+  } finally {
+    await db.query(`delete from public.work_tasks where title like 'API TDH %'`);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[tlA, tlB, memA, memB, aiMem]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[tlA, tlB, memA, memB, aiMem]]);
+  }
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

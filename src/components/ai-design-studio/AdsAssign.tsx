@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import type { ZodError } from 'zod';
+import { Trash2 } from 'lucide-react';
 import type { AdsAssignment, AdsAssignmentDetail, AdsAssignmentStatus, AdsLink, AdsPerson, AdsPriority } from '../../../shared/contracts';
 import { ADS_ASSIGNMENT_STATUSES, ADS_ASSIGNMENT_STATUS_LABELS, ADS_PRIORITIES, ADS_PRIORITY_LABELS } from '../../../shared/contracts';
 import { adsAssignmentCreateSchema, adsAssignmentStatusSchema, adsAssignmentUpdateSchema } from '../../../shared/validation';
@@ -29,7 +30,21 @@ const PriorityOptions: React.FC = () => (
 );
 
 // ---------------------------------------------------------------------------------------------------- list
-const AssignmentTable: React.FC<{ rows: AdsAssignment[]; onOpen: (id: string) => void }> = ({ rows, onOpen }) => (
+/** Delete straight from the list (20270225000100), shown when the list said canDelete; the same confirmation and API as the drawer, checked again there. */
+const deleteFromList = async (r: AdsAssignment) => {
+  const ok = await confirmTaskDeletion({
+    noun: 'assignment', title: r.title, assigneeName: r.assigneeName, status: ADS_ASSIGNMENT_STATUS_LABELS[r.status] ?? r.status, dueDate: r.dueDate ? fmtDate(r.dueDate) : null,
+    alsoRemoved: [countLine(r.memberCount, "Team Member's part", "Team Members' parts")],
+    run: () => aiDesignStudioApi.deleteAssignment(r.id)
+  });
+  if (!ok) return;
+  toast.success(`Assignment deleted: ${r.title}`);
+  notifyAdsChanged();
+};
+
+const AssignmentTable: React.FC<{ rows: AdsAssignment[]; onOpen: (id: string) => void }> = ({ rows, onOpen }) => {
+  const anyDeletable = rows.some(r => r.canDelete);
+  return (
   <div className="overflow-x-auto">
     <table className="w-full text-left text-sm">
       <thead>
@@ -42,6 +57,7 @@ const AssignmentTable: React.FC<{ rows: AdsAssignment[]; onOpen: (id: string) =>
           <th scope="col" className="px-3 py-2.5 font-semibold">Priority</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Status</th>
           <th scope="col" className="px-5 py-2.5 font-semibold">Progress</th>
+          {anyDeletable && <th scope="col" className="px-3 py-2.5"><span className="sr-only">Actions</span></th>}
         </tr>
       </thead>
       <tbody>
@@ -58,12 +74,23 @@ const AssignmentTable: React.FC<{ rows: AdsAssignment[]; onOpen: (id: string) =>
             <td className="px-3 py-3"><PriorityBadge priority={r.priority} /></td>
             <td className="px-3 py-3"><AssignmentStatusBadge status={r.status} /></td>
             <td className="px-5 py-3 text-slate-700">{r.progress}%</td>
+            {anyDeletable && (
+              <td className="px-3 py-3">
+                {r.canDelete && (
+                  <button type="button" data-testid="ads-row-delete" aria-label={`Delete assignment: ${r.title}`} title="Delete assignment" onClick={() => void deleteFromList(r)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50">
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
+                  </button>
+                )}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
     </table>
   </div>
-);
+  );
+};
 
 /** A Team Member's own work as cards (what they need to know about each piece of work). */
 const MemberCards: React.FC<{ rows: AdsAssignment[]; onOpen: (id: string) => void }> = ({ rows, onOpen }) => (

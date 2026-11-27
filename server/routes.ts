@@ -848,6 +848,8 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/ba/contacts', handler: ba.contacts },
   { method: 'GET', path: '/ba/contacts/:id', handler: ba.contact },
   { method: 'PATCH', path: '/ba/contacts/:id', handler: ba.updateContact },
+  { method: 'GET', path: '/ba/contacts/:id/research', handler: ba.research },
+  { method: 'POST', path: '/ba/contacts/:id/research', handler: ba.runResearch, options: S },
   { method: 'POST', path: '/ba/contacts/:id/notes', handler: ba.addNote },
   { method: 'POST', path: '/ba/contacts/:id/reassign', handler: ba.reassign, options: S },
   { method: 'GET', path: '/ba/contacts/:id/scope', handler: ba.scopes },

@@ -4,6 +4,7 @@ import { isOverdue, type Person, type WorkTask } from '../../lib/workTasks';
 import { useWorkUpdatesLoader, workUpdatesApi } from '../../lib/workUpdates';
 import { DueLabel, EmptyState, nameOf, PriorityPill, ProgressBar, StatusPill } from './TaskParts';
 import { Avatar } from './PeoplePicker';
+import { TaskCardDelete } from './TaskCardDelete';
 import { TaskDetails } from './TaskDetails';
 import { peekPendingWorkUpdate, useOpenWorkUpdateTask } from './workUpdateEvents';
 import { ago, FILTER_LABEL, matchesFilter, sortTasks, trackerStats, type TrackerFilter } from './taskView';
@@ -42,7 +43,9 @@ export const TaskTracker: React.FC<{
   emptyHint?: string;
   loading?: boolean;
   onChanged?: () => void;
-}> = ({ tasks, people, meId, filters = ['ALL', 'MINE', 'BY_ME', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING'], title = 'Task tracker', emptyHint, loading, onChanged }) => {
+  /** the tasks the signed-in person may delete (useWorkTasks().deletable): those cards get a Delete option */
+  deletable?: Set<string>;
+}> = ({ tasks, people, meId, filters = ['ALL', 'MINE', 'BY_ME', 'IN_PROGRESS', 'BLOCKED', 'COMPLETED', 'OVERDUE', 'AWAITING'], title = 'Task tracker', emptyHint, loading, onChanged, deletable }) => {
   const awaiting = useAwaitingTaskIds();
   const [filter, setFilter] = useState<TrackerFilter>('ALL');
   const [q, setQ] = useState('');
@@ -99,9 +102,9 @@ export const TaskTracker: React.FC<{
             const overdue = isOverdue(t);
             const name = nameOf(people, t.assigneeId);
             return (
-              <li key={t.id}>
+              <li key={t.id} className="relative">
                 <button type="button" onClick={() => setOpenId(t.id)} aria-label={`Open ${t.title}`} data-testid="tracker-task"
-                  className={`w-full rounded-2xl border bg-white p-3.5 text-left transition-colors hover:border-blue-300 hover:shadow-sm ${overdue ? 'border-rose-200' : t.status === 'BLOCKED' ? 'border-amber-300' : 'border-slate-200'}`}>
+                  className={`w-full rounded-2xl border bg-white p-3.5 text-left transition-colors hover:border-blue-300 hover:shadow-sm ${deletable?.has(t.id) ? 'pb-11 sm:pb-3.5 sm:pr-24' : ''} ${overdue ? 'border-rose-200' : t.status === 'BLOCKED' ? 'border-amber-300' : 'border-slate-200'}`}>
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <Avatar name={name} id={t.assigneeId} />
@@ -129,6 +132,8 @@ export const TaskTracker: React.FC<{
                     {t.lastUpdateNote && <span className="max-w-full truncate text-slate-600">“{t.lastUpdateNote}”</span>}
                   </div>
                 </button>
+                {/* a sibling of the card's button (a button cannot hold another): Delete never opens the task */}
+                {deletable?.has(t.id) && <TaskCardDelete task={t} assigneeName={name} className="absolute bottom-3 right-3" onDeleted={onChanged} />}
               </li>
             );
           })}

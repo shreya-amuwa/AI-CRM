@@ -49,6 +49,8 @@ const answers: Record<string, (a: any) => any> = {
   work_task_details: a => details(a.p_task),
   work_update_my_requests: () => ({ pending: 0, responded: 0, items: [] }),
   my_team_members: () => [],
+  // which cards get a Delete option (20270225000100): the ids put in __state.deletable; none unless a test sets them
+  work_tasks_deletable: a => (a.p_ids ?? []).filter((id: string) => state.deletable?.has(id)),
   take_task_myself: () => null,
   submit_task_update: () => null,
   work_update_request: a => { state.requested.add(a.p_task); return { id: `req-${a.p_task}` }; },
