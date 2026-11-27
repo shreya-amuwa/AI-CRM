@@ -4112,7 +4112,7 @@ export interface BaScope extends BaScopeRow {
   reviewedAt: string | null;
   client?: { name: string; company: string | null };
 }
-// ---- Business Associate: client research (web) — suggestions for the profile fields (20270224000100)
+// ---- Business Associate: client research (web) — suggestions for the profile fields (20270225000100)
 export interface BaClientResearchUsage {
   tavilyCredits?: number;
   tavilySearches?: number;

@@ -6940,7 +6940,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 404, 'business associate API: another Business Associate cannot download it', r);
   r = await api('dh', 'GET', `/ba/scope/${scopeId}/file`);
   check(r.status === 200, 'business associate API: the Department Head can', r);
-  // ---- client research on the web (20270224000100): Tavily first, Claude's web search when the Tavily credits are used up
+  // ---- client research on the web (20270225000100): Tavily first, Claude's web search when the Tavily credits are used up
   {
     const webCalls: { path: string; body: any; auth: string }[] = [];
     let tavilyStatus = 200;
