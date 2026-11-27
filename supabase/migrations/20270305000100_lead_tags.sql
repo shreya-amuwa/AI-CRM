@@ -261,7 +261,8 @@ revoke all on function private.lead_tag_json(uuid, uuid[]) from public, anon, au
 -- The tags the caller may see, in stage order.
 --  * the MD: every tag (retired ones marked), or those visible in p_department;
 --  * a CEO: the company-wide tags and every tag listing one of their departments (retired ones marked), or those visible in p_department;
---  * anyone else: the active tags usable in p_department when it is their own department or one of their scopes, else in their own department.
+--  * anyone else: the tags usable in p_department when it is their own department or one of their scopes, else in their own department,
+--    plus that department's retired tags (marked), which its leads may still carry.
 create or replace function public.lead_tags_list(p_department uuid default null)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -288,12 +289,18 @@ begin
     when v_filter = private.base_department(private.my_department_id())
          or exists (select 1 from private.scopes_of(auth.uid()) s where s.department_id = v_filter) then v_filter
   end;
-  -- (an unknown or foreign department: only the company-wide tags)
+  -- (an unknown or foreign department: only the company-wide tags.) Retired tags of the department are listed too, marked retired:
+  -- leads keep a retired tag, so the people working them still see its label; lead_tag_usable still refuses choosing one.
   return coalesce((
     select jsonb_agg(private.lead_tag_json(t.id, array[coalesce(v_dept, '00000000-0000-0000-0000-000000000000'::uuid)])
                      order by array_position(array['NEW', 'CONTACTED', 'INTERESTED', 'READY_TO_BUY'], t.stage), t.sort_order, lower(t.label), t.id)
       from public.lead_tags t
-     where private.lead_tag_usable(t.id, v_dept)), '[]'::jsonb);
+     where private.lead_tag_usable(t.id, v_dept)
+        or (t.retired_at is not null
+            and (t.scope = 'COMPANY'
+                 or exists (select 1 from public.lead_tag_departments d
+                             where d.tag_id = t.id and v_dept is not null
+                               and private.base_department(d.department_id) = private.base_department(v_dept))))), '[]'::jsonb);
 end $$;
 revoke all on function public.lead_tags_list(uuid) from public, anon;
 grant execute on function public.lead_tags_list(uuid) to authenticated;

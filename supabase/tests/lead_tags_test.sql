@@ -352,7 +352,14 @@ select public.lead_tag_save('{"label":"LT Cold","colour":"slate","stage":"NEW"}'
 select test.check((select (r ->> 'retired')::boolean from (select public.lead_tag_retire(test.lt_tag('LT Cold'), true) r) x), 'a CEO retires their tag');
 select test.check((test.lt_listed('LT Cold') ->> 'retired')::boolean, 'it stays in the CEO''s list, marked retired');
 select test.login('lt_wab_tm');
-select test.check(test.lt_listed('LT Cold') is null, 'a retired tag is absent from the lists of non-managers');
+-- a lead keeps a retired tag, so the people working it still see its label (only the form never offers it again)
+select test.check((test.lt_listed('LT Cold') ->> 'retired')::boolean and (test.lt_listed('LT Cold', test.dept('wabastore')) ->> 'retired')::boolean
+                  and not (test.lt_listed('LT Cold') ->> 'canManage')::boolean,
+  'a team member''s list for their department includes its retired tag, marked retired (not theirs to manage)');
+select test.login('lt_dg_tm');
+select test.check(test.lt_listed('LT Cold') is null and test.lt_listed('LT Cold', test.dept('wabastore')) is null and test.lt_listed('LT Cold', test.dept('digitree')) is null,
+  'never another department''s retired tag (a Digitree member, even asking for Wabastore)');
+select test.login('lt_wab_tm');
 set role authenticated;
 select test.must_fail(format($$select public.lead_tag_set('%s', '%s')$$, (select id from public.customers where phone = '+919877100101'), test.lt_tag('LT Cold')),
   'and cannot be chosen', '^VALIDATION_ERROR: ');

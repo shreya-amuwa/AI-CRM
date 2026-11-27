@@ -30,6 +30,7 @@ await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${srv.address().port}`;
 
 const tag = (o) => ({ colour: 'slate', scope: 'COMPANY', departmentIds: [], retired: false, seed: false, leadCount: 0, canManage: false, ...o });
+// as lead_tags_list answers a team member: the department's active tags and its retired ones (marked), never another department's
 const TAGS = [
   tag({ id: 'n1', label: 'New', stage: 'NEW', seed: true }),
   tag({ id: 'c1', label: 'Contacted', colour: 'blue', stage: 'CONTACTED', seed: true }),
@@ -151,7 +152,9 @@ try {
     const select = page.getByLabel('Tag', { exact: true });
     await select.waitFor();
     const chip = page.getByTestId('lead-tag-current').getByTestId('tag-chip');
-    check(/Old campaign/.test(await chip.innerText()) && /opacity-60/.test(await chip.getAttribute('class')), 'a retired tag is still shown, in the retired style');
+    check(/Old campaign/.test(await chip.innerText()) && /opacity-60/.test(await chip.getAttribute('class')), 'a retired tag is still shown with its real label, in the retired style');
+    const headerChip = page.locator('h1').locator('..').getByTestId('tag-chip');
+    check(/Old campaign/.test(await headerChip.innerText()) && /opacity-60/.test(await headerChip.getAttribute('class')), 'and in the lead page header');
     const opt = select.locator('option[value="old"]');
     check(await opt.count() === 1 && await opt.isDisabled(), 'the retired tag is not offered for a new choice');
     await select.selectOption('noresp');
@@ -227,6 +230,9 @@ try {
     const row = page.getByRole('row').filter({ hasText: 'Kavya Nair' });
     await row.getByText('Demo done').waitFor();
     check(await row.getByTestId('tag-chip').count() === 1, 'a lead with a tag shows its chip on the list');
+    const retiredChip = page.getByRole('row').filter({ hasText: 'Arun Das' }).getByTestId('tag-chip');
+    check(/Old campaign/.test(await retiredChip.innerText()) && /opacity-60/.test(await retiredChip.getAttribute('class')),
+      'a lead whose tag was retired shows its real label on the list, as a faded chip');
     const filter = page.getByLabel('Filter by tag');
     check(await filter.locator('optgroup').count() === 4, 'the "Tag" filter is grouped by stage');
     await filter.selectOption('demo');
