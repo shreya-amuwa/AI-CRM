@@ -86,3 +86,8 @@ Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
 - **The Managing Director** has no employee wallet and no PIN. Accounts' and HR's wallet screens (credits, report) are not behind a PIN.
 - **Not yet behind the PIN:** My Income and its withdrawals; they move into the Wallet in the next change and then share the same lock.
 - Tests: `supabase/tests/wallet_pin_test.sql`, the Wallet PIN block of `api_integration.test.ts`, the PIN section of `ui_wallet.test.mjs`.
+
+## Wallet reads are VOLATILE (20270227000100)
+
+`wallet_summary`, `wallet_transactions` and `wallet_monthly` renew the PIN unlock with an UPDATE (`private.wallet_me`), so they are declared VOLATILE. Declared STABLE they showed
+"cannot execute UPDATE in a read-only transaction" on the Wallet page: PostgREST runs a call to a STABLE function in a read-only transaction. Only the volatility changed. Test: `supabase/tests/wallet_readonly_test.sql`.
