@@ -5,7 +5,7 @@ import { ApiError } from '../../lib/api/client';
 import { crocodialApi } from '../../lib/api/endpoints';
 
 /**
- * "Refresh My Data" / "Refresh My Team" / "Refresh Department" / "Refresh My Departments": one button for every Sales role.
+ * "Sync My Data" / "Sync My Team" / "Sync Department Data" / "Sync All My Departments": one button for every Sales role.
  *
  * It decides nothing about who may refresh what: it sends a scope (and, for a department, its id) and the database works out the people
  * and Crocodial connections from the signed-in account (croc_refresh_request). One account-level read per connection serves everybody,
@@ -30,9 +30,10 @@ export function refreshMessage(scope: CrocodialRefreshScope, state: CrocodialRef
     case 'PARTIALLY_SYNCED': return 'Part of the data is refreshed. The rest continues automatically in the next few minutes.';
     case 'RATE_LIMITED': return 'Crocodial asked us to slow down. The refresh continues automatically shortly.';
     case 'SYNC_FAILED': return 'The refresh did not finish. The last data stays visible; try again later.';
+    // no token details for employees (the Super Admin's Connection Health page tells "token missing" from "authentication failed")
     case 'TOKEN_MISSING':
-    case 'TOKEN_INVALID': return 'Crocodial is temporarily unavailable: the connection needs the administrator. The last data stays visible.';
-    default: return 'Crocodial data is temporarily unavailable. The last data stays visible.';
+    case 'TOKEN_INVALID': return 'Crocodial is temporarily unavailable: the connection needs the administrator. The last data stays visible and may be stale.';
+    default: return 'Crocodial data is temporarily unavailable (connection unavailable). The last data stays visible and may be stale.';
   }
 }
 

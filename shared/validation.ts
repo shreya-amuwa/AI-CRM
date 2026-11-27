@@ -2045,6 +2045,10 @@ export const salesLeadSheetSchema = z
     commit: z.boolean().default(false)
   })
   .strict();
+// Sales CEO -> Department Head (20270303000100): forward the open leads of a received sheet (count: the oldest first; none = all)
+export const salesSheetForwardSchema = z
+  .object({ assigneeId: uuidSchema, count: z.number().int().min(1, 'Choose at least one lead.').max(2000).optional() })
+  .strict();
 export const salesLeadsQuerySchema = z
   .object({
     search: trimmed(120).optional(),

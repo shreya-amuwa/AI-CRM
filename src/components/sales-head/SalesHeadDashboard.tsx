@@ -73,7 +73,8 @@ export const SalesHeadDashboard: React.FC = () => {
   const [intent, setIntent] = useState<{ filter?: string; n: number }>({ n: 0 });
   const chatUnread = useChatNavBadge();
   const reportsBadge = useReportsBadge();
-  const crocodial = useCrocodialNav();
+  // reloaded when the active department changes (a CEO / multi-department head)
+  const crocodial = useCrocodialNav(profile?.departmentId ?? null);
   const { counts: pipelineCounts } = usePipelineCounts();
 
   useEffect(() => {
@@ -167,7 +168,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
-      {page === 'crocodial' && <CrocodialTeamPanel title="Team Crocodial Activity" />}
+      {page === 'crocodial' && <CrocodialTeamPanel title={operationsHead ? 'Crocodial Overview — My Sales Departments' : 'Department Crocodial Activity'} />}
       {page === 'crocodial-me' && <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} />}
       {page === 'crocodial-leads' && <CrocodialLeadsPanel title="My Crocodial Leads" hideWhenOff={false} />}
       {page === 'notices' && <ClientNotices />}

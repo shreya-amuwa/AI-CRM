@@ -60,6 +60,11 @@ m = ids({ crocodialSelf: true });
 check(m.labels.indexOf('Crocodial') === m.labels.indexOf('Customers') - 1 && m.all.includes('crocodial-me') && m.all.includes('crocodial-leads') && !m.all.includes('crocodial'), 'a connected head sees My Crocodial Activity and My Crocodial Leads, before Customers');
 m = ids({ crocodialTeam: true });
 check(m.all.includes('crocodial') && !m.all.includes('crocodial-me'), 'a head who only oversees connected people sees Team Crocodial Activity');
+{
+  // (20270303000100) the CEO's entry is the Crocodial Overview of all their Sales departments; a Department Head's is their department's
+  const label = (o: Partial<SalesHeadNavOptions>) => salesHeadNavGroups({ ...base, ...o }).flatMap(g => g.items).find(i => i.id === 'crocodial')?.label;
+  check(label({ crocodialTeam: true, operationsHead: true }) === 'Crocodial Overview' && label({ crocodialTeam: true }) === 'Department Crocodial Activity', 'the CEO sees Crocodial Overview, a Department Head Department Crocodial Activity');
+}
 m = ids({ crocodialSelf: true, crocodialTeam: true });
 check(['crocodial-me', 'crocodial-leads', 'crocodial'].every(id => m.all.includes(id)) && m.all.filter(id => !PARENTS.has(id)).every(id => pages.includes(id)), 'both: all three, and each is a real page');
 
