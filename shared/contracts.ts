@@ -7638,6 +7638,17 @@ export interface AiStudioTaskDeleteResult { deleted: true; taskId: string; title
 export interface AdsAssignmentDeleteResult { deleted: true; id: string; title: string; memberParts: number }
 
 // ---------------------------------------------------------------------------
+// Dashboard Explorer (migration 20270301000100): the Managing Director's preview audit and dashboard improvement requests
+// ---------------------------------------------------------------------------
+export interface PreviewSession { sessionId: string; startedAt: string }
+export interface PreviewRecent { dashboardId: string; department: string; viewedAt: string }
+export interface ImprovementRequestResult { id: string; reference: string; status: DevBugStatus; duplicate: boolean }
+export interface ImprovementRequestRow {
+  id: string; reference: string; title: string; priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'; status: DevBugStatus;
+  dashboardId: string | null; department: string | null; page: string | null; viewport: string | null; resolutionNote: string | null; createdAt: string; updatedAt: string;
+}
+
+// ---------------------------------------------------------------------------
 // Support Recharges (migration 20270228000200)
 // ---------------------------------------------------------------------------
 export type RechargeKind = 'PANEL' | 'MESSAGE';

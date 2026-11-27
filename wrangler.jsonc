@@ -13,6 +13,8 @@
     "binding": "ASSETS",
     // A path with no file goes to the Worker, which answers index.html for app screens and 404 for /api, /assets and /ocr.
     "not_found_handling": "none",
+    // Dashboard Explorer's preview frame: the Worker serves it with its own sandboxed headers (worker/securityHeaders.ts PREVIEW_HEADERS)
+    "run_worker_first": ["/dashboard-preview/*"],
     "html_handling": "auto-trailing-slash"
   },
   // Was vercel.json "crons" (UTC): 09:00 and 10:30 IST, the automations' safety net and retries. They do nothing until the dashboard

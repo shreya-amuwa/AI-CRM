@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { Activity, AtSign, BarChart3, Bell, Building2, FileBarChart, LayoutDashboard, LineChart, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
+import { Activity, AtSign, BarChart3, Bell, Building2, Eye, FileBarChart, LayoutDashboard, LineChart, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -27,9 +27,11 @@ const SuperAdminPerformance = lazy(() => import('./performance/SuperAdminPerform
 const NotificationHealth = lazy(() => import('../notifications/NotificationHealth'));
 const EmailManagement = lazy(() => import('../email/EmailManagement'));
 const WalletAdmin = lazy(() => import('../wallet/WalletAdmin'));
+// Dashboard Explorer: loaded only when opened (the preview frame is a separate bundle, loaded only when a preview starts)
+const DashboardExplorer = lazy(() => import('../dashboard-explorer/DashboardExplorer'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email'] as const;
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email', 'dashboard-explorer'] as const;
 type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
@@ -78,6 +80,8 @@ export const SuperAdminDashboard: React.FC = () => {
       },
       // AI Studio: the Super Admin is its Department Head; the entry opens AI Studio's own workspace (a button there brings the Super Admin back)
       { label: 'AI Studio', items: [{ id: 'ai-studio', label: 'AI Studio', icon: Sparkles }] },
+      // Dashboard Explorer: what every position sees, with demonstration data (separate from Team Members and account management)
+      { label: 'Management', items: [{ id: 'dashboard-explorer', label: 'Dashboard Explorer', icon: Eye }] },
       { label: 'Governance', items: [{ id: 'security', label: 'Security & Audit Logs', icon: ShieldCheck }] },
       { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }, { id: 'crocodial', label: 'Crocodial Integration', icon: PhoneCall }, { id: 'crocodial-activity', label: 'Crocodial Activity', icon: PhoneCall }] },
       {
@@ -119,7 +123,7 @@ export const SuperAdminDashboard: React.FC = () => {
       }}
       user={{ name: user?.name || 'Managing Director', role: 'Managing Director' }}
       onSignOut={() => void logout()}
-      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'performance' || page === 'team' || page === 'notification-health' || page === 'email'}
+      wide={page === 'overview' || page === 'security' || page === 'reports' || page === 'income' || page === 'incentives' || page === 'top-performers' || page === 'report-performance' || page === 'performance' || page === 'team' || page === 'notification-health' || page === 'email' || page === 'dashboard-explorer'}
       flush={page === 'chat'}
       topActions={
         <>
@@ -161,6 +165,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage />}
       {page === 'email' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><EmailManagement /></Suspense>}
+      {page === 'dashboard-explorer' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><DashboardExplorer /></Suspense>}
       {page === 'notification-health' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><NotificationHealth /></Suspense>}
     </DashboardShell>
   );

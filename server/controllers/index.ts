@@ -268,6 +268,15 @@ export const meetingsController = {
 };
 
 /** Bugs for the Developers team (20270122000300). */
+// Dashboard Explorer (20270301000100): only the Managing Director (the database checks the caller)
+export const dashboardExplorerController = {
+  startSession: (async ctx => ok(await svc(ctx).dashboardExplorer.startSession(ctx.req.body), 201)) as Handler,
+  endSession: (async ctx => ok(await svc(ctx).dashboardExplorer.endSession(ctx.req.body))) as Handler,
+  recent: (async ctx => ok(await svc(ctx).dashboardExplorer.recent())) as Handler,
+  suggest: (async ctx => ok(await svc(ctx).dashboardExplorer.suggest(ctx.req.body), 201)) as Handler,
+  requests: (async ctx => ok(await svc(ctx).dashboardExplorer.requests())) as Handler
+};
+
 export const bugsController = {
   access: (async ctx => ok(await svc(ctx).bugs.access())) as Handler,
   submit: (async ctx => ok(await svc(ctx).bugs.submit(ctx.req.body), 201)) as Handler,
