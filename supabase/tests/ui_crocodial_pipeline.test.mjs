@@ -27,8 +27,15 @@ const bundle = built.outputFiles[0].text;
 
 let calls = [];
 let mode = 'PREVIEW';
+let tagFail = false;
+const TAGS = [
+  { id: 'tg-new', label: 'New', colour: 'slate', stage: 'NEW', scope: 'COMPANY', departmentIds: [], retired: false, seed: true, leadCount: 0, canManage: true },
+  { id: 'tg-int', label: 'Warm', colour: 'amber', stage: 'INTERESTED', scope: 'DEPARTMENTS', departmentIds: ['d1'], retired: false, seed: false, leadCount: 0, canManage: true },
+  { id: 'tg-won', label: 'Converted', colour: 'green', stage: 'CONVERTED', scope: 'COMPANY', departmentIds: [], retired: false, seed: true, leadCount: 0, canManage: true },
+  { id: 'tg-other', label: 'Other dept only', colour: 'red', stage: 'INTERESTED', scope: 'DEPARTMENTS', departmentIds: ['d9'], retired: false, seed: false, leadCount: 0, canManage: true }
+];
 const OVERVIEW = () => ({ departments: [{ departmentId: 'd1', name: 'M Pillar', enabled: true, leadImport: mode }], counts: { PENDING_CREATE: 4, AMBIGUOUS: 1, UNMAPPED_ASSIGNEE: 2, LINKED: 0 },
-  ownershipDiffers: 0, externalLeads: 7, missingAtSource: 0, unknownStatuses: [{ status: 'hot lead', leads: 3 }], mappings: [{ status: 'won', disposition: 'CONVERTED' }],
+  ownershipDiffers: 0, externalLeads: 7, missingAtSource: 0, unknownStatuses: [{ status: 'hot lead', leads: 3 }], mappings: [{ status: 'won', disposition: 'CONVERTED', tagId: 'tg-won', ignored: false }],
   unmappedAssignees: [{ externalId: 599, name: 'Nobody Mapped', leads: 2 }], reconcile: { last_run_at: '2027-03-04T05:00:00Z', last_ok_at: null, last_error: null, processed_last_run: 7, created_last_run: 0, updated_last_run: 0, duration_ms_last_run: 120, pending: 0 },
   resources: [{ resource: 'leads', lastOkAt: '2027-03-04T05:00:00Z', lastRunAt: '2027-03-04T05:00:00Z', lastError: null, rowsLastRun: 7, inProgress: false }], recentRuns: [] });
 const LINKS = { total: 1, items: [{ id: 'k1', externalLeadId: 9005, status: 'AMBIGUOUS', reason: 'Several CRM records of this department have the same phone number or e-mail.', assignmentMode: 'EXTERNAL', importSource: null,
@@ -48,7 +55,12 @@ function api(req, res, body) {
   if (p === '/crocodial/connections/c1/reconcile' && req.method === 'POST') return ok(res, { batches: 1, processed: 7, created: 4, updated: 0, held: 3, failed: 0, pending: 0, enabled: true });
   if (p === '/crocodial/connections/c1/lead-links') return ok(res, LINKS);
   if (p === '/crocodial/connections/c1/lead-import') { mode = body.mode; return ok(res, { mode: body.mode }); }
-  if (p === '/crocodial/connections/c1/status-mappings') return ok(res, { status: body.status, disposition: body.disposition });
+  if (p === '/lead-tags' && req.method === 'GET') return ok(res, TAGS);
+  if (p === '/lead-tags' && req.method === 'POST') return ok(res, { ...TAGS[1], id: 'tg-new-hot', label: body.label, stage: body.stage, departmentIds: body.departmentIds });
+  if (p === '/crocodial/connections/c1/status-mappings') {
+    if (tagFail) { res.writeHead(422, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ success: false, error: { code: 'VALIDATION_ERROR', message: "That tag can't be used in every department of this connection." } })); }
+    return ok(res, { status: body.status, tagId: body.tagId, ignored: body.ignore });
+  }
   if (p === '/crocodial/lead-links/k1/resolve') return ok(res, { id: 'k1', status: 'LINKED' });
   if (p === '/crocodial/lead-activity/linked') return ok(res, ACTIVITY);
   if (p === '/crocodial/lead-activity/plain') return ok(res, { linked: false });
@@ -94,9 +106,35 @@ try {
     await page.getByText(/Lead import for M Pillar: import/).waitFor();
     check(calls.some(c => c.path === '/crocodial/connections/c1/lead-import' && c.body.mode === 'IMPORT' && c.body.departmentId === 'd1'), `${label}: then sends the department and the mode`);
     await page.getByText(/Status mapping \(1 mapped, 1 unknown\)/).click();
-    await page.getByLabel('CRM disposition for hot lead').selectOption('INTERESTED');
+    const sel = page.getByLabel('Lead tag for hot lead');
+    const opts = await sel.locator('option, optgroup').evaluateAll(l => l.map(o => (o.tagName === 'OPTGROUP' ? 'G:' : 'O:') + (o.label || o.textContent)));
+    check(opts[0] === 'O:Not mapped' && opts[1] === 'O:Ignore' && opts.includes('G:Interested') && opts.includes('O:Warm') && !opts.some(o => /Other dept/.test(o)), `${label}: the tag select is grouped by stage with Ignore and Not mapped, and hides tags the connection's departments can't all use`, opts);
+    await sel.selectOption('tg-int');
     await page.getByText(/“hot lead” mapped/).waitFor();
-    check(calls.some(c => c.path === '/crocodial/connections/c1/status-mappings' && c.body.status === 'hot lead' && c.body.disposition === 'INTERESTED'), `${label}: an unknown status is mapped`);
+    check(calls.some(c => c.path === '/crocodial/connections/c1/status-mappings' && c.body.status === 'hot lead' && c.body.tagId === 'tg-int' && c.body.ignore === false), `${label}: an unknown status is mapped to a tag`);
+    await sel.selectOption('__ignore');
+    await page.waitForTimeout(200);
+    check(calls.some(c => c.path === '/crocodial/connections/c1/status-mappings' && c.body.tagId === null && c.body.ignore === true), `${label}: Ignore sends ignore and no tag`);
+    await page.getByLabel('Lead tag for hot lead').selectOption('');
+    await page.waitForTimeout(200);
+    check(calls.some(c => c.path === '/crocodial/connections/c1/status-mappings' && c.body.tagId === null && c.body.ignore === false), `${label}: Not mapped sends an explicit null tag and ignore false`);
+    // 422 shows inline
+    tagFail = true;
+    await page.getByLabel('Lead tag for hot lead').selectOption('tg-int');
+    await page.getByText(/can't be used in every department/).waitFor();
+    check(await page.getByTestId('croc-lead-pipeline').isVisible(), `${label}: a refused mapping shows inline, the screen stays`);
+    tagFail = false;
+    // create a tag from the status
+    await page.getByRole('button', { name: 'Create a tag from this status' }).first().click();
+    check(await page.getByLabel('Label').inputValue() === 'hot lead', `${label}: the tag form is pre-filled with the status label`);
+    check(await page.getByRole('checkbox', { name: 'M Pillar' }).isChecked(), `${label}: the connection's departments are the default`);
+    await page.getByRole('combobox', { name: 'Counts as' }).selectOption('INTERESTED');
+    calls = [];
+    await page.getByRole('button', { name: 'Create tag and map' }).click();
+    await page.getByText(/mapped to the new tag/).waitFor();
+    const created = calls.find(c => c.path === '/lead-tags' && c.method === 'POST');
+    check(created && created.body.label === 'hot lead' && created.body.stage === 'INTERESTED' && created.body.departmentIds.join() === 'd1', `${label}: saving creates the tag in the connection's departments`, created);
+    check(calls.some(c => c.path === '/crocodial/connections/c1/status-mappings' && c.body.tagId === 'tg-new-hot' && c.body.ignore === false), `${label}: and maps the status to it in one go`);
     await page.getByLabel('Leads', { exact: false }).locator('xpath=self::select').or(page.locator('select').last()).selectOption('AMBIGUOUS');
     await page.getByTestId('croc-lead-links').waitFor();
     check(await page.getByText('Twin Lead').isVisible() && await page.getByText(/Twin One/).isVisible(), `${label}: a held lead shows its candidates`);
