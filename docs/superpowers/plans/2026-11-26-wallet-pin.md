@@ -16,7 +16,7 @@
 - 5 wrong PINs -> locked 15 minutes. Reset code: 8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, 30 minutes, 5 tries, one use; asking again replaces it.
 - Super Admin: no PIN (the wallet is not shown on that dashboard; wallet admin screens are not gated).
 - Errors: `VALIDATION_ERROR:`, `FORBIDDEN:`, `CONFLICT:`, `WALLET_LOCKED:` prefixes; functions `security definer`, `set search_path = ''`, `revoke ... from public, anon`.
-- Migration `20270220000100_wallet_pin.sql`, safe to run twice, no data changed.
+- Migration `20270222000100_wallet_pin.sql`, safe to run twice, no data changed.
 
 ## Review Focus
 - Two browser tabs of the same sign-in: unlocking one unlocks the other (same session_id) - expected, test it.
@@ -28,7 +28,7 @@
 ---
 
 ### Task 1: Database - PIN, unlock, reset, and the gate
-**Files:** Create `supabase/migrations/20270220000100_wallet_pin.sql`, `supabase/tests/wallet_pin_test.sql`; modify `supabase/tests/run.sh` (one line, after `wallet_test.sql`'s neighbours at the end).
+**Files:** Create `supabase/migrations/20270222000100_wallet_pin.sql`, `supabase/tests/wallet_pin_test.sql`; modify `supabase/tests/run.sh` (one line, after `wallet_test.sql`'s neighbours at the end).
 **Interfaces (Produces):**
 - tables `wallet_pins(profile_id pk, pin_hash, failed_count, locked_until, updated_at)`, `wallet_unlocks(profile_id, session_id, expires_at, pk(profile_id, session_id))`, `wallet_pin_resets(profile_id pk, code_hash, expires_at, tries, created_at)`; RLS on, no grants.
 - `public.wallet_pin_status() -> jsonb {hasPin, unlocked, lockedUntil, unlockExpiresAt}`

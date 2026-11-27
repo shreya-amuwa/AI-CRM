@@ -166,3 +166,13 @@ no entry, the address does not open the page and the API refuses them. Screensho
 PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-performance-nav.sh ./performance-screenshots
 ```
 
+
+## AI Studio cross-team task assignment
+
+`run-ai-studio-cross-team.sh` (own ports) signs in through the login page as two Team Leads and their members: Team Lead B gives Team A's employee a task from
+the grouped picker (workload warning, desktop and phone), the employee finds it (Cross-team label, filter, details), Team Lead B may change and delete it,
+the employee's own Team Lead may not (also refused through the API), and Ctrl+K finds the task. Screenshots go to the directory you pass.
+
+```
+PGHOST=... PGPORT=... PGUSER=postgres POSTGREST_BIN=/path/to/postgrest supabase/tests/e2e/run-ai-studio-cross-team.sh ./cross-team-screenshots
+```

@@ -26,7 +26,7 @@ const ids = (o: Partial<SalesHeadNavOptions>) => {
   return { groups, labels: groups.map(g => g.label), top: groups.flatMap(g => g.items.map(i => i.id)), all: groups.flatMap(g => g.items.flatMap(i => [i.id, ...(i.children ?? []).map(c => c.id)])) };
 };
 
-// the entries of the old flat menu (before the sections); My Income moved into the Wallet (20270221000100)
+// the entries of the old flat menu (before the sections); My Income moved into the Wallet (20270223000100)
 const OLD_TOP = ['overview', 'leads', 'sheet-upload', 'my-leads-group', 'field-visits-group', 'assign-task', 'tasks', 'work-updates', 'performance', 'telecaller-group', 'business-associate-group', 'top-performers',
   'income', 'incentive-setup', 'reports', 'work-reports', 'telecaller-sheets', 'service-prices', 'lead-whatsapp', 'notices', 'team', 'raise-issue', 'chat', 'notifications'];
 const sorted = (a: string[]) => [...a].sort();

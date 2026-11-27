@@ -41,7 +41,7 @@ const ledger = () => {
 };
 const mask = (m: any) => m;
 const month = (ym: string, inc: number, bon: number, rev: number, wd: number) => ({ month: ym, incentives: inc, reversed: rev, bonuses: bon, adjustments: 0, withdrawn: wd });
-// the Wallet PIN (20270220000100): by default set and unlocked, so the wallet's own checks run as before; the PIN section of the test changes it
+// the Wallet PIN (20270222000100): by default set and unlocked, so the wallet's own checks run as before; the PIN section of the test changes it
 state.pin = { hasPin: true, pin: '482913', unlocked: true, fails: 0, lockedUntil: null as string | null, code: 'ABCD2345' };
 const locked = () => { if (!state.pin.unlocked) fail('WALLET_LOCKED: Enter your Wallet PIN.'); };
 const pinCheck = (p: string, c: string) => {
@@ -50,7 +50,7 @@ const pinCheck = (p: string, c: string) => {
   if (/^(.)\1{5}$/.test(p) || p === '123456') fail('VALIDATION_ERROR: Choose a PIN that is harder to guess (not the same digit six times or a simple sequence).');
 };
 const handlers: Record<string, (a: any) => any> = {
-  // what My Income showed besides the money (20270221000100): today's incentives, a target, this month's activity
+  // what My Income showed besides the money (20270223000100): today's incentives, a target, this month's activity
   income_summary: () => { locked(); return { startsOn: '2026-01-16', eligible: true, today: 500, month: 5000, total: 5800, balance: 7000,
     targets: [{ ruleId: 'r1', name: 'WhatsApp API sales', serviceName: 'WhatsApp API', targetUnits: 10, unitsDone: 3 }],
     activity: { businessThisMonth: 120000, demosCompletedThisMonth: 4, visitsCompletedThisMonth: 2 } }; },

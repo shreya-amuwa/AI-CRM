@@ -5,7 +5,7 @@ import { incomeApi, rupees, units, type IncomeSummary } from '../../lib/income';
 import { Section, Tile } from './walletParts';
 
 /**
- * What "My Income" showed besides the money (it moved into the Wallet, 20270221000100): today's incentives, the incentive targets and this month's
+ * What "My Income" showed besides the money (it moved into the Wallet, 20270223000100): today's incentives, the incentive targets and this month's
  * activity (business on the person's customers, demos and field visits completed, and calls for someone connected to Crocodial). Read from
  * income_summary, which needs the Wallet PIN like the rest of the wallet. Shown only when there is something to show: a person who earns no
  * incentives sees nothing here.

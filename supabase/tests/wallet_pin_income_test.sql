@@ -1,5 +1,5 @@
 -- =============================================================================
--- Wallet PIN on My Income's reads and the person's own withdrawals (migration 20270221000100). Runs after wallet_pin_test.sql (tm_b has a PIN there;
+-- Wallet PIN on My Income's reads and the person's own withdrawals (migration 20270223000100). Runs after wallet_pin_test.sql (tm_b has a PIN there;
 -- tm_a has none). Synthetic data only; safe to run again.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -7,9 +7,9 @@
 \echo '--- 152. Wallet PIN on income and withdrawals'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270220000100_wallet_pin.sql
-\i supabase/migrations/20270221000100_wallet_pin_income.sql
-\i supabase/migrations/20270221000100_wallet_pin_income.sql
+\i supabase/migrations/20270222000100_wallet_pin.sql
+\i supabase/migrations/20270223000100_wallet_pin_income.sql
+\i supabase/migrations/20270223000100_wallet_pin_income.sql
 delete from wallet_pins where profile_id in (test.id('tm_b'), test.id('tm_a'));
 delete from wallet_unlocks where profile_id in (test.id('tm_b'), test.id('tm_a'));
 create or replace function test.slogin(p_name text, p_sid text) returns void language sql as $$

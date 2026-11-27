@@ -45,7 +45,7 @@ directly below the caller (`private.incentive_reports`) with what they get now a
 rule form's option lists and how often each rule was earned.
 
 ## Screens
-- **My Income moved into the Wallet** (20270221000100, `docs/EMPLOYEE_WALLET.md`): the menu entry is gone from the Sales Head / Operations Head, Team Lead,
+- **My Income moved into the Wallet** (20270223000100, `docs/EMPLOYEE_WALLET.md`): the menu entry is gone from the Sales Head / Operations Head, Team Lead,
   Telecaller, Business Associate and Sales Team Member dashboards (an old `my-income` / `income` address opens the Wallet; the Sales Head's Department Income
   keeps `income`). Today, targets and this month's activity are on the Wallet's Overview (`WalletActivity`), withdrawals on its Withdrawals tab.
   `income_summary`, `income_earnings` and the person's own payout functions need the Wallet PIN once it is set. `IncomePage.tsx` is no longer shown on any

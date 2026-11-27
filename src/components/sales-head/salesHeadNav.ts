@@ -47,7 +47,7 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
         items: [
           // the head's own leads, worked through the same Leads -> Potential -> Customer onboarding steps as a Sales Team Member's
           { id: 'my-leads-group', label: 'My Leads', icon: Briefcase, children: [{ id: 'my-leads', label: 'Leads' }, { id: 'my-potential', label: 'Potential' }, { id: 'my-onboarding', label: 'Customer onboarding' }, { id: 'my-part-payments', label: 'Part payments' }] }
-          // what the head earns is in the Wallet (My Income moved there, 20270221000100)
+          // what the head earns is in the Wallet (My Income moved there, 20270223000100)
         ]
       },
       {

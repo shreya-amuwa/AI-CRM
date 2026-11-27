@@ -41,3 +41,9 @@ check the hierarchy; reads follow it (RLS). Tests: `supabase/tests/rls_test.sql`
   team's tasks), the Team Lead, the member (their own part only), the Super Admin.
 * A member's update never completes the Team Lead's task; the Daily view counts a Team Lead task and its member parts once.
 * The Department Head is notified when a task is shared out (`TASK_DELEGATED`). Tests: `supabase/tests/task_delegation_detail_test.sql`.
+
+## Deleting an assigned task (migration 20270220000100)
+
+The Team Lead who gave a task, and the Department Head / Operations Head whose department and function it is in, can delete it from the task workspace
+(**Delete task**, with a confirmation). Team Members cannot, and the Super Admin's access is unchanged. Sub-tasks, updates and per-task daily reports go with it.
+See docs/TASK_DELETION.md.

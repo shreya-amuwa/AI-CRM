@@ -6,7 +6,7 @@ group: Income
 roles: [Telecaller, Business Associate, Sales Team Member, Team Lead, Department Head, Operations Head]
 audience: internal
 status: verified
-sources: [src/components/wallet/WalletPage.tsx, src/components/wallet/WalletActivity.tsx, src/components/wallet/WalletPinGate.tsx, supabase/migrations/20270221000100_wallet_pin_income.sql, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
+sources: [src/components/wallet/WalletPage.tsx, src/components/wallet/WalletActivity.tsx, src/components/wallet/WalletPinGate.tsx, supabase/migrations/20270223000100_wallet_pin_income.sql, src/lib/income.ts, supabase/migrations/20270119000100_sales_incentives.sql, supabase/migrations/20270121000100_incentive_setup_given.sql]
 related: [sales/incentive-setup, sales/business-associate-workspace]
 updated: 2026-11-26
 ---

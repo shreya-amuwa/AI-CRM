@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Plus } from 'lucide-react';
+import { AlertCircle, Plus, Trash2 } from 'lucide-react';
 import {
   AI_STUDIO_PRIORITIES,
+  type AiStudioAssignees,
   type AiStudioPerson,
   type AiStudioProject,
   type AiStudioRole,
@@ -12,8 +13,11 @@ import {
 import { aiStudioTaskCreateSchema, aiStudioTaskEditSchema, aiStudioTaskUpdateSchema } from '../../../shared/validation';
 import { aiStudioApi, type AiStudioTasksFilter } from '../../lib/api/aiStudio';
 import { errorMessage } from '../../lib/api/client';
+import { confirmTaskDeletion, countLine } from '../../lib/taskDeletion';
+import { toast } from '../../lib/feedback/feedbackStore';
 import { Dialog, ErrorBanner, Field, Pager, Spinner } from '../team-member/pipeline/shared';
 import { Card, ghostBtn, fieldCls, primaryBtn, textareaCls } from '../tasks/head/headParts';
+import { AssigneePicker, CrossTeamBadge, WorkloadSummary } from './AssigneePicker';
 import { notifyAiStudioChanged, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
 import { TaskReportsPanel } from './TaskReportsPanel';
 import { PRIORITY_LABELS, PriorityBadge, ProgressBar, TASK_STATUS_LABELS, TableWrap, TaskStatusBadge, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
@@ -30,8 +34,24 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
   const { data: task, error, reload } = useLoad<AiStudioTaskDetail>(() => aiStudioApi.task(id), [id]);
   const [mode, setMode] = useState<'view' | 'update' | 'edit'>('view');
   const changed = () => { notifyAiStudioChanged(); onChanged?.(); reload(); setMode('view'); };
+  // Delete: shown only when the database says so (the Team Lead who gave it, the Department Head); the delete is checked there again
+  const remove = async () => {
+    if (!task?.canDelete) return;
+    const done = await confirmTaskDeletion({
+      title: task.title, assigneeName: task.assigneeName, status: TASK_STATUS_LABELS[task.status] ?? task.status, dueDate: task.dueDate ? dateText(task.dueDate) : null,
+      alsoRemoved: [countLine(task.history.length, 'history entry', 'history entries'), countLine(task.reportCount, 'daily report entry', 'daily report entries')],
+      run: () => aiStudioApi.deleteTask(task.id)
+    });
+    if (!done) return;
+    toast.success(`Task deleted: ${task.title}`);
+    notifyAiStudioChanged();
+    onChanged?.();
+    onClose();
+  };
+  // Escape inside the delete confirmation closes only the confirmation
+  const close = () => { if (!document.querySelector('[data-testid="app-dialog-layer"]')) onClose(); };
   return (
-    <Dialog title={task?.title ?? 'Task'} description={task ? `${task.projectName} · assigned to ${task.assigneeName}` : undefined} onClose={onClose} wide>
+    <Dialog title={task?.title ?? 'Task'} description={task ? `${task.projectName} · assigned to ${task.assigneeName}` : undefined} onClose={close} wide>
       {error && <ErrorBanner message={error} onRetry={reload} />}
       {!task && !error && <Spinner label="Loading the task…" />}
       {task && (
@@ -42,6 +62,13 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
             <Info label="Assigned on">{dateText(task.assignedAt)} {task.assignedByName ? `by ${task.assignedByName}` : ''}</Info>
             <Info label="Deadline"><span className={task.overdue ? 'text-rose-700 font-bold' : ''}>{dateText(task.dueDate)}{task.overdue ? ' · overdue' : ''}</span></Info>
           </div>
+          {task.assignmentType ? (
+            <div className="grid sm:grid-cols-3 gap-3 text-sm rounded-lg border border-slate-200 bg-slate-50/60 p-3" data-testid="task-ownership">
+              <Info label="Assignment">{task.assignmentType === 'CROSS_TEAM' ? <CrossTeamBadge /> : 'My team'}</Info>
+              <Info label="Project-owning team">{task.ownerTeam ?? '-'}</Info>
+              <Info label="Employee's team">{task.assigneeTeam ?? '-'}{task.assigneeTeamAtAssignment && task.assigneeTeamAtAssignment !== task.assigneeTeam ? <span className="block text-xs text-slate-500">At assignment: {task.assigneeTeamAtAssignment}</span> : null}</Info>
+            </div>
+          ) : null}
           <div><div className="text-xs font-semibold text-slate-500 mb-1">Progress</div><ProgressBar value={task.progress} /></div>
           {task.description && <div><div className="text-xs font-semibold text-slate-500 mb-1">Description</div><p className="text-sm text-slate-700 whitespace-pre-wrap">{task.description}</p></div>}
           {task.completionNote && <div><div className="text-xs font-semibold text-slate-500 mb-1">Completion details</div><p className="text-sm text-slate-700 whitespace-pre-wrap">{task.completionNote}</p></div>}
@@ -53,10 +80,16 @@ export const TaskDialog: React.FC<{ id: string; onClose: () => void; onChanged?:
               </ul>
             </div>
           )}
-          {mode === 'view' && (task.canUpdate || task.canEdit) && (
+          {mode === 'view' && (task.canUpdate || task.canEdit || task.canDelete) && (
             <div className="flex flex-wrap gap-2">
               {task.canUpdate && <button type="button" className={primaryBtn} onClick={() => setMode('update')}>Update progress</button>}
               {task.canEdit && <button type="button" className={ghostBtn} onClick={() => setMode('edit')}>Edit task / deadline</button>}
+              {task.canDelete && (
+                <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50 sm:ml-auto"
+                  onClick={() => void remove()} data-testid="ai-task-delete">
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> Delete task
+                </button>
+              )}
             </div>
           )}
           {mode === 'update' && <UpdateForm task={task} onCancel={() => setMode('view')} onDone={changed} />}
@@ -178,8 +211,13 @@ const EditForm: React.FC<{ task: AiStudioTaskDetail; onCancel: () => void; onDon
 export const AssignTaskDialog: React.FC<{ role: AiStudioRole; projects: AiStudioProject[]; people: AiStudioPerson[]; onClose: () => void; onDone: () => void }> = ({ role, projects, people, onClose, onDone }) => {
   const usable = projects.filter(p => p.status === 'ACTIVE' && (role !== 'LEAD' || p.mine));
   const [projectId, setProjectId] = useState(usable[0]?.id ?? '');
-  const choices = useMemo(() => assignablePeople(people, projectId, role), [people, projectId, role]);
+  // 20270221000100: the people the database offers for this project (cross-team for a Team Lead on it), with their workload; an older database
+  // without it falls back to the earlier list (the project's people; a Team Lead's own Team Members)
+  const offered = useLoad<AiStudioAssignees | null>(() => (projectId ? aiStudioApi.assignees(projectId).then(d => (d && Array.isArray(d.people) ? d : null), () => null) : Promise.resolve(null)), [projectId]);
+  const fallback = useMemo(() => assignablePeople(people, projectId, role), [people, projectId, role]);
+  const choices = useMemo<{ id: string }[]>(() => (offered.data ? offered.data.people.filter(p => p.eligible) : fallback), [offered.data, fallback]);
   const [assigneeId, setAssigneeId] = useState('');
+  const chosen = offered.data?.people.find(p => p.id === assigneeId);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState('MEDIUM');
@@ -187,7 +225,8 @@ export const AssignTaskDialog: React.FC<{ role: AiStudioRole; projects: AiStudio
   const [links, setLinks] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { if (!choices.some(c => c.id === assigneeId)) setAssigneeId(choices[0]?.id ?? ''); }, [choices, assigneeId]);
+  // the earlier list preselects its first person; the grouped list (several teams) waits for an explicit choice
+  useEffect(() => { if (!choices.some(c => c.id === assigneeId)) setAssigneeId(offered.data ? '' : choices[0]?.id ?? ''); }, [choices, assigneeId, offered.data]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsed = aiStudioTaskCreateSchema.safeParse({ projectId, assigneeId, title, description, priority, dueDate, attachments: linkLines(links) });
@@ -209,12 +248,29 @@ export const AssignTaskDialog: React.FC<{ role: AiStudioRole; projects: AiStudio
             {usable.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </Field>
-        <Field label={role === 'LEAD' ? 'Team Member' : 'Assign to'} htmlFor="ai-as-who" required>
-          <select id="ai-as-who" className={fieldCls} value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
-            {choices.length === 0 && <option value="">Nobody on this project yet</option>}
-            {choices.map(c => <option key={c.id} value={c.id}>{c.fullName}{c.role === 'TEAM_HEAD' ? ' (Team Lead)' : ''}</option>)}
-          </select>
-        </Field>
+        {offered.data ? (
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-slate-600">Assign to <span className="text-rose-600">*</span></div>
+            <AssigneePicker data={offered.data} value={assigneeId} onChange={setAssigneeId} disabled={saving} />
+            {role === 'LEAD' && !offered.data.canAssignCrossTeam ? <p className="text-xs text-slate-500">Other teams' members can be given tasks only on projects you are on.</p> : null}
+            {chosen ? (
+              <div className="rounded-lg border border-slate-200 p-2.5 space-y-2" data-testid="assignee-summary">
+                <p className="text-xs text-slate-600">
+                  <span className="font-semibold text-slate-900">{chosen.fullName}</span>{chosen.designation ? ` · ${chosen.designation}` : ''} · {chosen.team}
+                  {chosen.assignmentType === 'CROSS_TEAM' ? <> · <CrossTeamBadge /> <span className="block mt-1">They stay in {chosen.team}; {chosen.primaryLeadName ?? 'their Team Lead'} is told about this task.</span></> : null}
+                </p>
+                <WorkloadSummary person={chosen} />
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <Field label={role === 'LEAD' ? 'Team Member' : 'Assign to'} htmlFor="ai-as-who" required>
+            <select id="ai-as-who" className={fieldCls} value={assigneeId} onChange={e => setAssigneeId(e.target.value)}>
+              {fallback.length === 0 && <option value="">{offered.loading ? 'Loading…' : 'Nobody on this project yet'}</option>}
+              {fallback.map(c => <option key={c.id} value={c.id}>{c.fullName}{c.role === 'TEAM_HEAD' ? ' (Team Lead)' : ''}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Task title" htmlFor="ai-as-title" required><input id="ai-as-title" className={fieldCls} value={title} maxLength={200} onChange={e => setTitle(e.target.value)} /></Field>
         <Field label="Description" htmlFor="ai-as-desc"><textarea id="ai-as-desc" className={textareaCls} rows={3} value={description} onChange={e => setDescription(e.target.value)} /></Field>
         <div className="grid grid-cols-2 gap-3">
@@ -239,6 +295,7 @@ export const AssignTaskDialog: React.FC<{ role: AiStudioRole; projects: AiStudio
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: '', label: 'All statuses' },
   { value: 'OPEN', label: 'Not completed' },
+  { value: 'OVERDUE', label: 'Overdue' },
   { value: 'ASSIGNED', label: 'Assigned' },
   { value: 'IN_PROGRESS', label: 'In progress' },
   { value: 'ON_HOLD', label: 'On hold' },
@@ -252,12 +309,13 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
 export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects: AiStudioProject[]; emptyText: string }> = ({ scope, projects, emptyText }) => {
   const [projectId, setProjectId] = useState('');
   const [status, setStatus] = useState('');
+  const [kind, setKind] = useState<'' | 'STANDARD' | 'CROSS_TEAM'>('');
   const [page, setPage] = useState(1);
   const pendingTask = usePendingAiStudio('task');
   const [openId, setOpenId] = useState<string | null>(pendingTask);
   const { data, error, loading, reload } = useLoad<AiStudioTaskPage>(
-    () => aiStudioApi.tasks({ scope, projectId: projectId || undefined, status: status || undefined, page, pageSize: 10 }),
-    [scope, projectId, status, page]
+    () => aiStudioApi.tasks({ scope, projectId: projectId || undefined, status: status || undefined, kind: kind || undefined, page, pageSize: 10 }),
+    [scope, projectId, status, kind, page]
   );
   useAiStudioChanged(reload);
   const team = scope === 'team';
@@ -267,6 +325,11 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
         <select aria-label="Filter by project" className={`${fieldCls} !w-auto min-w-[10rem]`} value={projectId} onChange={e => { setProjectId(e.target.value); setPage(1); }}>
           <option value="">All projects</option>
           {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select aria-label="Filter by team" className={`${fieldCls} !w-auto min-w-[10rem]`} value={kind} onChange={e => { setKind(e.target.value as typeof kind); setPage(1); }} data-testid="task-kind-filter">
+          <option value="">All tasks</option>
+          <option value="STANDARD">My team tasks</option>
+          <option value="CROSS_TEAM">Cross-team tasks</option>
         </select>
         {scope !== 'ongoing' && (
           <select aria-label="Filter by status" className={`${fieldCls} !w-auto min-w-[10rem]`} value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}>
@@ -292,9 +355,10 @@ export const TaskList: React.FC<{ scope: AiStudioTasksFilter['scope']; projects:
                 <tr key={t.id} onClick={() => setOpenId(t.id)} data-testid="ai-task-row" className="hover:bg-slate-50 cursor-pointer">
                   <td className={`${tdCls} max-w-[22rem]`}>
                     <button type="button" onClick={e => { e.stopPropagation(); setOpenId(t.id); }} className="text-left font-bold text-slate-900 hover:text-blue-700">{t.title}</button>
+                    {t.assignmentType === 'CROSS_TEAM' ? <CrossTeamBadge className="ml-1.5 align-middle" /> : null}
                     {t.description && <p className="text-xs text-slate-500 line-clamp-2">{t.description}</p>}
                   </td>
-                  <td className={tdCls}>{t.projectName}</td>
+                  <td className={tdCls}>{t.projectName}{t.ownerTeam ? <span className="block text-xs text-slate-500">{t.ownerTeam}{t.assignedByName ? ` · by ${t.assignedByName}` : ''}</span> : null}</td>
                   {team && <td className={tdCls}>{t.assigneeName}</td>}
                   <td className={tdCls}>{dateText(t.assignedAt)}</td>
                   <td className={tdCls}>

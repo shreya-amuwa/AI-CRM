@@ -67,7 +67,7 @@ export const TeamMemberLayout: React.FC<TeamMemberLayoutProps> = ({
   pipelineCounts
 }) => {
   const { user, logout } = useAuth();
-  // My Income moved into the Wallet (20270221000100): a remembered or linked "income" page opens the Wallet
+  // My Income moved into the Wallet (20270223000100): a remembered or linked "income" page opens the Wallet
   const asNav = (n: TeamMemberNav): TeamMemberNav => (n === 'income' ? WALLET_NAV as TeamMemberNav : n);
 
   const navItems = [

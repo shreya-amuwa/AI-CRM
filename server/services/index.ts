@@ -101,6 +101,8 @@ import { PerformanceRepository } from '../repositories/PerformanceRepository.js'
 import { PerformersRepository } from '../repositories/PerformersRepository.js';
 import { TaskReportRepository } from '../repositories/TaskReportRepository.js';
 import { TaskReportService } from './TaskReportService.js';
+import { WorkTaskRepository } from '../repositories/WorkTaskRepository.js';
+import { WorkTaskService } from './WorkTaskService.js';
 
 /** Request-scoped service container (repositories share the caller's RLS client). */
 export function createServices(db: SupabaseClient) {
@@ -149,6 +151,7 @@ export function createServices(db: SupabaseClient) {
     crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),
     taskReports: new TaskReportService(new TaskReportRepository(db)),
+    workTasks: new WorkTaskService(new WorkTaskRepository(db)),
     aiDesignStudio: new AiDesignStudioService(new AiDesignStudioRepository(db)),
     hrReviews: new HrReviewService(new HrReviewRepository(db)),
     reportAnalytics: new ReportAnalyticsService(new ReportAnalyticsRepository(db)),

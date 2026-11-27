@@ -126,7 +126,7 @@ export const BusinessAssociateDashboard: React.FC = () => {
     navigateTo(next === 'home' ? BA_BASE(userId) : `${BA_BASE(userId)}/${SEGMENT[next]}`);
   };
   const go: BaNavigate = (next, t) => open(next, t);
-  // My Income moved into the Wallet (20270221000100): an old /income address opens the Wallet over Home
+  // My Income moved into the Wallet (20270223000100): an old /income address opens the Wallet over Home
   useEffect(() => { if (page === 'income') { open('home'); openWallet(); } }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenIssuesRequest(React.useCallback(() => open('raise-issue'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
   useOpenChatRequest(React.useCallback(() => open('chat'), [userId])); // eslint-disable-line react-hooks/exhaustive-deps
