@@ -47,3 +47,6 @@ import './withAppFeedback';
 w.mountDashboard = () => root().render(<DepartmentHeadDashboard />);
 // the Team Lead's lead form, exactly as the Team Lead's dashboard shows it (no owner choice)
 w.mountTlForm = () => root().render(<div className="p-4 max-w-6xl"><AddLeadView onCancel={() => undefined} onSaved={() => undefined} /></div>);
+// "My Leads > Leads > Add lead" (the shared pipeline page every dashboard uses), as the signed-in window.__profile
+import { PipelineWorkspace } from '../../../src/components/team-member/pipeline/PipelineWorkspace';
+w.mountMyLeadsAdd = () => root().render(<div className="p-4 max-w-6xl"><PipelineWorkspace section="leads" counts={null} ownOnly startWithAdd onNavigate={() => undefined} /></div>);

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import type { PipelineCounts } from '../../../../shared/contracts';
 import { AddLeadView, EditLeadView } from './LeadForms';
+import { HeadOwnedAddLead } from './HeadOwnedAddLead';
+import { useAuth } from '../../../context/AuthContext';
 import { LeadsView } from './LeadsView';
 import { OnboardingCustomerView, OnboardingListView } from './OnboardingViews';
 import { PotentialView } from './PotentialView';
@@ -32,6 +34,8 @@ export const PipelineWorkspace: React.FC<{
   onNavigate: (section: PipelineSection) => void;
 }> = ({ section, counts, startWithAdd, resetKey, ownOnly, leadFilters, onNavigate }) => {
   const [page, setPage] = useState<Page>(startWithAdd ? { kind: 'add-lead' } : { kind: 'list' });
+  // a Department Head has no team: their lead form asks who owns the lead (Myself first)
+  const isHead = useAuth().profile?.role === 'DEPARTMENT_HEAD';
   const [pendingOpen, setPendingOpen] = useState<string | null>(null);
 
   // Switching section resets to its list unless a cross-section open is pending.
@@ -51,7 +55,9 @@ export const PipelineWorkspace: React.FC<{
 
   if (section === 'leads') {
     if (page.kind === 'add-lead')
-      return <AddLeadView onCancel={() => setPage({ kind: 'list' })} onSaved={id => setPage({ kind: 'edit-lead', id })} />;
+      return isHead
+        ? <HeadOwnedAddLead onCancel={() => setPage({ kind: 'list' })} onSaved={id => setPage({ kind: 'edit-lead', id })} />
+        : <AddLeadView onCancel={() => setPage({ kind: 'list' })} onSaved={id => setPage({ kind: 'edit-lead', id })} />;
     if (page.kind === 'edit-lead')
       return <EditLeadView id={page.id} onBack={() => setPage({ kind: 'list' })} onMovedToPotential={() => onNavigate('potential')} />;
     return <LeadsView counts={counts} showInbound={!ownOnly} mine={ownOnly} leadFilters={leadFilters} onAdd={() => setPage({ kind: 'add-lead' })} onEdit={id => setPage({ kind: 'edit-lead', id })} />;

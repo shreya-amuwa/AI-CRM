@@ -65,6 +65,23 @@ signed-out caller to no one. The Team Lead's own flow is unchanged. Sending the 
 request id; a smuggled department is ignored; every refused combination; the Support head), `department_head_add_lead.test.ts` (what the API accepts) and the browser
 test (same fields as the Team Lead's form plus the owner choice, validation, success, refresh, double click, server error, the Overview button).
 
+## Add lead from "My Leads" (every Department Head)
+
+**The bug.** "My Sales > My Leads > Leads > Add lead" (the Sales Department Head's own pipeline, and the same shared page on the other dashboards) opened the
+lead form without a Lead owner and sent no owner. The API then used the sender's team, and a Department Head has none, so the lead was refused with
+"Choose a lead owner who belongs to a team."
+
+**Now.**
+
+* Wherever a Department Head adds a lead, the form has the **Lead owner** choice: **Myself (Department Head)** first and chosen by default, then the
+  Team Leads and Team Members of their side of the department (the database's own list, `head_lead_owners`). The shared page uses
+  `HeadOwnedAddLead`; the department Leads page already had the choice.
+* The API: a Department Head who sends no owner owns the lead themself (`PipelineService.createLead`). The database still checks every owner
+  (`private.can_assign_customer_owner`): never someone outside the head's department. A head's own lead sits under a team of their side
+  (`private.lead_team_of`), as before.
+* Team Leads and Team Members are unchanged: they own the leads they add. No migration.
+* Tests: the "head lead owner" block of `api_integration.test.ts` and the "My Leads" checks of `ui_department_head_dashboard.test.mjs`.
+
 ## Add customer for a Support Department Head
 
 Customers → **Add customer** (Support Department Head, and the head of a unified department in its Support section). Before, the head could only upload a sheet
