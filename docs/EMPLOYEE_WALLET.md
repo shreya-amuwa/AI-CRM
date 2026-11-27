@@ -71,7 +71,7 @@ failure to notify never blocks Accounts or a withdrawal. Clicking one opens the 
 - **HR screen for the report and credits.** HR can read the report through the database function; a screen for HR (and HR entering credits) is a follow-up.
 - **Team Lead / Department Head views** of their team's wallets (see above).
 
-## Wallet PIN (migration `20270220000100_wallet_pin.sql`)
+## Wallet PIN (migration `20270222000100_wallet_pin.sql`)
 Design: `docs/superpowers/specs/2026-11-26-wallet-pin-design.md`.
 - **First open:** the Wallet asks for a 6-digit PIN, entered twice. Not the same digit six times or a simple sequence (123456, 654321, 012345, 543210).
 - **Afterwards:** the PIN is entered once per sign-in. The unlock is kept for that sign-in session (the access token's `session_id`) for 15 minutes,

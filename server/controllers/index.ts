@@ -484,8 +484,14 @@ export const payoutController = {
   razorpayStatus: (async ctx => ok(svc(ctx).payouts.razorpayStatus())) as Handler,
   payViaRazorpay: (async ctx => ok(await svc(ctx).payouts.payViaRazorpay(ctx.actor, ctx.params.id, ctx.req.body))) as Handler,
   checkRazorpay: (async ctx => ok(await svc(ctx).payouts.checkRazorpay(ctx.params.id))) as Handler,
-  /** Wallet PIN: e-mail a one-time reset code to the signed-in employee (20270220000100). */
+  /** Wallet PIN: e-mail a one-time reset code to the signed-in employee (20270222000100). */
   walletPinForgot: (async ctx => ok(await walletPinForgot(ctx.actor.id))) as Handler
+};
+
+// Deleting a Task module task (Team Lead / Department Head / Operations Head; the database decides)
+export const workTasksController = {
+  deletePreview: (async ctx => ok(await svc(ctx).workTasks.deletePreview(ctx.params.id))) as Handler,
+  remove: (async ctx => ok(await svc(ctx).workTasks.remove(ctx.params.id))) as Handler
 };
 
 // Task daily reports (Team Member -> Team Lead) and performance approval (Team Member -> Team Lead -> Department Head)
@@ -1028,6 +1034,7 @@ export const aiDesignStudioController = {
   assignmentStatus: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentStatus(ctx.params.id, ctx.req.body))) as Handler,
   assignmentUpdate: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentUpdate(ctx.params.id, ctx.req.body))) as Handler,
   assignmentReassign: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentReassign(ctx.params.id, ctx.req.body))) as Handler,
+  assignmentDelete: (async ctx => ok(await svc(ctx).aiDesignStudio.assignmentDelete(ctx.params.id))) as Handler,
   reportSubmit: (async ctx => ok(await svc(ctx).aiDesignStudio.reportSubmit(ctx.req.body), 201)) as Handler,
   reports: (async ctx => ok(await svc(ctx).aiDesignStudio.reports(ctx.req.query))) as Handler,
   report: (async ctx => ok(await svc(ctx).aiDesignStudio.report(ctx.params.id))) as Handler,
@@ -1054,6 +1061,7 @@ export const aiStudioController = {
   task: (async ctx => ok(await svc(ctx).aiStudio.task(ctx.params.id))) as Handler,
   assignTask: (async ctx => ok(await svc(ctx).aiStudio.assignTask(ctx.req.body), 201)) as Handler,
   editTask: (async ctx => ok(await svc(ctx).aiStudio.editTask(ctx.params.id, ctx.req.body))) as Handler,
+  deleteTask: (async ctx => ok(await svc(ctx).aiStudio.deleteTask(ctx.params.id))) as Handler,
   updateTask: (async ctx => ok(await svc(ctx).aiStudio.updateTask(ctx.params.id, ctx.req.body))) as Handler,
   reportContext: (async ctx => ok(await svc(ctx).aiStudio.reportContext())) as Handler,
   reports: (async ctx => ok(await svc(ctx).aiStudio.reports(ctx.req.query))) as Handler,
@@ -1063,6 +1071,7 @@ export const aiStudioController = {
   deleteDraft: (async ctx => { await svc(ctx).aiStudio.deleteDraft(ctx.params.id); return ok(null); }) as Handler,
   reviewReport: (async ctx => ok(await svc(ctx).aiStudio.reviewReport(ctx.params.id, ctx.req.body))) as Handler,
   leadEditReport: (async ctx => ok(await svc(ctx).aiStudio.leadEditReport(ctx.params.id, ctx.req.body))) as Handler,
+  assignees: (async ctx => ok(await svc(ctx).aiStudio.assignees(ctx.params.id))) as Handler,
   dailyReportOptions: (async ctx => ok(await svc(ctx).aiStudio.dailyReportOptions(ctx.req.query))) as Handler,
   dailyReportPreview: (async ctx => ok(await svc(ctx).aiStudio.dailyReportPreview(ctx.req.body))) as Handler,
   createDailyReport: (async ctx => ok(await svc(ctx).aiStudio.createDailyReport(ctx.req.body), 201)) as Handler,

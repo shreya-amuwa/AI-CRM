@@ -53,7 +53,7 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
   const [nonce, setNonce] = useState(0);
   const dept = departments.find(d => d.id === 'ai-studio');
   useOpenChatRequest(useCallback(() => setPage('chat'), []));
-  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); setPage(d.kind === 'task' ? 'tasks' : 'reports'); }, []));
+  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); setPage(d.kind === 'task' ? 'tasks' : d.kind === 'project' ? 'projects' : 'reports'); }, []));
 
   const items = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },

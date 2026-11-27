@@ -176,7 +176,7 @@ try {
     await ctx.close();
   }
 
-  // ---- the Wallet PIN (20270220000100): set on first open, entered afterwards, wrong tries, forgot, change, lock
+  // ---- the Wallet PIN (20270222000100): set on first open, entered afterwards, wrong tries, forgot, change, lock
   for (const [label, viewport] of [['desktop', { width: 1280, height: 900 }], ['phone', { width: 390, height: 800 }]]) {
     const ctx = await browser.newContext({ viewport, timezoneId: 'Asia/Kolkata' });
     const page = await ctx.newPage();

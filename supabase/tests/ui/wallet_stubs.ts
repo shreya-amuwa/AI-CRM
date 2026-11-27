@@ -41,7 +41,7 @@ const ledger = () => {
 };
 const mask = (m: any) => m;
 const month = (ym: string, inc: number, bon: number, rev: number, wd: number) => ({ month: ym, incentives: inc, reversed: rev, bonuses: bon, adjustments: 0, withdrawn: wd });
-// the Wallet PIN (20270220000100): by default set and unlocked, so the wallet's own checks run as before; the PIN section of the test changes it
+// the Wallet PIN (20270222000100): by default set and unlocked, so the wallet's own checks run as before; the PIN section of the test changes it
 state.pin = { hasPin: true, pin: '482913', unlocked: true, fails: 0, lockedUntil: null as string | null, code: 'ABCD2345' };
 const locked = () => { if (!state.pin.unlocked) fail('WALLET_LOCKED: Enter your Wallet PIN.'); };
 const pinCheck = (p: string, c: string) => {

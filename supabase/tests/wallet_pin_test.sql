@@ -1,5 +1,5 @@
 -- =============================================================================
--- Wallet PIN (migration 20270220000100): set once, unlock per sign-in session, 5 wrong PINs lock it, change, forgot (an e-mailed code), and the
+-- Wallet PIN (migration 20270222000100): set once, unlock per sign-in session, 5 wrong PINs lock it, change, forgot (an e-mailed code), and the
 -- Wallet's own functions refuse until the PIN is entered. Runs after wallet_test.sql (reuses tm_b, tm_a, sa). Synthetic data only; safe to run again.
 -- =============================================================================
 \set ON_ERROR_STOP 1
@@ -7,8 +7,8 @@
 \echo '--- 151. Wallet PIN'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270220000100_wallet_pin.sql
-\i supabase/migrations/20270220000100_wallet_pin.sql
+\i supabase/migrations/20270222000100_wallet_pin.sql
+\i supabase/migrations/20270222000100_wallet_pin.sql
 delete from wallet_pins where profile_id in (test.id('tm_b'), test.id('tm_a'));
 delete from wallet_unlocks where profile_id in (test.id('tm_b'), test.id('tm_a'));
 delete from wallet_pin_resets where profile_id in (test.id('tm_b'), test.id('tm_a'));

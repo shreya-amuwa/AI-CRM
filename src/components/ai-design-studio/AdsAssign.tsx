@@ -4,6 +4,8 @@ import type { AdsAssignment, AdsAssignmentDetail, AdsAssignmentStatus, AdsLink, 
 import { ADS_ASSIGNMENT_STATUSES, ADS_ASSIGNMENT_STATUS_LABELS, ADS_PRIORITIES, ADS_PRIORITY_LABELS } from '../../../shared/contracts';
 import { adsAssignmentCreateSchema, adsAssignmentStatusSchema, adsAssignmentUpdateSchema } from '../../../shared/validation';
 import { SideDrawer } from '../common/SideDrawer';
+import { confirmTaskDeletion, countLine } from '../../lib/taskDeletion';
+import { toast } from '../../lib/feedback/feedbackStore';
 import { notifyAdsChanged, takePendingAds, useOpenAdsRequest } from './adsEvents';
 import {
   aiDesignStudioApi, AssignmentStatusBadge, Card, CardHead, ClientSelect, cleanLinks, DetailRow, EmptyState, ErrorLine, errorMessage, FormField, Flash, fieldCls, fmtDate,
@@ -460,9 +462,24 @@ const AssignmentDrawer: React.FC<{ id: string; onOpenOther: (id: string) => void
   const open = data && data.status !== 'COMPLETED';
   const canEdit = !!data && (isHead(ctx) || data.assignedBy === ctx.userId);
   const canDelegate = !!data && isLead(ctx) && data.assigneeId === ctx.userId && !data.parentId;
+  // Delete: only when the database says so (the Team Lead who gave it, the Department Head); the delete is checked there again
+  const remove = async () => {
+    if (!data?.canDelete) return;
+    const ok = await confirmTaskDeletion({
+      noun: 'assignment', title: data.title, assigneeName: data.assigneeName, status: ADS_ASSIGNMENT_STATUS_LABELS[data.status] ?? data.status, dueDate: data.dueDate ? fmtDate(data.dueDate) : null,
+      alsoRemoved: [countLine(data.memberCount, "Team Member's part", "Team Members' parts")],
+      run: () => aiDesignStudioApi.deleteAssignment(data.id)
+    });
+    if (!ok) return;
+    toast.success(`Assignment deleted: ${data.title}`);
+    notifyAdsChanged();
+    onClose();
+  };
+  // Escape inside the delete confirmation closes only the confirmation
+  const close = () => { if (!document.querySelector('[data-testid="app-dialog-layer"]')) onClose(); };
 
   return (
-    <SideDrawer title={data?.title ?? 'Assignment'} subtitle={data ? `${data.clientName ?? 'Client'} · ${ctx.role === 'TEAM_MEMBER' ? 'Assigned by ' + (data.assignedByName ?? '') : 'Assigned to ' + (data.assigneeName ?? '')}` : undefined} onClose={onClose}>
+    <SideDrawer title={data?.title ?? 'Assignment'} subtitle={data ? `${data.clientName ?? 'Client'} · ${ctx.role === 'TEAM_MEMBER' ? 'Assigned by ' + (data.assignedByName ?? '') : 'Assigned to ' + (data.assigneeName ?? '')}` : undefined} onClose={close}>
       <div className="p-5 space-y-6">
         {loading && !data && <LoadingLine label="Loading assignment…" />}
         <ErrorLine message={error} onRetry={reload} />
@@ -507,6 +524,12 @@ const AssignmentDrawer: React.FC<{ id: string; onOpenOther: (id: string) => void
             {open && canDelegate && <DelegateForm detail={data} onDone={done} />}
             {open && canEdit && <EditForm key={`e-${data.id}-${data.updatedAt}`} detail={data} onDone={done} />}
             {open && canEdit && data.memberCount === 0 && <ReassignForm detail={data} onDone={done} />}
+            {data.canDelete && (
+              <div className="flex justify-end">
+                <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+                  onClick={() => void remove()} data-testid="ads-assignment-delete">Delete assignment</button>
+              </div>
+            )}
             {data.status === 'COMPLETED' && <p className="text-[13px] text-emerald-700 font-semibold">This assignment is completed{data.completedAt ? ` on ${fmtDate(data.completedAt)}` : ''}.</p>}
 
             <section aria-label="History" className="space-y-2">
