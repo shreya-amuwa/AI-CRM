@@ -21,6 +21,13 @@ check(!noticePublishSchema.safeParse({ ...base, audienceType: 'ROLE' }).success 
 check(!noticePublishSchema.safeParse({ ...base, audienceType: 'ROLE', roles: ['CEO'] }).success, 'only the known designations');
 check(!noticePublishSchema.safeParse({ ...base, audienceType: 'EMPLOYEES' }).success && noticePublishSchema.safeParse({ ...base, audienceType: 'EMPLOYEES', employeeIds: [id] }).success,
   'selected employees: at least one');
+// Sales / Support (20270224000100): exactly one department; the ticked team members are optional (none = the whole function)
+const id2 = '22222222-2222-4222-8222-222222222222';
+for (const t of ['SALES', 'SUPPORT']) {
+  check(!noticePublishSchema.safeParse({ ...base, audienceType: t }).success && !noticePublishSchema.safeParse({ ...base, audienceType: t, departmentIds: [id, id2] }).success
+    && noticePublishSchema.safeParse({ ...base, audienceType: t, departmentIds: [id] }).success
+    && noticePublishSchema.safeParse({ ...base, audienceType: t, departmentIds: [id], employeeIds: [id2] }).success, `${t.toLowerCase()}: one department, team members optional`);
+}
 check(!noticePublishSchema.safeParse({ ...base, priority: 'CRITICAL' }).success && noticePublishSchema.safeParse({ ...base, priority: 'URGENT' }).success, 'Normal / Important / Urgent');
 check(!noticePublishSchema.safeParse({ ...base, title: 'Hi' }).success && !noticePublishSchema.safeParse({ ...base, body: '' }).success, 'a title and a description');
 check(!noticePublishSchema.safeParse({ ...base, publishAt: '2026-12-01T10:00:00+05:30', expiresAt: '2026-11-30T10:00:00+05:30' }).success

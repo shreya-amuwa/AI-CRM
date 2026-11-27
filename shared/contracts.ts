@@ -7242,7 +7242,8 @@ export interface EmailRulePreview { rule: string; recipients: { mode: 'CC' | 'BC
 // ---------------------------------------------------------------------------
 export type NoticeCategory = 'GENERAL' | 'HR' | 'POLICY' | 'EVENT' | 'HOLIDAY' | 'IT_SYSTEM' | 'OPERATIONS' | 'OTHER';
 export type NoticePriority = 'NORMAL' | 'IMPORTANT' | 'URGENT';
-export type NoticeAudienceType = 'COMPANY' | 'DEPARTMENT' | 'ROLE' | 'EMPLOYEES';
+/** SALES / SUPPORT (20270224000100): one department's Sales or Support function; `employees` empty = the whole function */
+export type NoticeAudienceType = 'COMPANY' | 'DEPARTMENT' | 'ROLE' | 'EMPLOYEES' | 'SALES' | 'SUPPORT';
 /** SUPER_ADMIN / HR / DEVELOPER: any audience; OPERATIONS_HEAD: only the departments they own */
 /** 20270202000100: SUPER_ADMIN, HR and CRM_TEAM (Ashish, Shreya, Siddhesh by profile id) publish; the earlier OPERATIONS_HEAD / DEVELOPER only mark old notices. */
 export type NoticePublisherRole = 'SUPER_ADMIN' | 'OPERATIONS_HEAD' | 'HR' | 'DEVELOPER' | 'CRM_TEAM';
@@ -7279,6 +7280,13 @@ export interface NoticeAudienceOptions {
   canPublish: boolean; role: NoticePublisherRole | null; audiences: NoticeAudienceType[];
   departments: { id: string; name: string }[]; roles: { id: string; label: string }[];
   employees: { id: string; name: string; role: string; department: string | null; departmentId: string | null }[];
+  /** (20270224000100) the Sales / Support departments with the people of that function; absent before the migration runs */
+  sales?: NoticeDivisionDepartment[];
+  support?: NoticeDivisionDepartment[];
+}
+export interface NoticeDivisionDepartment {
+  id: string; name: string;
+  employees: { id: string; name: string; role: string; team: string | null }[];
 }
 
 // ---------------------------------------------------------------------------

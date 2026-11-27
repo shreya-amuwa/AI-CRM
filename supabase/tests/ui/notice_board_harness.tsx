@@ -19,6 +19,11 @@ const PEOPLE = [
   { id: '00000000-0000-4000-8000-0000000000e3', name: 'Anita Accounts', role: 'TEAM_MEMBER', department: 'Accounts', departmentId: '00000000-0000-4000-8000-00000000d002' }
 ];
 const DEPTS = [{ id: '00000000-0000-4000-8000-00000000d001', name: 'Wabastore' }, { id: '00000000-0000-4000-8000-00000000d002', name: 'Accounts' }];
+// Sales / Support (20270224000100): Wabastore's Sales function is Priya, its Support function Ravi; Accounts has neither
+const DIVISIONS: Record<string, { id: string; name: string; employees: { id: string; name: string; role: string; team: string }[] }[]> = {
+  SALES: [{ id: DEPTS[0].id, name: 'Wabastore', employees: [{ id: PEOPLE[0].id, name: PEOPLE[0].name, role: 'TEAM_MEMBER', team: 'Sales' }] }],
+  SUPPORT: [{ id: DEPTS[0].id, name: 'Wabastore', employees: [{ id: PEOPLE[1].id, name: PEOPLE[1].name, role: 'TEAM_MEMBER', team: 'Support' }] }]
+};
 const notices: any[] = [];
 const reads: Record<string, Record<string, string>> = {};
 let seq = 0;
@@ -32,7 +37,9 @@ const make = (x: any) => {
 };
 // the recipients of a notice: everyone in its audience but its publisher
 const recipients = (n: any) => PEOPLE.filter(p => p.id !== n.publisherId && (n.audience.type === 'COMPANY' || (n.audience.type === 'DEPARTMENT' && n.audience.departments.includes(p.departmentId))
-  || (n.audience.type === 'EMPLOYEES' && n.audience.employees.includes(p.id))));
+  || (n.audience.type === 'EMPLOYEES' && n.audience.employees.includes(p.id))
+  || ((n.audience.type === 'SALES' || n.audience.type === 'SUPPORT') && (DIVISIONS[n.audience.type].find(d => d.id === n.audience.departments[0])?.employees ?? []).some(e => e.id === p.id)
+      && (n.audience.employees.length === 0 || n.audience.employees.includes(p.id)))));
 const view = (n: any, full = false) => {
   const me = w.__profile.id;
   const mine = recipients(n).some(p => p.id === me);
@@ -53,9 +60,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const me = w.__profile;
   if (p === '/bugs/access') return json({ isDeveloper: false, isLead: false, developers: [] });
   if (p === '/notices/unread-count') return json({ unread: unread() });
-  if (p === '/notices/audience') return json(me.publisher ? { canPublish: true, role: me.publisher, audiences: ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES'], departments: DEPTS,
-    roles: [{ id: 'TEAM_HEAD', label: 'Team Leads' }, { id: 'TEAM_MEMBER', label: 'Team Members' }], employees: PEOPLE }
-    : { canPublish: false, role: null, audiences: [], departments: [], roles: [], employees: [] });
+  if (p === '/notices/audience') return json(me.publisher ? { canPublish: true, role: me.publisher, audiences: ['COMPANY', 'DEPARTMENT', 'ROLE', 'EMPLOYEES', 'SALES', 'SUPPORT'], departments: DEPTS,
+    roles: [{ id: 'TEAM_HEAD', label: 'Team Leads' }, { id: 'TEAM_MEMBER', label: 'Team Members' }], employees: PEOPLE, sales: DIVISIONS.SALES, support: DIVISIONS.SUPPORT }
+    : { canPublish: false, role: null, audiences: [], departments: [], roles: [], employees: [], sales: [], support: [] });
   if (p === '/notices' && method === 'GET') {
     const scope = url.searchParams.get('scope') ?? 'INBOX';
     if (scope === 'MINE' && !me.publisher) return json({ code: 'FORBIDDEN', message: 'Only publishers have published notices.' }, 403);
@@ -109,9 +116,11 @@ const Dash: React.FC = () => {
   );
 };
 let root: ReturnType<typeof createRoot> | null = null;
-w.mount = (who: 'member' | 'sa' | 'hr') => {
+w.mount = (who: 'member' | 'support' | 'sa' | 'hr' | 'crm') => {
   w.__profile = who === 'sa' ? { id: '00000000-0000-4000-8000-0000000000a1', fullName: 'Asha CEO', role: 'SUPER_ADMIN', publisher: 'SUPER_ADMIN' }
     : who === 'hr' ? { id: '00000000-0000-4000-8000-0000000000b1', fullName: 'Hema HR', role: 'DEPARTMENT_HEAD', publisher: 'HR', department: { slug: 'hr' } }
+    : who === 'crm' ? { id: '00000000-0000-4000-8000-0000000000c1', fullName: 'Ashish Sinha', role: 'TEAM_MEMBER', publisher: 'CRM_TEAM' }
+    : who === 'support' ? { id: PEOPLE[1].id, fullName: PEOPLE[1].name, role: 'TEAM_MEMBER' }
     : { id: PEOPLE[0].id, fullName: PEOPLE[0].name, role: 'TEAM_MEMBER' };
   root = createRoot(document.getElementById('root')!);
   root.render(<Dash />);
