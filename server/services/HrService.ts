@@ -18,12 +18,17 @@ import { confirmationDateSchema, paidLeaveAdjustSchema, paidLeaveListQuerySchema
   uuidSchema
 } from '../../shared/validation.js';
 import { automationSettings, liveChannels } from '../automations/config.js';
+import { sendHrCycleEmails } from '../automations/hrDispatcher.js';
 import { renderHrEmail } from '../automations/hrTemplates.js';
 import { parse } from '../http/validate.js';
 import type { HrRepository } from '../repositories/HrRepository.js';
 
 export class HrService {
-  constructor(private readonly repo: HrRepository) {}
+  constructor(
+    private readonly repo: HrRepository,
+    // sends one cycle's confirmation e-mails now (service role); injectable for tests
+    private readonly sendCycle: (cycleId: string) => Promise<{ note?: string }> = id => sendHrCycleEmails(id)
+  ) {}
 
   recordRmLogin() { return this.repo.recordRmLogin(); }
 
@@ -110,9 +115,32 @@ export class HrService {
   }
   emailHistory(query: unknown): Promise<HrEmailHistory> { return this.repo.emailHistory(parse(hrEmailHistoryQuerySchema, query)); }
   probationList(): Promise<HrProbationCycle[]> { return this.repo.probationList(); }
-  confirmProbation(id: string, body: unknown): Promise<HrProbationCycle> {
+  /**
+   * Confirm: the database validates and records the decision (CONFIRMING) and queues the confirmation e-mails; they are sent right here, and the
+   * employee is Confirmed only when the database has recorded their e-mail as SENT. The cycle is read back so the screen shows the real outcome.
+   */
+  async confirmProbation(id: string, body: unknown): Promise<HrProbationCycle> {
     const i = parse(hrConfirmProbationSchema, body ?? {});
-    return this.repo.confirmProbation(parse(uuidSchema, id), i.effectiveDate ?? null, i.note ?? null);
+    const cycleId = parse(uuidSchema, id);
+    await this.repo.confirmProbation(cycleId, i.effectiveDate ?? null, i.note ?? null);
+    return this.sendConfirmationNow(cycleId);
+  }
+  async retryProbationEmail(id: string): Promise<HrProbationCycle> {
+    const cycleId = parse(uuidSchema, id);
+    const cycle = await this.repo.retryProbationEmail(cycleId);
+    return cycle.status === 'APPROVED' ? cycle : this.sendConfirmationNow(cycleId);
+  }
+  remindOverdueProbation(id: string) { return this.repo.remindOverdueProbation(parse(uuidSchema, id)); }
+  private async sendConfirmationNow(cycleId: string): Promise<HrProbationCycle> {
+    let notice: string | undefined;
+    try {
+      notice = (await this.sendCycle(cycleId)).note;
+    } catch {
+      // the e-mail stays queued (the scheduler sends it); the read-back below shows its real status
+      notice = 'The confirmation e-mail could not be sent just now. It stays queued; retry it or wait for the next automatic run.';
+    }
+    const cycle = await this.repo.probationGet(cycleId);
+    return notice && cycle.status !== 'APPROVED' ? { ...cycle, notice } : cycle;
   }
   dismissProbation(id: string, body: unknown): Promise<HrProbationCycle> {
     return this.repo.dismissProbation(parse(uuidSchema, id), parse(hrDismissProbationSchema, body).note);

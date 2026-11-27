@@ -137,7 +137,8 @@ export interface Profile {
   /** Sales role of a Sales team member (Telecaller, Business Associate, ...); null for everybody else. */
   salesSubRole?: SalesSubRole | null;
   /** HR designation of an HR employee: HR Assistant (the existing HR dashboard) or HR Recruiter (the recruiter dashboard); null for everybody else. */
-  hrSubRole?: 'HR_ASSISTANT' | 'HR_RECRUITER' | null;
+  /** HR_DEPARTMENT: the HR of one business department (e.g. Digitree), placed in that department; HR scope = that department only. */
+  hrSubRole?: 'HR_ASSISTANT' | 'HR_RECRUITER' | 'HR_DEPARTMENT' | null;
   /** Sales or Support side of a Department Head (null when not specified or not a Department Head). */
   headDivision?: HeadDivision | null;
   /** Stored default dashboard (resolved by the database from role + team division). */
@@ -2879,13 +2880,21 @@ export interface HrProbationCycle {
   joiningDate: string;
   probationEnd: string;
   daysLeft: number;
-  status: 'PENDING' | 'APPROVED' | 'DISMISSED';
+  /** CONFIRMING: Confirm was clicked, the employee's confirmation e-mail is not sent yet. APPROVED (Confirmed) only once it is sent. */
+  status: 'PENDING' | 'CONFIRMING' | 'APPROVED' | 'DISMISSED';
   effectiveDate: string | null;
   approvedAt: string | null;
   approvedBy: string | null;
   note: string | null;
-  /** Whether the signed-in user may approve / close it (HR lead, the employee's Department Head, Super Admin). */
+  /** Whether the signed-in user may approve / close it (HR lead, the department's HR, the employee's Department Head, Super Admin). */
   canDecide: boolean;
+  /** The end date has passed and the confirmation is not completed (an unsent confirmation e-mail keeps it overdue). Older servers omit it. */
+  overdue?: boolean;
+  overdueRemindedAt?: string | null;
+  /** The employee's confirmation e-mail, tracked separately from the confirmation status (null before Confirm). */
+  email?: { status: HrEmailStatus; error: string | null; sentAt: string | null; sendAfter: string; attempts: number; nextAttemptAt: string } | null;
+  /** Set after Confirm / Retry when the e-mail could not go out now (sending switched off, not configured, a temporary failure). */
+  notice?: string;
 }
 export type HrDataIssue = 'NO_VALID_EMAIL' | 'NO_DATE_OF_BIRTH' | 'NO_JOINING_DATE' | 'JOINING_DATE_IN_THE_FUTURE';
 export interface HrEmailDataIssue {

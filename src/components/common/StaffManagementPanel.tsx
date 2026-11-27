@@ -5,7 +5,7 @@ import {
   RefreshCw, Ban, PauseCircle, PlayCircle, LayoutDashboard, ArrowUpCircle, Trash2, Lock, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { HEAD_DIVISIONS, HEAD_DIVISION_LABELS, SALES_SUB_ROLES, SALES_SUB_ROLE_LABELS, type DepartmentHeadAccess, type HeadDivision, type Profile, type Role, type SalesSubRole, type Team, type TeamDivision } from '../../../shared/contracts';
-import { BLOOD_GROUPS, DESIGNATIONS, HR_DESIGNATIONS, HR_DESIGNATION_ROLE, designationProblem, isHrDesignation, userCreateSchema, type HrDesignation } from '../../../shared/validation';
+import { BLOOD_GROUPS, DEPARTMENT_HR_DESIGNATION, DEPARTMENT_HR_OPTIONS, DESIGNATIONS, HR_DESIGNATIONS, HR_DESIGNATION_ROLE, designationProblem, isHrDesignation, userCreateSchema, type HrDesignation } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { organizationApi, usersApi } from '../../lib/api/endpoints';
@@ -127,6 +127,9 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   const [choice, setChoice] = useState<StaffChoice>('TEAM_MEMBER');
   // The HR department has its own three designations instead of the generic roles (see hrMode below).
   const [hrChoice, setHrChoice] = useState<HrDesignation>('HR Assistant');
+  // HR (Digitree): an HR member of ONE business department (Super Admin only). The slug of that department, or null for the HR designations above.
+  const [deptHr, setDeptHr] = useState<string | null>(null);
+  const [deptHrTeam, setDeptHrTeam] = useState<Team | null | undefined>(undefined);
   const [teamId, setTeamId] = useState('');
   // AI Studio: the project(s) of a new Team Lead / Team Member, and the Team Lead of a new Team Member
   const [aiProjects, setAiProjects] = useState<string[]>([]);
@@ -201,7 +204,10 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // AI Design Studio has one General team and no Sales / Support side: its Department Head is simply the head of the department (one per department)
   const adsMode = departmentSlug === AI_DESIGN_STUDIO_SLUG;
   const hrOptions = useMemo(() => HR_DESIGNATIONS.filter(d => allowedRoles.includes(HR_DESIGNATION_ROLE[d])), [allowedRoles]);
-  const effectiveChoice: StaffChoice = hrMode ? HR_DESIGNATION_ROLE[hrChoice] : lockedRole && allowedRoles.includes(lockedRole) ? lockedRole : choice;
+  // HR (Digitree) is offered to the Super Admin only (the server and the database refuse anybody else)
+  const deptHrOptions = profile?.role === 'SUPER_ADMIN' && hrMode ? DEPARTMENT_HR_OPTIONS : [];
+  const deptHrOption = deptHr ? DEPARTMENT_HR_OPTIONS.find(o => o.departmentSlug === deptHr) ?? null : null;
+  const effectiveChoice: StaffChoice = hrMode && deptHrOption ? 'TEAM_MEMBER' : hrMode ? HR_DESIGNATION_ROLE[hrChoice] : lockedRole && allowedRoles.includes(lockedRole) ? lockedRole : choice;
   const consultant = effectiveChoice === 'TECHNICAL_CONSULTANT';
   const metaVerifier = effectiveChoice === 'META_VERIFIER';
   const operationsHead = effectiveChoice === 'OPERATIONS_HEAD';
@@ -209,11 +215,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
   // The designation starts as the matching one for the role (they stay separate fields: the role decides access). It is always the STORED value
   // (DESIGNATIONS, e.g. 'Operations Head'), never the on-screen label: the CEO's label is "CEO" but its stored designation is 'Operations Head'.
   // Using the label left a value no option has, so the dropdown showed "CEO" while the form held 'CEO' and was refused ("Choose a designation.").
-  const roleDesignation: string = hrMode ? hrChoice
+  const roleDesignation: string = hrMode ? (deptHrOption ? DEPARTMENT_HR_DESIGNATION : hrChoice)
     : operationsHead ? 'Operations Head' : role === 'DEPARTMENT_HEAD' ? 'Department Head' : role === 'TEAM_HEAD' ? 'Team Lead' : 'Team Member';
   // the designations the dropdown offers; the role's own designation is always among them, so the default can always be shown and chosen
   const designationOptions = useMemo(() => {
-    const base: string[] = designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d)));
+    const base: string[] = designationsForDepartment(departmentSlug, DESIGNATIONS.filter(d => !(HR_DESIGNATIONS as readonly string[]).includes(d) && d !== DEPARTMENT_HR_DESIGNATION));
     return hrMode || base.includes(roleDesignation) ? base : [roleDesignation, ...base];
   }, [departmentSlug, hrMode, roleDesignation]);
   useEffect(() => { setDesignation(roleDesignation); }, [roleDesignation, departmentSlug]);
@@ -226,7 +232,20 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
     if (hrMode && hrOptions.length && !hrOptions.includes(hrChoice)) setHrChoice(hrOptions[0]);
   }, [hrMode, hrOptions, hrChoice]);
   // changing the department starts the HR choice again (nothing chosen for another department is carried back into HR)
-  useEffect(() => { setHrChoice('HR Assistant'); }, [departmentSlug]);
+  useEffect(() => { setHrChoice('HR Assistant'); setDeptHr(null); }, [departmentSlug]);
+  // HR (Digitree) is placed in that department's own HR team (created by migration 20270223000100), never in a Sales / Support team
+  const deptHrDbId = deptHrOption ? allDepartments.find(d => d.id === deptHrOption.departmentSlug)?.dbId ?? null : undefined;
+  useEffect(() => {
+    if (!deptHrOption || deptHrDbId === undefined) { setDeptHrTeam(undefined); return; }
+    if (!deptHrDbId) { setDeptHrTeam(null); return; }
+    let live = true;
+    setDeptHrTeam(undefined);
+    organizationApi.teams(deptHrDbId).then(
+      ts => { if (live) setDeptHrTeam(ts.find(t => t.name.toLowerCase() === deptHrOption.teamName.toLowerCase() && t.division === 'GENERAL') ?? null); },
+      () => { if (live) setDeptHrTeam(null); }
+    );
+    return () => { live = false; };
+  }, [deptHrOption, deptHrDbId]);
   useEffect(() => {
     if (!hrMode && isHrDesignation(designation)) setDesignation('Team Member');
   }, [hrMode, designation]);
@@ -486,7 +505,11 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       }
       headPlan = plan;
     }
-    const mismatch = designationProblem({ departmentSlug, role, designation, operationsHead });
+    if (deptHrOption && !deptHrTeam) {
+      setFormError(`The ${deptHrOption.teamName} team was not found. Ask the administrator to run the database update 20270223000100, then try again.`);
+      return;
+    }
+    const mismatch = designationProblem({ departmentSlug: deptHrOption ? deptHrOption.departmentSlug : departmentSlug, role, designation, operationsHead });
     if (mismatch) {
       setFormError(mismatch);
       return;
@@ -501,7 +524,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
       role,
       departmentId: headPlan ? headPlan.departmentId : undefined,
       departmentIds: operationsHead ? opsDepts : undefined,
-      teamId: needsTeam ? teamId || undefined : undefined,
+      teamId: deptHrOption ? deptHrTeam?.id : needsTeam ? teamId || undefined : undefined,
       position: position || undefined,
       technicalConsultant: consultant || undefined,
       metaVerifier: metaVerifier || undefined,
@@ -763,11 +786,16 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
               <select
                 id="staff-role"
                 className={`${inputClass} mt-1 cursor-pointer`}
-                value={hrChoice}
-                onChange={e => setHrChoice(e.target.value as HrDesignation)}
+                value={deptHrOption ? `dept-hr:${deptHrOption.departmentSlug}` : hrChoice}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v.startsWith('dept-hr:')) setDeptHr(v.slice('dept-hr:'.length));
+                  else { setDeptHr(null); setHrChoice(v as HrDesignation); }
+                }}
                 data-testid="hr-designation"
               >
                 {hrOptions.map(d => <option key={d} value={d}>{designationLabel(d)}</option>)}
+                {deptHrOptions.map(o => <option key={o.departmentSlug} value={`dept-hr:${o.departmentSlug}`}>{o.label}</option>)}
               </select>
             ) : lockedRole ? (
               <input id="staff-role" className={`${inputClass} mt-1 bg-slate-50 text-slate-600`} value={ROLE_LABELS[lockedRole]} readOnly aria-readonly="true" />
@@ -785,9 +813,12 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             )}
             {hrMode && (
               <span className="block mt-1 font-normal text-slate-500">
-                {hrChoice === 'HR Assistant' && 'Opens the HR dashboard.'}
-                {hrChoice === 'HR Recruiter' && 'Opens the HR Recruiter dashboard (vacancies, candidate applications, pipeline, calls, interviews and selection).'}
-                {hrChoice === 'HR Admin Head' && 'The Department Head of HR: opens the HR Department Head dashboard. One per department; it gives no Managing Director or CEO access.'}
+                {deptHrOption && (deptHrTeam === null
+                  ? <span className="text-rose-700">The {deptHrOption.teamName} team does not exist yet (database update 20270223000100 is needed).</span>
+                  : `Placed in ${deptHrOption.teamName}. Opens the ${deptHrOption.label} dashboard: that department's employees and probation confirmations only, no other department.`)}
+                {!deptHrOption && hrChoice === 'HR Assistant' && 'Opens the HR dashboard.'}
+                {!deptHrOption && hrChoice === 'HR Recruiter' && 'Opens the HR Recruiter dashboard (vacancies, candidate applications, pipeline, calls, interviews and selection).'}
+                {!deptHrOption && hrChoice === 'HR Admin Head' && 'The Department Head of HR: opens the HR Department Head dashboard. One per department; it gives no Managing Director or CEO access.'}
               </span>
             )}
             {(designMode || adsMode) && (
@@ -799,7 +830,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
             )}
           </label>
 
-          {needsTeam && (
+          {needsTeam && !deptHrOption && (
             <label className="block text-xs font-semibold text-slate-700">
               Sub-department / Team *
               <select
@@ -920,7 +951,7 @@ export const StaffManagementPanel: React.FC<StaffManagementPanelProps> = ({ depa
 
           <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5">
             <LayoutDashboard className="w-3.5 h-3.5 shrink-0" />
-            Will open: <strong>{defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, operationsHead ? undefined : department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' && !operationsHead ? headDivision || null : null, metaVerifier, operationsHead, hrMode && hrChoice === 'HR Recruiter' ? 'HR_RECRUITER' : null)}</strong>
+            Will open: <strong>{deptHrOption ? `${deptHrOption.label} dashboard (this department only)` : defaultDashboardLabel(role, needsTeam ? selectedTeam?.division : undefined, operationsHead ? undefined : department?.name, consultant, departmentSlug, showSalesRole ? salesSubRole || null : null, role === 'DEPARTMENT_HEAD' && !operationsHead ? headDivision || null : null, metaVerifier, operationsHead, hrMode && hrChoice === 'HR Recruiter' ? 'HR_RECRUITER' : null)}</strong>
           </div>
 
           {role === 'DEPARTMENT_HEAD' && !operationsHead && existingHead && (

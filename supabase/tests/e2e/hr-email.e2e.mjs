@@ -115,7 +115,7 @@ await p.locator('#app-sidebar').getByText('Probation Confirmations', { exact: tr
 await p.waitForSelector('section[aria-label="Probation confirmations"]', { timeout: 20000 }).catch(() => fail('the probation confirmations page did not appear'));
 await p.waitForSelector('text=Neha Shah', { timeout: 20000 }).catch(() => fail('the employee in probation is not listed'));
 const page = await text(p);
-await expect(/Approve confirmation/.test(page), 'the HR Department Head can approve a confirmation');
+await expect(/\bConfirm\b/.test(page), 'the HR Department Head can confirm (approve) a confirmation');
 await expect(!/Run the check now|Refresh|Email history|Dates to fix|Sent \(30 days\)/.test(page), 'the page has no e-mail run, refresh, history or counts');
 await p.screenshot({ path: `${OUT}/hr-1-probation.png`, fullPage: true });
 await p.getByRole('button', { name: 'Close', exact: true }).first().click();

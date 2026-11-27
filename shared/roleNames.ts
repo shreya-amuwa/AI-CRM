@@ -64,7 +64,9 @@ export function relabelRoles<T extends string | null | undefined>(text: T): T {
 const DESIGNATION_RENAMES: Record<string, string> = {
   'Super Admin': 'Managing Director',
   'Operations Head': 'CEO',
-  'Operation Head': 'CEO'
+  'Operation Head': 'CEO',
+  // a department's own HR (e.g. HR (Digitree)); the department is shown next to it
+  'Department HR': 'HR (department)'
 };
 export function designationLabel<T extends string | null | undefined>(value: T): T {
   if (!value) return value;

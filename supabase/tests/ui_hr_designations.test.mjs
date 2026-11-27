@@ -38,12 +38,13 @@ let browser;
 try { browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined }); } catch (e) { console.log('SKIPPED - Chromium could not be started:', String(e.message).split('\n')[0]); process.exit(0); }
 
 const apiScript = () => {
-  const U = { wabastore: '11111111-1111-4111-8111-111111111111', hr: '22222222-2222-4222-8222-222222222222', accounts: '33333333-3333-4333-8333-333333333333' };
+  const U = { wabastore: '11111111-1111-4111-8111-111111111111', hr: '22222222-2222-4222-8222-222222222222', accounts: '33333333-3333-4333-8333-333333333333', digitree: '55555555-5555-4555-8555-555555555555' };
   const dep = (id, name) => ({ id, dbId: U[id], name, description: '', category: 'x', facetOf: null, facetDivision: null });
-  window.__departments = [dep('wabastore', 'Wabastore'), dep('hr', 'HR Department'), dep('accounts', 'Accounts')];
+  window.__departments = [dep('wabastore', 'Wabastore'), dep('hr', 'HR Department'), dep('accounts', 'Accounts'), dep('digitree', 'Digitree Infotech')];
   window.__profile = { id: 'sa1', fullName: 'Super Admin', email: 'sa@x.example', role: 'SUPER_ADMIN', status: 'ACTIVE', departmentId: null, teamId: null, department: null, team: null };
   window.__posts = [];
-  const teamsOf = { wabastore: [{ id: '44444444-4444-4444-8444-444444444441', departmentId: U.wabastore, name: 'Sales', division: 'SALES' }, { id: '44444444-4444-4444-8444-444444444442', departmentId: U.wabastore, name: 'Support', division: 'SUPPORT' }], hr: [{ id: '44444444-4444-4444-8444-444444444443', departmentId: U.hr, name: 'HR Team', division: 'GENERAL' }], accounts: [{ id: '44444444-4444-4444-8444-444444444444', departmentId: U.accounts, name: 'Accounts Team', division: 'GENERAL' }] };
+  const teamsOf = { wabastore: [{ id: '44444444-4444-4444-8444-444444444441', departmentId: U.wabastore, name: 'Sales', division: 'SALES' }, { id: '44444444-4444-4444-8444-444444444442', departmentId: U.wabastore, name: 'Support', division: 'SUPPORT' }], hr: [{ id: '44444444-4444-4444-8444-444444444443', departmentId: U.hr, name: 'HR Team', division: 'GENERAL' }], accounts: [{ id: '44444444-4444-4444-8444-444444444444', departmentId: U.accounts, name: 'Accounts Team', division: 'GENERAL' }],
+    digitree: [{ id: '44444444-4444-4444-8444-444444444445', departmentId: U.digitree, name: 'Sales', division: 'SALES' }, { id: '44444444-4444-4444-8444-444444444446', departmentId: U.digitree, name: 'Digitree HR', division: 'GENERAL' }] };
   const json = (data, status = 200) => new Response(JSON.stringify(status < 400 ? { success: true, data } : { success: false, error: data }), { status, headers: { 'Content-Type': 'application/json' } });
   window.fetch = async (url, init = {}) => {
     const u = new URL(url, 'http://localhost');
@@ -79,7 +80,7 @@ const fill = async (page, name) => {
 
 {
   const page = await open();
-  check((await optionsOf(page)).join('|') === 'HR Assistant|HR Recruiter|HR Admin Head', 'HR Department: the Role dropdown shows exactly HR Assistant, HR Recruiter, HR Admin Head', await optionsOf(page));
+  check((await optionsOf(page)).join('|') === 'HR Assistant|HR Recruiter|HR Admin Head|HR (Digitree)', 'HR Department: the Super Admin\'s Role dropdown shows exactly HR Assistant, HR Recruiter, HR Admin Head and HR (Digitree)', await optionsOf(page));
   const labels = (await optionsOf(page)).join('|');
   check(!/Team Member|Team Lead|Department Head|Operations Head/.test(labels), 'and no generic role is offered');
   check((await page.$$('select:has(option:text("Team Lead"))')).length === 0 && (await page.$$('select:has(option:text("CEO"))')).length === 0, 'there is no second dropdown carrying the generic roles either');
@@ -101,6 +102,21 @@ for (const [designation, role, dash] of [['HR Assistant', 'TEAM_MEMBER', 'HR Das
   await page.close();
 }
 {
+  // HR (Digitree): a department-only HR member, placed in Digitree's own HR team (never the HR department, never a Sales team)
+  const page = await open();
+  await page.selectOption('#staff-role', 'dept-hr:digitree');
+  await page.waitForFunction(() => /HR \(Digitree\) dashboard/.test(document.body.innerText));
+  check(/HR \(Digitree\) dashboard \(this department only\)/.test(await page.innerText('text=Will open')), 'HR (Digitree): "Will open" says the Digitree HR dashboard, this department only', await page.innerText('text=Will open'));
+  check(!(await page.isVisible('select:has(option:text("Select team…"))')), 'HR (Digitree): no team to choose (it is always the Digitree HR team)');
+  await fill(page, 'Test Digitree HR');
+  await page.click('button[type="submit"]');
+  await page.waitForFunction(() => window.__posts.length === 1, null, { timeout: 5000 }).catch(async () => { console.error('form state:', await page.evaluate(() => ({ alert: document.querySelector('[role=alert]')?.textContent, invalid: [...document.querySelectorAll('input:invalid,select:invalid')].map(e => e.outerHTML.slice(0, 160)) }))); throw new Error('no POST for HR (Digitree)'); });
+  const sent = await page.evaluate(() => window.__posts[0]);
+  check(sent.role === 'TEAM_MEMBER' && sent.teamId === '44444444-4444-4444-8444-444444444446' && sent.details.designation === 'Department HR' && !sent.departmentId,
+    'HR (Digitree): sent as a Team Member of the Digitree HR team with the Department HR designation', sent);
+  await page.close();
+}
+{
   // other departments keep their roles; HR options never leak out, and a choice that does not belong is cleared when the department changes
   const page = await open();
   await page.selectOption('#staff-role', 'HR Recruiter');
@@ -116,7 +132,7 @@ for (const [designation, role, dash] of [['HR Assistant', 'TEAM_MEMBER', 'HR Das
   const acc = (await optionsOf(page)).join('|');
   check(!/HR /.test(acc) && /Team Member/.test(acc), 'Accounts: its existing roles, no HR designation', acc);
   await page.selectOption('#dept', 'hr');
-  check((await optionsOf(page)).join('|') === 'HR Assistant|HR Recruiter|HR Admin Head', 'back to HR: exactly the three HR designations again');
+  check((await optionsOf(page)).join('|') === 'HR Assistant|HR Recruiter|HR Admin Head|HR (Digitree)', 'back to HR: exactly the HR designations again');
   check(await page.$eval('#staff-role', s => s.value) === 'HR Assistant', 'and the earlier generic choice is gone (it starts at HR Assistant)');
   await page.close();
 }
@@ -150,7 +166,7 @@ for (const [name, vp] of [['phone', { width: 360, height: 740 }], ['tablet', { w
   const page = await open(vp);
   const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth, w: document.querySelector('#staff-role').getBoundingClientRect().width }));
   check(m.sw <= m.iw && m.w > 150, `${name}: the form fits and the Role / Designation dropdown is usable`, m);
-  check((await optionsOf(page)).length === 3, `${name}: three HR options`);
+  check((await optionsOf(page)).length === 4, `${name}: the three HR options and HR (Digitree)`);
   await page.close();
 }
 await browser.close();

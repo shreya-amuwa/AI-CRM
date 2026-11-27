@@ -85,22 +85,7 @@ export async function runHrEmailDispatch(opts: { limit?: number; budgetMs?: numb
     const events = (data ?? []) as ClaimedEvent[];
     if (!events.length) break;
     summary.claimed += events.length;
-    const outcomes = await Promise.all(
-      events.map(async ev => {
-        let o: Outcome;
-        try {
-          o = await processEvent(s, ev);
-        } catch (err) {
-          o = { outcome: 'RETRY', detail: `Unexpected error: ${(err as Error)?.message ?? 'unknown'}`.slice(0, 300) };
-        }
-        const { error: finishError } = await db.rpc('hr_email_finish', {
-          p_event: ev.id, p_outcome: o.outcome, p_detail: o.detail, p_response_code: o.code ?? null, p_provider_ref: o.ref ?? null
-        });
-        // If recording fails after a successful send the row stays SENDING until its lease ends; the log line makes that visible.
-        if (finishError) console.error(JSON.stringify({ level: 'error', msg: 'hr_email_finish failed', event: ev.id, error: finishError.message }));
-        return o.outcome;
-      })
-    );
+    const outcomes = await Promise.all(events.map(ev => finishEvent(db, s, ev)));
     for (const o of outcomes) {
       if (o === 'SENT') summary.sent++;
       else if (o === 'DRY_RUN') summary.dryRun++;
@@ -110,6 +95,48 @@ export async function runHrEmailDispatch(opts: { limit?: number; budgetMs?: numb
     }
   }
   return summary;
+}
+
+/**
+ * Send one probation cycle's due confirmation e-mails right now (after Confirm / Retry in the dashboard), with the same rules as the scheduler:
+ * the database claims the rows (two senders never take the same one) and records each outcome. When the employee's e-mail is recorded SENT,
+ * the database completes the confirmation by itself. Returns a short reason when nothing could be sent (switched off, not configured).
+ */
+export async function sendHrCycleEmails(cycleId: string, opts: { db?: SupabaseClient } = {}): Promise<{ sent: number; failed: number; note?: string }> {
+  const s = automationSettings();
+  if (s.mode === 'off') return { sent: 0, failed: 0, note: 'E-mail sending is switched off on the server, so the confirmation e-mail was not sent.' };
+  if (!opts.db && !hasServiceClient()) return { sent: 0, failed: 0, note: 'The server cannot send e-mails right now.' };
+  if (s.mode === 'live' && !liveChannels(s).includes('EMAIL')) return { sent: 0, failed: 0, note: 'E-mail sending is not configured on the server, so the confirmation e-mail is waiting.' };
+  const db = opts.db ?? getServiceClient();
+  const { data, error } = await db.rpc('hr_email_claim_cycle', {
+    p_cycle: cycleId,
+    p_mode: s.mode === 'live' ? 'live' : 'dry_run',
+    p_only_recipients: s.mode === 'live' && s.testRecipients ? [...s.testRecipients.emails] : null
+  });
+  if (error) throw new Error(`hr_email_claim_cycle: ${error.message}`);
+  let sent = 0;
+  let failed = 0;
+  for (const ev of (data ?? []) as ClaimedEvent[]) {
+    const o = await finishEvent(db, s, ev);
+    if (o === 'SENT') sent++;
+    else failed++;
+  }
+  return { sent, failed, note: s.mode !== 'live' ? 'E-mails are in dry-run mode on the server, so the confirmation e-mail was not really sent.' : undefined };
+}
+
+async function finishEvent(db: SupabaseClient, s: AutomationSettings, ev: ClaimedEvent): Promise<Outcome['outcome']> {
+  let o: Outcome;
+  try {
+    o = await processEvent(s, ev);
+  } catch (err) {
+    o = { outcome: 'RETRY', detail: `Unexpected error: ${(err as Error)?.message ?? 'unknown'}`.slice(0, 300) };
+  }
+  const { error: finishError } = await db.rpc('hr_email_finish', {
+    p_event: ev.id, p_outcome: o.outcome, p_detail: o.detail, p_response_code: o.code ?? null, p_provider_ref: o.ref ?? null
+  });
+  // If recording fails after a successful send the row stays SENDING until its lease ends; the log line makes that visible.
+  if (finishError) console.error(JSON.stringify({ level: 'error', msg: 'hr_email_finish failed', event: ev.id, error: finishError.message }));
+  return o.outcome;
 }
 
 /** The scheduler tick: decide what is due, then send. Never throws (it runs inside other requests too). */
