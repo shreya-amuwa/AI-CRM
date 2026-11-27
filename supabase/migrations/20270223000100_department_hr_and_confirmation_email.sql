@@ -668,7 +668,7 @@ begin
   for r in select p.id from public.profiles p
             where p.status = 'ACTIVE' and p.department_id = c.department_id and p.id is distinct from c.profile_id and p.id is distinct from auth.uid()
               and (p.role = 'DEPARTMENT_HEAD' or (p.role = 'TEAM_MEMBER' and p.hr_sub_role = 'HR_DEPARTMENT')) loop
-    perform private.notify_once(r.id, 'HR_PROBATION_OVERDUE', 'Probation confirmation overdue: ' || c.employee_name,
+    perform private.notify_once(r.id, 'EMPLOYEE_PROBATION_OVERDUE', 'Probation confirmation overdue: ' || c.employee_name,
       c.employee_name || '''s probation ended on ' || to_char(c.probation_end, 'DD Mon YYYY') || ' and the confirmation is not completed yet.',
       'hr_probation', c.id, jsonb_build_object('cycleId', c.id, 'daysOverdue', private.hr_today() - c.probation_end), 'urgent');
     v_n := v_n + 1;

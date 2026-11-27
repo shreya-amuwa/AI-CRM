@@ -129,7 +129,7 @@ select test.check((hr_probation_get(test.dc('Digi One')) ->> 'overdue')::boolean
 select test.check((hr_probation_remind_overdue(test.dc('Digi One')) ->> 'reminded')::int >= 1, 'the overdue reminder reaches the Digitree Department Head');
 reset role;
 select test.check((select count(*) >= 1 from notifications n join profiles p on p.id = n.recipient_id
-                    where n.type = 'HR_PROBATION_OVERDUE' and n.entity_id = test.dc('Digi One') and p.role = 'DEPARTMENT_HEAD' and p.department_id = test.dept('digitree')),
+                    where n.type = 'EMPLOYEE_PROBATION_OVERDUE' and n.entity_id = test.dc('Digi One') and p.role = 'DEPARTMENT_HEAD' and p.department_id = test.dept('digitree')),
   'as a CRM notification');
 select test.check((select status = 'PENDING' and overdue_reminded_at is not null from hr_probation_cycles where id = test.dc('Digi One')), 'the reminder confirms nobody');
 set role authenticated;
