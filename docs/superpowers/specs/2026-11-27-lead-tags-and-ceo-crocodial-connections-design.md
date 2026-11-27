@@ -22,7 +22,8 @@ Date: 2026-11-27. Status: draft for the owner's approval.
 
 ## Facts this design is built on (production, 2026-11-27)
 
-- **CEOs and their departments** (`operations_head_departments`):
+- **CEOs and their departments** (`operations_head_departments`; `division` is null for every row, meaning the whole department, Sales
+  and Support):
   - Aarti: Amuwa International, Amuwa Reseller, D Talk, Wabastar, Wabastore, Whatsbox.
   - Ashwini: D Talk, Digitree, Wabastore, Whatsbox.
   - **D Talk, Wabastore and Whatsbox are run by both.**
@@ -47,6 +48,16 @@ Date: 2026-11-27. Status: draft for the owner's approval.
   - Cloudflare-only secrets were rejected: they defeat the purpose.
 - **CEOs may run several departments.**
   - A CEO may link one Crocodial account to several departments, but only departments they run.
+
+## What "runs a department" means here
+
+- CEO scopes are (department, side) pairs (`private.scopes_of` / `private.scope_covers`, `20261224000100_department_function_scopes.sql`).
+- For lead tags and Crocodial, "a CEO runs a department" means **`private.scope_covers(department, 'SALES')` is true for them as a
+  CEO**. This covers a whole-department scope (division null) or a Sales one.
+  - A CEO who covers only Support is refused: Crocodial and leads are Sales.
+  - No new `runs_department` helper; reuse `scope_covers`. Builder: confirm it answers for operations-head (CEO) scopes specifically,
+    not just Department Head grants.
+- Tags stay per department, not per side, since lead tags only ever apply to Sales leads.
 
 ## Goals
 
@@ -93,7 +104,7 @@ Date: 2026-11-27. Status: draft for the owner's approval.
   | `sort_order` | display order |
 
 - **New table `public.lead_tag_departments (tag_id, department_id)`** for `DEPARTMENTS` scope. A CEO's tag gets the departments they
-  run at creation.
+  run at creation. It does not grow by itself if the CEO later gains a department; they can add it. *(my call)*
   - A CEO may narrow that list, but only to departments they run.
 - **Duplicates:** label uniqueness is case-insensitive within what one department can see. Creating "Demo done" where an active
   "demo done" is already visible is refused as CONFLICT.
@@ -115,6 +126,10 @@ Date: 2026-11-27. Status: draft for the owner's approval.
   - Everyone else: refused with `FORBIDDEN: Only the Managing Director or the department's CEO can manage lead tags.`
 - **Changing a tag's `stage`** moves every lead with that tag, so the stage of leads already tagged changes. Allowed for the same
   people. The UI shows how many leads it affects before saving.
+- **A lead whose department changes** (new owner in another department), or a tag whose departments are narrowed, or a CEO who loses
+  a department: any lead whose tag is no longer visible in its department is moved to the **seed tag of the same stage**. Stage
+  totals stay the same, and a department never shows another department's tag. This is done by the trigger that keeps the tag in
+  step (it also fires on `department_id` changes) and inside the tag update. *(my call)*
 - **Retire, never delete.**
   - Leads keep a retired tag.
   - A retired tag is not offered for new choices.
@@ -152,6 +167,8 @@ Date: 2026-11-27. Status: draft for the owner's approval.
   | IGNORE | Ignore |
 
   The `disposition` column stays readable for one release, then is dropped in a later migration.
+- **Adding a department link** when an existing status mapping points to a tag not usable in the new department: that mapping is
+  set back to "not mapped" (listed as unknown again), and the person is told how many. *(my call)*
 - **From the status mapping row:** "Create a tag from this status" pre-fills the label, so a new Crocodial status becomes a tag in
   one step.
 
@@ -172,6 +189,13 @@ Date: 2026-11-27. Status: draft for the owner's approval.
   3. It encrypts the key, then stores it through a service-role function.
 
   The plain key never reaches the database, logs, audit or API answers.
+- **Encryption key lifetime:** stored keys depend on `AUTOMATION_SECRET_KEY` (a Cloudflare Worker secret, so the database move to
+  self-hosting does not affect it).
+  - The ciphertext keeps the `v1:` version prefix.
+  - If a stored key can no longer be decrypted (the server key changed), the connection's health becomes **"Key needs to be entered
+    again"** and the sync skips it. The manager sees this, not an error.
+  - Rotating `AUTOMATION_SECRET_KEY` therefore means re-entering Crocodial keys. This is documented in the runbook. No
+    re-encryption tool in this version. *(my call)*
 - **Errors:**
   - No `AUTOMATION_SECRET_KEY` on the server: "Crocodial keys can't be stored on this server. Ask the Managing Director." Nothing is
     stored.
@@ -179,6 +203,15 @@ Date: 2026-11-27. Status: draft for the owner's approval.
     another department)." The other connection's name is not revealed to a CEO who can't manage it.
 - **Replace / remove:** "Replace key" re-tests and replaces. "Disconnect" clears the ciphertext and switches the connection off;
   synced data stays.
+
+### Rollout and switching on (so the MD is not a required step)
+
+- `crocodial_rollout` today allows only M Pillar Sales, and only the MD changes it. **When a CEO links a connection to a department
+  they run (Sales), the rollout for that department's Sales side is allowed automatically** (audited as done by that CEO).
+- A CEO may switch their connection **on** and set a link's stage (PILOT / PRODUCTION) and owner, for links to departments they run.
+- **The MD keeps the kill switch:** the MD can switch any connection or link off, and can withdraw a department's rollout. While the
+  MD has switched something off, the CEO sees "Switched off by the Managing Director", cannot switch it back on, and is told to ask
+  the MD. *(my calls, from "the MD should not have to bother")*
 
 ### Who manages a connection
 
@@ -251,5 +284,13 @@ Date: 2026-11-27. Status: draft for the owner's approval.
 
 ## Left to the builder
 
-Exact component split, palette names, the order of PRs (suggested: tags → mapping onto tags → CEO connections), and copy wording in
+Calls made in writing this up (marked *(my call)* above):
+- what "runs a department" means;
+- what happens to tags when departments change;
+- tags not growing automatically;
+- mappings reset when a link is added;
+- automatic rollout and CEO switch-on, with the MD's kill switch;
+- the "re-enter key" state instead of key rotation.
+
+Also: exact component split, palette names, the order of PRs (suggested: tags → mapping onto tags → CEO connections), and copy wording in
 the plain style of the existing UI.
