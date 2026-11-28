@@ -180,6 +180,18 @@ export const searchController = {
   record: (async ctx => ok(await svc(ctx).search.record(ctx.params.type, ctx.params.id))) as Handler
 };
 
+// Lead tags (20270305000100): the database decides who manages which tag; tagging a lead follows the lead's own edit rules
+export const leadTagsController = {
+  list: (async ctx => ok(await svc(ctx).leadTags.list(ctx.req.query))) as Handler,
+  save: (async ctx => {
+    const body = ctx.req.body as { id?: unknown } | null;
+    const created = !(body && typeof body === 'object' && body.id);
+    return ok(await svc(ctx).leadTags.save(ctx.actor.id, ctx.req.body), created ? 201 : 200);
+  }) as Handler,
+  retire: (async ctx => ok(await svc(ctx).leadTags.retire(ctx.params.id, ctx.req.body))) as Handler,
+  setOnLead: (async ctx => ok(await svc(ctx).leadTags.setOnLead(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const crocodialController = {
   overview: (async ctx => ok(await svc(ctx).crocodial.overview())) as Handler,
   rolloutSet: (async ctx => ok(await svc(ctx).crocodial.rolloutSet(ctx.req.body))) as Handler,

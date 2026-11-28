@@ -7,6 +7,8 @@ import { errorMessage } from '../../../lib/api/client';
 import { rowOpen } from '../../../lib/rowClick';
 import { leadScopeApi, pipelineApi, type PipelineQuery } from '../../../lib/api/endpoints';
 import { UploadLeadsButton } from '../../leads/LeadUpload';
+import { TagChip } from '../../leadTags/TagChip';
+import { useLeadTags } from '../../leadTags/useLeadTags';
 import { AccountsDetails, LEAD_SCOPE_EMPTY, LeadOwner, LeadScopeTabs, ReadOnlyLeadDialog, useLeadScopeCounts } from '../../leads/LeadScope';
 import {
   Avatar,
@@ -17,6 +19,7 @@ import {
   LEAD_SOURCES,
   LEAD_STATUS_LABEL,
   LEAD_STATUS_TONE,
+  LeadTagOptions,
   notifyPipelineChanged,
   Pager,
   Pill,
@@ -96,6 +99,10 @@ export const LeadsView: React.FC<{
   const [source, setSource] = useState('');
   const [followUp, setFollowUp] = useState<FollowUpFilter>('');
   const [status, setStatus] = useState<Tab>('');
+  // Lead tags: a chip on each lead and a "Tag" filter (the five lead filters of a Business Associate have no tag filter yet)
+  const { tags, byId: tagById } = useLeadTags(scope?.departmentId);
+  const [tagFilter, setTagFilter] = useState('');
+  const tagFilterOn = !(leadFilters && !scope) && tags.some(t => !t.retired);
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Paginated<LeadRow> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -145,6 +152,7 @@ export const LeadsView: React.FC<{
         service: service || undefined,
         source: source || undefined,
         leadStatus: (LEAD_STATUSES as readonly string[]).includes(status) ? (status as LeadStatus) : undefined,
+        leadTagId: tagFilter || undefined,
         accounts: status === 'WITH_ACCOUNTS' || status === 'RETURNED' ? status : undefined,
         sort: followUp ? 'followUp' : 'newest',
         ...followUpRange(followUp)
@@ -154,10 +162,10 @@ export const LeadsView: React.FC<{
         err => seq === requestSeq.current && setError(errorMessage(err))
       )
       .finally(() => seq === requestSeq.current && setLoading(false));
-  }, [page, debounced, service, source, status, followUp, scope?.departmentId, scope?.division, owner, lscope, leadFilters, mine]);
+  }, [page, debounced, service, source, status, followUp, tagFilter, scope?.departmentId, scope?.division, owner, lscope, leadFilters, mine]);
 
   useEffect(load, [load]);
-  useEffect(() => setPage(1), [debounced, service, source, status, followUp, owner, lscope]);
+  useEffect(() => setPage(1), [debounced, service, source, status, followUp, tagFilter, owner, lscope]);
   // a lead that is not mine is for reading only; mine opens as before
   const openRow = (l: LeadRow) => (l.scopeRow && !l.scopeRow.isMine ? setViewRow(l.scopeRow) : onEdit(l.id));
   const rowWithAccounts = (l: LeadRow) => leadFilters && !!l.scopeRow?.accounts && (lscope === 'TO_ACCOUNTS' || lscope === 'RETURNED');
@@ -246,28 +254,36 @@ export const LeadsView: React.FC<{
               <option value="NONE">No follow-up set</option>
             </select>
           </div>
-          <div role="tablist" aria-label="Lead status" className="flex flex-wrap gap-1.5">
-            {tabs.map(t => {
-              const active = status === t;
-              const filtered = leadFilters && !scope;
-              const n = filtered
-                ? t ? statusCounts[t as LeadStatus] ?? 0 : scopeCounts ? scopeCounts[({ ALL: 'all', MINE: 'mine', DEPARTMENT: 'department', TO_ACCOUNTS: 'toAccounts', RETURNED: 'returned' } as const)[lscope]] : null
-                : counts ? (t ? counts.leads[t] : counts.leads.all) : null;
-              return (
-                <button
-                  key={t || 'ALL'}
-                  role="tab"
-                  type="button"
-                  aria-selected={active}
-                  onClick={() => setStatus(t)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                    active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {TAB_LABEL(t)} {n !== null && <span className={active ? 'text-slate-300' : 'text-slate-400'}>{n}</span>}
-                </button>
-              );
-            })}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div role="tablist" aria-label="Lead status" className="flex flex-wrap gap-1.5">
+              {tabs.map(t => {
+                const active = status === t;
+                const filtered = leadFilters && !scope;
+                const n = filtered
+                  ? t ? statusCounts[t as LeadStatus] ?? 0 : scopeCounts ? scopeCounts[({ ALL: 'all', MINE: 'mine', DEPARTMENT: 'department', TO_ACCOUNTS: 'toAccounts', RETURNED: 'returned' } as const)[lscope]] : null
+                  : counts ? (t ? counts.leads[t] : counts.leads.all) : null;
+                return (
+                  <button
+                    key={t || 'ALL'}
+                    role="tab"
+                    type="button"
+                    aria-selected={active}
+                    onClick={() => setStatus(t)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                      active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    {TAB_LABEL(t)} {n !== null && <span className={active ? 'text-slate-300' : 'text-slate-400'}>{n}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {tagFilterOn && (
+              <select aria-label="Filter by tag" className={`${selectCls} max-w-full`} value={tagFilter} onChange={e => setTagFilter(e.target.value)}>
+                <option value="">All tags</option>
+                <LeadTagOptions tags={tags} />
+              </select>
+            )}
           </div>
         </div>
 
@@ -301,7 +317,7 @@ export const LeadsView: React.FC<{
               ) : data && data.items.length === 0 ? (
                 <tr>
                   <td colSpan={scope ? 8 : 7} className="py-12 text-center text-sm text-slate-500">
-                    {debounced || service || source || status || followUp || owner ? 'No leads match these filters.' : leadFilters && !scope ? `${LEAD_SCOPE_EMPTY[lscope].title}. ${LEAD_SCOPE_EMPTY[lscope].text}` : scope ? 'No leads have been added by this team yet.' : 'No leads yet. Add your first lead to get started.'}
+                    {debounced || service || source || status || followUp || tagFilter || owner ? 'No leads match these filters.' : leadFilters && !scope ? `${LEAD_SCOPE_EMPTY[lscope].title}. ${LEAD_SCOPE_EMPTY[lscope].text}` : scope ? 'No leads have been added by this team yet.' : 'No leads yet. Add your first lead to get started.'}
                   </td>
                 </tr>
               ) : (
@@ -335,6 +351,10 @@ export const LeadsView: React.FC<{
                       <td className="px-4 py-3">
                         <div className="flex flex-col items-start gap-1">
                           <Pill tone={LEAD_STATUS_TONE[l.leadStatus]}>{LEAD_STATUS_LABEL[l.leadStatus]}</Pill>
+                          {(() => {
+                            const t = l.leadTagId ? tagById.get(l.leadTagId) : undefined;
+                            return t && !t.seed ? <TagChip tag={t} /> : null;
+                          })()}
                           <WorkflowBadge workflow={l.paymentWorkflow} />
                         </div>
                       </td>

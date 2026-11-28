@@ -13987,6 +13987,82 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// ---------------------------------------------------------------------------
+// Lead tags (20270305000100): list, save (rate limited on creation), retire, and a lead's tag
+// ---------------------------------------------------------------------------
+{
+  const created: string[] = [];
+  const leadPhone = '+91 98700 88101';
+  try {
+    r = await api('sa', 'POST', '/lead-tags', { label: '  API Company Tag ', colour: 'green', stage: 'INTERESTED' });
+    check(r.status === 201 && r.json.data.scope === 'COMPANY' && r.json.data.label === 'API Company Tag' && r.json.data.canManage === true,
+      'lead tags API: the MD creates a company-wide tag (201)', r);
+    created.push(r.json.data.id);
+    const companyTag = r.json.data.id as string;
+    r = await api('sa', 'POST', '/lead-tags', { id: companyTag, label: 'API Company Tag', colour: 'blue', stage: 'INTERESTED' });
+    check(r.status === 200 && r.json.data.colour === 'blue', 'lead tags API: and recolours it (200)', r);
+    r = await api('sa', 'POST', '/lead-tags', { label: 'API Pink', colour: 'pink', stage: 'NEW' });
+    check(r.status === 422, 'lead tags API: a colour outside the palette is refused', r);
+    r = await api('sa', 'POST', '/lead-tags', { label: 'api company tag', colour: 'red', stage: 'NEW' });
+    check(r.status === 409, 'lead tags API: a duplicate label (case-insensitive) is a conflict', r);
+    r = await api('sa', 'POST', '/lead-tags', { label: 'API Whatsbox Tag', colour: 'violet', stage: 'CONTACTED', departmentIds: [wbx.id] });
+    check(r.status === 201 && r.json.data.scope === 'DEPARTMENTS' && r.json.data.departmentIds.length === 1, 'lead tags API: the MD creates a Whatsbox-only tag', r);
+    created.push(r.json.data.id);
+    const wbxTag = r.json.data.id as string;
+
+    r = await api('a', 'POST', '/lead-tags', { label: 'API Member Tag', colour: 'red', stage: 'NEW' });
+    check(r.status === 403 && r.json.error.message === "Only the Managing Director or the department's CEO can manage lead tags.", 'lead tags API: a team member gets 403 on save', r);
+    r = await api('a', 'POST', `/lead-tags/${companyTag}/retire`, { retired: true });
+    check(r.status === 403, 'lead tags API: and on retire', r);
+    r = await api('a', 'GET', '/lead-tags');
+    check(r.status === 200 && r.json.data.some((t: any) => t.id === companyTag) && r.json.data.some((t: any) => t.seed && t.stage === 'NEW')
+      && !r.json.data.some((t: any) => t.id === wbxTag) && r.json.data.every((t: any) => t.scope === 'COMPANY' || t.departmentIds.includes(wab.id)),
+      'lead tags API: a Wabastore member lists the company-wide tags and none of another department\'s', r);
+    r = await api('a', 'GET', '/lead-tags?departmentId=nope');
+    check(r.status === 422, 'lead tags API: the department filter is checked', r);
+
+    r = await api('sa', 'POST', `/lead-tags/${(await db.query(`select id from public.lead_tags where seed_stage = 'NEW'`)).rows[0].id}/retire`, { retired: true });
+    check(r.status === 422 && r.json.error.message === "A stage's basic tag can't be retired.", 'lead tags API: a stage\'s basic tag cannot be retired', r);
+    r = await api('sa', 'POST', `/lead-tags/${companyTag}/retire`, { retired: true });
+    check(r.status === 200 && r.json.data.retired === true, 'lead tags API: the MD retires a tag', r);
+    r = await api('a', 'GET', '/lead-tags');
+    // leads keep a retired tag, so a member still gets it (to show its label), marked retired; the form never offers it again
+    const retiredListed = r.json?.data?.find((t: any) => t.id === companyTag);
+    check(r.status === 200 && retiredListed?.retired === true && retiredListed?.canManage === false, 'lead tags API: a member still lists a retired tag, marked retired (not theirs to manage)', r);
+    r = await api('a', 'POST', '/pipeline/leads', { name: 'Tag Api Lead', company: 'Tag Api Co', phone: leadPhone, leadSource: 'Instagram', services: ['BLUE_TICK'] });
+    check(r.status === 201, 'lead tags API: a member creates a lead', r);
+    const leadId = r.json.data.id as string;
+    r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: companyTag });
+    check(r.status === 422, 'lead tags API: a retired tag can\'t be set on a lead (422)', r);
+    r = await api('sa', 'POST', `/lead-tags/${companyTag}/retire`, { retired: false });
+    check(r.status === 200 && r.json.data.retired === false, 'lead tags API: and restores it', r);
+
+    r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: wbxTag });
+    check(r.status === 422, 'lead tags API: setting another department\'s tag on a lead is refused (422)', r);
+    r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: companyTag });
+    const lead = (await db.query(`select lead_tag_id, lead_status from public.customers where id = $1`, [leadId])).rows[0];
+    check(r.status === 200 && lead.lead_tag_id === companyTag && lead.lead_status === 'INTERESTED', 'lead tags API: a company-wide tag is set, and the lead counts as its stage', { r, lead });
+    r = await api('a', 'POST', `/pipeline/leads/${leadId}/tag`, { tagId: 'nope' });
+    check(r.status === 422, 'lead tags API: the tag id is checked', r);
+
+    // the 31st tag one person creates within a day: the counter is set to 30 (looping 30 creations would trip the per-minute quota for
+    // sensitive writes, 20, first). Every creation attempt that passed validation counted: 2 created and the refused duplicate.
+    const { rows: [counter] } = await db.query(`select hits from private.rate_limit_counters where bucket = $1 order by window_start desc limit 1`, [`lead-tag-create:${sa.id}`]);
+    check(counter?.hits === 3, 'lead tags API: tag creations are counted per person in the database', counter);
+    await db.query(`update private.rate_limit_counters set hits = 30 where bucket = $1`, [`lead-tag-create:${sa.id}`]);
+    r = await api('sa', 'POST', '/lead-tags', { label: 'API Thirty-first', colour: 'amber', stage: 'NEW' });
+    check(r.status === 429 && r.json.error.code === 'RATE_LIMITED', 'lead tags API: a 31st tag within a day is refused (429)', r);
+    check((await db.query(`select 1 from public.lead_tags where label = 'API Thirty-first'`)).rowCount === 0, 'lead tags API: and nothing is created');
+    r = await api('sa', 'POST', '/lead-tags', { id: companyTag, label: 'API Company Tag', colour: 'green', stage: 'INTERESTED' });
+    check(r.status === 200, 'lead tags API: changing a tag is not limited', r);
+  } finally {
+    await db.query(`delete from private.rate_limit_counters where bucket = $1`, [`lead-tag-create:${sa.id}`]);
+    await db.query(`delete from public.customers where phone = $1 or phone = $2`, [leadPhone, leadPhone.replace(/\s/g, '')]);
+    await db.query(`delete from public.lead_tag_departments where tag_id = any($1::uuid[])`, [created]);
+    await db.query(`delete from public.lead_tags where id = any($1::uuid[])`, [created]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

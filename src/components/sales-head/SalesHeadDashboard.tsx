@@ -34,6 +34,8 @@ import { FieldVisitLeadQueuePage } from '../field-visit/FieldVisitLeadQueue';
 import { PipelineWorkspace, type PipelineSection } from '../team-member/pipeline/PipelineWorkspace';
 import { usePipelineCounts } from '../team-member/pipeline/shared';
 
+import { ceoLeadTagDepartments } from '../leadTags/ceoDepartments';
+import { LeadTagsPage } from '../leadTags/LeadTagsPage';
 import { IncomePage } from '../income/IncomePage';
 import { IncentiveSetup } from '../income/IncentiveSetup';
 import { PerformanceHub } from '../performance/PerformanceHub';
@@ -61,7 +63,7 @@ const MY_PAGE: Record<PipelineSection, SalesHeadPage> = { leads: 'my-leads', pot
 const SalesHeadAssign: React.FC = () => { const data = useWorkTasks(); return <HeadAssign data={data} />; };
 
 export const SalesHeadDashboard: React.FC = () => {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, logout, scopes } = useAuth();
   const userId = user?.id || profile?.id || '';
   // a Sales Operations Head oversees several departments: its own overview is the home page of this dashboard
   const operationsHead = !!profile?.isOperationsHead;
@@ -167,6 +169,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'work-reports' && <ReportsRoute />}
       {page === 'telecaller-sheets' && <ContactSheets />}
       {page === 'service-prices' && <ServicePrices />}
+      {page === 'lead-tags' && operationsHead && <LeadTagsPage departments={ceoLeadTagDepartments(scopes?.departments)} canCompanyWide={false} />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'crocodial' && <CrocodialTeamPanel title={operationsHead ? 'Crocodial Overview — My Sales Departments' : 'Department Crocodial Activity'} />}
       {page === 'crocodial-me' && <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} />}

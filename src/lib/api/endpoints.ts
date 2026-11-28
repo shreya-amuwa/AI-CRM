@@ -256,6 +256,8 @@ export interface PipelineQuery {
   service?: string;
   source?: string;
   leadStatus?: LeadStatus;
+  /** Leads with this tag. */
+  leadTagId?: string;
   followUpFrom?: string;
   followUpTo?: string;
   noFollowUp?: boolean;

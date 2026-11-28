@@ -33,6 +33,7 @@ import {
   meetingsController as meetings,
   leadWhatsAppController as leadWhatsApp,
   crocodialController as crocodial,
+  leadTagsController as leadTags,
   searchController as search,
   workReportsController as workReports,
   aiDesignStudioController as ads,
@@ -203,6 +204,11 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/pipeline/customers/:id', handler: pipeline.get },
   { method: 'POST', path: '/pipeline/leads', handler: pipeline.createLead },
   { method: 'PATCH', path: '/pipeline/leads/:id', handler: pipeline.updateLead },
+  // Lead tags (20270305000100): everyone lists what they may use; the MD and CEOs manage; whoever may edit a lead sets its tag
+  { method: 'GET', path: '/lead-tags', handler: leadTags.list },
+  { method: 'POST', path: '/lead-tags', handler: leadTags.save, options: S },
+  { method: 'POST', path: '/lead-tags/:id/retire', handler: leadTags.retire, options: S },
+  { method: 'POST', path: '/pipeline/leads/:id/tag', handler: leadTags.setOnLead, options: S },
   { method: 'POST', path: '/pipeline/customers/:id/ai-website-onboarding', handler: pipeline.saveAiWebsiteOnboarding },
   // Upload Leads: preview, then start / send the rows in chunks / finish; history and the rows that were not created
   { method: 'POST', path: '/lead-uploads/check', handler: leadUploads.check },

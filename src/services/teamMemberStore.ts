@@ -107,6 +107,7 @@ function toLead(r: Row): Lead {
     departmentId: '' as DepartmentId,
     assignedTo: r.owner_id,
     stage,
+    leadTagId: r.lead_tag_id ?? null,
     priority: 'Medium',
     lastActionDate: r.updated_at ? new Date(r.updated_at).toLocaleString() : undefined,
     receivedAt: r.created_at,
@@ -303,7 +304,7 @@ class TeamMemberStore {
     if (table === 'customers') {
       query = supabase
         .from('customers')
-        .select('id, name, phone, email, company, lead_source, lifecycle_stage, lead_status, deal_amount, expected_budget, notes, owner_id, created_at, updated_at')
+        .select('id, name, phone, email, company, lead_source, lifecycle_stage, lead_status, lead_tag_id, deal_amount, expected_budget, notes, owner_id, created_at, updated_at')
         .eq('owner_id', userId)
         .in('lifecycle_stage', ['LEAD', 'POTENTIAL', 'ONBOARDING', 'CUSTOMER', 'LOST'])
         .order('created_at', { ascending: false })
