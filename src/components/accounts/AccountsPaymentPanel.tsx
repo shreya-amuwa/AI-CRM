@@ -8,10 +8,11 @@ import { GST_STATES, inferStateFromAddress, isValidGstinFormat, normalizeGstin }
 import { FOLLOWUP_OUTCOMES, PAYMENT_METHODS } from '../../../shared/contracts';
 import { accountsRecordPaymentSchema, accountsUpdatePaymentSchema, paymentFollowUpSchema } from '../../../shared/validation';
 import { useAuth } from '../../context/AuthContext';
-import { errorMessage } from '../../lib/api/client';
 import { generatedInvoicesApi, pipelineApi, type AccountsPaymentInput } from '../../lib/api/endpoints';
 import { ErrorBanner, FormField, inputClass, Loading, Modal } from '../support-member/SupportParts';
 import { Badge, fmtDateTime, METHOD_LABEL, MoneyTiles, PaymentHistory, PaymentStatusBadge, rupees, rupeesExact, TYPE_LABEL } from '../payments/PaymentBits';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 const primaryBtn = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50';
 const ghostBtn = 'inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-50';
@@ -90,7 +91,7 @@ const PaymentFormDialog: React.FC<{
         : await pipelineApi.recordAccountsPayment(customerId, { ...body, verify, invoice });
       onSaved(next);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -211,7 +212,7 @@ const OrderGstCard: React.FC<{ customerId: string; overview: PaymentOverview; re
     try {
       onSaved(await pipelineApi.setOrderGst(customerId, Number(value)));
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }
@@ -304,7 +305,7 @@ const BillingDetailsDialog: React.FC<{
     try {
       await onSubmit({ businessName: businessName.trim() || undefined, address: address.trim(), stateCode, gstin: gstin.trim() ? normalizeGstin(gstin) : undefined });
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -371,7 +372,7 @@ export const ReasonDialog: React.FC<{
     try {
       await onConfirm(reason.trim());
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -421,7 +422,6 @@ export const AccountsPaymentPanel: React.FC<{
   const isManager = profile?.role === 'SUPER_ADMIN' || profile?.role === 'DEPARTMENT_HEAD' || profile?.role === 'TEAM_HEAD';
   const [overview, setOverview] = useState<PaymentOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [invoiceOutcome, setInvoiceOutcome] = useState<PaymentInvoiceOutcome | null>(null);
   const [invoicesKey, setInvoicesKey] = useState(0);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -450,7 +450,7 @@ export const AccountsPaymentPanel: React.FC<{
 
   const load = useCallback(() => {
     setError(null);
-    pipelineApi.paymentOverview(customerId).then(o => apply(o, false), e => setError(errorMessage(e)));
+    pipelineApi.paymentOverview(customerId).then(o => apply(o, false), e => setError(userMessage(e)));
   }, [customerId, apply]);
   useEffect(load, [load]);
   useEffect(() => {
@@ -466,15 +466,14 @@ export const AccountsPaymentPanel: React.FC<{
   const run = async (key: string, fn: () => Promise<PaymentOverview>, done: string) => {
     setBusyId(key);
     setError(null);
-    setNotice(null);
     setInvoiceOutcome(null);
     try {
       const next = await fn();
       apply(next);
       showInvoice(next);
-      setNotice(done);
+      toast.success(done);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusyId(null);
     }
@@ -486,14 +485,15 @@ export const AccountsPaymentPanel: React.FC<{
     setInvoiceOutcome(outcome);
     setInvoicesKey(n => n + 1);
     apply(await pipelineApi.paymentOverview(customerId));
-    setNotice(outcome.status === 'EXISTS' ? `The paid invoice ${outcome.number} was already made for this payment.` : `Paid invoice ${outcome.number} made for this payment.`);
+    // an invoice that already existed is information, not a new success
+    if (outcome.status === 'EXISTS') toast.info(`The paid invoice ${outcome.number} was already made for this payment.`);
+    else toast.success(`Paid invoice ${outcome.number} made successfully for this payment.`);
   };
 
   /** "Generate invoice" on a verified payment: also the retry when the automatic one could not be made. Asks for the billing details only when the customer record lacks them. */
   const generateInvoice = async (paymentId: string) => {
     setBusyId(paymentId);
     setError(null);
-    setNotice(null);
     setInvoiceOutcome(null);
     try {
       const b = await generatedInvoicesApi.paymentInvoiceBilling(paymentId);
@@ -503,7 +503,7 @@ export const AccountsPaymentPanel: React.FC<{
       }
       await makeInvoice(paymentId);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusyId(null);
     }
@@ -527,13 +527,8 @@ export const AccountsPaymentPanel: React.FC<{
           </button>
         )}
       </div>
-      <OrderGstCard customerId={customerId} overview={o} readOnly={readOnly} onSaved={next => { apply(next); setNotice('GST saved for the order.'); }} />
+      <OrderGstCard customerId={customerId} overview={o} readOnly={readOnly} onSaved={next => { apply(next); toast.success('GST saved successfully for the order.'); }} />
       <MoneyTiles pendingGst={!!o.order?.gstRequired} deal={o.dealAmount} agreed={o.agreedAmount} basis={o.taxBasis} verified={o.verified} pending={o.pending} balance={o.balance} />
-      {notice && (
-        <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-          {notice}
-        </p>
-      )}
       {invoiceOutcome?.status === 'FAILED' && (
         <p role="alert" className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
           The payment is saved, but its paid invoice could not be made: {invoiceOutcome.message} Use &quot;Generate invoice&quot; on the payment to try again.
@@ -582,7 +577,7 @@ export const AccountsPaymentPanel: React.FC<{
       {followUps && !readOnly && (
         <>
           <OwnerRow overview={o} team={team} isManager={isManager} myId={myId} busy={busyId === 'owner'} onAssign={ownerId => void run('owner', () => pipelineApi.assignPaymentOwner(customerId, ownerId), 'Accountant updated.')} />
-          <FollowUpSection customerId={customerId} overview={o} onSaved={next => { apply(next); setNotice('Follow-up saved.'); }} />
+          <FollowUpSection customerId={customerId} overview={o} onSaved={next => { apply(next); toast.success('Follow-up saved successfully.'); }} />
         </>
       )}
 
@@ -595,7 +590,7 @@ export const AccountsPaymentPanel: React.FC<{
           onSaved={next => {
             apply(next);
             showInvoice(next);
-            setNotice(form.editing ? 'Payment updated.' : 'Payment recorded.');
+            toast.success(form.editing ? 'Payment updated successfully.' : 'Payment recorded successfully.');
             setForm(null);
           }}
         />
@@ -620,7 +615,7 @@ export const AccountsPaymentPanel: React.FC<{
           onClose={() => setReject(null)}
           onConfirm={async reason => {
             apply(await pipelineApi.rejectAccountsPayment(customerId, reject.id, reason));
-            setNotice('Payment rejected.');
+            toast.success('Payment rejected successfully.');
             setReject(null);
           }}
         />
@@ -634,7 +629,7 @@ export const AccountsPaymentPanel: React.FC<{
           onClose={() => setReverse(null)}
           onConfirm={async reason => {
             apply(await pipelineApi.reverseAccountsPayment(customerId, reverse.id, reason));
-            setNotice('Payment reversed. The balance was restored.');
+            toast.success('Payment reversed successfully. The balance was restored.');
             setReverse(null);
           }}
         />
@@ -700,7 +695,7 @@ const FollowUpSection: React.FC<{ customerId: string; overview: PaymentOverview;
       setNext('');
       onSaved(nextOverview);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }

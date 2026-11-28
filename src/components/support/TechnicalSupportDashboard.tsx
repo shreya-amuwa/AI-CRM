@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { ReviewCounts } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
-import { errorMessage } from '../../lib/api/client';
 import { pipelineApi, workflowApi } from '../../lib/api/endpoints';
 import { useRealtime } from '../../lib/support';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
@@ -20,6 +19,7 @@ import { NotificationsPage } from '../notifications/NotificationsPage';
 import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
+import { userMessage } from '../../lib/feedback/errors';
 
 interface TechnicalSupportDashboardProps {
   currentUserId?: string;
@@ -42,7 +42,7 @@ export const TechnicalSupportDashboard: React.FC<TechnicalSupportDashboardProps>
   const [page, setPage] = useRememberedPage<ConsultantPage>(verifier ? 'meta-verifier' : 'technical-support', 'customers', CONSULTANT_PAGES);
   const [counts, setCounts] = useState<ReviewCounts | null>(null);
   const loadCounts = useCallback(() => {
-    pipelineApi.reviewCounts().then(setCounts, err => console.warn('[consultant] counts failed', errorMessage(err)));
+    pipelineApi.reviewCounts().then(setCounts, err => console.warn('[consultant] counts failed', userMessage(err)));
   }, []);
   useEffect(loadCounts, [loadCounts]);
   usePipelineRealtime(loadCounts);

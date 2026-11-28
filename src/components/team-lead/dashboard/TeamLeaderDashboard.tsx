@@ -12,6 +12,8 @@ import { ErrorBanner, Loading, Modal, TicketPriorityPill, TicketStatusPill } fro
 import { EMPTY_CUSTOMER_FILTERS, TlCustomersSection, type CustomerFilters } from './TlCustomersSection';
 import { EMPTY_TICKET_FILTERS, TlTicketsSection, type TicketFilters } from './TlTicketsSection';
 import { Paged } from '../../common/Paged';
+import { toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * Team Leader dashboard. Everything comes from the database through functions
@@ -28,7 +30,6 @@ export const TeamLeaderDashboard: React.FC = () => {
   const [adding, setAdding] = useState(false);
   const [openCustomer, setOpenCustomer] = useState<string | null>(null);
   const [openTicket, setOpenTicket] = useState<TlTicket | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const customersRef = useRef<HTMLDivElement>(null);
   const ticketsRef = useRef<HTMLDivElement>(null);
 
@@ -51,8 +52,9 @@ export const TeamLeaderDashboard: React.FC = () => {
     [d?.members, leadId, leadName, profile?.teamId, profile?.departmentId]
   );
 
+  // the result of an action on this dashboard: a success toast (docs/APP_FEEDBACK_SYSTEM.md), then the lists are read again
   const changed = (message: string) => {
-    setNotice(message);
+    toast.success(message);
     bump();
   };
   const showCustomers = (f: Partial<CustomerFilters>) => {
@@ -87,26 +89,13 @@ export const TeamLeaderDashboard: React.FC = () => {
         </div>
         <button
           type="button"
-          onClick={() => {
-            setNotice(null);
-            setAdding(true);
-          }}
+          onClick={() => setAdding(true)}
           className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shrink-0"
         >
           <Plus className="w-4 h-4" aria-hidden="true" /> Add Customer
         </button>
       </header>
 
-      {notice && (
-        <div className="flex items-start justify-between gap-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-800" role="status">
-          <span className="inline-flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0" aria-hidden="true" /> {notice}
-          </span>
-          <button type="button" className="text-emerald-700 text-xs font-semibold" onClick={() => setNotice(null)}>
-            Dismiss
-          </button>
-        </div>
-      )}
       {dash.error && <ErrorBanner message={dash.error} onRetry={() => void dash.reload()} />}
 
       {/* B. KPIs */}
@@ -428,7 +417,7 @@ const TicketModal: React.FC<{ ticket: TlTicket; people: Person[]; onClose: () =>
     try {
       setState({ data: await teamLeadApi.ticket(ticket.id, { name: ticket.customerName, code: ticket.customerCode }), error: null });
     } catch (e) {
-      setState({ data: null, error: e instanceof Error ? e.message : 'Could not load the ticket.' });
+      setState({ data: null, error: userMessage(e, 'The ticket could not be loaded. Please try again.') });
     }
   }, [ticket.id, ticket.customerName, ticket.customerCode]);
   React.useEffect(() => {

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BadgeCheck, CheckCircle2, FilePlus2, FileText, IndianRupee, MessageSquareWarning, Search, UploadCloud, XCircle } from 'lucide-react';
 import type { AddonRequest, AddonRequestPage, AddonRequestStatus, PaymentMethod } from '../../../shared/contracts';
-import { errorMessage } from '../../lib/api/client';
 import { addonsApi } from '../../lib/api/endpoints';
 import { rowOpen } from '../../lib/rowClick';
 import {
@@ -24,6 +23,7 @@ import { addonPaymentState, ADDON_STATUS_LABEL, AddonStatusPill, InvoiceDetail, 
 import { UploadInvoiceDialog } from '../invoices/invoiceFiles';
 import { InvoiceBuilder } from '../invoices/InvoiceBuilder';
 import { AddonEvents } from '../support/consultant/AddonRequestPanel';
+import { userMessage } from '../../lib/feedback/errors';
 
 const PAGE_SIZE = 20;
 const TABS: { key: AddonRequestStatus | ''; label: string }[] = [
@@ -66,7 +66,7 @@ export const BusinessVerification: React.FC<{ onCountsChanged?: () => void }> = 
       .list({ status: tab || undefined, search: debounced || undefined, consultant: consultant || undefined, from: from || undefined, to: to || undefined, page, pageSize: PAGE_SIZE })
       .then(
         r => n === seq.current && setData(r),
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       )
       .finally(() => n === seq.current && setLoading(false));
   }, [tab, debounced, consultant, from, to, page]);
@@ -247,7 +247,7 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
         setR(x);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [id]);
   useEffect(load, [load]);
@@ -261,7 +261,7 @@ const RequestDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =
       after?.();
       onChanged();
     } catch (e) {
-      setActionError(errorMessage(e));
+      setActionError(userMessage(e));
       load();
     } finally {
       setBusy(false);

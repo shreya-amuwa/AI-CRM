@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { CheckCircle2, KeyRound, Send } from 'lucide-react';
 import type { HandoverInfo, HandoverStage } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { Dialog, ErrorBanner, inputCls, longDate } from '../../team-member/pipeline/shared';
+import { userMessage } from '../../../lib/feedback/errors';
 
 export const HANDOVER_LABEL: Record<HandoverStage, string> = {
   CONSULTANT: 'In verification (Meta Verifier / Technical Consultant)',
@@ -95,7 +95,7 @@ export const SendToDepartmentHead: React.FC<{
       setOpen(false);
       onSent();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };

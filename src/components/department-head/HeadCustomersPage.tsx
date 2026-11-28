@@ -9,6 +9,7 @@ import { Badge, CUSTOMER_BADGE, EmptyRow, InvoiceBadge, OpenInvoice, PageError, 
 import { AddCustomerPage } from '../support-member/AddCustomerPage';
 import { useWorkTasks, type Person, type TeamRef } from '../../lib/workTasks';
 import { useAuth } from '../../context/AuthContext';
+import { toast } from '../feedback/AppFeedback';
 
 /**
  * The people a Support Department Head may give a new customer to: active members of a Support team in the department the head works in.
@@ -142,7 +143,6 @@ export const HeadCustomersPage: React.FC<{
   const [openId, setOpenId] = useState<string | null>(null);
   const [recordId, setRecordId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const q = useDebounced(search, 300);
   const { data, error, loading, reload } = useHeadData(
     () => (view === 'overview' ? headApi.customers({ search: q, status: filter === 'ALL' ? null : filter, limit: PAGE, offset: (page - 1) * PAGE }) : Promise.resolve(null)),
@@ -156,7 +156,7 @@ export const HeadCustomersPage: React.FC<{
         people={addCustomerPeople}
         onCancel={() => setAdding(false)}
         onCreated={name => {
-          setNotice(`${name} was added.`);
+          toast.success(`Customer added successfully: ${name}.`);
           setAdding(false);
           setView('overview');
           void reload();
@@ -175,21 +175,13 @@ export const HeadCustomersPage: React.FC<{
         {addCustomerPeople && (
           <button
             type="button"
-            onClick={() => {
-              setNotice(null);
-              setAdding(true);
-            }}
+            onClick={() => setAdding(true)}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 self-start"
           >
             <Plus className="w-4 h-4" aria-hidden="true" /> Add customer
           </button>
         )}
       </div>
-      {notice && (
-        <p className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm" role="status">
-          {notice}
-        </p>
-      )}
       <Tabs<View> label="Customers view" value={view} onChange={setView} options={[{ id: 'overview', label: 'Overview' }, { id: 'handover', label: 'Hand-overs & tickets' }]} />
       {view === 'handover' ? (
         <DepartmentCustomers initialSearch={initialSearch} waitingForLead={waitingForLead} onOpenHandovers={onOpenHandovers} />

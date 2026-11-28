@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { FilePlus2 } from 'lucide-react';
 import { fmtMonth, fmtWhen, invoiceRequestApi, useCustomerOptions, useInvoiceRequests } from '../../lib/support';
 import { ErrorBanner, FormField, inputClass, Loading } from './SupportParts';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 const STATUS_LABEL = { REQUESTED: 'Requested', RAISED: 'Invoice raised', CANCELLED: 'Cancelled' } as const;
 const STATUS_CLS = {
@@ -27,12 +29,10 @@ export const InvoiceRequests: React.FC<{ canRequest?: boolean; onOpenCustomer?: 
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setDone(null);
     if (!customerId) return setError('Choose the customer.');
     if (!fromMonth || !toMonth) return setError('Choose the from and to month.');
     if (toMonth < fromMonth) return setError('The "to" month must be the same as or after the "from" month.');
@@ -40,12 +40,12 @@ export const InvoiceRequests: React.FC<{ canRequest?: boolean; onOpenCustomer?: 
     try {
       await invoiceRequestApi.create({ customerId, fromMonth, toMonth, note: note.trim() });
       const c = customers.find(x => x.id === customerId);
-      setDone(`Invoice requested for ${c?.name || 'the customer'} (${fmtMonth(fromMonth)}${fromMonth === toMonth ? '' : ` – ${fmtMonth(toMonth)}`}).`);
+      toast.success(`Invoice requested successfully for ${c?.name || 'the customer'} (${fmtMonth(fromMonth)}${fromMonth === toMonth ? '' : ` – ${fmtMonth(toMonth)}`}).`);
       setNote('');
       setCustomerId('');
       await data.reload();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send the request.');
+      setError(userMessage(err, 'The invoice request could not be sent. Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -83,11 +83,6 @@ export const InvoiceRequests: React.FC<{ canRequest?: boolean; onOpenCustomer?: 
           {error && (
             <p className="text-xs text-rose-700" role="alert">
               {error}
-            </p>
-          )}
-          {done && (
-            <p className="text-xs text-emerald-700" role="status">
-              {done}
             </p>
           )}
           <div className="flex justify-end">

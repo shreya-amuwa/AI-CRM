@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CalendarClock, MessageCircle, Phone, PhoneCall } from 'lucide-react';
 import { FOLLOWUP_CHANNELS, TC_FOLLOWUP_OUTCOMES, type FollowUpChannel, type TcFollowUp, type TcFollowUpOutcome, type TcFollowUpStatus } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { workflowApi } from '../../../lib/api/endpoints';
 import { useRealtime } from '../../../lib/support';
 import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, notifyPipelineChanged, Pill, Spinner, usePipelineRealtime, type Tone } from '../../team-member/pipeline/shared';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const STATUS_LABEL: Record<TcFollowUpStatus, string> = {
   AWAITING_CONFIGURATION: 'Waiting for the delay to be set',
@@ -44,7 +44,7 @@ const ContactDialog: React.FC<{ item: TcFollowUp; onClose: () => void; onDone: (
       notifyPipelineChanged();
       onDone();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -110,7 +110,7 @@ export const TcFollowUps: React.FC<{ onChanged?: () => void }> = ({ onChanged })
         setItems(r);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [scope]);
   useEffect(load, [load]);

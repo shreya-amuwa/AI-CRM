@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Clock, Globe, Mail, MessageCircle, Send, XCircle } from 'lucide-react';
 import type { ChecklistItem, ClientMessage, ClientMessages, ClientStage, MessageStage } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner } from '../../team-member/pipeline/shared';
 import { WebsiteEditDialog } from './WebsiteEditDialog';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * The customer's onboarding emails and WhatsApp messages (Wabastore, WhatsApp API + Blue Tick).
@@ -86,7 +86,7 @@ export const ClientMessagesPanel: React.FC<{
       setResendNote('The messages are being sent.');
       onChanged();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setResending(false);
     }
@@ -100,7 +100,7 @@ export const ClientMessagesPanel: React.FC<{
       await pipelineApi.markMetaVerificationCompleted(customerId);
       onChanged();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setRecording(false);
     }

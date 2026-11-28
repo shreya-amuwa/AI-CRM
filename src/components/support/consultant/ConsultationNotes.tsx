@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { MessageSquareText, Pencil, Plus } from 'lucide-react';
 import type { ConsultantNote } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner, inputCls, Spinner, useServiceCatalog, usePipelineRealtime } from '../../team-member/pipeline/shared';
 import { Paged } from '../../common/Paged';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const stamp = (iso: string) =>
   new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
@@ -29,7 +29,7 @@ export const ConsultationNotes: React.FC<{ customerId: string; canWrite: boolean
         setNotes(n);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [customerId]);
   useEffect(load, [load]);
@@ -43,7 +43,7 @@ export const ConsultationNotes: React.FC<{ customerId: string; canWrite: boolean
       setNotes(await fn());
       done();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy(false);
     }
