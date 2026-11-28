@@ -33,7 +33,10 @@ select 'IN-' || x.n, p.full_name, p.email, 'Intern', p.id, x.data
   join profiles p on p.id = test.id(x.who);
 create or replace function test.icyc(p text, t text default 'INTERNSHIP') returns uuid language sql stable security definer as
   $$ select id from hr_probation_cycles where profile_id = test.id(p) and cycle_type = t order by created_at desc limit 1 $$;
+create or replace function test.iceo(p text) returns uuid language sql stable security definer as
+  $$ select ceo_reviewer_id from hr_probation_cycles where id = test.icyc(p) $$;
 grant execute on function test.icyc(text, text) to authenticated;
+grant execute on function test.iceo(text) to authenticated;
 
 \echo '   opening and the reminders'
 select test.sched(date '2027-03-01');
@@ -49,6 +52,10 @@ select test.check(not exists (select 1 from hr_email_events where cycle_id = tes
   'the intern does not get the employee''s probation reminder');
 select test.check((select dh_reviewer_id = test.id('dh_wbx') from hr_probation_cycles where id = test.icyc('in_one')), 'the Department Head is assigned as for a confirmation');
 
+select test.check((select review_started_at is null from hr_probation_cycles where id = test.icyc('in_two')), 'eleven days before: the second intern''s review has not started');
+select test.sched(date '2027-03-02');
+select test.check((select review_started_at is not null from hr_probation_cycles where id = test.icyc('in_two')), 'ten days before, it starts');
+
 \echo '   the reports and HR''s decision'
 set role authenticated;
 select test.login('dh_wbx');
@@ -58,8 +65,9 @@ select test.check(hr_review_save(test.icyc('in_one'), 'DH', '{"ratings":{"learni
   -> 'dh' ->> 'status' = 'SUBMITTED', 'the Department Head submits the internship evaluation');
 select test.check(hr_review_save(test.icyc('in_two'), 'DH', '{"ratings":{"learning":3},"recommendation":"COMPLETE","submit":true}') -> 'dh' ->> 'status' = 'SUBMITTED',
   'and the second intern''s');
-select test.login('rv_ceo');
+select test.as_id(test.iceo('in_one'));  -- the CEO the hierarchy assigned
 select test.check(hr_review_save(test.icyc('in_one'), 'CEO', '{"ratings":{"overall":4},"recommendation":"CONVERT","submit":true}') -> 'ceo' ->> 'status' = 'SUBMITTED', 'the CEO submits');
+select test.as_id(test.iceo('in_two'));
 select test.check(hr_review_save(test.icyc('in_two'), 'CEO', '{"ratings":{"overall":3},"recommendation":"COMPLETE","submit":true}') -> 'ceo' ->> 'status' = 'SUBMITTED', 'for both');
 select test.must_fail($$select hr_review_decide(test.icyc('in_one'), '{"decision":"CONVERT","reason":"Strong reports from both"}')$$,
   'the CEO does not take the final decision', 'Only the HR');

@@ -301,11 +301,12 @@ create table if not exists public.hr_review_notice_log (
 alter table public.hr_review_notice_log enable row level security;
 revoke all on public.hr_review_notice_log from public, anon, authenticated;
 
--- the e-mail queue learns the two review reminder kinds
+-- the e-mail queue learns the two review reminder kinds. PERFORMANCE_REVIEW_MEETING belongs to 20270312000300; it is listed here too so that running
+-- this file again after that one never fails on its queued invitations.
 alter table public.hr_email_events drop constraint if exists hr_email_events_kind_check;
 alter table public.hr_email_events add constraint hr_email_events_kind_check
   check (kind in ('BIRTHDAY', 'ANNIVERSARY', 'PROBATION_REMINDER_EMPLOYEE', 'PROBATION_REMINDER_HR', 'PROBATION_OVERDUE_HR',
-                  'CONFIRMATION_EMPLOYEE', 'CONFIRMATION_HR', 'REVIEW_FIRST', 'REVIEW_SECOND'));
+                  'CONFIRMATION_EMPLOYEE', 'CONFIRMATION_HR', 'REVIEW_FIRST', 'REVIEW_SECOND', 'PERFORMANCE_REVIEW_MEETING'));
 
 -- ---------------------------------------------------------------------------
 -- 4. Who is who for a cycle

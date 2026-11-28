@@ -4,6 +4,7 @@
  */
 import { registerUnifiedDepartments } from '../auth/departmentRoles';
 import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../../shared/hrUpgrade';
+import type { TcPerformanceList, TcPolicy, TcProfile, TcTarget, TcWeekRow } from '../../../shared/hrUpgrade';
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
 import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
@@ -1240,4 +1241,19 @@ export const attendanceStatementApi = {
     api.post<AttendanceExportPage>('/hr/attendance-statement/export', body),
   history: () => api.get<{ id: number; by: string | null; type: string; format: string; from: string; to: string; rows: number; at: string }[]>('/hr/attendance-statement/exports'),
   setBiometricId: (profileId: string, biometricId: string) => api.post<unknown>('/hr/biometric-id', { profileId, biometricId })
+};
+
+// Telecaller performance (Phase 3): the database returns only the Telecallers the viewer may see and refuses changes they may not make
+export const telecallerPerformanceApi = {
+  list: (q: Record<string, string | undefined> = {}) =>
+    api.get<TcPerformanceList>('/performance/telecallers', Object.fromEntries(Object.entries(q).filter(([, v]) => v)) as Record<string, string>),
+  profile: (profileId: string, weeks = 12) => api.get<TcProfile>(`/performance/telecallers/${profileId}`, { weeks: String(weeks) }),
+  targets: () => api.get<TcTarget[]>('/performance/telecallers/targets'),
+  setTarget: (body: Record<string, unknown>) => api.post<TcTarget[]>('/performance/telecallers/targets', body),
+  policy: () => api.get<TcPolicy>('/performance/telecallers/policy'),
+  setPolicy: (body: Record<string, unknown>) => api.post<TcPolicy>('/performance/telecallers/policy', body),
+  recalculate: (weekId: string, reason: string) => api.post<TcWeekRow>(`/performance/weeks/${weekId}/recalculate`, { reason }),
+  schedule: (weekId: string, body: { startsAt?: string; cancel?: boolean; note?: string }) => api.post<TcWeekRow>(`/performance/weeks/${weekId}/schedule`, body),
+  report: (weekId: string, body: Record<string, unknown>) => api.post<TcProfile>(`/performance/weeks/${weekId}/report`, body),
+  closePlan: (planId: string, remarks: string) => api.post<TcProfile>(`/performance/plans/${planId}/close`, { remarks })
 };

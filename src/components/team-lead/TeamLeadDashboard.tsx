@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Bell, Briefcase, ClipboardList, IndianRupee, LayoutDashboard, LineChart, ListChecks, Navigation, PhoneCall, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, ClipboardList, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, Navigation, PhoneCall, SlidersHorizontal, UserPlus, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { FieldVisitTrackerView } from '../common/FieldVisitTrackerView';
 import { ActiveFieldVisits } from '../field-visit/ActiveFieldVisits';
@@ -27,8 +27,9 @@ import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 import { IncomePage } from '../income/IncomePage';
 import { IncentiveSetup } from '../income/IncentiveSetup';
+import { TelecallerPerformance } from '../hr/performance/TelecallerPerformance';
 
-export const TEAM_LEAD_NAVS = ['overview', 'my-leads', 'my-potential', 'my-onboarding', 'my-part-payments', 'customers', 'assigned-tasks', 'performance', 'field-visits', 'team-members', 'chat', 'raise-issue', 'work-reports', 'notifications', 'crocodial', 'crocodial-me', 'crocodial-leads', 'my-income', 'incentive-setup'] as const;
+export const TEAM_LEAD_NAVS = ['overview', 'my-leads', 'my-potential', 'my-onboarding', 'my-part-payments', 'customers', 'assigned-tasks', 'performance', 'field-visits', 'team-members', 'chat', 'raise-issue', 'work-reports', 'notifications', 'crocodial', 'crocodial-me', 'crocodial-leads', 'my-income', 'incentive-setup', 'telecaller-performance'] as const;
 export type TeamLeadNav = (typeof TEAM_LEAD_NAVS)[number];
 
 const MY_SECTION: Record<'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments', PipelineSection> = {
@@ -93,6 +94,8 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
           { id: 'customers', label: 'Team Customers', icon: Users },
           { id: 'assigned-tasks', label: 'Assign Task', icon: ClipboardList },
           { id: 'performance', label: 'Performance Management', icon: LineChart },
+          // the team's Telecallers: weekly calls against target (docs/hr-dashboard-upgrade.md, Phase 3; the database limits it to this team)
+          ...(sales ? [{ id: 'telecaller-performance', label: 'Telecaller Performance', icon: Headphones }] : []),
           { ...REPORTS_NAV, badge: reportsBadge },
           { id: 'field-visits', label: 'Field Visits', icon: Navigation }
         ]
@@ -139,6 +142,7 @@ export const TeamLeadDashboard: React.FC<TeamLeadDashboardProps> = ({ userName }
         <PipelineWorkspace section={MY_SECTION[nav]} counts={pipelineCounts} ownOnly resetKey={navNonce} onNavigate={s => setNav(MY_NAV[s])} />
       )}
       {nav === 'customers' && <TeamCustomers />}
+      {nav === 'telecaller-performance' && sales && <TelecallerPerformance title="Team Telecaller Performance" />}
       {nav === 'assigned-tasks' && <TeamLeadTasksView />}
       {nav === 'performance' && <PerformanceHub mode="TEAM_LEAD" />}
       {nav === 'field-visits' && (

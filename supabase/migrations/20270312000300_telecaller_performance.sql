@@ -627,6 +627,17 @@ begin
     'policy', (select jsonb_build_object('enabled', pol.enabled, 'approvedAt', pol.approved_at, 'achievedPct', pol.achieved_pct, 'onTrackPct', pol.on_track_pct,
                  'needsImprovementPct', pol.needs_improvement_pct, 'reviewBelowPct', pol.review_below_pct) from public.telecaller_review_policy pol where pol.id),
     'canManage', private.tc_can_manage(v_dept) or private.is_hr_staff(), 'isHr', private.is_hr_staff(),
+    -- the choices of the filters and the target form: only the Telecallers (and their teams / departments) this caller may see
+    'options', (with t as (select x.id, x.full_name, private.base_department(x.department_id) as department_id, x.team_id, nullif(btrim(x.position), '') as designation
+                             from public.profiles x
+                            where x.status = 'ACTIVE' and x.role = 'TEAM_MEMBER' and x.sales_sub_role = 'TELECALLER' and private.tc_can_view(x.id))
+                select jsonb_build_object(
+                  'telecallers', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'name', t.full_name, 'departmentId', t.department_id, 'teamId', t.team_id) order by t.full_name) from t), '[]'::jsonb),
+                  'teams', coalesce((select jsonb_agg(jsonb_build_object('id', tm.id, 'name', tm.name, 'departmentId', tm.department_id) order by tm.name)
+                                       from public.teams tm where tm.id in (select t.team_id from t)), '[]'::jsonb),
+                  'departments', coalesce((select jsonb_agg(jsonb_build_object('id', d.id, 'name', d.name) order by d.name)
+                                             from public.departments d where d.id in (select t.department_id from t)), '[]'::jsonb),
+                  'designations', coalesce((select jsonb_agg(distinct t.designation) from t where t.designation is not null), '[]'::jsonb))),
     'lastRun', (select value from public.hr_automation_state where key = 'telecaller_weekly'));
 end $$;
 revoke all on function public.tc_performance_list(jsonb) from public, anon;

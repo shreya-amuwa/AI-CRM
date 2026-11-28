@@ -30,7 +30,8 @@ check(parseSalesHeadPage(`${base}/performance`) === 'performance' && parseSalesH
   'every existing page keeps its address');
 // 36: + lead-tags (20270305000100) and crocodial-setup (20270307000100)
 check(parseSalesHeadPage(`${base}/crocodial/setup`) === 'crocodial-setup', 'the CEO\'s Crocodial Integration has its own address');
-check(Object.keys(PATHS).length === 36 && PATHS.telecallers === 'telecallers' && PATHS['my-income'] === 'my-income' && PATHS.income === 'income', 'the role-wise and income pages were added; Department Income keeps its address', Object.keys(PATHS).length);
+// 38: + employee-reviews and telecaller-performance (HR dashboard upgrade, docs/hr-dashboard-upgrade.md)
+check(Object.keys(PATHS).length === 38 && PATHS['telecaller-performance'] === 'telecaller-performance' && PATHS.telecallers === 'telecallers' && PATHS['my-income'] === 'my-income' && PATHS.income === 'income', 'the role-wise and income pages were added; Department Income keeps its address', Object.keys(PATHS).length);
 
 // what the browser may send
 check(salesRoleSchema.safeParse('TELECALLER').success && salesRoleSchema.safeParse('BUSINESS_ASSOCIATE').success && !salesRoleSchema.safeParse('INFLUENCER').success,

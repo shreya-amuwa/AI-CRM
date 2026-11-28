@@ -14525,6 +14525,132 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.biometricId === null, 'attendance statement API: and clears it', r);
 }
 
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 3: Telecaller performance, targets, review meetings, reports, improvement plans (20270312000300)
+// ---------------------------------------------------------------------------
+{
+  const tcl = (await db.query(`select id from profiles where sales_sub_role = 'TELECALLER' and role = 'TEAM_MEMBER' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  tokens.set('tcl', tokenFor(tcl));
+  const wk = (await db.query(
+    `insert into public.telecaller_weekly_performance (profile_id, week_start, week_end, department_id, team_id, status, category, scheduled_days, eligible_days,
+                                                      daily_target, adjusted_target, actual_calls, connected_calls, achievement, mapping_ok, data_complete, finalized_at)
+     select p.id, w.s, w.s + 6, private.base_department(p.department_id), p.team_id, 'FINAL', 'LOW_PERFORMANCE', 5, 5, 60, 300, 150, 90, 50, true, true, now()
+       from public.profiles p, (select private.tc_week_of(private.office_today()) - 7 as s) w where p.id = $1
+     -- the weekly run earlier in this suite may already have computed this week (no mapping, so not evaluated): replace it with known figures
+     on conflict (profile_id, week_start) do update set status = 'FINAL', category = 'LOW_PERFORMANCE', review_status = 'NONE', meeting_id = null, eligible_days = 5,
+       daily_target = 60, adjusted_target = 300, actual_calls = 150, connected_calls = 90, achievement = 50, mapping_ok = true, data_complete = true, finalized_at = now()
+     returning id, week_start::text ws`, [tcl])).rows[0] as { id: string; ws: string };
+  const future = new Date(Date.now() + 3 * 86400000);
+  future.setUTCHours(5, 30, 0, 0); // 11:00 India time
+  try {
+    r = await api('a', 'GET', `/performance/telecallers?weekStart=${wk.ws}`);
+    check(r.status === 200 && !r.json.data.rows.some((x: any) => x.profileId === tcl) && r.json.data.sync.length === 0, 'telecaller performance API: an unrelated employee sees no Telecaller and no sync state', r);
+    r = await api('tcl', 'GET', `/performance/telecallers?weekStart=${wk.ws}`);
+    check(r.status === 200 && r.json.data.rows.length === 1 && r.json.data.rows[0].profileId === tcl && r.json.data.isHr === false, 'telecaller performance API: a Telecaller sees only their own week', r);
+    r = await api('tcl', 'GET', `/performance/telecallers/${memberA}`);
+    check(r.status === 404, 'telecaller performance API: a Telecaller cannot open someone else', r);
+    r = await api('hr', 'GET', '/performance/telecallers?category=NOT_A_CATEGORY');
+    check(r.status === 422, 'telecaller performance API: unknown filters are refused before the database', r);
+    r = await api('hr', 'GET', `/performance/telecallers?weekStart=${wk.ws}&category=LOW_PERFORMANCE`);
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === wk.id && x.achievement === 50) && r.json.data.cards.low >= 1 && r.json.data.isHr === true
+      && Array.isArray(r.json.data.options.telecallers) && r.json.data.options.telecallers.some((x: any) => x.id === tcl), 'telecaller performance API: HR filters by category; the cards count it', r);
+
+    // targets
+    r = await api('a', 'POST', '/performance/telecallers/targets', { scopeType: 'EMPLOYEE', profileId: tcl, dailyCalls: 60, effectiveFrom: wk.ws });
+    check(r.status === 403, 'telecaller performance API: an employee cannot set a target', r);
+    r = await api('sa', 'POST', '/performance/telecallers/targets', { scopeType: 'EMPLOYEE', profileId: tcl, dailyCalls: 0, effectiveFrom: wk.ws });
+    check(r.status === 422, 'telecaller performance API: a zero target is refused', r);
+    r = await api('sa', 'POST', '/performance/telecallers/targets', { scopeType: 'TEAM', dailyCalls: 50, effectiveFrom: wk.ws });
+    check(r.status === 422, 'telecaller performance API: a team target needs the team', r);
+    r = await api('sa', 'POST', '/performance/telecallers/targets', { scopeType: 'EMPLOYEE', profileId: tcl, dailyCalls: 60, effectiveFrom: wk.ws, note: 'API check' });
+    check(r.status === 200 && r.json.data.some((t: any) => t.scopeType === 'EMPLOYEE' && t.dailyCalls === 60 && t.effectiveTo === null), 'telecaller performance API: the Super Admin sets a Telecaller target', r);
+    r = await api('tcl', 'GET', '/performance/telecallers/targets');
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot list the targets', r);
+
+    // policy (off until management approves)
+    r = await api('hr', 'GET', '/performance/telecallers/policy');
+    check(r.status === 200 && r.json.data.enabled === false, 'telecaller performance API: automatic review meetings are off by default', r);
+    r = await api('a', 'POST', '/performance/telecallers/policy', { enabled: true });
+    check(r.status === 403, 'telecaller performance API: an employee cannot approve the policy', r);
+    r = await api('sa', 'POST', '/performance/telecallers/policy', { enabled: false, achievedPct: 70, onTrackPct: 80 });
+    check(r.status === 422, 'telecaller performance API: thresholds out of order are refused', r);
+
+    // the review meeting, the report and the improvement plan
+    r = await api('a', 'POST', `/performance/weeks/${wk.id}/schedule`, { startsAt: future.toISOString() });
+    check(r.status === 403, 'telecaller performance API: only HR schedules a review meeting', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/schedule`, {});
+    check(r.status === 422, 'telecaller performance API: a meeting needs its time', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/schedule`, { startsAt: future.toISOString(), note: 'Weekly call target review' });
+    check(r.status === 200 && r.json.data.reviewStatus === 'SCHEDULED' && r.json.data.meeting?.id, 'telecaller performance API: HR schedules the review meeting', r);
+    r = await api('tcl', 'GET', `/performance/telecallers/${tcl}`);
+    check(r.status === 200 && r.json.data.meetings.length >= 1 && r.json.data.isSelf === true, 'telecaller performance API: the Telecaller sees their meeting', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/report`, { outcome: 'IMPROVEMENT_PLAN', fields: { performanceGap: 'Calls at half the target', hrObservations: 'Needs a better script' } });
+    check(r.status === 422, 'telecaller performance API: an improvement plan needs its targets and deadline', r);
+    r = await api('tcl', 'POST', `/performance/weeks/${wk.id}/report`, { outcome: 'CONCERN_RESOLVED', fields: { performanceGap: 'Calls at half the target', hrObservations: 'Fine now' } });
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot write the report', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/report`, {
+      outcome: 'IMPROVEMENT_PLAN', fields: { performanceGap: 'Calls at half the target', hrObservations: 'Needs a better script', supportNeeded: 'Script training' },
+      actionItems: [{ action: 'Script training', owner: 'Team Lead' }], plan: { targets: '80% of the adjusted target for three weeks', deadline: '2099-01-31' } });
+    check(r.status === 200 && r.json.data.plans.some((x: any) => x.status === 'OPEN') && r.json.data.reports.length >= 1, 'telecaller performance API: HR saves the report and starts the plan', r);
+    const plan = r.json.data.plans.find((x: any) => x.status === 'OPEN').id as string;
+    r = await api('tcl', 'GET', `/performance/telecallers/${tcl}`);
+    check(r.status === 200 && r.json.data.reports.length === 0 && r.json.data.plans.length >= 1, 'telecaller performance API: the Telecaller sees the plan, not HR\'s report notes', r);
+    r = await api('tcl', 'POST', `/performance/plans/${plan}/close`, { remarks: 'I improved' });
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot close the plan', r);
+    r = await api('hr', 'POST', `/performance/plans/${plan}/close`, { remarks: 'Back on target' });
+    check(r.status === 200 && r.json.data.plans.find((x: any) => x.id === plan).status === 'CLOSED', 'telecaller performance API: HR closes the plan', r);
+
+    // recalculation
+    r = await api('tcl', 'POST', `/performance/weeks/${wk.id}/recalculate`, { reason: 'My calls were missing' });
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot recalculate their week', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/recalculate`, { reason: 'no' });
+    check(r.status === 422, 'telecaller performance API: a recalculation needs a reason', r);
+  } finally {
+    await db.query(`delete from public.meetings where source_type = 'performance_review' and source_id = $1`, [wk.id]);
+    await db.query(`delete from public.performance_improvement_plans where profile_id = $1`, [tcl]);
+    await db.query(`delete from public.performance_review_reports where profile_id = $1`, [tcl]);
+    await db.query(`delete from public.telecaller_weekly_performance where id = $1`, [wk.id]);
+    await db.query(`delete from public.telecaller_targets where profile_id = $1`, [tcl]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 4: internship reviews (20270312000400)
+// ---------------------------------------------------------------------------
+{
+  const due = (await db.query(`select (private.hr_today() + 5)::text d, (private.hr_today() - interval '3 months' + interval '5 days')::date::text j`)).rows[0];
+  await db.query(`delete from public.hr_probation_cycles where employee_key = $1::text`, [memberA]);
+  const cyc = (await db.query(
+    `insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date,
+                                             probation_end, original_end, period_months, cycle_type, employment_type)
+     select $1::text, p.id, p.full_name, p.email, 'INT-API', p.department_id, d.name, $2::date, $3::date, $3::date, 3, 'INTERNSHIP', 'Intern'
+       from public.profiles p join public.departments d on d.id = p.department_id where p.id = $1::uuid returning id`, [memberA, due.j, due.d])).rows[0].id as string;
+  try {
+    r = await api('hr', 'GET', '/hr/reviews?type=INTERNSHIP');
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === cyc && x.cycleType === 'INTERNSHIP'), 'internship API: HR lists the internship review', r);
+    r = await api('hr', 'GET', '/hr/reviews?type=PROBATION');
+    check(r.status === 200 && !r.json.data.rows.some((x: any) => x.id === cyc), 'internship API: not among the confirmations', r);
+    r = await api('a', 'GET', `/hr/reviews/${cyc}`);
+    check(r.status === 404, 'internship API: the intern cannot open their own review', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONVERT', reason: 'Both reports recommend conversion' });
+    check(r.status === 409, 'internship API: the decision waits for the Department Head and CEO reports', r);
+    await db.query(`insert into public.hr_review_evaluations (cycle_id, round, reviewer_role, status, ratings, recommendation, submitted_at, version)
+                    select $1, 1, x.r, 'SUBMITTED', '{"overall": 4}', 'CONVERT', now(), 1 from (values ('DH'), ('CEO')) x(r) on conflict do nothing`, [cyc]);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONFIRM', reason: 'Both reports recommend conversion' });
+    check(r.status === 422, 'internship API: an internship is never "confirmed"', r);
+    r = await api('a', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONVERT', reason: 'Both reports recommend conversion' });
+    check(r.status === 404 || r.status === 403, 'internship API: the intern cannot decide', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONVERT', reason: 'Both reports recommend conversion', probationMonths: 6 });
+    check(r.status === 200 && r.json.data.status === 'CONVERTED', 'internship API: HR converts the intern to full-time', r);
+    const pc = (await db.query(`select joining_date::text j, probation_end::text e, period_months m, status from public.hr_probation_cycles where converted_from = $1`, [cyc])).rows[0];
+    check(pc && pc.status === 'PENDING' && pc.m === 6, 'internship API: a full-time probation review is opened', pc);
+  } finally {
+    await db.query(`delete from public.hr_probation_cycles where converted_from = $1`, [cyc]);
+    await db.query(`delete from public.hr_probation_cycles where id = $1`, [cyc]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

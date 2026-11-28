@@ -325,6 +325,8 @@ export interface TcPolicySummary { enabled: boolean; approvedAt: string | null; 
 export interface TcPerformanceList {
   weekStart: string; weekEnd: string; rows: TcWeekRow[]; cards: TcCards; sync: { connection: string; lastOkAt: string | null; error: string | null }[];
   policy: TcPolicySummary; canManage: boolean; isHr: boolean; lastRun: unknown;
+  options: { telecallers: { id: string; name: string; departmentId: string | null; teamId: string | null }[]; teams: { id: string; name: string; departmentId: string }[];
+    departments: { id: string; name: string }[]; designations: string[] };
 }
 export interface TcReport { id: string; meetingId: string | null; outcome: string; fields: Record<string, string>; actionItems: { action: string; owner?: string; due?: string }[];
   followUpDate: string | null; by: string | null; at: string }

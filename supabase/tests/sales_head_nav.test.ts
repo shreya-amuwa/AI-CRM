@@ -28,19 +28,21 @@ const ids = (o: Partial<SalesHeadNavOptions>) => {
 
 // the entries of the old flat menu (before the sections)
 const OLD_TOP = ['overview', 'leads', 'sheet-upload', 'my-leads-group', 'field-visits-group', 'assign-task', 'tasks', 'work-updates', 'performance', 'telecaller-group', 'business-associate-group', 'top-performers',
-  'income', 'my-income', 'incentive-setup', 'reports', 'work-reports', 'telecaller-sheets', 'service-prices', 'lead-whatsapp', 'notices', 'team', 'raise-issue', 'chat', 'notifications'];
+  'income', 'my-income', 'incentive-setup', 'reports', 'work-reports', 'telecaller-sheets', 'service-prices', 'lead-whatsapp', 'notices', 'team', 'raise-issue', 'chat', 'notifications',
+  // the HR dashboard upgrade (docs/hr-dashboard-upgrade.md): the confirmation / internship reviews assigned to the head or CEO
+  'employee-reviews'];
 const sorted = (a: string[]) => [...a].sort();
 
 let m = ids({});
 check(JSON.stringify(m.labels) === JSON.stringify([undefined, 'Leads', 'My Sales', 'Work', 'Income & Reports', 'Customers', 'Team', 'Communication']), 'the Department Head\'s menu reads in sections: Overview on top, then Leads, My Sales, Work, Income & Reports, Customers, Team, Communication', m.labels);
-check(JSON.stringify(sorted(m.top)) === JSON.stringify(sorted(OLD_TOP)), 'no entry of the old flat menu is lost, and the only one added is Assign Task', m.top);
+check(JSON.stringify(sorted(m.top)) === JSON.stringify(sorted(OLD_TOP)), 'no entry of the old flat menu is lost; the only ones added are Assign Task and Employee Confirmation Reviews', m.top);
 check(new Set(m.all).size === m.all.length, 'no entry is listed twice (parents and their pages)');
 check(m.groups.every(g => g.items.length > 0), 'no section is empty');
 check(m.groups[0].items.map(i => i.id).join() === 'overview', 'Overview is alone on top (the shell adds Attendance and Meetings above it)');
 const section = (label: string) => m.groups.find(g => g.label === label)!.items.map(i => i.id);
 check(section('Leads').join() === 'leads,sheet-upload,telecaller-sheets,field-visits-group,lead-whatsapp', 'Leads holds the lead flow: Lead list / assign, Sheet Upload, Telecaller Sheets, Field Visits, Lead Welcome WhatsApp', section('Leads'));
 check(section('My Sales').join() === 'my-leads-group,my-income', 'My Sales holds the head\'s own leads and income');
-check(section('Team').join() === 'team,telecaller-group,business-associate-group', 'Team holds Team Members & Access and the role lists');
+check(section('Team').join() === 'team,employee-reviews,telecaller-group,business-associate-group', 'Team holds Team Members & Access, the Employee Confirmation Reviews and the role lists');
 check(section('Communication').join() === 'raise-issue,chat,notifications', 'Communication holds Raise an Issue, Chat and the Notification Center');
 
 // every entry opens a page that exists (a parent only opens its list)

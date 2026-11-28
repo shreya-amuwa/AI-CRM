@@ -97,7 +97,7 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
           // confirmation / internship reviews assigned to this head or CEO (docs/hr-dashboard-upgrade.md)
           { id: 'employee-reviews', label: 'Employee Confirmation Reviews', icon: ClipboardCheck },
           // role-wise sections (migration 20270117000300): each role's list and one person's full-page dashboard
-          { id: 'telecaller-group', label: 'Telecaller', icon: Headphones, children: [{ id: 'telecallers', label: 'Telecaller List' }] },
+          { id: 'telecaller-group', label: 'Telecaller', icon: Headphones, children: [{ id: 'telecallers', label: 'Telecaller List' }, { id: 'telecaller-performance', label: 'Telecaller Performance' }] },
           { id: 'business-associate-group', label: 'Business Associate', icon: Handshake, children: [{ id: 'business-associates', label: 'Business Associate List' }] }
         ]
       },

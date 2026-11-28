@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MyReviews } from '../hr/reviews/MyReviews';
+import { TelecallerPerformance } from '../hr/performance/TelecallerPerformance';
 import { ClipboardList } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
@@ -179,6 +180,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'crocodial-leads' && <CrocodialLeadsPanel title="My Crocodial Leads" hideWhenOff={false} />}
       {page === 'notices' && <ClientNotices />}
       {page === 'employee-reviews' && <MyReviews showSummary={!!profile?.isOperationsHead} />}
+      {page === 'telecaller-performance' && <TelecallerPerformance />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}
       {page === 'chat' && <ChatRoute />}
       {page === 'raise-issue' && <IssuesRoute />}
