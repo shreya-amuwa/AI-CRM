@@ -13582,7 +13582,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.dev_bugs where source = 'DASHBOARD_EXPLORER' and title like 'API check:%'`);
 }
 
-// --- Support Recharges (migrations 20270228000200, 20270306000100): a recharge for a customer is credited to the customer's own Relationship Manager,
+// --- Support Recharges (migrations 20270228000200, 20270308000100): a recharge for a customer is credited to the customer's own Relationship Manager,
 // Accounts verify that the payment really arrived, and the private screenshot is only proof ---
 {
   const mkUser = async (tag: string, role: string, teamId: string) => {

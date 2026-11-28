@@ -1,6 +1,6 @@
 # Recharges: Support, Relationship Manager credit and Accounts verification
 
-Migrations: `supabase/migrations/20270228000200_support_recharges.sql` (the first version) and `20270306000100_recharge_accounts_workflow.sql` (this workflow). Both are safe to run twice; nothing is deleted or rewritten.
+Migrations: `supabase/migrations/20270228000200_support_recharges.sql` (the first version) and `20270308000100_recharge_accounts_workflow.sql` (this workflow). Both are safe to run twice; nothing is deleted or rewritten.
 Tests: `supabase/tests/support_recharges_test.sql` (database), `support_recharges_validation.test.ts` (rules), `ui_recharges.test.mjs` (screens at desktop and phone width) and a "Support Recharges" block in `api_integration.test.ts`.
 
 ## The workflow

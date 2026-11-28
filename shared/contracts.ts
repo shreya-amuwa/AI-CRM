@@ -7831,7 +7831,7 @@ export interface ImprovementRequestRow {
 }
 
 // ---------------------------------------------------------------------------
-// Support Recharges (migrations 20270228000200, 20270306000100)
+// Support Recharges (migrations 20270228000200, 20270308000100)
 // ---------------------------------------------------------------------------
 export type RechargeKind = 'PANEL' | 'MESSAGE';
 export type RechargeBillingType = 'GST' | 'NON_GST';
