@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Bugs: shared tracking by the three developers (docs/EMPLOYEE_ISSUES.md "Bugs for the Developers team", docs/BUG_SHARED_TRACKING.md).
--- Run after 20270312000300_telecaller_performance.sql (any order after the recharge migrations is fine; nothing here depends on it). Additive and safe to run twice; no bug, event, file or assignment is deleted or changed.
+-- Run after the migrations already on main (nothing here depends on another pending migration). Additive and safe to run twice; no bug, event, file or assignment is deleted or changed.
 --
 --   Before (20270122000400): the Team Lead assigned each bug to one developer, the other developer did not even see it, and only the assigned
 --   developer (or the lead) could change its status. A bug waited for its single assignee.
