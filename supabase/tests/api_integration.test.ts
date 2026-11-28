@@ -11786,7 +11786,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 // ---------------------------------------------------------------------------
-// Bugs for the Developers team (migrations 20270122000300, 20270122000400, 20270312000100): every bug is seen and worked on by the whole team (no
+// Bugs for the Developers team (migrations 20270122000300, 20270122000400, 20270312000400): every bug is seen and worked on by the whole team (no
 // mandatory assignee; the Team Lead may name an optional primary contact); progress updates by each developer, kept as written; contributors; conflicts and
 // simultaneous saves. Each of the three accounts is checked on its own.
 // ---------------------------------------------------------------------------
@@ -11835,7 +11835,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sa', 'GET', '/bugs');
   check(r.status === 403, 'bugs API: nor the Super Admin', r);
 
-  // the optional primary contact: only the Team Lead names one, and it never hides a bug or blocks anybody (20270312000100)
+  // the optional primary contact: only the Team Lead names one, and it never hides a bug or blocks anybody (20270312000400)
   r = await api('bd1', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
   check(r.status === 403, 'bugs API: a developer cannot name a primary contact, not even for themself', r);
   r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: leadId });
@@ -12251,7 +12251,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('rd1', 'GET', `/bugs/${escBug}`);
   check(r.status === 200 && r.json.data.source === 'HR_ESCALATION' && r.json.data.affectedEmployeeId === memberId && r.json.data.priority === 'HIGH', 'issue routing API: the developers see where it came from and whom it affects', r);
   r = await api('rd1', 'POST', `/bugs/${escBug}/status`, { status: 'UNDER_REVIEW' });
-  check(r.status === 200 && r.json.data.status === 'UNDER_REVIEW', 'issue routing API: any developer changes its status, assigned or not (20270312000100)', r);
+  check(r.status === 200 && r.json.data.status === 'UNDER_REVIEW', 'issue routing API: any developer changes its status, assigned or not (20270312000400)', r);
   r = await api('tl2', 'POST', `/bugs/${escBug}/status`, { status: 'RESOLVED', note: 'Sessions now last 8 hours.' });
   check(r.status === 200 && r.json.data.status === 'RESOLVED', 'issue routing API: the lead resolves it', r);
   r = await api('a', 'GET', `/employee/issues/${issueId}`);

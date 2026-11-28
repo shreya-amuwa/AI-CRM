@@ -1,6 +1,6 @@
 # Bugs: shared tracking by the three developers
 
-Migration: `supabase/migrations/20270312000100_bug_shared_tracking.sql` (run after `20270311000100_recharge_invoices.sql`; safe to run twice,
+Migration: `supabase/migrations/20270312000400_bug_shared_tracking.sql` (run after the migrations already on main; safe to run twice,
 nothing is deleted or changed in the existing bugs, events, files or assignments).
 
 ## What changed

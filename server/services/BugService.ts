@@ -8,7 +8,7 @@ import type { BugRepository } from '../repositories/BugRepository.js';
 /**
  * Bugs for the Developers team (migration 20270122000300). The database decides who may do what from the caller's own login: an employee
  * reports and follows their own bugs; only the developers on the list open the Bugs section, and all of them (the Team Lead, Ashish Sinha,
- * Siddhesh Shinde) see and work on every bug together (20270312000100: no mandatory assignee); the Super Admin keeps the list. This layer only validates. Files use the existing issue upload / download routes.
+ * Siddhesh Shinde) see and work on every bug together (20270312000400: no mandatory assignee); the Super Admin keeps the list. This layer only validates. Files use the existing issue upload / download routes.
  */
 export class BugService {
   constructor(private readonly repo: BugRepository) {}

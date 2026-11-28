@@ -7092,11 +7092,11 @@ export interface DevBugRow extends DevBugRouting {
   resolutionNote?: string | null;
   /** the last message of the conversation between the reporter and the developers */
   lastMessage?: { from: 'REPORTER' | 'DEVELOPER'; note: string | null; by: string | null; at: string } | null;
-  /** shared tracking (20270312000100): overall progress 0-100, the team members who worked on it (names), the last update */
+  /** shared tracking (20270312000400): overall progress 0-100, the team members who worked on it (names), the last update */
   progress?: number; contributors?: string[]; lastUpdateAt?: string | null; lastUpdateBy?: string | null;
 }
 export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT' | 'MESSAGE' | 'PROGRESS'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; byId?: string | null; at: string }
-/** a team member who worked on a bug, derived from its history (shared tracking, 20270312000100) */
+/** a team member who worked on a bug, derived from its history (shared tracking, 20270312000400) */
 export interface DevBugContributor { id: string; name: string; updates: number; lastAt: string }
 export interface DevBug extends DevBugRouting {
   sourceIssueId?: string | null; affectedDepartmentId?: string | null; affectedEmployeeId?: string | null;
@@ -7111,7 +7111,7 @@ export interface DevBug extends DevBugRouting {
   /** internal comments only for the developers */
   history: DevBugHistoryEntry[];
   duplicate?: boolean;
-  /** shared tracking (20270312000100): overall progress 0-100, the version (a change made on an old screen is refused), the contributors and the last progress update */
+  /** shared tracking (20270312000400): overall progress 0-100, the version (a change made on an old screen is refused), the contributors and the last progress update */
   progress?: number; version?: number; contributors?: DevBugContributor[];
   latestUpdate?: { by: string | null; at: string; work: string | null; statusTo: string | null; progressTo: number | null } | null;
 }
@@ -7119,14 +7119,14 @@ export interface DevBugList {
   total: number;
   counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number;
     UNDER_REVIEW?: number; TESTING?: number; NEEDS_INFO?: number; CLOSED?: number; OPEN?: number };
-  /** every developer sees every bug (20270312000100); isLead only says who may name an optional primary contact */
+  /** every developer sees every bug (20270312000400); isLead only says who may name an optional primary contact */
   isLead: boolean;
   /** the lead's view of the team's workload */
   byDeveloper: { id: string; name: string; open: number; closed: number; updates?: number }[];
   items: DevBugRow[];
 }
 /** developers: who the Team Lead can assign to (empty for everyone else) */
-export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[]; /** the whole team (20270312000100) */ team?: { id: string; name: string; isLead: boolean }[] }
+export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[]; /** the whole team (20270312000400) */ team?: { id: string; name: string; isLead: boolean }[] }
 export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; isLead: boolean; department: string | null; addedAt: string }
 
 // ---------------------------------------------------------------------------

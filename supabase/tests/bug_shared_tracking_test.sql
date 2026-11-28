@@ -1,5 +1,5 @@
 -- =============================================================================
--- Bugs: shared tracking by the three developers (migration 20270312000100, docs/BUG_SHARED_TRACKING.md).
+-- Bugs: shared tracking by the three developers (migration 20270312000400, docs/BUG_SHARED_TRACKING.md).
 --  - a bug is created with no assignee and none is needed: all three developers (the Team Lead and two developers) see it and work on it;
 --  - "Add Progress Update": any developer, any bug: what was worked on, status, progress, notes; each update is a new history entry with the
 --    person (from the login) and the time, none overwrites another; contributors come from the history;
@@ -14,8 +14,8 @@
 \echo '--- 170. Shared bug tracking (no mandatory assignee)'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270312000100_bug_shared_tracking.sql
-\i supabase/migrations/20270312000100_bug_shared_tracking.sql
+\i supabase/migrations/20270312000400_bug_shared_tracking.sql
+\i supabase/migrations/20270312000400_bug_shared_tracking.sql
 select test.create_auth_user(u, e, jsonb_build_object('full_name', n),
   jsonb_build_object('provisioned_by', test.id('sa'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales')))
   from (values

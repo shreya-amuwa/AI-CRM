@@ -18,12 +18,12 @@ w.__calls = [];
 const bugs: any[] = [];
 const isDev = () => DEVS.some(d => d.id === w.__profile?.id);
 const isLead = () => DEVS.some(d => d.id === w.__profile?.id && d.lead);
-// the rule of 20270312000100: every developer sees every bug (the optional primary contact hides nothing)
+// the rule of 20270312000400: every developer sees every bug (the optional primary contact hides nothing)
 const sees = (_b: any) => isDev();
 const json = (data: unknown, code = 200) => new Response(JSON.stringify(code < 400 ? { success: true, data } : { success: false, error: data }), { status: code, headers: { 'Content-Type': 'application/json' } });
 const forbidden = () => json({ code: 'FORBIDDEN', message: 'The Bugs section is for the Developers team only.' }, 403);
 const OPEN = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'TESTING', 'NEEDS_INFO'];
-// the team members who worked on a bug, from its history (20270312000100)
+// the team members who worked on a bug, from its history (20270312000400)
 const contributors = (b: any) => { const m = new Map<string, { id: string; name: string; updates: number; lastAt: string }>();
   for (const h of b.history) if (h.by && (h.kind === 'PROGRESS' || h.kind === 'COMMENT' || (h.kind === 'STATUS' && !h.data.byReporter) || (h.kind === 'MESSAGE' && h.data.from === 'DEVELOPER'))) {
     const c = m.get(h.by) ?? { id: h.by, name: h.by, updates: 0, lastAt: h.at }; c.updates++; c.lastAt = h.at; m.set(h.by, c); }
@@ -113,7 +113,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       if (['RESOLVED', 'REJECTED'].includes(body.status) && (body.note ?? '').length < 5) return json({ code: 'VALIDATION_ERROR', message: 'Write the resolution note.' }, 422);
       b.status = body.status; if (body.note && ['RESOLVED', 'REJECTED'].includes(body.status)) b.resolutionNote = body.note; b.version++; ev('STATUS', false, body.note, { to: body.status });
     }
-    // "Add Progress Update" (20270312000100): any developer; appended to the history with the person; refused when the screen is out of date
+    // "Add Progress Update" (20270312000400): any developer; appended to the history with the person; refused when the screen is out of date
     if (one[2] === 'updates') {
       w.__updateCalls = (w.__updateCalls ?? 0) + 1;
       if (body.clientRequestId && b.history.some((h: any) => h.kind === 'PROGRESS' && h.data.clientRequestId === body.clientRequestId && h.by === me.fullName)) return json({ ...full(b, true), duplicate: true }, 201);

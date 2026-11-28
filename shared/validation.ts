@@ -3720,7 +3720,7 @@ export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note
   .refine(v => !['RESOLVED', 'REJECTED'].includes(v.status) || (v.note ?? '').trim().length >= 5,
     { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['note'] });
 export const bugCommentSchema = z.object({ note: trimmed(3000).min(1, 'Write a comment.') }).strict();
-/** "Add Progress Update" (20270312000100): what was worked on, optionally the new status / progress and notes. expectedVersion: the version the screen was loaded with */
+/** "Add Progress Update" (20270312000400): what was worked on, optionally the new status / progress and notes. expectedVersion: the version the screen was loaded with */
 export const bugProgressUpdateSchema = z.object({
   work: trimmed(3000).min(3, 'Write what you worked on (at least 3 characters).'),
   status: z.enum(DEV_BUG_STATUSES).optional(),

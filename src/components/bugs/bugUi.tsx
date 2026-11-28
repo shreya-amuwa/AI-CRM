@@ -37,7 +37,7 @@ export const BugTags: React.FC<{ b: DevBugRouting }> = ({ b }) => (
 export const BugStatusPill: React.FC<{ status: DevBugStatus }> = ({ status }) => (
   <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${BUG_STATUS_STYLE[status]}`} data-testid="bug-status" data-status={status}>{BUG_STATUS_LABEL[status]}</span>
 );
-/** the overall progress of a bug (shared tracking, 20270312000100) */
+/** the overall progress of a bug (shared tracking, 20270312000400) */
 export const BugProgress: React.FC<{ value: number | undefined; compact?: boolean }> = ({ value, compact }) => {
   const v = Math.max(0, Math.min(100, value ?? 0));
   return (

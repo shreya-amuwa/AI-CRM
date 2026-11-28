@@ -7,7 +7,7 @@ import { SideDrawer } from '../common/SideDrawer';
 import { BUG_STATUS_LABEL, BugFiles, BugHistory, BugProgress, BugStatusPill, BugTags, bugWhen, useBugAccess } from './bugUi';
 
 /**
- * Bugs (migrations 20270122000300, 20270122000400, 20270312000100): the Developers team's section. Every technical issue an employee reports lands here
+ * Bugs (migrations 20270122000300, 20270122000400, 20270312000400): the Developers team's section. Every technical issue an employee reports lands here
  * and is seen by the whole team. Only the developers on the list get the section (the menu follows the database, which checks every call again).
  * A bug has no mandatory assignee: all three developers (the Team Lead and the two developers) see every bug and work on it together. Each one
  * adds progress updates (what they did, the new status and progress, notes): every update is kept with who made it and when, none overwrites

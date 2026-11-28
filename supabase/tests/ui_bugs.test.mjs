@@ -1,5 +1,5 @@
 // Browser test of bugs for the Developers team (20270122000300, 20270122000400), with each of the three developer accounts: an employee
-// reports bugs; Shreya Mande (Team Lead), Ashish Sinha and Siddhesh Shinde all see and work on every bug (20270312000100: no mandatory assignee; only
+// reports bugs; Shreya Mande (Team Lead), Ashish Sinha and Siddhesh Shinde all see and work on every bug (20270312000400: no mandatory assignee; only
 // Shreya may name an optional primary contact); each adds progress updates that are kept with their author; contributors, progress and a conflict on an
 // out-of-date screen are shown; a bug nobody was assigned to is resolved; the employee follows it. Issue routing (20270128000200): the two recipients (HR or the Developer Team, no
 // meeting request), category and priority, the conversation (a developer asks for information, the employee answers), whole rows that open,

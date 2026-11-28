@@ -1,4 +1,4 @@
-// The rules of "Add Progress Update" on a bug (20270312000100) as the screen and the API check them before the database checks them again:
+// The rules of "Add Progress Update" on a bug (20270312000400) as the screen and the API check them before the database checks them again:
 // what was worked on is required, status and progress are optional, progress is 0-100, a resolved bug is 100% done and needs the resolution
 // text, and the person who made the update is never part of the request (the database takes it from the login).
 import { DEV_BUG_STATUSES, bugListQuerySchema, bugProgressUpdateSchema } from '../../shared/validation.js';
