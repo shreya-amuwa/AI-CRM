@@ -8,7 +8,8 @@ import {
   MAX_QUEUED, MAX_TOASTS, TOAST_MS, confirmAction, dismissToast, getFeedbackState, promptInput, registerFeedbackHost, resetFeedbackForTests, settleDialog,
   showDetails, toast
 } from '../../src/lib/feedback/feedbackStore.js';
-import { NETWORK_MESSAGE, userMessage } from '../../src/lib/feedback/errors.js';
+import { NETWORK_MESSAGE, PERMISSION_MESSAGE, RATE_MESSAGE, SESSION_MESSAGE, userMessage } from '../../src/lib/feedback/errors.js';
+import { clearToasts, errorKind, updateToast } from '../../src/lib/feedback/feedbackStore.js';
 
 let passed = 0;
 function check(ok: unknown, label: string, extra?: unknown) {
@@ -96,5 +97,50 @@ check(userMessage({ code: 'NETWORK_ERROR', message: 'Failed to fetch' }) === NET
 check(userMessage('x'.repeat(400), 'short') === 'short', 'a very long text is not shown');
 check(userMessage(undefined) === 'Something went wrong. Please try again.', 'nothing: the default sentence');
 
+
+// ---------------------------------------------------------------------------- Phase 1: loading, promise, fromError, defaults (docs/crm-enhancement-roadmap.md)
+{
+  clearToasts();
+  const id = toast.loading('Saving changes…');
+  const t0 = getFeedbackState().toasts.find(t => t.id === id)!;
+  check(t0.kind === 'loading' && t0.durationMs === null, 'a loading toast stays until it is updated');
+  updateToast(id, 'success', 'Changes saved successfully.');
+  const t1 = getFeedbackState().toasts.find(t => t.id === id)!;
+  check(t1.kind === 'success' && t1.message === 'Changes saved successfully.' && t1.durationMs === 4000 && getFeedbackState().toasts.length === 1,
+    'it turns into the success toast in place (one toast, then it disappears by itself)');
+  check(updateToast(99999, 'info', 'Shown again.') > 0 && getFeedbackState().toasts.some(t => t.message === 'Shown again.'), 'updating a toast that was closed shows it again');
+
+  clearToasts();
+  let during = '';
+  const ok = await toast.promise(new Promise<number>(r => setTimeout(() => { during = getFeedbackState().toasts.map(t => t.kind).join(','); r(7); }, 10)),
+    { loading: 'Saving lead…', success: v => `Lead ${v} saved successfully.`, error: 'Unable to save lead.' });
+  check(ok === 7 && during === 'loading', 'toast.promise: loading while the request runs, the value is returned');
+  check(getFeedbackState().toasts.length === 1 && getFeedbackState().toasts[0].kind === 'success' && getFeedbackState().toasts[0].message === 'Lead 7 saved successfully.',
+    'success only after the answer, in the same toast');
+
+  clearToasts();
+  let threw = false;
+  try { await toast.promise(Promise.reject(Object.assign(new Error('duplicate key value violates unique constraint "c"'), { code: 'INTERNAL' })), { loading: 'Saving…', success: 'Saved.', error: 'Unable to save lead.' }); }
+  catch { threw = true; }
+  check(threw && getFeedbackState().toasts[0].kind === 'error' && getFeedbackState().toasts[0].message === 'Unable to save lead.', 'a failure: the error toast with the fallback (no database text), and the promise still rejects');
+
+  clearToasts();
+  await toast.promise(Promise.reject({ code: 'CONFLICT', message: 'A customer with this number already exists.' }), { loading: 'Saving…', success: 'Saved.', error: 'x' }).catch(() => undefined);
+  check(getFeedbackState().toasts[0].kind === 'warning' && getFeedbackState().toasts[0].message === 'A customer with this number already exists.', 'a duplicate is a warning with the server\'s readable message');
+
+  clearToasts();
+  toast.fromError({ code: 'VALIDATION_ERROR', message: 'Required customer information is missing.' }, 'x');
+  toast.fromError({ code: 'FORBIDDEN', status: 403, message: '' }, 'x');
+  const kinds = getFeedbackState().toasts.map(t => `${t.kind}:${t.message}`);
+  check(kinds[0] === 'warning:Required customer information is missing.' && kinds[1] === `error:${PERMISSION_MESSAGE}`, 'fromError: something to fix is a warning; a refusal without a message says "no permission"', kinds);
+  check(errorKind({ code: 'NOT_FOUND' }) === 'error' && errorKind(null) === 'error' && errorKind({ code: 'CONFLICT' }) === 'warning', 'errorKind');
+  check(userMessage({ status: 401 }, 'x') === SESSION_MESSAGE && userMessage({ code: 'RATE_LIMITED' }, 'x') === RATE_MESSAGE, 'clear defaults for an expired session and too many attempts');
+  check(userMessage({ code: 'FORBIDDEN', message: 'Only Accounts can confirm payments.' }, 'x') === 'Only Accounts can confirm payments.', 'a readable refusal keeps its own words');
+
+  clearToasts();
+  for (let i = 0; i < 6; i++) toast.loading(`Uploading document ${i}…`);
+  check(getFeedbackState().toasts.length === 4, 'loading toasts are bounded like the others');
+  clearToasts();
+}
 console.warn = origWarn;
 console.log(`\n=== APP FEEDBACK UNIT TESTS PASSED (${passed}) ===`);

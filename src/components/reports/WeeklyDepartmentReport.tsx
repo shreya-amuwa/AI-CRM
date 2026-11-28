@@ -70,6 +70,10 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
   const [assigned, setAssigned] = useState('');
   const [completed, setCompleted] = useState('');
   const [remarks, setRemarks] = useState('');
+  // (20270308000100) what is still pending, what the department achieved, what got in the way
+  const [pending, setPending] = useState('');
+  const [achievements, setAchievements] = useState('');
+  const [challenges, setChallenges] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<'' | 'draft' | 'submit'>('');
   const [preview, setPreview] = useState(false);
@@ -86,12 +90,16 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
       setAssigned(a => (p.assignedOverview ?? a) || `${d.stats.assignedTasks} tasks were assigned across the department's reports this week.`);
       setCompleted(c => (p.completedOverview ?? c) || `${d.stats.completedTasks} of those tasks were reported completed${d.stats.completionRate === null ? '' : ` (${d.stats.completionRate}%)`}.`);
       setRemarks(r => (p.note ?? r) || '');
+      setPending(x => (p.pendingOverview ?? x) || '');
+      setAchievements(x => (p.achievements ?? x) || '');
+      setChallenges(x => (p.challenges ?? x) || '');
     }, e => setError(errText(e)));
   }, [week, fn]);
-  useEffect(() => { setData(null); setTitle(''); setAssigned(''); setCompleted(''); setRemarks(''); setNote(''); setErrors({}); }, [week, fn]);
+  useEffect(() => { setData(null); setTitle(''); setAssigned(''); setCompleted(''); setRemarks(''); setPending(''); setAchievements(''); setChallenges(''); setNote(''); setErrors({}); }, [week, fn]);
   useEffect(load, [load, reloadKey]);
 
-  const body = (submit: boolean) => ({ weekStart: week, title: title.trim(), assignedOverview: assigned.trim() || undefined, completedOverview: completed.trim() || undefined, remarks: remarks.trim() || undefined, submit, function: fn ?? data?.function });
+  const body = (submit: boolean) => ({ weekStart: week, title: title.trim(), assignedOverview: assigned.trim() || undefined, completedOverview: completed.trim() || undefined, remarks: remarks.trim() || undefined,
+    pendingOverview: pending.trim() || undefined, achievements: achievements.trim() || undefined, challenges: challenges.trim() || undefined, submit, function: fn ?? data?.function });
 
   const run = async (submit: boolean) => {
     setNote('');
@@ -169,6 +177,17 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
                 <Field label="Weekly completed task overview" htmlFor={`${uid}-co`} error={errors.completedOverview}>
                   <textarea id={`${uid}-co`} className={`${inputCls} min-h-20`} value={completed} maxLength={2000} disabled={locked || !!busy} onChange={e => setCompleted(e.target.value)} />
                 </Field>
+                <Field label="Pending work" htmlFor={`${uid}-pe`} error={errors.pendingOverview}>
+                  <textarea id={`${uid}-pe`} className={`${inputCls} min-h-20`} value={pending} maxLength={2000} disabled={locked || !!busy} onChange={e => setPending(e.target.value)} />
+                </Field>
+                <Field label="Achievements" htmlFor={`${uid}-ac`} error={errors.achievements}>
+                  <textarea id={`${uid}-ac`} className={`${inputCls} min-h-20`} value={achievements} maxLength={2000} disabled={locked || !!busy} onChange={e => setAchievements(e.target.value)} />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Challenges" htmlFor={`${uid}-ch`} error={errors.challenges}>
+                    <textarea id={`${uid}-ch`} className={`${inputCls} min-h-20`} value={challenges} maxLength={2000} disabled={locked || !!busy} onChange={e => setChallenges(e.target.value)} />
+                  </Field>
+                </div>
                 <div className="sm:col-span-2">
                   <Field label="Remarks / Department summary" htmlFor={`${uid}-re`} error={errors.remarks}>
                     <textarea id={`${uid}-re`} className={`${inputCls} min-h-20`} value={remarks} maxLength={2000} disabled={locked || !!busy} onChange={e => setRemarks(e.target.value)} />
@@ -202,6 +221,9 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
             <dl className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-xl bg-slate-50/80 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Weekly assigned task overview</dt><dd className="mt-1 text-sm whitespace-pre-wrap">{assigned || '-'}</dd></div>
               <div className="rounded-xl bg-slate-50/80 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Weekly completed task overview</dt><dd className="mt-1 text-sm whitespace-pre-wrap">{completed || '-'}</dd></div>
+              <div className="rounded-xl bg-slate-50/80 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Pending work</dt><dd className="mt-1 text-sm whitespace-pre-wrap">{pending || '-'}</dd></div>
+              <div className="rounded-xl bg-slate-50/80 px-3 py-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Achievements</dt><dd className="mt-1 text-sm whitespace-pre-wrap">{achievements || '-'}</dd></div>
+              <div className="rounded-xl bg-slate-50/80 px-3 py-2 sm:col-span-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Challenges</dt><dd className="mt-1 text-sm whitespace-pre-wrap">{challenges || '-'}</dd></div>
               <div className="rounded-xl bg-slate-50/80 px-3 py-2 sm:col-span-2"><dt className="text-[11px] font-bold uppercase text-slate-500">Remarks / Department summary</dt><dd className="mt-1 text-sm whitespace-pre-wrap">{remarks || '-'}</dd></div>
             </dl>
             <CompiledWeek data={data} />

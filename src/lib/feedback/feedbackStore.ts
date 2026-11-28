@@ -12,10 +12,13 @@
  *   - a dialog with onConfirm / onSubmit shows "working", runs it once (a second click does nothing), stays open with the error if it
  *     fails and resolves true only when it succeeded;
  *   - without a provider on the page nothing is confirmed (false / null), so an action can never run unasked;
- *   - at most MAX_TOASTS toasts are shown; the same message again refreshes the one already shown instead of stacking.
+ *   - at most MAX_TOASTS toasts are shown; the same message again refreshes the one already shown instead of stacking;
+ *   - a loading toast ("Saving changes…") never disappears by itself: it turns into the success or error toast in place (toast.promise),
+ *     so success is only ever shown after the server has answered.
  */
+import { userMessage } from './errors';
 
-export type ToastKind = 'success' | 'error' | 'warning' | 'info';
+export type ToastKind = 'success' | 'error' | 'warning' | 'info' | 'loading';
 export interface ToastAction { label: string; onClick: () => void }
 export interface ToastItem {
   id: number;
@@ -72,7 +75,7 @@ export interface FeedbackState { toasts: ToastItem[]; dialogs: DialogRequest[] }
 
 export const MAX_TOASTS = 4;
 export const MAX_QUEUED = 5;
-export const TOAST_MS: Record<ToastKind, number> = { success: 4000, info: 5000, warning: 7000, error: 9000 };
+export const TOAST_MS: Record<ToastKind, number | null> = { success: 4000, info: 5000, warning: 7000, error: 9000, loading: null };
 
 let state: FeedbackState = { toasts: [], dialogs: [] };
 let nextId = 1;
@@ -121,6 +124,31 @@ export function showToast(kind: ToastKind, message: string, opts: ToastOptions =
   set({ ...state, toasts });
   return item.id;
 }
+/** Change a shown toast in place (a loading toast becoming success / error). A toast that is gone is shown again. */
+export function updateToast(id: number, kind: ToastKind, message: string, opts: ToastOptions = {}): number {
+  if (!state.toasts.some(t => t.id === id)) return showToast(kind, message, opts);
+  const text = String(message ?? '').trim() || (kind === 'error' ? 'Something went wrong. Please try again.' : '');
+  set({ ...state, toasts: state.toasts.map(t => (t.id === id ? {
+    ...t, kind, message: text, title: opts.title, action: opts.action, repeat: 1, createdAt: Date.now(),
+    durationMs: opts.durationMs === undefined ? TOAST_MS[kind] : opts.durationMs
+  } : t)) });
+  return id;
+}
+
+/** API refusals the person can fix (a missing field, a duplicate) are warnings; everything else is an error. */
+const WARNING_CODES = new Set(['VALIDATION_ERROR', 'CONFLICT', 'DUPLICATE']);
+export function errorKind(err: unknown): 'warning' | 'error' {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && WARNING_CODES.has(code) ? 'warning' : 'error';
+}
+
+export interface PromiseMessages<T> {
+  loading: string;
+  success: string | ((value: T) => string);
+  /** the fallback when the failure has no readable message (raw technical text is never shown) */
+  error: string;
+}
+
 export function dismissToast(id: number) {
   if (state.toasts.some(t => t.id === id)) set({ ...state, toasts: state.toasts.filter(t => t.id !== id) });
 }
@@ -131,12 +159,32 @@ type ToastFn = ((message: string, opts?: ToastOptions & { kind?: ToastKind }) =>
   error: (m: string, o?: ToastOptions) => number;
   warning: (m: string, o?: ToastOptions) => number;
   info: (m: string, o?: ToastOptions) => number;
+  /** "Uploading document…": stays until it is updated or dismissed */
+  loading: (m: string, o?: ToastOptions) => number;
+  /** a failure as a safe sentence: a warning for something the person can fix, an error otherwise */
+  fromError: (err: unknown, fallback: string, o?: ToastOptions) => number;
+  /** one toast for the whole request: loading, then success (after the server answered) or the error. Resolves / rejects like the promise. */
+  promise: <T>(work: Promise<T>, messages: PromiseMessages<T>, o?: ToastOptions) => Promise<T>;
 };
+const fromError = (err: unknown, fallback: string, o?: ToastOptions) => showToast(errorKind(err), userMessage(err, fallback), o);
 export const toast: ToastFn = Object.assign((m: string, o: ToastOptions & { kind?: ToastKind } = {}) => showToast(o.kind ?? 'info', m, o), {
   success: (m: string, o?: ToastOptions) => showToast('success', m, o),
   error: (m: string, o?: ToastOptions) => showToast('error', m, o),
   warning: (m: string, o?: ToastOptions) => showToast('warning', m, o),
-  info: (m: string, o?: ToastOptions) => showToast('info', m, o)
+  info: (m: string, o?: ToastOptions) => showToast('info', m, o),
+  loading: (m: string, o?: ToastOptions) => showToast('loading', m, o),
+  fromError,
+  promise: async <T,>(work: Promise<T>, messages: PromiseMessages<T>, o?: ToastOptions): Promise<T> => {
+    const id = showToast('loading', messages.loading, o);
+    try {
+      const value = await work;
+      updateToast(id, 'success', typeof messages.success === 'function' ? messages.success(value) : messages.success, { title: o?.title });
+      return value;
+    } catch (err) {
+      updateToast(id, errorKind(err), userMessage(err, messages.error), { title: o?.title });
+      throw err;
+    }
+  }
 });
 
 // ------------------------------------------------------------------ dialogs

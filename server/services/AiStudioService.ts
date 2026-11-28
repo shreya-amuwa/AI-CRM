@@ -1,11 +1,11 @@
 import type {
   AiStudioTaskDeleteResult, AiStudioAssignees,
   AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioHrAccess, AiStudioHrPerformance, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
-  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
+  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry, AiStudioWeeklyReport, AiStudioWeeklyWeek
 } from '../../shared/contracts.js';
 import {
   aiStudioDailyReportOptionsQuerySchema, aiStudioDailyReportPreviewSchema, aiStudioHrPerformanceQuerySchema, aiStudioHrViewerSchema, aiStudioDailyReportSchema, aiStudioAssignLeadSchema, aiStudioProjectAssignSchema, aiStudioReportLeadEditSchema, aiStudioProjectSchema, aiStudioSetLeadSchema, aiStudioReportReviewSchema, aiStudioReportSchema, aiStudioReportsQuerySchema, aiStudioTaskCreateSchema,
-  aiStudioTaskEditSchema, aiStudioTasksQuerySchema, aiStudioTaskUpdateSchema, uuidSchema
+  aiStudioTaskEditSchema, aiStudioTasksQuerySchema, aiStudioTaskUpdateSchema, aiStudioWeeklyListQuerySchema, aiStudioWeeklyQuerySchema, aiStudioWeeklyReviewSchema, aiStudioWeeklySaveSchema, uuidSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
 import type { AiStudioRepository } from '../repositories/AiStudioRepository.js';
@@ -61,6 +61,18 @@ export class AiStudioService {
   hrPerformance(query: unknown): Promise<AiStudioHrPerformance> {
     const q = parse(aiStudioHrPerformanceQuerySchema, query);
     return this.repo.hrPerformance(q.from ?? null, q.to ?? null);
+  }
+  // the AI Studio weekly report (20270308000100): a Team Lead writes it for the Super Admin; nobody else reads it (the database decides)
+  weeklyWeek(query: unknown): Promise<AiStudioWeeklyWeek> { return this.repo.weeklyWeek(parse(aiStudioWeeklyQuerySchema, query).weekStart); }
+  weeklySave(body: unknown): Promise<AiStudioWeeklyReport> { return this.repo.weeklySave(parse(aiStudioWeeklySaveSchema, body)); }
+  weeklyList(query: unknown): Promise<AiStudioWeeklyReport[]> {
+    const q = parse(aiStudioWeeklyListQuerySchema, query ?? {});
+    return this.repo.weeklyList(q.weekStart ?? null, q.status ?? null);
+  }
+  weeklyOpen(id: string): Promise<AiStudioWeeklyReport> { return this.repo.weeklyOpen(parse(uuidSchema, id)); }
+  weeklyReview(id: string, body: unknown): Promise<AiStudioWeeklyReport> {
+    const { decision, comment } = parse(aiStudioWeeklyReviewSchema, body);
+    return this.repo.weeklyReview(parse(uuidSchema, id), decision, comment ?? null);
   }
   // the consolidated daily report (20270219000100): the browser sends dates and task ids only; the database checks every id and builds the work
   dailyReportOptions(query: unknown): Promise<AiStudioDailyReportOptions> { return this.repo.dailyReportOptions(parse(aiStudioDailyReportOptionsQuerySchema, query).date); }

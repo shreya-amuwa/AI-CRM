@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Bell, FileText, FolderKanban, LayoutDashboard, ListChecks, UserCheck, Users } from 'lucide-react';
+import { ArrowLeft, Bell, CalendarRange, FileText, FolderKanban, LayoutDashboard, ListChecks, UserCheck, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -14,12 +14,13 @@ import { AiStudioOverviewPage } from './AiStudioOverview';
 import { AiStudioPeoplePage } from './AiStudioPeople';
 import { DepartmentTasks, ProjectManagement } from './AiStudioProjects';
 import { DepartmentReports } from './AiStudioReports';
+import { AdminWeeklyReports } from './AiStudioWeekly';
 import { AI_STUDIO_CHANGED_EVENT, useOpenAiStudioRequest } from './aiStudioEvents';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 
 const AttendancePage = React.lazy(() => import('../attendance/AttendancePage'));
 
-const AI_STUDIO_WORKSPACE_PAGES = ['overview', 'projects', 'leads', 'members', 'tasks', 'reports', 'chat', 'notifications'] as const;
+const AI_STUDIO_WORKSPACE_PAGES = ['overview', 'projects', 'leads', 'members', 'tasks', 'reports', 'weekly', 'chat', 'notifications'] as const;
 type Page = (typeof AI_STUDIO_WORKSPACE_PAGES)[number];
 
 /** Reports waiting for the Super Admin's final decision (the badge of Daily Reports). */
@@ -53,7 +54,7 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
   const [nonce, setNonce] = useState(0);
   const dept = departments.find(d => d.id === 'ai-studio');
   useOpenChatRequest(useCallback(() => setPage('chat'), []));
-  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); setPage(d.kind === 'task' ? 'tasks' : d.kind === 'project' ? 'projects' : 'reports'); }, []));
+  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); setPage(d.kind === 'task' ? 'tasks' : d.kind === 'project' ? 'projects' : d.kind === 'weekly' ? 'weekly' : 'reports'); }, []));
 
   const items = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -62,11 +63,13 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
     { id: 'members', label: 'Team Members', icon: Users },
     { id: 'tasks', label: 'Tasks', icon: ListChecks },
     { id: 'reports', label: 'Daily Reports', icon: FileText, badge: awaiting },
+    // (20270308000100) the Team Leads' weekly team reports, received as AI Studio's Department Head
+    { id: 'weekly', label: 'Weekly Reports', icon: CalendarRange },
     { ...CHAT_NAV, badge: chatUnread },
     { id: 'notifications', label: 'Notification Center', icon: Bell, badge: unreadCount }
   ];
   const groups: ShellNavGroup[] = groupNavItems(items, [
-    { ids: ['overview', 'projects', 'leads', 'members', 'tasks', 'reports'] },
+    { ids: ['overview', 'projects', 'leads', 'members', 'tasks', 'reports', 'weekly'] },
     { label: 'Communication', ids: ['chat', 'notifications'] }
   ]);
   const key = `${page}-${nonce}`;
@@ -98,6 +101,7 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
       {page === 'members' && <AiStudioPeoplePage kind="MEMBER" departmentSlug="ai-studio" />}
       {page === 'tasks' && <DepartmentTasks key={key} role="ADMIN" />}
       {page === 'reports' && <DepartmentReports key={key} role="ADMIN" />}
+      {page === 'weekly' && <AdminWeeklyReports key={key} />}
       {page === 'chat' && <ChatRoute />}
       {page === 'notifications' && <NotificationsPage onOpenItem={n => void openFromNotification(n)} />}
     </DashboardShell>

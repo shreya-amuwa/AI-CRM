@@ -153,6 +153,25 @@ try {
     await page.locator('[data-testid^="toast-"]').first().getByRole('button', { name: 'Dismiss notification' }).click();
     check(await page.locator('[data-testid^="toast-"]').count() === 3, `${label}: a toast can be closed`);
 
+    // Phase 1: one request at a time, loading then success in the same toast, safe failure text, offline warning
+    await page.evaluate(() => document.querySelectorAll('[data-testid^="toast-"] button[aria-label="Dismiss notification"]').forEach(b => b.click()));
+    await page.click('#submit');
+    await page.click('#submit', { force: true }).catch(() => undefined);
+    const loadingT = page.getByTestId('toast-loading');
+    check(await loadingT.count() === 1 && await loadingT.getAttribute('aria-busy') === 'true' && await loadingT.getByText('Saving lead…').count() === 1 && await page.locator('#submit').isDisabled(),
+      `${label}: while saving, a loading toast and a disabled button`);
+    await page.getByTestId('toast-success').getByText('Lead saved successfully.').waitFor();
+    check(await page.evaluate(() => window.saves()) === 1 && await page.getByTestId('toast-loading').count() === 0, `${label}: a double click saved once; the loading toast became the success toast`);
+    await page.click('#submit-fail');
+    await page.getByTestId('toast-error').getByText('Unable to save lead.').waitFor();
+    check(await page.getByText('violates unique constraint').count() === 0, `${label}: a failure shows the safe sentence, never the database text`);
+    await page.context().setOffline(true);
+    await page.getByText('You are offline').waitFor();
+    check(await page.getByTestId('toast-warning').filter({ hasText: 'Internet connection unavailable' }).count() === 1, `${label}: going offline shows one persistent warning`);
+    await page.context().setOffline(false);
+    await page.getByText('Back online.').waitFor();
+    check(await page.getByText('You are offline').count() === 0, `${label}: back online replaces it`);
+
     check(native === 0, `${label}: no browser dialog was ever shown`);
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${label}: no sideways scrolling`);
     check(errors.length === 0, `${label}: no script errors`, errors);

@@ -2532,6 +2532,10 @@ export const reportWeeklySaveSchema = z
     assignedOverview: optionalText(2000),
     completedOverview: optionalText(2000),
     remarks: optionalText(2000),
+    // (20270308000100) the weekly report also says what is pending, what was achieved and what got in the way
+    pendingOverview: optionalText(2000),
+    achievements: optionalText(2000),
+    challenges: optionalText(2000),
     submit: z.boolean().default(false),
     function: reportWeeklyFunctionSchema.optional()
   })
@@ -3475,6 +3479,33 @@ export const aiStudioHrPerformanceQuerySchema = z
   .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The start date is after the end date.', path: ['from'] });
 export const aiStudioHrViewerSchema = z.object({ profileId: uuidSchema, allowed: z.boolean() }).strict();
 
+// ---- AI Studio weekly report: Team Lead -> the Super Admin, AI Studio's Department Head (migration 20270308000100) ----------------------------------------
+const aiStudioMonday = isoDate.refine(d => new Date(`${d}T00:00:00Z`).getUTCDay() === 1, { message: 'Choose a week that starts on a Monday.' });
+const weeklyPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Keep each part under 4000 characters.').nullable().optional());
+export const aiStudioWeeklyQuerySchema = z.object({ weekStart: aiStudioMonday }).strict();
+export const aiStudioWeeklyListQuerySchema = z.object({ weekStart: aiStudioMonday.optional(), status: z.enum(['DRAFT', 'SUBMITTED', 'RETURNED', 'ACKNOWLEDGED']).optional() }).strict();
+export const aiStudioWeeklySaveSchema = z
+  .object({
+    weekStart: aiStudioMonday,
+    completedWork: weeklyPart,
+    pendingWork: weeklyPart,
+    achievements: weeklyPart,
+    challenges: weeklyPart,
+    remarks: weeklyPart,
+    submit: z.boolean().default(false)
+  })
+  .strict()
+  .refine(v => !v.submit || (v.completedWork ?? '').trim().length >= 10, {
+    message: 'Describe the work your team completed this week (at least 10 characters) before submitting.', path: ['completedWork']
+  });
+export const aiStudioWeeklyReviewSchema = z
+  .object({
+    decision: z.enum(['ACKNOWLEDGE', 'RETURN']),
+    comment: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'Keep the comment under 2000 characters.').nullable().optional())
+  })
+  .strict()
+  .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write what the Team Lead should change.', path: ['comment'] });
+
 // ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
 /** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */
 export const crocodialCredentialRefSchema = z
@@ -4139,57 +4170,96 @@ export const walletNewPinSchema = z.object({ pin: walletPinSchema, confirm: z.st
   .refine(v => v.pin === v.confirm, { message: 'The two PINs do not match.', path: ['confirm'] });
 
 // ---------------------------------------------------------------------------
-// Support Recharges (migration 20270228000200): Panel and Message recharges with a payment screenshot. The database re-checks every rule.
+// Support Recharges (migrations 20270228000200, 20270310000100): Panel and Message recharges for a customer, GST / Non-GST, a payment screenshot, and Accounts
+// verifying the payment. The database re-checks every rule; the customer's Relationship Manager is never taken from a request.
 // ---------------------------------------------------------------------------
 export const RECHARGE_KINDS = ['PANEL', 'MESSAGE'] as const;
-export const RECHARGE_STATUSES = ['PENDING', 'VERIFIED', 'COMPLETED', 'REJECTED'] as const;
+export const RECHARGE_BILLING_TYPES = ['GST', 'NON_GST'] as const;
+export const RECHARGE_PAYMENT_STATUSES = ['PENDING_VERIFICATION', 'PAYMENT_RECEIVED', 'PAYMENT_NOT_RECEIVED', 'REJECTED'] as const;
+export const RECHARGE_INVOICE_STATUSES = ['NOT_GENERATED', 'GENERATED', 'SENT', 'EMAIL_SENT', 'WHATSAPP_SENT', 'PARTIALLY_SENT', 'FAILED'] as const;
+export const RECHARGE_VERIFY_DECISIONS = ['RECEIVED', 'NOT_RECEIVED', 'REJECTED'] as const;
 export const RECHARGE_PROOF_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'] as const;
 export const RECHARGE_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const rechargeKindSchema = z.enum(RECHARGE_KINDS, { errorMap: () => ({ message: 'Choose Panel Recharge or Message Recharge.' }) });
-export const rechargeStatusSchema = z.enum(RECHARGE_STATUSES, { errorMap: () => ({ message: 'Choose a valid status.' }) });
+export const rechargeBillingTypeSchema = z.enum(RECHARGE_BILLING_TYPES, { errorMap: () => ({ message: 'Choose GST or Non-GST.' }) });
+export const rechargePaymentStatusSchema = z.enum(RECHARGE_PAYMENT_STATUSES, { errorMap: () => ({ message: 'Choose a valid payment status.' }) });
 /** A money amount: a number with at most 2 decimals, never negative. */
 const rechargeAmount = z.coerce.number({ invalid_type_error: 'Amounts must be numbers.' }).min(0, 'Amounts cannot be negative.').max(100000000, 'Amounts cannot be more than 10 crore.')
   .refine(v => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, 'Amounts can have at most 2 decimal places.');
 const rechargeText = (max: number, message: string) => z.string().trim().max(max, message).optional().nullable().transform(v => (v ? v : null));
+/** A GST number as typed: spaces and case do not matter; the database checks the format again. */
+const rechargeGstin = z.string().trim().transform(v => v.replace(/\s+/g, '').toUpperCase()).refine(v => v === '' || /^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$/.test(v), 'Enter a valid 15-character GST number.')
+  .optional().nullable().transform(v => (v ? v : null));
 const rechargeFields = z.object({
-  customerName: z.string().trim().min(2, 'Enter the customer name (2 to 150 characters).').max(150, 'The customer name is too long.'),
   rechargeDate: isoDate,
+  billingType: rechargeBillingTypeSchema,
+  /** the amount before GST (for a Non-GST recharge, the whole amount) */
+  rechargeAmount: rechargeAmount.refine(v => v > 0, 'Enter the recharge amount (above zero).'),
   gstAmount: rechargeAmount.default(0),
-  gstDetails: rechargeText(500, 'GST details can be at most 500 characters.'),
-  nonGstAmount: rechargeAmount.default(0),
-  nonGstDetails: rechargeText(500, 'Non-GST details can be at most 500 characters.'),
-  /** Optional: when sent it must equal GST + non-GST (the database always computes it). */
+  gstNumber: rechargeGstin,
+  /** Optional: when sent it must equal amount + GST (the database always computes it). */
   totalAmount: rechargeAmount.optional(),
+  paymentReference: rechargeText(100, 'The payment reference can be at most 100 characters.'),
   remarks: rechargeText(1000, 'Remarks can be at most 1000 characters.'),
   screenshotId: uuidSchema.optional().nullable().transform(v => v ?? null)
 });
-const rechargeTotals = (v: { gstAmount: number; nonGstAmount: number; totalAmount?: number }, ctx: z.RefinementCtx) => {
-  const sum = Math.round(v.gstAmount * 100 + v.nonGstAmount * 100) / 100;
-  if (sum <= 0) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'Enter the GST amount, the non-GST amount or both (the total must be above zero).' });
-  if (v.totalAmount !== undefined && Math.abs(v.totalAmount - sum) > 0.001) ctx.addIssue({ code: 'custom', path: ['totalAmount'], message: 'The total recharge amount must equal the GST amount plus the non-GST amount.' });
+const rechargeRules = (v: { billingType: string; rechargeAmount: number; gstAmount: number; gstNumber: string | null; totalAmount?: number }, ctx: z.RefinementCtx) => {
+  const sum = Math.round(v.rechargeAmount * 100 + v.gstAmount * 100) / 100;
+  if (v.billingType === 'NON_GST' && v.gstAmount !== 0) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'A Non-GST recharge has no GST amount.' });
+  if (v.billingType === 'GST' && v.gstAmount > v.rechargeAmount) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'The GST amount cannot be more than the recharge amount.' });
+  if (v.totalAmount !== undefined && Math.abs(v.totalAmount - sum) > 0.001) ctx.addIssue({ code: 'custom', path: ['totalAmount'], message: 'The total must equal the recharge amount plus the GST amount.' });
 };
-export const rechargeBodySchema = rechargeFields.strict().superRefine(rechargeTotals);
-export const rechargeCreateSchema = rechargeFields.extend({ kind: rechargeKindSchema, requestId: uuidSchema.optional() }).strict().superRefine(rechargeTotals)
+/** Editing: the customer, the kind and the RM are fixed, so none of them can be sent. */
+export const rechargeBodySchema = rechargeFields.strict().superRefine(rechargeRules);
+/** Creating: the customer is chosen; the Relationship Manager, the department and the status are never accepted from the browser. */
+export const rechargeCreateSchema = rechargeFields.extend({ kind: rechargeKindSchema, customerId: uuidSchema, requestId: uuidSchema.optional() }).strict().superRefine(rechargeRules)
   .refine(v => !!v.screenshotId, { message: 'Upload the screenshot of the payment.', path: ['screenshotId'] });
-export const rechargeStatusBodySchema = z
-  .object({ status: rechargeStatusSchema, note: z.string().trim().max(500, 'The note can be at most 500 characters.').optional().nullable().transform(v => (v ? v : null)) })
+/** Accounts: the money arrived, did not arrive, or the recharge is rejected. */
+export const rechargeVerifySchema = z
+  .object({
+    decision: z.enum(RECHARGE_VERIFY_DECISIONS, { errorMap: () => ({ message: 'Choose Payment received, Payment not received or Reject.' }) }),
+    note: z.string().trim().max(500, 'The note can be at most 500 characters.').optional().nullable().transform(v => (v ? v : null)),
+    /** what Accounts saw arrive: when sent it must equal the recharge total */
+    receivedAmount: rechargeAmount.optional()
+  })
   .strict()
-  .refine(v => v.status !== 'REJECTED' || (v.note ?? '').length >= 3, { message: 'Say why the recharge is rejected.', path: ['note'] });
+  .refine(v => v.decision === 'RECEIVED' || (v.note ?? '').length >= 3, { message: 'Say why (a short note is required).', path: ['note'] });
+/** Accounts: a correction of the billing details, with the reason. */
+export const rechargeCorrectSchema = z
+  .object({
+    note: z.string({ required_error: 'Say what was corrected and why.' }).trim().min(3, 'Say what was corrected and why.').max(500, 'The note can be at most 500 characters.'),
+    billingType: rechargeBillingTypeSchema.optional(),
+    rechargeAmount: rechargeAmount.refine(v => v > 0, 'Enter the recharge amount (above zero).').optional(),
+    gstAmount: rechargeAmount.optional(),
+    gstNumber: rechargeGstin,
+    paymentReference: rechargeText(100, 'The payment reference can be at most 100 characters.'),
+    customerEmail: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional().nullable().or(z.literal('')),
+    customerPhone: z.string().trim().max(40).optional().nullable(),
+    customerAddress: z.string().trim().max(500, 'The address can be at most 500 characters.').optional().nullable()
+  })
+  .strict();
 export const rechargeListQuerySchema = z
   .object({
-    kind: rechargeKindSchema,
+    kind: rechargeKindSchema.optional().or(z.literal('').transform(() => undefined)),
     search: z.string().trim().max(100).optional(),
-    status: z.union([z.literal(''), rechargeStatusSchema]).optional(),
+    paymentStatus: z.union([z.literal(''), rechargePaymentStatusSchema]).optional(),
+    invoiceStatus: z.union([z.literal(''), z.enum([...RECHARGE_INVOICE_STATUSES, 'GENERATED_ANY', 'DELIVERY_ANY'])]).optional(),
     from: isoDate.optional().or(z.literal('')),
     to: isoDate.optional().or(z.literal('')),
     min: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
     max: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
+    rm: uuidSchema.optional().or(z.literal('').transform(() => undefined)),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     offset: z.coerce.number().int().min(0).max(100000).default(0)
   })
   .strict()
   .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The "from" date must not be after the "to" date.', path: ['to'] })
   .refine(v => v.min === undefined || v.max === undefined || v.min <= v.max, { message: 'The minimum amount must not be above the maximum.', path: ['max'] });
+export const rechargePerformanceQuerySchema = z
+  .object({ from: isoDate.optional().or(z.literal('')), to: isoDate.optional().or(z.literal('')), rm: uuidSchema.optional().or(z.literal('').transform(() => undefined)) })
+  .strict()
+  .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The "from" date must not be after the "to" date.', path: ['to'] });
+export const rechargeCustomerQuerySchema = z.object({ search: z.string().trim().max(100).optional() }).strict();
 /** The payment proof: an image or a PDF, at most 5 MB. */
 export const rechargeUploadSchema = z
   .object({
@@ -4212,3 +4282,26 @@ export const leadTagSaveSchema = z
   .strict();
 export const leadTagRetireSchema = z.object({ retired: z.boolean() }).strict();
 export const leadTagSetSchema = z.object({ tagId: uuidSchema }).strict();
+/** Accounts: make the invoice of a verified recharge. Nothing here is a number or an amount: the database builds the invoice from the recharge. */
+export const rechargeInvoiceGenerateSchema = z
+  .object({
+    hsnSac: z.string().trim().regex(/^[0-9]{4,8}$/, 'The HSN/SAC code is 4 to 8 digits.').optional().or(z.literal('').transform(() => undefined)),
+    taxTreatment: z.enum(['INTRA_STATE', 'INTER_STATE'], { errorMap: () => ({ message: 'Choose intra-state (CGST + SGST) or inter-state (IGST).' }) }).optional()
+  })
+  .strict();
+export const RECHARGE_DELIVERY_CHANNELS = ['EMAIL', 'WHATSAPP'] as const;
+/** Accounts: send the invoice. "resend" is the deliberate second send of a channel that already went. */
+export const rechargeInvoiceSendSchema = z
+  .object({
+    channels: z.array(z.enum(RECHARGE_DELIVERY_CHANNELS, { errorMap: () => ({ message: 'Choose e-mail or WhatsApp.' }) })).min(1, 'Choose e-mail, WhatsApp or both.').max(2).refine(v => new Set(v).size === v.length, 'Each channel once.'),
+    resend: z.boolean().default(false)
+  })
+  .strict();
+/** Accounts: the customer's contact for sending, with the reason. */
+export const rechargeContactSchema = z
+  .object({
+    customerEmail: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional().nullable().or(z.literal('')),
+    customerPhone: z.string().trim().max(40).optional().nullable(),
+    note: z.string({ required_error: 'Say what was corrected and why.' }).trim().min(3, 'Say what was corrected and why.').max(500)
+  })
+  .strict();

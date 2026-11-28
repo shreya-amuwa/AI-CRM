@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 /** A notification about an AI Studio task or daily report opens that page of the AI Studio dashboard, on the item it names. */
 export const OPEN_AI_STUDIO_EVENT = 'crm:open-ai-studio';
 /** A task or a report (a notification, a search result) opens it; a project (a search result) opens the Projects page. */
-export interface OpenAiStudioDetail { kind: 'task' | 'report' | 'project'; id?: string }
+export interface OpenAiStudioDetail { kind: 'task' | 'report' | 'project' | 'weekly'; id?: string }
 let pending: OpenAiStudioDetail | null = null;
 
 export const openAiStudio = (detail: OpenAiStudioDetail) => {

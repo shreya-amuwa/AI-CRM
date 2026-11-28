@@ -11217,22 +11217,23 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('aim1', 'PATCH', `/ai-studio/reports/${report1}`, { ...rep, workCompleted: 'Login screen and tests' });
   check(q.status === 200 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.revision === 2, 'AI Studio: the member edits and resubmits', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Good' });
-  check(q.status === 200 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: the Team Lead approves: it moves to the Super Admin', q);
+  // (20270308000100) AI Studio daily: Team Member -> Team Lead -> HR; the Team Lead's approval is final
+  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Team Lead approves: final (it goes to HR, not to the Super Admin)', q);
   q = await api('sa', 'GET', '/ai-studio/reports?view=department&status=PENDING_DH_APPROVAL');
-  check(q.status === 200 && q.json.data.total === 1 && q.json.data.items[0].authorName === 'AI Member One', 'AI Studio: the Super Admin sees the forwarded report', q);
+  check(q.status === 200 && q.json.data.total === 0, 'AI Studio: nothing waits for the Super Admin', q);
   q = await api('sa', 'GET', `/ai-studio/reports?view=department&leadId=${lead2}`);
   check(q.json.data.total === 0, 'AI Studio: and can filter by Team Lead', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE' });
   check(q.status === 409, 'AI Studio: the Team Lead cannot approve it again', q);
   q = await api('sa', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Approved' });
-  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Super Admin gives the final approval', q);
+  check(q.status === 409, 'AI Studio: the Super Admin has no approval step after the Team Lead\'s (20270308000100)', q);
   q = await api('aim1', 'GET', `/ai-studio/reports/${report1}`);
-  // (20270302000100) the Team Lead's approval also sent it to HR: one "Sent to HR" entry besides the six steps
-  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').length === 6
+  // the Team Lead's approval sent it to HR: one "Sent to HR" entry besides the five steps (created, submitted, returned, resubmitted, approved)
+  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').length === 5
     && q.json.data.history.filter((h: any) => h.action === 'SENT_TO_HR').length === 1 && q.json.data.history[0].action === 'CREATED' && q.json.data.history[1].action === 'SUBMITTED'
-    && q.json.data.history[q.json.data.history.length - 1].actorName === 'Root'
+    && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').slice(-1)[0].actorName === 'AI Lead One'
     && q.json.data.history.some((h: any) => h.action === 'RETURNED' && h.comment === 'Add the test results'),
-    'AI Studio: the final status and the whole history are visible to the member', q);
+    'AI Studio: the final status (the Team Lead\'s approval) and the whole history are visible to the member', q);
   q = await api('sa', 'GET', '/ai-studio/reports?view=department');
   check(q.status === 200 && q.json.data.total === 1, 'AI Studio: the Super Admin sees every report of the department', q);
   q = await api('sa', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'RETURN', comment: 'Too late to return' });
@@ -11339,12 +11340,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: aiqr.id, reportDate: today, workCompleted: 'AIQR review', submit: true });
   check(q.status === 201 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.leadId === lead1, 'AI Studio: a new report follows Team Member -> Team Lead', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${q.json.data.id}/review`, { decision: 'APPROVE' });
-  check(q.status === 200 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: the Team Lead approves it and it goes on to the Super Admin', q);
+  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Team Lead approves it: final, sent to HR (20270308000100)', q);
 
   // shared features keep working for AI Studio people: notifications, chat, leave
   q = await api('aim1', 'GET', '/notifications?page=1&pageSize=50');
   const types = (q.json.data.items ?? q.json.data).map((n: any) => n.type);
-  check(['AI_STUDIO_TASK_ASSIGNED', 'AI_STUDIO_REPORT_RETURNED', 'AI_STUDIO_REPORT_TL_APPROVED', 'AI_STUDIO_REPORT_APPROVED'].every(t => types.includes(t)), 'AI Studio: the member was notified of the task and of every report decision', types);
+  check(['AI_STUDIO_TASK_ASSIGNED', 'AI_STUDIO_REPORT_RETURNED', 'AI_STUDIO_REPORT_TL_APPROVED'].every(t => types.includes(t)), 'AI Studio: the member was notified of the task and of every report decision', types);
   q = await api('aim1', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2099-03-01', reason: 'Family function' });
   check([200, 201, 404].includes(q.status), 'AI Studio: the leave module is reachable for AI Studio people', q);
 }
@@ -13592,7 +13593,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`delete from public.dev_bugs where source = 'DASHBOARD_EXPLORER' and title like 'API check:%'`);
 }
 
-// --- Support Recharges (migration 20270228000200): Panel / Message recharges with a private payment screenshot ---
+// --- Support Recharges (migrations 20270228000200, 20270310000100): a recharge for a customer is credited to the customer's own Relationship Manager,
+// Accounts verify that the payment really arrived, and the private screenshot is only proof ---
 {
   const mkUser = async (tag: string, role: string, teamId: string) => {
     const u = await api('sa', 'POST', '/users', { email: `${tag}@amuwa.com`, fullName: `Recharge ${tag}`, password: 'Sup3rSecret!', role, teamId });
@@ -13600,9 +13602,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     tokens.set(tag, tokenFor(u.json.data.id));
     return u.json.data.id as string;
   };
-  await mkUser('rcm', 'TEAM_MEMBER', support.id);
-  await mkUser('rcm2', 'TEAM_MEMBER', support.id);
+  const rcmId = await mkUser('rcm', 'TEAM_MEMBER', support.id);
+  const rcm2Id = await mkUser('rcm2', 'TEAM_MEMBER', support.id);
   await mkUser('rcl', 'TEAM_HEAD', support.id);
+  // a fresh connection with no login on it: earlier blocks leave a session login on pooled connections, and a customer insert with a login is checked as that person's assignment
+  const cust = async (owner: string, name: string, phone: string) => {
+    const c = await db.connect();
+    try {
+      await c.query(`select set_config('request.jwt.claims', '', false)`);
+      return (await c.query(`insert into public.customers (owner_id, name, company, phone, lifecycle_stage) values ($1, $2, $2, $3, 'CUSTOMER') returning id`, [owner, name, phone])).rows[0].id as string;
+    } finally { c.release(); }
+  };
+  const c1 = await cust(rcmId, 'RCX Alpha Traders', '+919810000711');
+  const c2 = await cust(rcm2Id, 'RCX Beta Stores', '+919810000712');
   const png = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5f645400000000049454e44ae426082', 'hex'), Buffer.alloc(600, 0)]);
   const put = (t: any, body: Buffer, type: string) =>
     fetch(`${GW}/storage/v1/object/upload/sign/${t.bucket}/${t.path}?token=${t.token}`, { method: 'PUT', headers: { 'content-type': type, 'x-upsert': 'false' }, body });
@@ -13616,18 +13628,21 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     return t.attachment.id as string;
   };
   const today = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
-  const form = (name: string, extra: Record<string, unknown> = {}) => ({ customerName: name, rechargeDate: today, gstAmount: 118, gstDetails: '18% GST', nonGstAmount: 500.5, nonGstDetails: 'wallet', ...extra });
+  const form = (customerId: string, extra: Record<string, unknown> = {}) => ({ kind: 'PANEL', customerId, rechargeDate: today, billingType: 'NON_GST', rechargeAmount: 500.5, gstAmount: 0, ...extra });
+  const gstForm = (customerId: string, extra: Record<string, unknown> = {}) => form(customerId, { billingType: 'GST', rechargeAmount: 500, gstAmount: 90, gstNumber: '27AAPFU0939F1ZV', ...extra });
 
   let r = await api(null, 'GET', '/support/recharges?kind=PANEL');
   check(r.status === 401, 'recharges API: not for visitors', r);
   r = await api('a', 'GET', '/support/recharges?kind=PANEL');
   check(r.status === 403, 'recharges API: a Sales member cannot list recharges', r);
+  r = await api('a', 'GET', '/support/recharge-customers');
+  check(r.status === 403, 'recharges API: ... nor search customers for one', r);
   r = await api('a', 'POST', '/support/recharge-uploads', { fileName: 'proof.png', mimeType: 'image/png', sizeBytes: 100 });
   check(r.status === 403, 'recharges API: ... nor upload a screenshot', r);
   r = await api('rcm', 'GET', '/support/recharges');
-  check(r.status === 422, 'recharges API: a list needs a kind', r);
+  check(r.status === 422, 'recharges API: Support lists one kind at a time', r);
   r = await api('rcm', 'GET', '/support/recharges?kind=BOTH');
-  check(r.status === 422, 'recharges API: ... and a valid one', r);
+  check(r.status === 422, 'recharges API: ... a valid one', r);
   r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'proof.gif', mimeType: 'image/gif', sizeBytes: 100 });
   check(r.status === 422, 'recharges API: a GIF is not accepted as proof', r);
   r = await api('rcm', 'POST', '/support/recharge-uploads', { fileName: 'proof.exe', mimeType: 'application/x-msdownload', sizeBytes: 100 });
@@ -13645,61 +13660,89 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('rcm', 'POST', `/support/recharge-uploads/${fk.attachment.id}/complete`);
   check(r.status === 422, 'recharges API: a text file renamed .png is refused after it was looked at', r);
 
+  // the customer picker and the RM, from the database
+  r = await api('rcm', 'GET', '/support/recharge-customers?search=rcx%20alpha');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === c1 && r.json.data[0].rmId === rcmId && r.json.data[0].phone, 'recharges API: the picker lists the customer with its Relationship Manager', r);
+  r = await api('rcm', 'GET', `/support/recharge-customers/${c1}`);
+  check(r.status === 200 && r.json.data.rmId === rcmId, 'recharges API: the customer context', r);
+  r = await api('rcm', 'GET', `/support/recharge-customers/${crypto.randomUUID()}`);
+  check(r.status === 404, 'recharges API: an unknown customer is not found', r);
+
   const f1 = await shot('rcm');
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha'), screenshotId: null });
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(c1), screenshotId: null });
   check(r.status === 422, 'recharges API: the screenshot is required', r);
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { totalAmount: 5 }), screenshotId: f1 });
-  check(r.status === 422, 'recharges API: a total that is not GST + non-GST is refused', r);
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { gstAmount: -1 }), screenshotId: f1 });
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(c1, { customerId: undefined }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: the customer is required', r);
+  r = await api('rcm', 'POST', '/support/recharges', { ...gstForm(c1, { gstNumber: undefined }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a GST recharge needs the GST number', r);
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(c1, { gstAmount: 90 }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a Non-GST recharge has no GST amount', r);
+  r = await api('rcm', 'POST', '/support/recharges', { ...gstForm(c1, { totalAmount: 5 }), screenshotId: f1 });
+  check(r.status === 422, 'recharges API: a total that is not amount + GST is refused', r);
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(c1, { rechargeAmount: -1 }), screenshotId: f1 });
   check(r.status === 422, 'recharges API: a negative amount is refused', r);
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { gstAmount: 0, nonGstAmount: 0 }), screenshotId: f1 });
-  check(r.status === 422, 'recharges API: a zero total is refused', r);
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { rechargeDate: '2999-01-01' }), screenshotId: f1 });
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(c1, { rechargeDate: '2999-01-01' }), screenshotId: f1 });
   check(r.status === 422, 'recharges API: a date in the future is refused', r);
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { departmentId: crypto.randomUUID() }), screenshotId: f1 });
-  check(r.status === 422, 'recharges API: a department named in the request is not accepted', r);
+  for (const k of ['rmId', 'departmentId', 'paymentStatus', 'createdBy']) {
+    r = await api('rcm', 'POST', '/support/recharges', { ...form(c1, { [k]: rcm2Id }), screenshotId: f1 });
+    check(r.status === 422, `recharges API: "${k}" in the request is not accepted`, r);
+  }
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(crypto.randomUUID()), screenshotId: f1 });
+  check(r.status === 404, 'recharges API: an unknown customer is not found', r);
   const reqId = crypto.randomUUID();
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha', { totalAmount: 618.5 }), screenshotId: f1, requestId: reqId });
-  check(r.status === 201 && r.json.data.kind === 'PANEL' && r.json.data.status === 'PENDING' && r.json.data.totalAmount === 618.5 && /^PRC-\d{5}$/.test(r.json.data.reference), 'recharges API: a Panel recharge is created Pending', r);
+  r = await api('rcm', 'POST', '/support/recharges', { ...gstForm(c1, { totalAmount: 590, paymentReference: 'UPI-API-1' }), screenshotId: f1, requestId: reqId });
+  check(r.status === 201 && r.json.data.kind === 'PANEL' && r.json.data.paymentStatus === 'PENDING_VERIFICATION' && r.json.data.invoiceStatus === 'NOT_GENERATED' && r.json.data.totalAmount === 590 && r.json.data.rmId === rcmId
+    && /^PRC-\d{5}$/.test(r.json.data.reference), 'recharges API: a GST Panel recharge is created, waiting for Accounts, credited to the customer\'s RM', r);
   const p1 = r.json.data.id as string;
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Alpha'), screenshotId: f1, requestId: reqId });
+  r = await api('rcm', 'POST', '/support/recharges', { ...gstForm(c1, { paymentReference: 'UPI-API-1' }), screenshotId: f1, requestId: reqId });
   check(r.status === 201 && r.json.data.id === p1, 'recharges API: the same request id returns the record already saved', r);
-  const f2 = await shot('rcm', 'msg.png');
-  r = await api('rcm', 'POST', '/support/recharges', { kind: 'MESSAGE', ...form('RCX Beta', { gstAmount: 0, nonGstAmount: 200 }), screenshotId: f2 });
+  // a colleague records a recharge for rcm's customer: the credit still goes to rcm
+  const f2 = await shot('rcm2', 'colleague.png');
+  r = await api('rcm2', 'POST', '/support/recharges', { ...form(c1, { rechargeAmount: 200 }), screenshotId: f2 });
+  check(r.status === 201 && r.json.data.rmId === rcmId && r.json.data.createdById === rcm2Id, 'recharges API: a colleague recording it cannot take the credit', r);
+  const p2 = r.json.data.id as string;
+  const f3 = await shot('rcm', 'msg.png');
+  r = await api('rcm', 'POST', '/support/recharges', { ...form(c1, { kind: 'MESSAGE', rechargeAmount: 300 }), screenshotId: f3 });
   check(r.status === 201 && /^MRC-\d{5}$/.test(r.json.data.reference), 'recharges API: a Message recharge has its own references', r);
   const m1 = r.json.data.id as string;
   r = await api('rcm', 'GET', '/support/recharges?kind=PANEL');
-  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.total === 1 && r.json.data.items[0].customerName === 'RCX Alpha' && r.json.data.summary.totalAmount === 618.5 && r.json.data.summary.pending === 1, 'recharges API: the Panel list and its summary', r);
+  check(r.status === 200 && r.json.data.total === 2 && r.json.data.summary.pending === 2 && r.json.data.summary.totalAmount === 790 && r.json.data.summary.totalGst === 90, 'recharges API: the Panel list and its summary (own and credited to this RM)', r);
   r = await api('rcm', 'GET', '/support/recharges?kind=MESSAGE');
-  check(r.status === 200 && r.json.data.items.length === 1 && r.json.data.items[0].id === m1 && r.json.data.summary.totalGst === 0, 'recharges API: the Message list is separate', r);
-  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&search=alp&status=PENDING&from=2020-01-01&to=2999-01-01&min=1&max=1000&limit=5&offset=0');
-  check(r.status === 200 && r.json.data.total === 1, 'recharges API: search, status, date and amount filters with pagination', r);
-  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&search=zzzz');
-  check(r.status === 200 && r.json.data.total === 0 && r.json.data.items.length === 0, 'recharges API: an empty result', r);
+  check(r.status === 200 && r.json.data.total === 1 && r.json.data.items[0].id === m1, 'recharges API: the Message list is separate', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&search=alpha&paymentStatus=PENDING_VERIFICATION&invoiceStatus=NOT_GENERATED&from=2020-01-01&to=2999-01-01&min=1&max=1000&limit=5&offset=0');
+  check(r.status === 200 && r.json.data.total === 2, 'recharges API: search, payment and invoice status, date and amount filters with pagination', r);
   r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&from=2026-02-01&to=2026-01-01');
   check(r.status === 422, 'recharges API: a "from" date after the "to" date is refused', r);
+  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL&paymentStatus=DONE');
+  check(r.status === 422, 'recharges API: an unknown payment status is refused', r);
 
   // who sees and opens what
   r = await api('rcm2', 'GET', '/support/recharges?kind=PANEL');
-  check(r.status === 200 && r.json.data.total === 0, 'recharges API: another Support member sees none of them', r);
+  check(r.status === 200 && r.json.data.total === 1, 'recharges API: the recorder sees only what they recorded', r);
   r = await api('rcm2', 'GET', `/support/recharges/${p1}`);
-  check(r.status === 404, 'recharges API: ... nor opens one by its id', r);
+  check(r.status === 404, 'recharges API: ... and cannot open somebody else\'s by id', r);
   r = await api('rcl', 'GET', '/support/recharges?kind=PANEL');
-  check(r.status === 200 && r.json.data.total === 1 && r.json.data.role === 'LEAD', "recharges API: the Team Lead sees the team's recharges", r);
+  check(r.status === 200 && r.json.data.total === 2 && r.json.data.role === 'LEAD', "recharges API: the Team Lead sees the team's recharges", r);
   r = await api('dh', 'GET', '/support/recharges?kind=PANEL');
-  check(r.status === 200 && r.json.data.total === 1 && r.json.data.role === 'HEAD', "recharges API: the Department Head sees the department's recharges", r);
+  check(r.status === 200 && r.json.data.total === 2 && r.json.data.role === 'HEAD', "recharges API: the Department Head sees the department's recharges", r);
+  r = await api('accm', 'GET', '/support/recharges');
+  check(r.status === 200 && r.json.data.role === 'ACCOUNTS' && r.json.data.total >= 3 && r.json.data.isAccounts === true && r.json.data.canCreate === false, 'recharges API: Accounts see every recharge, of both kinds', r);
   r = await api('sa', 'GET', '/support/recharges?kind=PANEL');
-  check(r.status === 200 && r.json.data.total >= 1 && r.json.data.canCreate === false, 'recharges API: the Super Admin sees all and does not record', r);
+  check(r.status === 200 && r.json.data.total >= 2 && r.json.data.canCreate === false, 'recharges API: the Super Admin sees all and does not record', r);
+  r = await api('accm', 'POST', '/support/recharges', { ...form(c1), screenshotId: f1 });
+  check(r.status === 403, 'recharges API: Accounts do not record recharges', r);
 
   // the screenshot: private, opened through a short-lived link, checked on every request
   r = await api('rcm', 'GET', `/support/recharge-files/${f1}/url`);
   check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'recharges API: the recorder gets a short-lived link', r);
   const dl = await fetch(r.json.data.url);
   check(dl.status === 200 && Buffer.from(await dl.arrayBuffer()).equals(png), 'recharges API: and the file is the one that was uploaded');
-  r = await api('rcl', 'GET', `/support/recharge-files/${f1}/url?action=download`);
-  check(r.status === 200 && r.json.data.fileName === 'proof.png', 'recharges API: the Team Lead opens it', r);
+  r = await api('accm', 'GET', `/support/recharge-files/${f1}/url?action=download`);
+  check(r.status === 200 && r.json.data.fileName === 'proof.png', 'recharges API: Accounts open it to check the payment', r);
+  r = await api('rcm', 'GET', `/support/recharge-files/${f2}/url`);
+  check(r.status === 200, 'recharges API: the RM opens the proof of a recharge made for their customer', r);
   r = await api('rcm2', 'GET', `/support/recharge-files/${f1}/url`);
-  check(r.status === 404, 'recharges API: another Support member cannot open it even with the id', r);
+  check(r.status === 404, 'recharges API: a Support member who is neither recorder nor RM cannot open it even with the id', r);
   r = await api('a', 'GET', `/support/recharge-files/${f1}/url`);
   check(r.status === 403, 'recharges API: a Sales member cannot', r);
   r = await api(null, 'GET', `/support/recharge-files/${f1}/url`);
@@ -13708,35 +13751,132 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(direct.status >= 400, 'recharges API: the bucket cannot be signed with a user token (private)');
   check((await db.query(`select public from storage.buckets where id = 'support-recharge-files'`)).rows[0]?.public === false, 'recharges API: the bucket is not public');
 
-  // editing and status
-  r = await api('rcm', 'POST', `/support/recharges/${p1}/update`, form('RCX Alpha Two', { gstAmount: 100, nonGstAmount: 50 }));
-  check(r.status === 200 && r.json.data.customerName === 'RCX Alpha Two' && r.json.data.totalAmount === 150, 'recharges API: the recorder edits a Pending recharge', r);
-  r = await api('rcm2', 'POST', `/support/recharges/${p1}/update`, form('RCX Hack'));
-  check(r.status === 404, 'recharges API: another member cannot edit it', r);
-  r = await api('rcm', 'POST', `/support/recharges/${p1}/status`, { status: 'VERIFIED' });
-  check(r.status === 403, 'recharges API: a member cannot change the status', r);
-  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'REJECTED' });
-  check(r.status === 422, 'recharges API: rejecting needs a reason', r);
-  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'DONE' });
-  check(r.status === 422, 'recharges API: an unknown status is refused', r);
-  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'VERIFIED', note: 'matches the bank' });
-  check(r.status === 200 && r.json.data.status === 'VERIFIED' && r.json.data.statusNote === 'matches the bank', 'recharges API: the Team Lead verifies', r);
-  r = await api('rcm', 'POST', `/support/recharges/${p1}/update`, form('RCX Alpha Two'));
-  check(r.status === 403, 'recharges API: the recorder cannot edit it after it is Verified', r);
-  r = await api('dh', 'POST', `/support/recharges/${p1}/status`, { status: 'COMPLETED' });
-  check(r.status === 200 && r.json.data.status === 'COMPLETED', 'recharges API: the Department Head completes it', r);
-  r = await api('rcl', 'POST', `/support/recharges/${p1}/status`, { status: 'PENDING' });
-  check(r.status === 403, 'recharges API: a Completed recharge is final for the Team Lead', r);
-  r = await api('rcm', 'GET', '/support/recharges?kind=PANEL');
-  check(r.json.data.summary.completed === 1 && r.json.data.summary.pending === 0, 'recharges API: the summary follows the statuses', r);
-  r = await api('sa', 'POST', `/support/recharges/${p1}/status`, { status: 'REJECTED', note: 'duplicate payment' });
-  check(r.status === 200 && r.json.data.status === 'REJECTED', 'recharges API: the Super Admin can change any status', r);
-  r = await api('sa', 'POST', '/support/recharges', { kind: 'PANEL', ...form('RCX Super'), screenshotId: f1 });
-  check(r.status === 403, 'recharges API: the Super Admin does not record recharges', r);
-  check((await db.query(`select count(*)::int n from public.audit_logs where action in ('SUPPORT_RECHARGE_CREATED', 'SUPPORT_RECHARGE_STATUS', 'SUPPORT_RECHARGE_SCREENSHOT_VIEWED')`)).rows[0].n >= 5, 'recharges API: creating, status changes and screenshot views are audited');
-  check((await db.query(`select count(*)::int n from public.support_recharges where total_amount <> gst_amount + non_gst_amount`)).rows[0].n === 0, 'recharges API: the stored totals always add up');
-  await db.query(`update public.support_recharge_files set recharge_id = null where file_name in ('proof.png', 'msg.png', 'fake.png')`);
+  // Accounts verify; nobody else does
+  for (const who of ['rcm', 'rcl', 'dh', 'a']) {
+    r = await api(who, 'POST', `/support/recharges/${p1}/verify`, { decision: 'RECEIVED' });
+    check(r.status === 403, `recharges API: ${who} cannot verify a payment`, r);
+  }
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'MAYBE' });
+  check(r.status === 422, 'recharges API: a decision must be one of the three', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'NOT_RECEIVED' });
+  check(r.status === 422, 'recharges API: "not received" needs a note', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'RECEIVED', receivedAmount: 589 });
+  check(r.status === 422, 'recharges API: the amount received must be the total', r);
+  const perf0 = await api('rcm', 'GET', '/support/recharge-performance');
+  check(perf0.status === 200 && perf0.json.data.every((x: any) => x.totalCount === 0), 'recharges API: before Accounts confirm anything the performance counts nothing', perf0);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'RECEIVED', note: 'seen in the bank statement', receivedAmount: 590 });
+  check(r.status === 200 && r.json.data.paymentStatus === 'PAYMENT_RECEIVED' && r.json.data.replayed === false && r.json.data.invoiceStatus === 'NOT_GENERATED', 'recharges API: Accounts confirm the payment (no invoice is made by it)', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'RECEIVED' });
+  check(r.status === 200 && r.json.data.replayed === true, 'recharges API: verifying again changes nothing', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/update`, { rechargeDate: today, billingType: 'NON_GST', rechargeAmount: 1, gstAmount: 0 });
+  check(r.status === 403, 'recharges API: Support can no longer edit a recharge whose payment was received', r);
+  r = await api('accm', 'POST', `/support/recharges/${p2}/verify`, { decision: 'REJECTED', note: 'wrong customer on the screenshot' });
+  check(r.status === 200 && r.json.data.paymentStatus === 'REJECTED', 'recharges API: Accounts reject a recharge, with a reason', r);
+  r = await api('accm', 'POST', `/support/recharges/${m1}/verify`, { decision: 'NOT_RECEIVED', note: 'no credit yet' });
+  check(r.status === 200 && r.json.data.paymentStatus === 'PAYMENT_NOT_RECEIVED', 'recharges API: Accounts mark a payment not received', r);
+  r = await api('rcm', 'POST', `/support/recharges/${m1}/update`, { rechargeDate: today, billingType: 'NON_GST', rechargeAmount: 300, gstAmount: 0, paymentReference: 'UPI-API-2' });
+  check(r.status === 200 && r.json.data.paymentStatus === 'PENDING_VERIFICATION', 'recharges API: the recorder corrects it and it goes back to Accounts', r);
+  r = await api('rcm', 'POST', `/support/recharges/${m1}/update`, { customerId: c2, rechargeDate: today, billingType: 'NON_GST', rechargeAmount: 300, gstAmount: 0 });
+  check(r.status === 422, 'recharges API: the customer cannot be changed by an edit', r);
+  r = await api('accm', 'GET', `/support/recharges/${m1}`);
+  check(r.status === 200 && r.json.data.timeline.map((e: any) => e.action).join(',') === 'CREATED,PAYMENT_NOT_RECEIVED,RESUBMITTED', 'recharges API: the status timeline', r);
+
+  // Accounts correct the billing details
+  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { gstAmount: 100 });
+  check(r.status === 422, 'recharges API: a correction needs a reason', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'GST is 100 on the invoice we hold', gstAmount: 100, customerEmail: 'billing@rcx.example.com', customerAddress: '12 MG Road, Pune 411001' });
+  check(r.status === 200 && r.json.data.totalAmount === 600 && r.json.data.customerEmail === 'billing@rcx.example.com' && r.json.data.rmId === rcmId, 'recharges API: Accounts correct the GST and the e-mail; the RM stays', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'try', rmId: rcm2Id });
+  check(r.status === 422, 'recharges API: a correction cannot name a Relationship Manager', r);
+  r = await api('rcl', 'POST', `/support/recharges/${p1}/correct`, { note: 'lead tries', gstAmount: 1 });
+  check(r.status === 403, 'recharges API: only Accounts correct billing details', r);
+
+  // the invoice of a verified recharge: Accounts only, once, with a number from the series; nothing is sent by itself
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice/plan`);
+  check(r.status === 403, 'recharges API: Support cannot see the invoice plan', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/invoice`, {});
+  check(r.status === 403, 'recharges API: ... nor generate the invoice', r);
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice`);
+  check(r.status === 200 && r.json.data === null, 'recharges API: there is no invoice yet', r);
+  r = await api('accm', 'POST', `/support/recharges/${m1}/invoice`, {});
+  check(r.status === 409, 'recharges API: a recharge whose payment is not confirmed has no invoice', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, { amount: 1 });
+  check(r.status === 422, 'recharges API: an amount sent by the browser is not accepted', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, { hsnSac: '12' });
+  check(r.status === 422, 'recharges API: a bad HSN/SAC code is refused', r);
+  r = await api('accm', 'GET', `/support/recharges/${p1}/invoice/plan`);
+  check(r.status === 200 && r.json.data.missing.length === 0 && r.json.data.taxTreatment === 'INTRA_STATE' && r.json.data.totalAmount === 600 && r.json.data.cgstAmount === 50 && r.json.data.sgstAmount === 50, 'recharges API: the plan: nothing missing, same state, CGST + SGST', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, {});
+  check(r.status === 201 && /^GST\/\d{2}-\d{2}\/\d+$/.test(r.json.data.invoice.number) && r.json.data.invoice.totalAmount === 600 && r.json.data.invoice.invoiceType === 'GST' && ['READY', 'FAILED'].includes(r.json.data.pdf.status),
+    'recharges API: Accounts generate the invoice: a number from the existing series, total = amount + GST', r);
+  const invNo = r.json.data.invoice.number as string;
+  const invId = r.json.data.invoice.id as string;
+  check(r.json.data.pdf.status === 'READY', 'recharges API: and its PDF is drawn and stored privately', r.json.data.pdf);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, {});
+  check(r.status === 201 && r.json.data.invoice.number === invNo, 'recharges API: generating again returns the same invoice (no second number)', r);
+  check((await db.query(`select count(*)::int n from public.support_recharge_invoices where recharge_id = $1`, [p1])).rows[0].n === 1, 'recharges API: one invoice per recharge');
+  r = await api('accm', 'GET', `/support/recharges/${p1}/invoice/file?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'recharges API: Accounts review the PDF through a short-lived link', r);
+  const pdfRes = await fetch(r.json.data.url);
+  check(pdfRes.status === 200 && Buffer.from(await pdfRes.arrayBuffer()).subarray(0, 5).toString() === '%PDF-', 'recharges API: and it is a real PDF');
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice/file`);
+  check(r.status === 403, 'recharges API: Support cannot open the invoice PDF', r);
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice`);
+  check(r.status === 200 && r.json.data.number === invNo && r.json.data.customerEmail === undefined && r.json.data.customerPhone === undefined, 'recharges API: Support see the number and the status, not the customer\'s contact', r);
+  r = await api('rcm', 'GET', `/support/recharges/${p1}`);
+  check(r.status === 200 && r.json.data.invoiceStatus === 'GENERATED' && r.json.data.invoice.number === invNo && r.json.data.isAccounts === false, 'recharges API: the recharge carries its invoice status', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'too late', gstAmount: 1 });
+  check(r.status === 409, 'recharges API: the billing details are locked once the invoice exists', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'NOT_RECEIVED', note: 'second thoughts' });
+  check(r.status === 409, 'recharges API: and so is the payment status', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/invoice/send`, { channels: ['EMAIL'] });
+  check(r.status === 403, 'recharges API: Support cannot send the invoice', r);
+  for (const bad of [{}, { channels: [] }, { channels: ['SMS'] }, { channels: ['EMAIL', 'EMAIL'] }, { channels: ['EMAIL'], to: 'x@y.z' }, { channels: ['EMAIL'], resend: 'yes' }]) {
+    r = await api('accm', 'POST', `/support/recharges/${p1}/invoice/send`, bad);
+    check(r.status === 422, `recharges API: a send request ${JSON.stringify(bad)} is refused`, r);
+  }
+  // nothing real is sent in this test: the server is in test mode, so a send is recorded as NOT_SENT, never as sent
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice/send`, { channels: ['EMAIL', 'WHATSAPP'] });
+  check(r.status === 200 && r.json.data.results.length === 2 && r.json.data.results.every((x: any) => x.status === 'NOT_SENT' || x.status === 'REFUSED' || x.status === 'FAILED') && r.json.data.results.every((x: any) => x.status !== 'SENT'),
+    'recharges API: in test mode a send is never reported as sent', r);
+  r = await api('accm', 'GET', `/support/recharges/${p1}`);
+  check(r.status === 200 && r.json.data.invoiceStatus === 'GENERATED' && r.json.data.invoice.deliveries.length >= 1 && r.json.data.isAccounts === true, 'recharges API: the attempts are recorded, the invoice status is not "sent"', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/contact`, { note: 'confirmed by phone', customerEmail: 'new@rcx.example.com', customerPhone: '+91 98765 43210' });
+  check(r.status === 200 && r.json.data.customerEmail === 'new@rcx.example.com', 'recharges API: Accounts can correct the contact after the invoice exists', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/contact`, { customerEmail: 'new@rcx.example.com' });
+  check(r.status === 422, 'recharges API: a contact correction needs a reason', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/contact`, { note: 'support tries', customerEmail: 'x@y.co' });
+  check(r.status === 403, 'recharges API: Support cannot correct the contact', r);
+  r = await api('accm', 'GET', '/support/recharges?invoiceStatus=GENERATED_ANY');
+  check(r.status === 200 && r.json.data.total >= 1 && r.json.data.summary.invoiced >= 1, 'recharges API: Accounts\' "Invoices generated" queue', r);
+  r = await api('accm', 'GET', '/support/recharges?invoiceStatus=DELIVERY_ANY');
+  check(r.status === 200, 'recharges API: the "Invoice delivery" queue is accepted', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action in ('SUPPORT_RECHARGE_INVOICE_GENERATED', 'SUPPORT_RECHARGE_INVOICE_VIEWED', 'SUPPORT_RECHARGE_INVOICE_NOT_SENT', 'SUPPORT_RECHARGE_CONTACT_CORRECTED')`)).rows[0].n >= 4, 'recharges API: generating, viewing, sending and the contact correction are audited');
+  check((await db.query(`select count(*)::int n from public.support_recharge_invoices where id = $1 and total_amount = taxable_amount + total_gst and cgst_amount + sgst_amount + igst_amount = total_gst`, [invId])).rows[0].n === 1, 'recharges API: the invoice adds up');
+
+  // performance: verified only, per RM, once
+  r = await api('rcm', 'GET', '/support/recharge-performance');
+  check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].rmId === rcmId && r.json.data[0].panelCount === 1 && r.json.data[0].panelAmount === 600 && r.json.data[0].messageCount === 0 && r.json.data[0].totalCount === 1
+    && r.json.data[0].pendingCount === 1, 'recharges API: the RM\'s verified Panel recharge counts once (at the corrected amount); the pending Message recharge does not', r);
+  r = await api('rcm', 'GET', '/support/recharge-performance?from=2026-02-01&to=2026-01-01');
+  check(r.status === 422, 'recharges API: a reversed performance range is refused', r);
+  r = await api('a', 'GET', '/support/recharge-performance');
+  check(r.status === 403, 'recharges API: a Sales member cannot read the performance', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action in ('SUPPORT_RECHARGE_CREATED', 'SUPPORT_RECHARGE_SUBMITTED', 'SUPPORT_RECHARGE_PAYMENT_VERIFIED', 'SUPPORT_RECHARGE_REJECTED', 'SUPPORT_RECHARGE_BILLING_CORRECTED', 'SUPPORT_RECHARGE_SCREENSHOT_VIEWED')`)).rows[0].n >= 8,
+    'recharges API: submitting, verifying, rejecting, correcting and viewing the proof are audited');
+  check((await db.query(`select count(*)::int n from public.notifications where type = 'RECHARGE_SUBMITTED'`)).rows[0].n >= 1 && (await db.query(`select count(*)::int n from public.notifications where type = 'RECHARGE_PAYMENT_RECEIVED' and recipient_id = $1`, [rcmId])).rows[0].n === 1,
+    'recharges API: Accounts are told of a submission, the RM once of the confirmation');
+  check((await db.query(`select count(*)::int n from public.support_recharges where total_amount <> recharge_amount + gst_amount`)).rows[0].n === 0, 'recharges API: the stored totals always add up');
+  const alterGuard = async (sql: string) => { try { await db.query(sql); return false; } catch { return true; } };
+  check(await alterGuard(`update public.support_recharges set rm_id = '${rcm2Id}' where id = '${p1}'`), 'recharges API: the table itself refuses to move a recharge to another RM');
+  await db.query(`alter table public.support_recharge_events disable trigger support_recharge_events_append_only`);
+  await db.query(`delete from public.support_recharge_events where recharge_id in (select id from public.support_recharges where customer_name like 'RCX %')`);
+  await db.query(`alter table public.support_recharge_events enable trigger support_recharge_events_append_only`);
+  await db.query(`delete from public.support_recharge_deliveries where invoice_id in (select i.id from public.support_recharge_invoices i join public.support_recharges r on r.id = i.recharge_id where r.customer_name like 'RCX %')`);
+  await db.query(`delete from public.support_recharge_invoices where recharge_id in (select id from public.support_recharges where customer_name like 'RCX %')`);
+  await db.query(`update public.support_recharge_files set recharge_id = null where file_name in ('proof.png', 'msg.png', 'fake.png', 'colleague.png')`);
   await db.query(`delete from public.support_recharges where customer_name like 'RCX %'`);
+  await db.query(`delete from public.customers where name like 'RCX %'`);
 }
 
 // --- Deleting an assigned task by team and department (migration 20270225000100) ---
@@ -13884,7 +14024,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'REJECT' });
   check(r.status === 422, 'AI Studio HR API: a rejection needs a reason', r);
   r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
-  check(r.status === 200 && r.json.data.status === 'PENDING_DH_APPROVAL' && r.json.data.sentToHrAt && r.json.data.tlReviewedAt, 'AI Studio HR API: the Team Lead approves; it is sent to HR', r);
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.sentToHrAt && r.json.data.tlReviewedAt, 'AI Studio HR API: the Team Lead approves (final); it is sent to HR', r);
   r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
   check(r.status === 409, 'AI Studio HR API: approving twice is refused', r);
   const notes = (await one(`select count(*)::int as n from public.notifications where recipient_id = $1 and type = 'AI_STUDIO_REPORT_TO_HR' and entity_id = $2`, [viewerId, reportId])).n;
@@ -14099,6 +14239,68 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.customers where phone = $1 or phone = $2`, [leadPhone, leadPhone.replace(/\s/g, '')]);
     await db.query(`delete from public.lead_tag_departments where tag_id = any($1::uuid[])`, [created]);
     await db.query(`delete from public.lead_tags where id = any($1::uuid[])`, [created]);
+  }
+}
+
+// --- Reporting hierarchy (migration 20270308000100): AI Studio weekly Team Lead -> Super Admin; AI Studio out of the Department Head -> Operations Head cycle ---
+{
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const { rows: [hrTeam] } = await db.query(`select t.id from public.teams t where t.department_id = (select id from public.departments where slug = 'hr') order by t.created_at limit 1`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const lead = await mkUser('rhLead', 'api.rh.lead@example.com', 'API RH Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const lead2 = await mkUser('rhLead2', 'api.rh.lead2@example.com', 'API RH Lead Two', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const mem = await mkUser('rhMem', 'api.rh.mem@example.com', 'API RH Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  const hrv = await mkUser('rhHr', 'api.rh.hr@example.com', 'API RH HR', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: hrTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  await db.query(`insert into public.ai_studio_hr_viewers (profile_id) values ($1) on conflict do nothing`, [hrv]);
+  const monday = (await db.query(`select (date_trunc('week', (now() at time zone 'Asia/Kolkata')::date)::date - 7)::text as d`)).rows[0].d as string;
+  try {
+    let r = await api('rhLead', 'GET', `/ai-studio/weekly-reports/week?weekStart=${monday}`);
+    check(r.status === 200 && r.json.data.report === null && Array.isArray(r.json.data.liveStats.members) && r.json.data.liveStats.members.some((m: any) => m.id === mem),
+      'AI Studio weekly API: the Team Lead\'s week, with their team\'s figures', r);
+    r = await api('rhLead', 'POST', '/ai-studio/weekly-reports', { weekStart: monday, completedWork: 'short', submit: true });
+    check(r.status === 422, 'AI Studio weekly API: submitting needs the completed work', r);
+    r = await api('rhLead', 'POST', '/ai-studio/weekly-reports', { weekStart: monday, completedWork: 'Shipped the AIQR landing page.', pendingWork: 'Payments', achievements: 'Live on time',
+      challenges: 'API keys late', remarks: 'Good week', submit: true, assignedTo: 'hr' });
+    check(r.status === 422, 'AI Studio weekly API: the browser cannot choose who receives it (unknown field)', r);
+    r = await api('rhLead', 'POST', '/ai-studio/weekly-reports', { weekStart: monday, completedWork: 'Shipped the AIQR landing page.', pendingWork: 'Payments', achievements: 'Live on time',
+      challenges: 'API keys late', remarks: 'Good week', submit: true });
+    check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.achievements === 'Live on time', 'AI Studio weekly API: the Team Lead submits it to the Super Admin', r);
+    const id = r.json.data.id as string;
+    const toSa = (await db.query(`select count(*)::int n from public.notifications where entity_id = $1 and type = 'AI_STUDIO_WEEKLY_REPORT' and recipient_id = $2`, [id, sa.id])).rows[0].n;
+    const toHr = (await db.query(`select count(*)::int n from public.notifications where entity_id = $1 and recipient_id = $2`, [id, hrv])).rows[0].n;
+    check(toSa === 1 && toHr === 0, 'AI Studio weekly API: the Super Admin is notified; HR is not', { toSa, toHr });
+    for (const who of ['rhHr', 'rhMem', 'hr']) {
+      r = await api(who, 'GET', '/ai-studio/weekly-reports');
+      check(r.status === 403, `AI Studio weekly API: ${who} cannot list AI Studio weekly reports (403)`, r);
+    }
+    r = await api('rhLead2', 'GET', `/ai-studio/weekly-reports/${id}`);
+    check(r.status === 404, 'AI Studio weekly API: another Team Lead cannot open it (404)', r);
+    r = await api('rhLead', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'ACKNOWLEDGE' });
+    check(r.status === 403, 'AI Studio weekly API: the Team Lead cannot review their own week', r);
+    r = await api('sa', 'GET', `/ai-studio/weekly-reports?weekStart=${monday}`);
+    check(r.status === 200 && r.json.data.some((w: any) => w.id === id && w.challenges === 'API keys late'), 'AI Studio weekly API: the Super Admin lists it', r);
+    r = await api('sa', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'RETURN' });
+    check(r.status === 422, 'AI Studio weekly API: returning needs a comment', r);
+    r = await api('sa', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'ACKNOWLEDGE', comment: 'Thanks' });
+    check(r.status === 200 && r.json.data.status === 'ACKNOWLEDGED', 'AI Studio weekly API: the Super Admin acknowledges it', r);
+    r = await api('sa', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'ACKNOWLEDGE' });
+    check(r.status === 409, 'AI Studio weekly API: a second decision is refused (409)', r);
+    // Simran's section: the named HR employee opens Daily Reports - AI Studio; the AI Studio Team Lead does not
+    r = await api('rhHr', 'GET', '/ai-studio/hr-performance');
+    check(r.status === 200, 'Daily Reports - AI Studio: the named HR employee opens it', r);
+    r = await api('rhLead', 'GET', '/ai-studio/hr-performance');
+    check(r.status === 403, 'Daily Reports - AI Studio: an AI Studio Team Lead cannot (403)', r);
+  } finally {
+    await db.query(`delete from public.ai_studio_weekly_reports where lead_id = any($1::uuid[])`, [[lead, lead2]]);
+    await db.query(`delete from public.ai_studio_hr_viewers where profile_id = $1`, [hrv]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[lead, lead2, mem, hrv]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[lead, lead2, mem, hrv]]);
   }
 }
 

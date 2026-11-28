@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
-import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, WifiOff, X, XCircle } from 'lucide-react';
 import {
-  confirmAction, dismissToast, getFeedbackState, promptInput, registerFeedbackHost, settleDialog, showDetails, subscribeFeedback, toast,
+  confirmAction, dismissToast, getFeedbackState, promptInput, registerFeedbackHost, settleDialog, showDetails, showToast, subscribeFeedback, toast,
   type ConfirmOptions, type DialogRequest, type InputOptions, type ToastItem, type ToastKind
 } from '../../lib/feedback/feedbackStore';
-import { userMessage } from '../../lib/feedback/errors';
+import { OFFLINE_MESSAGE, userMessage } from '../../lib/feedback/errors';
 
 /**
  * <AppFeedbackProvider>: the one place toasts and confirmation / input dialogs are drawn (docs/APP_FEEDBACK_SYSTEM.md). Mounted once around
@@ -18,8 +18,33 @@ export const usePrompt = () => promptInput;
 
 const useFeedback = () => useSyncExternalStore(subscribeFeedback, getFeedbackState, getFeedbackState);
 
+/**
+ * One persistent "You are offline" warning while the browser has no connection (nothing can be saved meanwhile), replaced by "Back online"
+ * when it returns. Per screen, a failed request still says what could not be done.
+ */
+function useOfflineNotice() {
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let offlineToast: number | null = null;
+    const offline = () => {
+      if (offlineToast === null) offlineToast = showToast('warning', OFFLINE_MESSAGE, { title: 'You are offline', durationMs: null });
+    };
+    const online = () => {
+      if (offlineToast === null) return;
+      dismissToast(offlineToast);
+      offlineToast = null;
+      toast.info('Back online.');
+    };
+    if (navigator.onLine === false) offline();
+    window.addEventListener('offline', offline);
+    window.addEventListener('online', online);
+    return () => { window.removeEventListener('offline', offline); window.removeEventListener('online', online); };
+  }, []);
+}
+
 export const AppFeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   useEffect(() => registerFeedbackHost(), []);
+  useOfflineNotice();
   const { toasts, dialogs } = useFeedback();
   const active = dialogs[0];
   return (
@@ -222,7 +247,8 @@ const KIND: Record<ToastKind, { icon: React.ElementType; tone: string; label: st
   success: { icon: CheckCircle2, tone: 'text-emerald-600', label: 'Success' },
   error: { icon: XCircle, tone: 'text-rose-600', label: 'Error' },
   warning: { icon: AlertTriangle, tone: 'text-amber-600', label: 'Warning' },
-  info: { icon: Info, tone: 'text-slate-500', label: 'Information' }
+  info: { icon: Info, tone: 'text-slate-500', label: 'Information' },
+  loading: { icon: Loader2, tone: 'text-slate-500 motion-safe:animate-spin', label: 'In progress' }
 };
 
 const Toast: React.FC<{ t: ToastItem }> = ({ t }) => {
@@ -238,9 +264,9 @@ const Toast: React.FC<{ t: ToastItem }> = ({ t }) => {
     return () => { window.clearTimeout(timer); left.current -= Date.now() - startedAt.current; };
   }, [t.id, t.durationMs, t.createdAt, paused]);
   const k = KIND[t.kind];
-  const Icon = k.icon;
+  const Icon = t.kind === 'warning' && t.title === 'You are offline' ? WifiOff : k.icon;
   return (
-    <div role={t.kind === 'error' ? 'alert' : 'status'} data-testid={`toast-${t.kind}`}
+    <div role={t.kind === 'error' ? 'alert' : 'status'} aria-busy={t.kind === 'loading' || undefined} data-testid={`toast-${t.kind}`}
       onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocus={() => setPaused(true)} onBlur={() => setPaused(false)}
       className="pointer-events-auto w-full sm:w-[360px] flex items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-lg motion-safe:animate-[toastIn_160ms_ease-out]">
       <Icon className={`w-[18px] h-[18px] mt-0.5 shrink-0 ${k.tone}`} aria-hidden />

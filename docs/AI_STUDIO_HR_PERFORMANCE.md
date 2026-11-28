@@ -148,3 +148,9 @@ A click on an HR notification opens HR > AI Studio Performance.
   * a corrected revision sent once more.
 * The API section in `api_integration.test.ts` and the unit test `ai_studio_hr_performance.test.ts` cover the same rules over HTTP and in the
   shared schema.
+
+## Team Lead approval is final (migration `20270308000100_report_hierarchy.sql`)
+
+AI Studio daily reports now go Team Member → Team Lead → HR: the Team Lead's approval of a Team Member's report is final (*Approved*, sent to HR), and the
+Department Head step after it is gone. The HR menu entry is now **Daily Reports – AI Studio**. See `docs/REPORTING_HIERARCHY.md`, which replaces what this page
+says about the Department Head's step for Team Member reports.
