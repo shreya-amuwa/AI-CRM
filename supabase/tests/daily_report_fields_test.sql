@@ -36,10 +36,11 @@ select test.create_auth_user('drf_m', 'drf.m@amuwa.com', '{"full_name":"DRF Memb
   jsonb_build_object('provisioned_by', test.id('th_wab'), 'provisioned_role', 'TEAM_MEMBER', 'provisioned_team_id', test.team('wabastore', 'Sales')));
 insert into drf select 'lead', private.direct_lead_of(test.id('drf_m'));
 select test.check(test.drf('lead') is not null, 'fixtures: the member has a Team Lead');
-insert into drf select 'task', id from (
+with x as (
   insert into public.work_tasks (department_id, team_id, title, assigned_by, assignee_id, progress, status, due_date, created_at)
   values (test.dept('wabastore'), test.team('wabastore', 'Sales'), 'DRF follow-up list', test.drf('lead'), test.id('drf_m'), 40, 'IN_PROGRESS', test.dtoday() - 1, now() - interval '3 days')
-  returning id) x;
+  returning id)
+insert into drf select 'task', id from x;
 set role authenticated;
 select test.login('drf_m');
 select test.must_fail($$select task_report_submit(test.drf('task'), test.dtoday(), '', null)$$, 'an empty report is refused', 'Write the work completed');
