@@ -1,5 +1,5 @@
 -- =============================================================================
--- Recharge invoices and their delivery (20270309000100): generated only by Accounts, only for a verified payment, once per recharge, with a number from the existing
+-- Recharge invoices and their delivery (20270311000100): generated only by Accounts, only for a verified payment, once per recharge, with a number from the existing
 -- invoice series; sent by e-mail and WhatsApp as two separate channels, never twice by accident, with every outcome recorded. Uses rls_test.sql's users: sup_plain, sup_b,
 -- sup_th, dh_wab, tm_a (Sales), acc_m (Accounts), sa. Synthetic data only; safe to run again.
 -- =============================================================================
@@ -8,9 +8,9 @@
 \echo '--- 161. Recharge invoices and delivery'
 reset role;
 \i supabase/migrations/20270228000200_support_recharges.sql
-\i supabase/migrations/20270308000100_recharge_accounts_workflow.sql
-\i supabase/migrations/20270309000100_recharge_invoices.sql
-\i supabase/migrations/20270309000100_recharge_invoices.sql
+\i supabase/migrations/20270310000100_recharge_accounts_workflow.sql
+\i supabase/migrations/20270311000100_recharge_invoices.sql
+\i supabase/migrations/20270311000100_recharge_invoices.sql
 
 alter table public.support_recharge_events disable trigger support_recharge_events_append_only;
 delete from support_recharge_events where recharge_id in (select id from support_recharges where customer_id in (select id from customers where phone like '90000008%'));

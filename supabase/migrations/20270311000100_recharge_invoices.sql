@@ -1,5 +1,5 @@
 -- Recharges, part 3: the invoice for a recharge whose payment Accounts confirmed, and sending it to the customer by e-mail and WhatsApp.
--- (Builds on 20270306000100_recharge_accounts_workflow.sql. Additive: nothing is deleted or rewritten; safe to run twice.)
+-- (Builds on 20270310000100_recharge_accounts_workflow.sql. Additive: nothing is deleted or rewritten; safe to run twice.)
 --
 -- WHEN. Only Accounts (and the Super Admin) generate it, and only for a recharge whose payment_status is PAYMENT_RECEIVED. Generating twice returns the invoice that exists:
 -- one invoice per recharge (unique), never a second number. After the payment is confirmed it can no longer be taken back, and the billing details can no longer be corrected.
