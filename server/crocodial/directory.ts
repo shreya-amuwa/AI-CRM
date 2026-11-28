@@ -21,23 +21,36 @@ export interface CrocodialTestResult {
  * e-mails Crocodial returns are dropped here. The caller has already been checked by the database (croc_admin_connection).
  */
 export async function testCrocodialConnection(
-  connection: { id: string; credentialRef: string },
-  opts: ClientOptions & { db?: SupabaseClient; env?: NodeJS.ProcessEnv; host?: string | null; context?: 'TEST' | 'SYNC' | 'REFRESH' } = {}
+  connection: { id: string; credentialRef: string | null },
+  opts: ClientOptions & {
+    db?: SupabaseClient; env?: NodeJS.ProcessEnv; host?: string | null; context?: 'TEST' | 'SYNC' | 'REFRESH';
+    /** the key to use instead of the server setting: a stored key (opened by the server) or a candidate key being checked */
+    token?: string;
+    /** a candidate key: one read of 1 user and nothing else (nothing stored, the connection's health untouched); employees = the account's users */
+    probe?: boolean;
+  } = {}
 ): Promise<CrocodialTestResult> {
+  if (opts.probe) return probeKey(opts.token ?? '', opts);
   const db = opts.db ?? getServiceClient();
   const status = (health: CrocodialHealth, error: string | null) =>
     db.rpc('croc_connection_status', { p_connection: connection.id, p_health: health, p_error: error });
-  const token = crocodialToken(connection.credentialRef, opts.env);
+  const token = opts.token ?? crocodialToken(connection.credentialRef, opts.env);
+  if (!token && !connection.credentialRef) {
+    const message = 'No Crocodial key has been entered for this connection yet.';
+    await status('NO_CREDENTIAL', message);
+    return { ok: false, health: 'NO_CREDENTIAL', message, employees: 0, branches: 0, timezone: null, requests: 0 };
+  }
   if (!token) {
     // the message names THIS server (Cloudflare / Vercel, environment): a deployment without the setting says so, never "the server"
     const rt = runtimeInfo(opts.env, opts.host);
     const check = credentialCheck(connection.credentialRef, opts.env);
-    const message = `${credentialProblem(connection.credentialRef, check, rt)} The token is never typed into the CRM.`;
+    const message = `${credentialProblem(connection.credentialRef ?? '', check, rt)} The token is never typed into the CRM.`;
     await reportRuntime(db, connection.id, rt, check, opts.context ?? 'TEST');
     await status('NO_CREDENTIAL', message);
     return { ok: false, health: 'NO_CREDENTIAL', message, employees: 0, branches: 0, timezone: null, requests: 0 };
   }
-  await reportRuntime(db, connection.id, runtimeInfo(opts.env, opts.host), credentialCheck(connection.credentialRef, opts.env), opts.context ?? 'TEST');
+  // (a stored key is not a setting of this server: nothing to report about the setting)
+  if (!opts.token) await reportRuntime(db, connection.id, runtimeInfo(opts.env, opts.host), credentialCheck(connection.credentialRef, opts.env), opts.context ?? 'TEST');
   const client = new CrocodialClient(token, opts);
   try {
     const emp = await client.all('employees', crocodialEmployeeSchema, {}, 20);
@@ -57,6 +70,20 @@ export async function testCrocodialConnection(
   } catch (err) {
     const e = err instanceof CrocodialError ? err : new CrocodialError('ERROR', 'The connection test failed.');
     await status(e.health, e.message);
+    return { ok: false, health: e.health, message: e.message, employees: 0, branches: 0, timezone: null, requests: client.requests };
+  }
+}
+
+/** One read of 1 user with a candidate key. Never throws; nothing is stored or recorded. */
+async function probeKey(token: string, opts: ClientOptions): Promise<CrocodialTestResult> {
+  // a person is waiting for the answer: no minute-long wait on 429 and one short retry at most (it ends as "could not be reached")
+  const client = new CrocodialClient(token, { ...opts, maxRateWaits: 0, maxErrorRetries: 1, retryDelayMs: 500 });
+  try {
+    const p = await client.page(client.url('employees', { per_page: 1, page: 1 }));
+    const users = p.meta.total ?? p.rows.length;
+    return { ok: true, health: 'OK', message: 'Crocodial accepted the key.', employees: users, branches: 0, timezone: p.meta.timezone ?? null, requests: client.requests };
+  } catch (err) {
+    const e = err instanceof CrocodialError ? err : new CrocodialError('ERROR', 'The key could not be checked.');
     return { ok: false, health: e.health, message: e.message, employees: 0, branches: 0, timezone: null, requests: client.requests };
   }
 }

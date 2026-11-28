@@ -13985,6 +13985,35 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     check(r.status === 422, 'crocodial pipeline API: an unknown disposition is refused', r);
     r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: ' Won ', disposition: 'CONVERTED' });
     check(r.status === 200 && r.json.data.status === 'won', 'crocodial pipeline API: a status is mapped (stored lower-cased)', r);
+    // statuses onto lead tags (20270306000100): { status, tagId | null, ignore }; the old { disposition } body is translated
+    const readyToBuy = (await db.query(`select id from public.lead_tags where seed_stage = 'READY_TO_BUY'`)).rows[0].id as string;
+    const demoDone = (await db.query(`select id from public.lead_tags where label = 'Demo done' and scope = 'COMPANY' and created_by is null`)).rows[0].id as string;
+    check(r.json.data.tagId === readyToBuy && r.json.data.ignored === false && r.json.data.disposition === 'CONVERTED', 'crocodial pipeline API: the old disposition body is stored as the seed tag of its stage', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Demo done', tagId: demoDone });
+    check(r.status === 200 && r.json.data.status === 'demo done' && r.json.data.tagId === demoDone && r.json.data.ignored === false, 'crocodial pipeline API: a status is mapped to a tag', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', ignore: true });
+    check(r.status === 200 && r.json.data.ignored === true && r.json.data.tagId === null, 'crocodial pipeline API: a status is mapped to Ignore', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: demoDone, ignore: true });
+    check(r.status === 422, 'crocodial pipeline API: a tag and Ignore together are refused', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: demoDone, disposition: 'NEW' });
+    check(r.status === 422, 'crocodial pipeline API: a tag and a disposition together are refused', r);
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: 'nope' });
+    check(r.status === 422, 'crocodial pipeline API: the tag id is checked', r);
+    r = await api('a', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: demoDone });
+    check(r.status === 403, 'crocodial pipeline API: an employee cannot map a status', r);
+    const wabOnly = (await db.query(`insert into public.lead_tags (label, colour, stage, scope) values ('API Wabastore only', 'amber', 'CONTACTED', 'DEPARTMENTS') returning id`)).rows[0].id as string;
+    await db.query(`insert into public.lead_tag_departments (tag_id, department_id) select $1, id from public.departments where slug = 'wabastore'`, [wabOnly]);
+    try {
+      r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Hot', tagId: wabOnly });
+      check(r.status === 422 && /can't be used in every department of this connection/.test(JSON.stringify(r.json)), 'crocodial pipeline API: a tag not usable in M Pillar is refused for an M Pillar connection', r);
+    } finally {
+      await db.query(`delete from public.lead_tags where id = $1`, [wabOnly]);
+    }
+    r = await api('sa', 'POST', `/crocodial/connections/${cid}/status-mappings`, { status: 'Not now', tagId: null });
+    check(r.status === 200 && r.json.data.tagId === null && r.json.data.ignored === false, 'crocodial pipeline API: no tag and no Ignore removes the mapping', r);
+    r = await api('sa', 'GET', `/crocodial/connections/${cid}/reconcile`);
+    check(r.status === 200 && r.json.data.mappings.some((m: any) => m.status === 'demo done' && m.tagId === demoDone && m.ignored === false)
+      && !r.json.data.mappings.some((m: any) => m.status === 'not now'), 'crocodial pipeline API: the monitor lists the mappings with their tag', r);
     await db.query(`insert into public.crocodial_ext_leads (connection_id, external_id, name, phone_number, status, assigned_to_ext, external_updated_at) values ($1, 1, 'API Croc Lead', '+919770099001', 'Won', 77777, now())`, [cid]);
     r = await api('a', 'POST', `/crocodial/connections/${cid}/reconcile`);
     check(r.status === 403, 'crocodial pipeline API: an employee cannot run reconciliation', r);
@@ -14128,6 +14157,137 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.customers where phone = $1 or phone = $2`, [leadPhone, leadPhone.replace(/\s/g, '')]);
     await db.query(`delete from public.lead_tag_departments where tag_id = any($1::uuid[])`, [created]);
     await db.query(`delete from public.lead_tags where id = any($1::uuid[])`, [created]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Crocodial keys stored by the CRM (20270307000100, Task 8): a CEO pastes the key of a connection they manage; the server checks it with
+// one live read, encrypts it and stores it through the service role. The key never comes back in an answer.
+// ---------------------------------------------------------------------------
+{
+  const KEY = 'croc-api-key-not-real-7c3e9d1a';
+  const savedSecret = process.env.AUTOMATION_SECRET_KEY;
+  process.env.AUTOMATION_SECRET_KEY = 'local-test-automation-secret';
+  r = await api('sa', 'POST', '/users', { email: 'api.croc.ceo@amuwa.com', fullName: 'API Croc CEO', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES', operationsHead: true });
+  check(r.status === 201 && r.json.data.isOperationsHead === true, 'crocodial keys API: a CEO of Wabastore + Whatsbox is created', r);
+  const ceoId = r.json.data.id as string;
+  await db.query(`delete from public.operations_head_departments where profile_id = $1`, [ceoId]);
+  await db.query(`insert into public.operations_head_departments (profile_id, department_id, division) values ($1, $2, null), ($1, $3, null)`, [ceoId, wab.id, wbx.id]);
+  tokens.set('crocceo', tokenFor(ceoId));
+  const mpDept = (await db.query(`select id from public.departments where slug = 'mpillar'`)).rows[0].id as string;
+  const conn = async (name: string, dept: string, ref: string | null) => {
+    const id = (await db.query(`insert into public.crocodial_connections (name, credential_ref, enabled) values ($1, $2, false) returning id`, [name, ref])).rows[0].id as string;
+    await db.query(`insert into public.crocodial_department_links (connection_id, department_id, division, enabled) values ($1, $2, 'SALES', false)`, [id, dept]);
+    return id;
+  };
+  const ownA = await conn('API key A', wab.id, null);
+  const ownB = await conn('API key B', wbx.id, null);
+  const mdConn = await conn('API key MP', mpDept, 'CROCODIAL_TOKEN_APIKEYMP');
+  const extra: string[] = [];
+  // a CEO linking a department allows its rollout automatically: put the rollout back afterwards
+  const rolloutBefore = (await db.query(`select to_jsonb(r) j from public.crocodial_rollout r where division = 'SALES' and department_id = any($1::uuid[])`, [[wab.id, wbx.id]])).rows;
+  // a fake Crocodial: `answer` decides the status of the one live read; every request's Authorization header is kept
+  const realFetch = globalThis.fetch;
+  let answer = 200;
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://app.crocodial.app/')) {
+      seen.push(String(init?.headers?.Authorization ?? ''));
+      return new Response(JSON.stringify(answer === 200 ? { success: true, data: [{ id: 1, name: 'Seller' }], meta: { page: 1, per_page: 1, total: 9, next_page_url: null } } : { message: 'no' }),
+        { status: answer, headers: { 'Content-Type': 'application/json' } });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  try {
+    r = await api('crocceo', 'POST', `/crocodial/connections/${mdConn}/key`, { key: KEY });
+    check(r.status === 403 && r.json.error.message === 'You can manage Crocodial only for departments you run.' && seen.length === 0,
+      'crocodial keys API: a CEO cannot store a key on a connection they do not manage (403, Crocodial not called)', r);
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownA}/key`, { key: `  ${KEY}\n` });
+    check(r.status === 200 && r.json.data.ok === true && r.json.data.last4 === KEY.slice(-4) && r.json.data.users === 9, 'crocodial keys API: the key is checked and stored (200, last 4, users)', r);
+    check(!JSON.stringify(r.json).includes(KEY) && seen.length === 1 && seen[0] === `Bearer ${KEY}`, 'crocodial keys API: the answer does not contain the key; Crocodial got it once, normalised', { r: r.json, n: seen.length });
+    const row = (await db.query(`select token_ciphertext, token_fingerprint, token_last4, token_set_by from public.crocodial_connections where id = $1`, [ownA])).rows[0];
+    check(row.token_ciphertext.startsWith('v1:') && !row.token_ciphertext.includes(KEY) && row.token_fingerprint === crypto.createHash('sha256').update(KEY).digest('hex')
+      && row.token_last4 === KEY.slice(-4) && row.token_set_by === ceoId, 'crocodial keys API: the database has the ciphertext, the fingerprint and the last 4, not the key', row);
+    r = await api('crocceo', 'GET', '/crocodial/admin');
+    const shown = r.json.data?.connections?.find((c: any) => c.id === ownA);
+    check(r.status === 200 && shown?.keySource === 'DATABASE' && shown?.keyLast4 === KEY.slice(-4) && shown?.credentialConfigured === true,
+      'crocodial keys API: the overview shows keySource DATABASE and keyLast4', shown);
+    const body = JSON.stringify(r.json);
+    check(!body.includes(KEY) && !body.includes(row.token_ciphertext) && !body.includes(row.token_fingerprint), 'crocodial keys API: the overview has no key, ciphertext or fingerprint');
+    const audits = (await db.query(`select metadata::text m from public.audit_logs where entity_id = $1`, [ownA])).rows.map((x: any) => x.m).join(' ');
+    check(/CROCODIAL_KEY_SET/.test((await db.query(`select string_agg(action, ' ') a from public.audit_logs where entity_id = $1`, [ownA])).rows[0].a ?? '')
+      && !audits.includes(KEY) && !audits.includes(row.token_ciphertext) && !audits.includes(row.token_fingerprint), 'crocodial keys API: audited, without the key, ciphertext or fingerprint');
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownB}/key`, { key: KEY });
+    check(r.status === 409 && r.json.error.message === 'This Crocodial account is already connected (by another department).', 'crocodial keys API: the same key on a second connection is refused (409)', r);
+    answer = 401;
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownB}/key`, { key: 'croc-api-key-other-1111' });
+    check(r.status === 422 && r.json.error.message === 'Crocodial refused this key.', 'crocodial keys API: a key Crocodial refuses is not stored (422)', r);
+    check((await db.query(`select token_ciphertext from public.crocodial_connections where id = $1`, [ownB])).rows[0].token_ciphertext === null, 'crocodial keys API: nothing stored for it');
+    answer = 200;
+    delete process.env.AUTOMATION_SECRET_KEY;
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownB}/key`, { key: 'croc-api-key-other-2222' });
+    check(r.status === 503 && r.json.error.message === "Crocodial keys can't be stored on this server. Ask the Managing Director.", 'crocodial keys API: no AUTOMATION_SECRET_KEY: 503 with the exact copy', r);
+    process.env.AUTOMATION_SECRET_KEY = 'local-test-automation-secret';
+    r = await api('crocceo', 'DELETE', `/crocodial/connections/${mdConn}/key`);
+    check(r.status === 403, 'crocodial keys API: nor remove the key of a connection they do not manage', r);
+    r = await api('crocceo', 'DELETE', `/crocodial/connections/${ownA}/key`);
+    check(r.status === 200 && r.json.data.keySource === 'NONE' && r.json.data.enabled === false, 'crocodial keys API: Disconnect clears the key and switches the connection off', r);
+    check((await db.query(`select token_ciphertext is null and token_fingerprint is null n from public.crocodial_connections where id = $1`, [ownA])).rows[0].n, 'crocodial keys API: nothing of the key is left');
+    // after Disconnect the CEO pastes the key again and switches the connection back on (no server setting name involved)
+    await db.query(`delete from private.rate_limit_counters where bucket = $1`, [`croc-key:${ceoId}`]);
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownA}/key`, { key: KEY });
+    check(r.status === 200, 'crocodial keys API: the key is pasted again', r);
+    r = await api('crocceo', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: true });
+    check(r.status === 200 && r.json.data.enabled === true && r.json.data.keySource === 'DATABASE' && r.json.data.credentialRef === null,
+      'crocodial keys API: the CEO switches their key-only connection on (no credentialRef sent)', r);
+    r = await api('sa', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: false });
+    check(r.status === 200 && r.json.data.enabled === false, 'crocodial keys API: the MD switches a key-only connection off without a credentialRef', r);
+    r = await api('sa', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: true });
+    check(r.status === 200 && r.json.data.enabled === true, 'crocodial keys API: and on again', r);
+    // a CEO creates a connection for the departments they run, then switches it on
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key CEO new', departmentIds: [] });
+    check(r.status === 422, 'crocodial keys API: a CEO connection needs at least one department', r);
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key CEO new', departmentIds: ['nope'] });
+    check(r.status === 422, 'crocodial keys API: department ids are checked', r);
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key CEO new', departmentIds: [wab.id, wbx.id] });
+    check(r.status === 200 && r.json.data.enabled === false && r.json.data.credentialRef === null && r.json.data.keySource === 'NONE',
+      'crocodial keys API: a CEO creates a connection with departmentIds (off, no key yet)', r);
+    const created = r.json.data.id as string;
+    extra.push(created);
+    const links = (await db.query(`select department_id from public.crocodial_department_links where connection_id = $1 and division = 'SALES'`, [created])).rows.map((x: any) => x.department_id).sort();
+    check(links.length === 2 && links.includes(wab.id) && links.includes(wbx.id), 'crocodial keys API: linked to both departments in the same call', links);
+    r = await api('crocceo', 'POST', '/crocodial/connections', { id: created, name: 'API key CEO new', enabled: true });
+    check(r.status === 200 && r.json.data.enabled === true, 'crocodial keys API: and switches it on', r);
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key CEO bad', departmentIds: [mpDept] });
+    check(r.status === 403, 'crocodial keys API: not for a department they do not run', r);
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key CEO ref', credentialRef: 'CROCODIAL_TOKEN_APIKEYCEO', departmentIds: [wab.id] });
+    check(r.status === 403, 'crocodial keys API: a CEO cannot name a server setting', r);
+    // who can be mapped: the CEO gets the people of a linked department they run that is not their home department (Whatsbox)
+    r = await api('crocceo', 'GET', `/crocodial/connections/${created}/mapping-candidates?departmentId=${wbx.id}`);
+    check(r.status === 200 && Array.isArray(r.json.data), 'crocodial keys API: a CEO reads the mapping candidates of a linked department they run', r);
+    r = await api('crocceo', 'GET', `/crocodial/connections/${created}/mapping-candidates?departmentId=${mpDept}`);
+    check(r.status === 422, 'crocodial keys API: not of a department that is not linked', r);
+    r = await api('crocceo', 'GET', `/crocodial/connections/${mdConn}/mapping-candidates?departmentId=${mpDept}`);
+    check(r.status === 403, 'crocodial keys API: nor on a connection they do not manage', r);
+    // the MD's switch-off is a real stop: the CEO cannot Disconnect the connection (freeing its key) nor start another one for its department
+    r = await api('sa', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: false });
+    check(r.status === 200 && r.json.data.mdDisabledAt, 'crocodial keys API: the MD switches the CEO\'s connection off', r);
+    r = await api('crocceo', 'DELETE', `/crocodial/connections/${ownA}/key`);
+    check(r.status === 409 && r.json.error.message === 'Switched off by the Managing Director. Ask the Managing Director to switch it back on.',
+      'crocodial keys API: the CEO cannot Disconnect a connection the MD switched off (409, exact copy)', r);
+    check((await db.query(`select token_ciphertext is not null n from public.crocodial_connections where id = $1`, [ownA])).rows[0].n, 'crocodial keys API: its key stays');
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key around', departmentIds: [wab.id] });
+    check(r.status === 409, 'crocodial keys API: nor create a new connection for that department', r);
+    r = await api('sa', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: true });
+    check(r.status === 200 && !r.json.data.mdDisabledAt, 'crocodial keys API: the MD switching it on lifts the stop', r);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (savedSecret === undefined) delete process.env.AUTOMATION_SECRET_KEY; else process.env.AUTOMATION_SECRET_KEY = savedSecret;
+    await db.query(`delete from private.rate_limit_counters where bucket = $1`, [`croc-key:${ceoId}`]);
+    await db.query(`delete from public.crocodial_connections where id = any($1::uuid[])`, [[ownA, ownB, mdConn, ...extra]]);
+    await db.query(`delete from public.crocodial_rollout where division = 'SALES' and department_id = any($1::uuid[])`, [[wab.id, wbx.id]]);
+    for (const x of rolloutBefore) await db.query(`insert into public.crocodial_rollout select * from jsonb_populate_record(null::public.crocodial_rollout, $1::jsonb)`, [x.j]);
   }
 }
 

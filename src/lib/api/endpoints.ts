@@ -8,7 +8,7 @@ import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProvider
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialReconcileRun, CrocodialLeadActivity, CrocodialTeamLeads } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialKeySaveResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialReconcileRun, CrocodialLeadActivity, CrocodialTeamLeads } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   AiWebsiteOnboarding,
@@ -1112,11 +1112,17 @@ export const leadUploadApi = {
 export const crocodialApi = {
   overview: () => api.get<CrocodialAdminOverview>('/crocodial/admin'),
   setRollout: (body: { departmentId: string; division: 'SALES'; allowed: boolean; note?: string | null }) => api.post<CrocodialAdminOverview>('/crocodial/rollout', body),
-  saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef: string; enabled?: boolean }) =>
+  saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef?: string | null; enabled?: boolean; departmentIds?: string[] }) =>
     api.post<CrocodialConnection>('/crocodial/connections', body),
   testConnection: (id: string) => api.post<CrocodialTestResult>(`/crocodial/connections/${id}/test`, {}),
+  /** (20270307000100) test a Crocodial key with one live read, then store it encrypted; DELETE: "Disconnect" (the key is cleared, the connection switched off) */
+  saveKey: (id: string, key: string) => api.post<CrocodialKeySaveResult>(`/crocodial/connections/${id}/key`, { key }),
+  removeKey: (id: string) => api.delete<CrocodialConnection>(`/crocodial/connections/${id}/key`),
   saveDepartmentLink: (body: { connectionId: string; departmentId: string; division: 'SALES'; enabled: boolean; stage?: 'PILOT' | 'PRODUCTION' }) =>
     api.post<{ id: string }>('/crocodial/department-links', body),
+  /** (20270307000100) who can be mapped in a linked department (for the MD and a CEO alike; not the users list, which a CEO sees only for their home department) */
+  mappingCandidates: (connectionId: string, departmentId: string) =>
+    api.get<CrocodialMappingCandidate[]>(`/crocodial/connections/${connectionId}/mapping-candidates`, { departmentId }),
   checkMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
     api.post<CrocodialMappingCheck>('/crocodial/mappings/check', body),
   createMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>
@@ -1141,7 +1147,8 @@ export const crocodialApi = {
   leadLinks: (connectionId: string, q: { status?: string; page?: number; pageSize?: number }) => api.get<CrocodialLeadLinkList>(`/crocodial/connections/${connectionId}/lead-links`, q),
   reconcileNow: (connectionId: string) => api.post<CrocodialReconcileRun>(`/crocodial/connections/${connectionId}/reconcile`),
   setLeadImport: (connectionId: string, departmentId: string, mode: 'OFF' | 'PREVIEW' | 'IMPORT') => api.post<{ mode: string }>(`/crocodial/connections/${connectionId}/lead-import`, { departmentId, mode }),
-  setStatusMapping: (connectionId: string, status: string, disposition: string | null) => api.post<{ status: string; disposition: string | null }>(`/crocodial/connections/${connectionId}/status-mappings`, { status, disposition }),
+  /** Map a Crocodial status to a lead tag (tagId), to Ignore (ignore: true) or to nothing (null, false: the mapping is removed). Always send both. */
+  setStatusMappingTag: (connectionId: string, status: string, tagId: string | null, ignore: boolean) => api.post<{ status: string; tagId: string | null; ignored: boolean }>(`/crocodial/connections/${connectionId}/status-mappings`, { status, tagId, ignore }),
   resolveLeadLink: (id: string, action: 'LINK' | 'IGNORE' | 'RETRY' | 'RELEASE_OVERRIDE', customerId?: string) => api.post<{ id: string; status: string }>(`/crocodial/lead-links/${id}/resolve`, customerId ? { action, customerId } : { action }),
   leadActivity: (customerId: string) => api.get<CrocodialLeadActivity>(`/crocodial/lead-activity/${customerId}`),
   teamLeads: (q: { departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamLeads>('/crocodial/team-leads', { ...q }),

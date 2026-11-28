@@ -11,6 +11,9 @@
 reset role;
 \i supabase/migrations/20270304000100_crocodial_crm_lead_links.sql
 \i supabase/migrations/20270304000100_crocodial_crm_lead_links.sql
+-- the newer migrations that redefine its functions (lead tags, statuses onto tags), so these checks run against the current code
+\i supabase/migrations/20270305000100_lead_tags.sql
+\i supabase/migrations/20270306000100_crocodial_status_tags.sql
 
 delete from crocodial_connections where credential_ref like 'CROCODIAL_TOKEN_LLTEST%';
 delete from customers where phone like '%97700000%' or name = 'Paying Customer';
