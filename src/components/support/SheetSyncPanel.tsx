@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Check, Copy, Link2, RefreshCw, Unlink } from 'lucide-react';
 import type { SheetSyncConnectResult, SheetSyncConnection } from '../../../shared/contracts';
-import { api, errorMessage } from '../../lib/api/client';
+import { api } from '../../lib/api/client';
 import { buildSheetSyncScript } from '../../lib/sheetSyncScript';
 import { useAuth } from '../../context/AuthContext';
 import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
+import { userMessage } from '../../lib/feedback/errors';
 
 /**
  * Google Sheet sync (docs/CUSTOMER_SHEET_SYNC.md): connect the team's customer sheet once, paste the script, then "CRM Sync > Sync now"
@@ -27,7 +28,7 @@ export const SheetSyncPanel: React.FC = () => {
       setConn(await api.get<SheetSyncConnection | null>('/customers/sheet-sync'));
     } catch (e) {
       setConn(null);
-      setError(errorMessage(e));
+      setError(userMessage(e));
     }
   }, []);
   useEffect(() => void load(), [load]);
@@ -45,7 +46,7 @@ export const SheetSyncPanel: React.FC = () => {
       }));
       setCopied(false);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy('');
     }
@@ -59,7 +60,7 @@ export const SheetSyncPanel: React.FC = () => {
       setScript(null);
       await load();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy('');
     }

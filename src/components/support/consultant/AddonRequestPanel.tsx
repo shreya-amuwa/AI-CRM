@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, History, Save, Send } from 'lucide-react';
 import type { AddonRequest } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { addonsApi } from '../../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, notifyPipelineChanged, Pill, Spinner, usePipelineRealtime, useServiceCatalog } from '../../team-member/pipeline/shared';
 import {
@@ -18,6 +17,7 @@ import {
   validateLines
 } from '../../invoices/invoiceShared';
 import { ClientServiceRequestsCard, useClientServiceRequests } from './ClientServiceRequests';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const EVENT_LABEL: Record<string, string> = {
   CREATED: 'Draft created',
@@ -84,7 +84,7 @@ export const AddonRequestEditor: React.FC<{
         setRequest(r);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [customerId]);
   useEffect(load, [load]);
@@ -134,7 +134,7 @@ export const AddonRequestEditor: React.FC<{
       notifyPipelineChanged();
       onChanged?.(r);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
       load();
     } finally {
       setBusy(false);

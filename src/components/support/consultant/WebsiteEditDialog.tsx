@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { normalizeWebsite } from '../../../../shared/contactValidation';
-import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, Field, inputCls } from '../../team-member/pipeline/shared';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * The Technical Consultant adds or corrects the customer's website link (for example, after building
@@ -29,7 +29,7 @@ export const WebsiteEditDialog: React.FC<{
       await pipelineApi.setWebsite(customerId, w.url);
       onSaved();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }

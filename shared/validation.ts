@@ -3674,7 +3674,7 @@ export const clientMeetingListQuerySchema = z.object({
 // ---------------------------------------------------------------------------
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
-export const DEV_BUG_STATUSES = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
+export const DEV_BUG_STATUSES = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'TESTING', 'NEEDS_INFO', 'RESOLVED', 'REJECTED', 'CLOSED'] as const;
 // Issue routing (migration 20270128000200): what an issue to the Developer Team is about, and how urgent
 export const DEV_ISSUE_CATEGORIES = ['BUG', 'FEATURE_REQUEST', 'ACCESS_LOGIN', 'DATA_ISSUE', 'PERFORMANCE', 'OTHER'] as const;
 export const DEV_ISSUE_CATEGORY_LABELS: Record<(typeof DEV_ISSUE_CATEGORIES)[number], string> = {
@@ -3695,7 +3695,7 @@ export const bugSubmitSchema = z.object({
 }).strict();
 export const bugListQuerySchema = z.object({
   status: z.enum([...DEV_BUG_STATUSES, 'OPEN', 'DONE']).optional(),
-  assignee: z.union([z.enum(['ME', 'UNASSIGNED']), uuidSchema]).optional(),
+  assignee: z.union([z.enum(['ME', 'UNASSIGNED', 'CONTRIBUTED']), uuidSchema]).optional(),
   search: trimmed(120).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50)
@@ -3720,6 +3720,18 @@ export const bugStatusSchema = z.object({ status: z.enum(DEV_BUG_STATUSES), note
   .refine(v => !['RESOLVED', 'REJECTED'].includes(v.status) || (v.note ?? '').trim().length >= 5,
     { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['note'] });
 export const bugCommentSchema = z.object({ note: trimmed(3000).min(1, 'Write a comment.') }).strict();
+/** "Add Progress Update" (20270312000400): what was worked on, optionally the new status / progress and notes. expectedVersion: the version the screen was loaded with */
+export const bugProgressUpdateSchema = z.object({
+  work: trimmed(3000).min(3, 'Write what you worked on (at least 3 characters).'),
+  status: z.enum(DEV_BUG_STATUSES).optional(),
+  progress: z.coerce.number().int().min(0, 'The progress is a percentage from 0 to 100.').max(100, 'The progress is a percentage from 0 to 100.').optional(),
+  notes: optionalText(3000),
+  expectedVersion: z.coerce.number().int().min(1).optional(),
+  clientRequestId: z.string().trim().min(8).max(80).optional()
+}).strict()
+  .refine(v => v.status !== 'RESOLVED' || v.progress === undefined || v.progress === 100, { message: 'A resolved bug is 100% done.', path: ['progress'] })
+  .refine(v => !['RESOLVED', 'REJECTED'].includes(v.status ?? '') || ((v.notes ?? v.work).trim().length >= 5),
+    { message: 'Write the resolution note or the reason (at least 5 characters). The employee will read it.', path: ['notes'] });
 export const devTeamSetSchema = z.object({ profileId: uuidSchema, member: z.boolean(), lead: z.boolean().optional() }).strict();
 
 // ---------------------------------------------------------------------------

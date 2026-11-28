@@ -4,6 +4,7 @@ import { CUSTOMER_STATUS_LABELS, fmtWhen, type CustomerStatusValue } from '../..
 import { rowOpen } from '../../../lib/rowClick';
 import { teamLeadApi, useServerList, type Assignment, type CustomerQuery, type TlCustomer, type TlMemberLoad } from '../../../lib/teamLead';
 import { CustomerStatusPill, Empty, ErrorBanner, inputClass, Loading, Modal, Pager } from '../../support-member/SupportParts';
+import { userMessage } from '../../../lib/feedback/errors';
 
 export interface CustomerFilters {
   search: string;
@@ -263,7 +264,7 @@ export const ReassignModal: React.FC<{
       const name = mode === 'me' ? 'you' : members.find(m => m.id === target)?.fullName || 'the team member';
       onDone(`${customer.name} is now assigned to ${name}.`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not change the assignment.');
+      setError(userMessage(e, 'The assignment could not be changed. Please try again.'));
       setBusy(false);
     }
   };

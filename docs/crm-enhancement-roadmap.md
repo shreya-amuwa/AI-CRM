@@ -1,6 +1,6 @@
 # CRM enhancement roadmap (six phases)
 
-Status: **Phase 0 complete and approved (decisions D1–D9 approved as recommended). Phase 1 in progress: part 1 of 4 (core + Sales Department Head) done.**
+Status: **Phase 0 complete and approved (D1–D9 as recommended). Phase 1 in progress: parts 1–2 of 4 done (core + Sales Department Head; Support, Accounts, Meta Verifier, Technical Consultant).**
 Branch of the audit: `claude/crm-enhancement-roadmap` (from `main` at `70fd7741`). Baseline on that commit: `npm run typecheck` and `npm run build` pass.
 There is no lint script in this repository (`package.json` has none), so "run linting" cannot be executed until one is added.
 
@@ -300,7 +300,7 @@ the destination with validation or request an exception; nothing is tracked outs
 | Phase | Status | Pull request | Notes |
 | --- | --- | --- | --- |
 | 0. Audit and plan | Done, approved | `claude/crm-enhancement-roadmap` | D1–D9 approved as recommended |
-| 1. Toast notifications | In progress (part 1 of 4) | part 1: `claude/crm-enhancement-roadmap` | Part 1: core (loading, `toast.promise`, `toast.fromError`, `useSubmit`, offline warning, clear defaults) + Sales Department Head (sheet assign, forward, inbound lead, task). Next: Support + Accounts + verification; HR + studios + field visit; Super Admin + the rest. |
+| 1. Toast notifications | In progress (parts 1–2 of 4 done) | part 1: #341 (merged); part 2: `claude/toasts-support-accounts` | Next: part 3 (HR, AI Studio, AI Design Studio, Field Visit), part 4 (Super Admin, Sales Team Lead / Member / Telecaller / Business Associate, the rest). |
 | 2. Mandatory contacts + automation retry | Not started | | |
 | 3. Support-originated workflow | Not started | | |
 | 4. Lead capture and drafts | Not started | | |
@@ -327,3 +327,24 @@ the destination with validation or request an exception; nothing is tracked outs
   * `ui_app_feedback.test.mjs` (double click saves once, loading → success in place, safe failure text, offline / back online, at desktop
     and two phone widths);
   * `ui_ceo_lead_assign.test.mjs` (failed assignment → clear error toast without database text, retry → success, forward → success toast).
+
+### Phase 1, part 2 (Support, Accounts, Meta Verifier, Technical Consultant): what was done
+
+* **Support member and Team Lead** (`src/components/support-member/`, `team-lead/dashboard/`, `unified/UnifiedSupport.tsx`,
+  `department-head/HeadCustomersPage.tsx`):
+  * success toasts for: customer added, invoice request, ticket actions, ticket SLA, client login created, password link sent;
+  * "login created but the e-mail was not sent" is a warning that stays until it is closed;
+  * the customer list's `notice` prop was removed (no caller uses it any more).
+* **Accounts** (`src/components/accounts/**`):
+  * success toasts for: payment recorded / updated / rejected / reversed, paid invoice, GST, follow-up, invoices saved or uploaded, payment
+    requests, client logins, expenses, finance mails queued again, payouts;
+  * "paid invoice already made" is information, not success.
+* **Meta Verifier and Technical Consultant** (`src/components/support/**`):
+  * success toasts for: intake (the old banner's "Open …" shortcut is now the toast's action button), panel URL saved, panel link sent,
+    add-ons;
+  * "link already being sent / already sent" is information.
+* **Errors:** every raw `err.message` / `errorMessage(err)` in these screens now goes through `userMessage(err, fallback)`. Readable API
+  messages are kept; database and script text is hidden. Form and dialog errors stay in the form.
+* Timed and permanent green banners were removed.
+* The Dashboard Explorer preview clears toasts when a new demonstration starts, so a Reset leaves no old "… was added".
+* Tests run before the suite: `ui_accounts_finance` (28), `ui_payouts` (33), `ui_client_logins` (21), `ui_client_journey` (56): all pass.

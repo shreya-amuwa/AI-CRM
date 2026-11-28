@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { FinanceSummary, FinanceTrend } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { financeApi } from '../../../lib/api/endpoints';
 import { ErrorBanner, Loading, PageHeader } from '../../support-member/SupportParts';
 import { money, SummaryCards, useFinanceRefresh } from './FinanceBits';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const pct = (cur: number, prev: number) => (prev === 0 ? null : Math.round(((cur - prev) / Math.abs(prev)) * 100));
 const monthLabel = (m: string) => new Date(`${m.slice(0, 7)}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' });
@@ -25,7 +25,7 @@ export const AccountsOverview: React.FC = () => {
         setTrend(t);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, []);
   useEffect(load, [load]);

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { api, errorMessage } from '../../lib/api/client';
+import { api } from '../../lib/api/client';
 import { accountsCustomerDetailsSchema } from '../../../shared/validation';
 import { ErrorBanner, FormField, inputClass, Modal } from '../support-member/SupportParts';
+import { userMessage } from '../../lib/feedback/errors';
 
 const fields = { company: 'Business / company', name: 'Customer / contact name', phone: 'Mobile number', whatsapp: 'WhatsApp number', email: 'Email address', address: 'Business address (including state)', city: 'City', businessCategory: 'Business category' };
 type Details = Record<keyof typeof fields, string> & { hasClientLogin?: boolean };
@@ -16,7 +17,7 @@ export const AccountsCustomerDetails: React.FC<{ customerId: string; onSaved: ()
       const data = await api.get<Details>(path);
       setDetails(Object.fromEntries(Object.keys(fields).map(k => [k, data[k as keyof typeof fields] ?? ''])) as unknown as Details);
       setDetails(d => ({ ...d!, hasClientLogin: data.hasClientLogin }));
-    } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    } catch (e) { setError(userMessage(e)); } finally { setBusy(false); }
   };
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +27,7 @@ export const AccountsCustomerDetails: React.FC<{ customerId: string; onSaved: ()
     if (!parsed.success) { setError(parsed.error.issues.map(i => i.message).join(' ')); return; }
     setBusy(true); setError(null);
     try { await api.patch(path, parsed.data); onSaved(); setDetails(null); }
-    catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    catch (e) { setError(userMessage(e)); } finally { setBusy(false); }
   };
   return <>
     <button type="button" disabled={busy} onClick={() => void open()} className="px-3 py-2 border rounded-xl text-xs font-bold">Edit Details</button>
