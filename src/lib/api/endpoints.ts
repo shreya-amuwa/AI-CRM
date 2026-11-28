@@ -1103,7 +1103,7 @@ export const leadUploadApi = {
 export const crocodialApi = {
   overview: () => api.get<CrocodialAdminOverview>('/crocodial/admin'),
   setRollout: (body: { departmentId: string; division: 'SALES'; allowed: boolean; note?: string | null }) => api.post<CrocodialAdminOverview>('/crocodial/rollout', body),
-  saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef?: string; enabled?: boolean }) =>
+  saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef?: string | null; enabled?: boolean; departmentIds?: string[] }) =>
     api.post<CrocodialConnection>('/crocodial/connections', body),
   testConnection: (id: string) => api.post<CrocodialTestResult>(`/crocodial/connections/${id}/test`, {}),
   saveDepartmentLink: (body: { connectionId: string; departmentId: string; division: 'SALES'; enabled: boolean; stage?: 'PILOT' | 'PRODUCTION' }) =>

@@ -50,18 +50,19 @@ function harness(answer: (url: string, init: RequestInit) => Promise<Response>, 
     tokenClear: async (...args: unknown[]) => { calls.push({ fn: 'tokenClear', args }); return { id: CID, keySource: 'NONE', enabled: false }; }
   };
   const limits: unknown[] = [];
+  const sleeps: number[] = [];
   const svc = new CrocodialService(repo, env as any, {
     keyStore,
     limit: async (b: unknown) => { limits.push(b); },
     client: {
-      sleep: async () => undefined, minGapMs: 0,
+      sleep: async (ms: number) => { sleeps.push(ms); }, minGapMs: 0,
       fetch: async (url: string, init: RequestInit) => {
         fetched.push({ url, auth: String((init.headers as Record<string, string>).Authorization) });
         return answer(url, init);
       }
     }
   });
-  return { svc, calls, fetched, limits };
+  return { svc, calls, fetched, limits, sleeps };
 }
 const failure = async (p: Promise<unknown>) => {
   try { await p; } catch (e) { return e as AppError; }
@@ -104,6 +105,19 @@ const failure = async (p: Promise<unknown>) => {
   const e = await failure(h.svc.saveKey(CID, KEY, 'actor-1'));
   check(e?.code === 'SERVICE_UNAVAILABLE' && e.message === 'Crocodial could not be reached. Nothing was saved; try again.' && !h.calls.some(c => c.fn === 'tokenStore'),
     'a 5xx: the same, nothing stored', e);
+}
+{
+  // a 429 must not make "Save key" wait (the client waits 60 s twice on 429 for the sync): it fails at once, nothing stored
+  const h = harness(async () => json(429, {}));
+  const e = await failure(h.svc.saveKey(CID, KEY, 'actor-1'));
+  check(e?.code === 'SERVICE_UNAVAILABLE' && e.message === 'Crocodial could not be reached. Nothing was saved; try again.', 'a 429: SERVICE_UNAVAILABLE with the exact copy', e);
+  check(h.fetched.length === 1 && h.sleeps.length === 0 && !h.calls.some(c => c.fn === 'tokenStore'), 'at once: one request, no waiting, nothing stored', { fetched: h.fetched.length, sleeps: h.sleeps });
+}
+{
+  // network errors and 5xx: at most one short retry in the probe (the sync keeps its 2 s / 4 s back-off)
+  const h = harness(async () => json(503, {}));
+  await failure(h.svc.saveKey(CID, KEY, 'actor-1'));
+  check(h.sleeps.reduce((a, b) => a + b, 0) <= 1_000, 'a 5xx: the probe waits at most a second in all', h.sleeps);
 }
 {
   const h = harness(async () => usersPage(), {});

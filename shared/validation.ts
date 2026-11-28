@@ -3460,8 +3460,11 @@ export const crocodialConnectionSaveSchema = z
     id: uuidSchema.optional(),
     name: z.string().trim().min(2, 'Give the connection a name.').max(120),
     externalAccountLabel: z.string().trim().max(200).optional().nullable(),
-    credentialRef: crocodialCredentialRefSchema,
-    enabled: z.boolean().optional()
+    // optional (Task 8): a CEO's connection has no server setting (its key is stored by the CRM); only the MD may name one (the database checks)
+    credentialRef: crocodialCredentialRefSchema.optional().nullable(),
+    enabled: z.boolean().optional(),
+    // a CEO creating a connection: the departments they run that it serves (at least one; the database checks each)
+    departmentIds: z.array(uuidSchema).min(1, 'Choose at least one department you run.').max(20).optional()
   })
   .strict();
 // A Crocodial key pasted by its manager (Task 8): only its size here; the server normalises it and checks its shape and a live read

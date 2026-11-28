@@ -76,7 +76,8 @@ export async function testCrocodialConnection(
 
 /** One read of 1 user with a candidate key. Never throws; nothing is stored or recorded. */
 async function probeKey(token: string, opts: ClientOptions): Promise<CrocodialTestResult> {
-  const client = new CrocodialClient(token, opts);
+  // a person is waiting for the answer: no minute-long wait on 429 and one short retry at most (it ends as "could not be reached")
+  const client = new CrocodialClient(token, { ...opts, maxRateWaits: 0, maxErrorRetries: 1, retryDelayMs: 500 });
   try {
     const p = await client.page(client.url('employees', { per_page: 1, page: 1 }));
     const users = p.meta.total ?? p.rows.length;
