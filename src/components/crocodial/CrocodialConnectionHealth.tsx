@@ -21,6 +21,8 @@ export type HealthCategory = { label: string; tone: 'ok' | 'warn' | 'bad'; detai
 /** The current state of a connection, worst first: what THIS server sees, then what Crocodial last answered. */
 export function healthCategory(h: Pick<Health, 'current' | 'connection' | 'lastSyncAt'>): HealthCategory {
   const c = h.connection;
+  // a key stored by the CRM that the server can no longer decrypt (its AUTOMATION_SECRET_KEY changed)
+  if (c.health === 'KEY_UNREADABLE') return { label: 'Key needs to be entered again', tone: 'warn', detail: 'Paste the Crocodial key again (Replace key).' };
   if (!h.current.nameValid) return { label: 'Setting name is not valid', tone: 'bad' };
   if (!h.current.credentialDetected) return { label: 'Secret missing from this server’s runtime', tone: 'bad' };
   if (!h.current.credentialFormatValid) return { label: 'Secret exists but its format is invalid', tone: 'bad', detail: 'It must not contain spaces, quotes or the word "Bearer".' };

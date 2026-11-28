@@ -12,7 +12,8 @@ import { resolveCredential } from './runtime.js';
  */
 export const CROCODIAL_BASE = 'https://app.crocodial.app/api/datalake/outbound';
 export type CrocodialResource = 'employees' | 'branches' | 'leads' | 'call-logs' | 'followups' | 'remarks';
-export type CrocodialHealth = 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR';
+// KEY_UNREADABLE: a key stored by the CRM that this server can no longer decrypt (server/crocodial/keys.ts)
+export type CrocodialHealth = 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR' | 'KEY_UNREADABLE';
 
 export class CrocodialError extends Error {
   constructor(readonly health: Exclude<CrocodialHealth, 'OK'>, message: string, readonly status: number | null = null) {
@@ -27,7 +28,7 @@ export type CrocodialFetch = (url: string, init: RequestInit) => Promise<Respons
  * The connection's token, from this server's settings (process.env, then the Worker's bindings; with an explicit env, only that). A name
  * that does not follow the convention is never looked up, and a value that is not shaped like a token is not used (server/crocodial/runtime.ts).
  */
-export function crocodialToken(credentialRef: string, env?: NodeJS.ProcessEnv): string | null {
+export function crocodialToken(credentialRef: string | null, env?: NodeJS.ProcessEnv): string | null {
   return resolveCredential(credentialRef, env);
 }
 
@@ -87,6 +88,11 @@ export interface ClientOptions {
   minGapMs?: number;
   timeoutMs?: number;
   base?: string;
+  /** how many times a 429 is waited out (a minute each; default 2). "Save key" uses 0: it answers at once instead. */
+  maxRateWaits?: number;
+  /** how many times a network error or 5xx is retried (default 2), and the first back-off (default 2 s, doubled each time) */
+  maxErrorRetries?: number;
+  retryDelayMs?: number;
 }
 
 const realSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
@@ -97,6 +103,9 @@ export class CrocodialClient {
   private readonly minGapMs: number;
   private readonly timeoutMs: number;
   private readonly base: string;
+  private readonly maxRateWaits: number;
+  private readonly maxErrorRetries: number;
+  private readonly retryDelayMs: number;
   private last = 0;
   requests = 0;
 
@@ -106,6 +115,9 @@ export class CrocodialClient {
     this.minGapMs = opts.minGapMs ?? 1_200;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
     this.base = (opts.base ?? CROCODIAL_BASE).replace(/\/+$/, '');
+    this.maxRateWaits = opts.maxRateWaits ?? 2;
+    this.maxErrorRetries = opts.maxErrorRetries ?? 2;
+    this.retryDelayMs = opts.retryDelayMs ?? 2_000;
   }
 
   url(resource: CrocodialResource, params: Record<string, string | number | undefined> = {}): string {
@@ -130,19 +142,19 @@ export class CrocodialClient {
         res = await this.doFetch(url, { method: 'GET', headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/json' }, signal: ctl.signal });
       } catch (err) {
         clearTimeout(timer);
-        if (++errors > 2) throw new CrocodialError('ERROR', `Crocodial could not be reached (${(err as Error).name || 'network error'}).`);
-        await this.sleep(2_000 * errors);
+        if (++errors > this.maxErrorRetries) throw new CrocodialError('ERROR', `Crocodial could not be reached (${(err as Error).name || 'network error'}).`);
+        await this.sleep(this.retryDelayMs * errors);
         continue;
       }
       clearTimeout(timer);
       if (res.status === 429) {
-        if (++rateWaits > 2) throw new CrocodialError('RATE_LIMITED', 'Crocodial\'s limit of 60 requests a minute was reached. Try again in a minute.', 429);
+        if (++rateWaits > this.maxRateWaits) throw new CrocodialError('RATE_LIMITED', 'Crocodial\'s limit of 60 requests a minute was reached. Try again in a minute.', 429);
         await this.sleep(60_000);
         continue;
       }
       if (res.status >= 500) {
-        if (++errors > 2) throw new CrocodialError('ERROR', `Crocodial answered ${res.status}.`, res.status);
-        await this.sleep(2_000 * errors);
+        if (++errors > this.maxErrorRetries) throw new CrocodialError('ERROR', `Crocodial answered ${res.status}.`, res.status);
+        await this.sleep(this.retryDelayMs * errors);
         continue;
       }
       const body = await res.json().catch(() => null) as { message?: unknown } | null;

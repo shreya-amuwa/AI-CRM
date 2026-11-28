@@ -1,4 +1,4 @@
-import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, ReceiptIndianRupee, SlidersHorizontal, Tag, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, PlugZap, ReceiptIndianRupee, SlidersHorizontal, Tag, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import type { ShellNavGroup, ShellNavItem } from '../layout/shell';
 
 /**
@@ -72,13 +72,15 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
           { ...o.reportsNav, badge: o.reportsBadge }
         ]
       },
-      // Crocodial (read-only calling app): the head's own activity and leads when they are connected, and the connected people they cover
-      ...(o.crocodialSelf || o.crocodialTeam ? [{
+      // Crocodial (read-only calling app): the head's own activity and leads when they are connected, and the connected people they cover;
+      // a CEO always has Crocodial Integration (connect the departments they run), so the section is there before anything is connected
+      ...(o.crocodialSelf || o.crocodialTeam || o.operationsHead ? [{
         label: 'Crocodial',
         items: [
           ...(o.crocodialSelf ? [{ id: 'crocodial-me', label: 'My Crocodial Activity', icon: PhoneCall }, { id: 'crocodial-leads', label: 'My Crocodial Leads', icon: ListChecks }] : []),
           // a CEO's overview covers every Sales department they are assigned (department, team and employee drill-down, refresh, sync status)
-          ...(o.crocodialTeam ? [{ id: 'crocodial', label: o.operationsHead ? 'Crocodial Overview' : 'Department Crocodial Activity', icon: Users }] : [])
+          ...(o.crocodialTeam ? [{ id: 'crocodial', label: o.operationsHead ? 'Crocodial Overview' : 'Department Crocodial Activity', icon: Users }] : []),
+          ...(o.operationsHead ? [{ id: 'crocodial-setup', label: 'Crocodial Integration', icon: PlugZap }] : [])
         ]
       }] : []),
       {
