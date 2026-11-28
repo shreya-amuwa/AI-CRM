@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, FileSpreadsheet } from 'lucide-react';
-import type { SalesLeadAssignee, SalesSheet, SalesSheetCheck, SalesSheetIssues } from '../../../shared/contracts';
+import type { SalesForwardAssignee, SalesLeadAssignee, SalesReceivedSheet, SalesSheet, SalesSheetCheck, SalesSheetIssues } from '../../../shared/contracts';
 import { TELECALLER_SHEET_MAX_BYTES } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
 import { salesHeadApi } from '../../lib/api/endpoints';
@@ -29,6 +29,7 @@ async function readSheetFile(name: string, bytes: ArrayBuffer): Promise<Workbook
 
 /** Who receives a sheet and what happens to it. */
 const roleOf = (p: Pick<SalesLeadAssignee, 'mode' | 'role'>) => (p.mode === 'TELECALLER' ? 'Telecaller' : p.role);
+const ROLE_GROUPS = ['Department Head', 'Team Lead', 'Team Member', 'Telecaller'] as const;
 
 interface Picked {
   fileName: string;
@@ -61,6 +62,8 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
   const [assigning, setAssigning] = useState(false);
   const [done, setDone] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ sheet: SalesSheet; data: SalesSheetIssues | null; error: string | null } | null>(null);
+  const [deptFilter, setDeptFilter] = useState('');
+  const [received, setReceived] = useState<SalesReceivedSheet[]>([]);
   const busy = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -70,6 +73,8 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
       ([a, s]) => (setPeople(a), setSheets(s)),
       e => (setError(errorMessage(e)), setPeople(p => p ?? []))
     );
+    // the sheets a CEO gave to this Department Head (none for anybody else)
+    salesHeadApi.receivedSheets().then(setReceived, () => setReceived([]));
   }, []);
   useEffect(load, [load]);
   // with a single Telecaller there is nothing to choose
@@ -170,7 +175,12 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
   };
 
   const blocked = !check || check.summary.valid === 0 || check.alreadyAssigned || checking;
-  const groupsOfPeople = people ? (['Team Lead', 'Team Member', 'Telecaller'] as const).map(r => ({ role: r, list: people.filter(p => roleOf(p) === r) })).filter(g => g.list.length) : [];
+  // a Sales CEO covers several departments: the list can be narrowed to one (the department is always the recipient's, decided by the server)
+  const departments = people ? [...new Map(people.filter(p => p.departmentId).map(p => [p.departmentId as string, p.department ?? 'Department'])).entries()] : [];
+  const shown = people ? people.filter(p => !deptFilter || p.departmentId === deptFilter) : [];
+  const groupsOfPeople = ROLE_GROUPS.map(r => ({ role: r, list: shown.filter(p => roleOf(p) === r) })).filter(g => g.list.length);
+  const multiDept = departments.length > 1;
+  const sheetDepts = new Set(sheets.map(s => s.department).filter(Boolean));
   const openFailed = (sheet: SalesSheet) => {
     setFailed({ sheet, data: null, error: null });
     salesHeadApi.sheetIssues(sheet.id).then(d => setFailed(f => (f && f.sheet.id === sheet.id ? { ...f, data: d } : f)), e => setFailed(f => (f && f.sheet.id === sheet.id ? { ...f, error: errorMessage(e) } : f)));
@@ -188,6 +198,15 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
         </div>
       ) : (
         <Card className="p-5 space-y-4" label="Upload and assign a lead sheet">
+          {multiDept && (
+            <div className="max-w-sm">
+              <label htmlFor="la-dept" className="block text-xs font-medium text-slate-600 mb-1">Department</label>
+              <select id="la-dept" className={tcInput} value={deptFilter} onChange={e => { setDeptFilter(e.target.value); setAssigneeId(''); }}>
+                <option value="">All my Sales departments</option>
+                {departments.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label htmlFor="la-assignee" className="block text-xs font-medium text-slate-600 mb-1">Give the sheet to <span aria-hidden="true">*</span></label>
@@ -195,7 +214,7 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
                 <option value="">Choose a Sales person…</option>
                 {groupsOfPeople.map(g => (
                   <optgroup key={g.role} label={`${g.role}s`}>
-                    {g.list.map(p => <option key={p.id} value={p.id}>{p.name} · {roleOf(p)} · {p.team} ({p.mode === 'TELECALLER' ? `${p.openContacts} calls pending` : `${p.openLeads ?? 0} open leads`})</option>)}
+                    {g.list.map(p => <option key={p.id} value={p.id}>{p.name} · {roleOf(p)} · {p.role === 'Department Head' ? p.department : p.team}{multiDept && p.role !== 'Department Head' && p.department ? ` (${p.department})` : ''} ({p.mode === 'TELECALLER' ? `${p.openContacts} calls pending` : `${p.openLeads ?? 0} open leads`})</option>)}
                   </optgroup>
                 ))}
               </select>
@@ -203,6 +222,8 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
                 <p className="mt-1.5 text-xs text-slate-500" data-testid="assign-mode">
                   {assignee.mode === 'TELECALLER'
                     ? 'The Telecaller sees these contacts in their Tasks, calls them, and turns the interested ones into leads.'
+                    : assignee.role === 'Department Head'
+                    ? `${assignee.name} is the Sales Department Head of ${assignee.department ?? 'the department'} (${assignee.openLeads ?? 0} open leads now). The valid rows become leads in their pipeline; they are notified, see that you assigned them, and forward them to their Team Leads and Team Members.`
                     : `The valid rows become new leads in ${assignee.name}'s own pipeline (My Leads). ${assignee.role === 'Team Lead' ? 'They' : 'They, their Team Lead'} and you see them.`}
                 </p>
               )}
@@ -304,7 +325,9 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
           <div className="space-y-4">
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div><dt className="text-[11px] font-semibold text-slate-500">Give to</dt><dd className="font-bold text-slate-900" data-testid="confirm-name">{assignee.name}</dd></div>
-              <div><dt className="text-[11px] font-semibold text-slate-500">Role</dt><dd className="text-slate-900" data-testid="confirm-role">{roleOf(assignee)} · {assignee.team}</dd></div>
+              <div><dt className="text-[11px] font-semibold text-slate-500">Role</dt><dd className="text-slate-900" data-testid="confirm-role">{roleOf(assignee)} · {assignee.role === 'Department Head' ? assignee.department : assignee.team}</dd></div>
+              {assignee.department && <div><dt className="text-[11px] font-semibold text-slate-500">Department</dt><dd className="text-slate-900" data-testid="confirm-department">{assignee.department}</dd></div>}
+              <div><dt className="text-[11px] font-semibold text-slate-500">Note</dt><dd className="text-slate-900 break-words">{note.trim() || '-'}</dd></div>
               <div><dt className="text-[11px] font-semibold text-slate-500">Sheet</dt><dd className="text-slate-900 break-all">{picked.fileName}</dd></div>
               <div><dt className="text-[11px] font-semibold text-slate-500">{assignee.mode === 'LEADS' ? 'New leads' : 'Contacts'}</dt><dd className="text-slate-900">{check.summary.valid} valid · {check.summary.invalid + check.summary.duplicates} left out</dd></div>
             </dl>
@@ -340,16 +363,19 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
         </Dialog>
       )}
 
+      {received.length > 0 && <ReceivedSheets sheets={received} onChanged={load} />}
+
       <Card label="Uploaded sheets">
         <h2 className="px-5 pt-5 pb-3 text-base font-extrabold text-slate-900">Uploaded sheets</h2>
         {sheets.length === 0 ? <EmptyState title="Nothing uploaded yet" /> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm min-w-[1000px]">
-              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Sheet', 'Assigned to', 'Uploaded by', 'Uploaded', 'Assigned', 'Rows', 'Valid', 'Invalid', 'Duplicates', 'Status', 'Failed rows', 'Original file'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
+              <thead><tr className="text-left text-[11px] text-slate-500 bg-slate-50/60">{['Sheet', ...(sheetDepts.size > 1 ? ['Department'] : []), 'Assigned to', 'Uploaded by', 'Uploaded', 'Assigned', 'Rows', 'Valid', 'Invalid', 'Duplicates', 'Status', 'Failed rows', 'Original file'].map(h => <th key={h} scope="col" className="px-4 py-2.5 font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {sheets.map(s => (
                   <tr key={s.id}>
                     <td className="px-4 py-3 font-semibold text-slate-900">{s.fileName}{s.note ? <span className="block text-xs font-normal text-slate-500">{s.note}</span> : null}</td>
+                    {sheetDepts.size > 1 && <td className="px-4 py-3">{s.department ?? '-'}</td>}
                     <td className="px-4 py-3">{s.assignedTo}<span className="block text-xs text-slate-500">{s.mode === 'TELECALLER' ? 'Telecaller · contacts to call' : `${s.assigneeRole ?? 'Sales'} · leads in their pipeline`}</span></td>
                     <td className="px-4 py-3">{s.uploadedBy || '-'}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{dateText(s.uploadedAt)}</td>
@@ -376,5 +402,84 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
         )}
       </Card>
     </div>
+  );
+};
+
+/**
+ * A Department Head's sheets from the CEO: who assigned them and when, how many leads are still with them, and forwarding the open ones to a
+ * Sales Team Lead or Team Member of that department (the same lead records change owner; nothing is copied).
+ */
+const ReceivedSheets: React.FC<{ sheets: SalesReceivedSheet[]; onChanged: () => void }> = ({ sheets, onChanged }) => {
+  const [open, setOpen] = useState<SalesReceivedSheet | null>(null);
+  const [people, setPeople] = useState<SalesForwardAssignee[] | null>(null);
+  const [to, setTo] = useState('');
+  const [count, setCount] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const busy = useRef(false);
+  const start = (s: SalesReceivedSheet) => {
+    setOpen(s); setPeople(null); setTo(''); setCount(''); setProblem(null);
+    salesHeadApi.forwardAssignees(s.id).then(setPeople, e => (setPeople([]), setProblem(errorMessage(e))));
+  };
+  const n = count.trim() === '' ? undefined : Number(count);
+  const badCount = n !== undefined && (!Number.isInteger(n) || n < 1 || (open ? n > open.openWithMe : false));
+  const forward = async () => {
+    if (!open || !to || badCount || busy.current) return;
+    busy.current = true; setSaving(true); setProblem(null);
+    try {
+      const r = await salesHeadApi.forwardSheet(open.id, to, n);
+      setDone(`${r.moved} lead${r.moved === 1 ? '' : 's'} of ${open.fileName} forwarded to ${r.assignee.name}.`);
+      setOpen(null);
+      onChanged();
+    } catch (err) {
+      setProblem(errorMessage(err));
+    } finally {
+      busy.current = false; setSaving(false);
+    }
+  };
+  return (
+    <Card label="Sheets assigned to you">
+      <h2 className="px-5 pt-5 pb-1 text-base font-extrabold text-slate-900">Sheets assigned to you</h2>
+      <p className="px-5 pb-3 text-xs text-slate-500">Leads the CEO gave you. They are in your pipeline; forward them to your Team Leads and Team Members.</p>
+      {done && <p role="status" className="mx-5 mb-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">{done}</p>}
+      <ul className="divide-y divide-slate-100" data-testid="received-sheets">
+        {sheets.map(s => (
+          <li key={s.id} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-slate-900 break-words">{s.fileName}{s.department ? <span className="font-normal text-slate-500"> · {s.department}</span> : null}</p>
+              <p className="text-xs text-slate-500">Assigned by {s.assignedBy ?? 'unknown'}{s.assignedByRole ? ` (${s.assignedByRole})` : ''} · {dateText(s.assignedAt)}{s.note ? ` · ${s.note}` : ''}</p>
+              <p className="text-xs text-slate-600 mt-0.5"><b>{s.openWithMe}</b> open with you · {s.forwarded} forwarded · {s.converted} converted · {s.valid} in the sheet</p>
+            </div>
+            <button type="button" className={tcBtn.secondary} disabled={s.openWithMe === 0} onClick={() => start(s)}>Forward leads</button>
+          </li>
+        ))}
+      </ul>
+      {open && (
+        <Dialog title={`Forward leads of ${open.fileName}`} description={`${open.openWithMe} open lead${open.openWithMe === 1 ? '' : 's'} are with you. The oldest rows go first.`} onClose={() => !saving && setOpen(null)} persistent={saving}>
+          <div className="space-y-3">
+            {problem && <ErrorBanner message={problem} />}
+            {people === null ? <Spinner /> : people.length === 0 ? <p className="text-sm text-slate-600">No active Sales Team Lead or Team Member in {open.department ?? 'this department'}.</p> : (
+              <>
+                <label className="block text-xs font-medium text-slate-600">Forward to
+                  <select className={`${tcInput} mt-1`} value={to} onChange={e => setTo(e.target.value)}>
+                    <option value="">Choose a Team Lead or Team Member…</option>
+                    {people.map(p => <option key={p.id} value={p.id}>{p.name} · {p.role} · {p.team} ({p.openLeads} open leads)</option>)}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-slate-600">How many (leave empty for all {open.openWithMe})
+                  <input className={`${tcInput} mt-1`} inputMode="numeric" value={count} onChange={e => setCount(e.target.value.replace(/[^0-9]/g, ''))} aria-invalid={badCount} />
+                </label>
+                {badCount && <p className="text-xs text-rose-700">Enter a number from 1 to {open.openWithMe}.</p>}
+              </>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" className={tcBtn.secondary} onClick={() => setOpen(null)} disabled={saving}>Cancel</button>
+              <button type="button" className={tcBtn.primary} onClick={() => void forward()} disabled={saving || !to || badCount}>{saving ? 'Forwarding…' : 'Forward'}</button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+    </Card>
   );
 };

@@ -81,7 +81,7 @@ export const CrocodialActivityPanel: React.FC<{ profileId?: string; title?: stri
           <p className="text-xs text-slate-500">Source: Crocodial (read-only){data?.lastSyncAt ? ` · last synced ${when(data.lastSyncAt)}` : ''}{data?.timezone ? ` · ${data.timezone}` : ''}</p>
         </div>
         {!profileId && caps?.self.state === 'CONNECTED' ? (
-          <CrocodialRefreshControl scope="SELF" label="Refresh My Data" lastSyncAt={data?.lastSyncAt ?? caps.self.lastSyncAt} onCompleted={load}
+          <CrocodialRefreshControl scope="SELF" label="Sync My Data" lastSyncAt={data?.lastSyncAt ?? caps.self.lastSyncAt} onCompleted={load}
             resume={caps.recent?.scope === 'SELF' ? caps.recent : null} />
         ) : null}
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Period">

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  SalesIncome, SalesLeadAssignee, SalesRole, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
+  SalesForwardAssignee, SalesForwardResult, SalesIncome, SalesLeadAssignee, SalesReceivedSheet, SalesRole, SalesRoleList, SalesRolePersonDashboard, SalesTeamPerson, SalesLeadDetail, SalesLeadList, SalesOverview, SalesReport, SalesSheet, SalesSheetCheck, SalesSheetIssues, SalesTaskAssignee, SalesTaskList
 } from '../../shared/contracts.js';
 import { getServiceClient } from '../db/supabase.js';
 import { unwrap } from './base.js';
@@ -23,6 +23,10 @@ export class SalesHeadRepository {
       p_assignee: i.assigneeId, p_file_name: i.fileName, p_note: i.note ?? null, p_rows: i.rows, p_hash: i.hash, p_commit: i.commit
     });
   }
+  // a Department Head's received sheets (from the CEO) and forwarding their open leads (20270303000100)
+  received() { return this.rpc<SalesReceivedSheet[]>('sales_sheets_received'); }
+  forwardAssignees(sheetId: string) { return this.rpc<SalesForwardAssignee[]>('sales_forward_assignees', { p_sheet: sheetId }); }
+  forward(sheetId: string, assigneeId: string, count: number | null) { return this.rpc<SalesForwardResult>('sales_sheet_forward', { p_sheet: sheetId, p_assignee: assigneeId, p_count: count }); }
   sheetIssues(sheetId: string) { return this.rpc<SalesSheetIssues>('sales_lead_sheet_issues', { p_sheet: sheetId }); }
   sourceBegin(sheetId: string) { return this.rpc<{ id: string; fileName: string; departmentId: string; contentHash: string }>('sales_lead_sheet_source_begin', { p_sheet: sheetId }); }
   /** After the database allowed it and the file is stored: keep the reference next to the sheet (service role only). */
