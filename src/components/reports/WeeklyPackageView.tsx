@@ -30,6 +30,9 @@ export const WeeklyPackageView: React.FC<{ pkg: ReportPackage; showHistory?: boo
       <dl className="grid gap-2 sm:grid-cols-2">
         {block('Weekly assigned task overview', pkg.assignedOverview)}
         {block('Weekly completed task overview', pkg.completedOverview)}
+        {pkg.pendingOverview ? block('Pending work', pkg.pendingOverview) : null}
+        {pkg.achievements ? block('Achievements', pkg.achievements) : null}
+        {pkg.challenges ? <div className="sm:col-span-2">{block('Challenges', pkg.challenges)}</div> : null}
         <div className="sm:col-span-2">{block('Remarks / Department summary', pkg.note)}</div>
       </dl>
       {pkg.ohReviewer ? (

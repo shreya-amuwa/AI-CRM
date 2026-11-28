@@ -1,11 +1,25 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppFeedbackProvider, confirmAction, promptInput, showDetails, toast } from '../../../src/components/feedback/AppFeedback';
+import { useSubmit } from '../../../src/lib/feedback/useSubmit';
 
 // Buttons that ask the way the CRM's screens do; every answer and every "mutation" is written to window.__log.
 const log = (x: unknown) => { ((window as any).__log ||= []).push(x); };
 let mutations = 0;
 let failOnce = true;
+let saves = 0;
+// a form button the way Phase 1 wires them: one request at a time, a loading toast, success only after the answer
+const SubmitButtons: React.FC = () => {
+  const save = useSubmit();
+  return (
+    <>
+      <button type="button" id="submit" disabled={save.busy} onClick={() => void save.run(async () => { await new Promise(r => setTimeout(r, 400)); saves++; return saves; },
+        { loading: 'Saving lead…', success: 'Lead saved successfully.', error: 'Unable to save lead.' })}>{save.busy ? 'Saving…' : 'Save lead'}</button>
+      <button type="button" id="submit-fail" onClick={() => void save.run(async () => { throw Object.assign(new Error('violates unique constraint "x"'), { code: 'INTERNAL' }); },
+        { error: 'Unable to save lead.' })}>Save failing lead</button>
+    </>
+  );
+};
 const Page: React.FC = () => (
   <div className="p-4 space-y-2">
     <button type="button" id="destructive" onClick={async () => {
@@ -29,7 +43,9 @@ const Page: React.FC = () => (
     <button type="button" id="ok" onClick={() => toast.success('Changes saved successfully.')}>Save</button>
     <button type="button" id="err" onClick={() => toast.error('Unable to save changes.')}>Fail</button>
     <button type="button" id="many" onClick={() => { for (let i = 1; i <= 6; i++) toast.info(`Update ${i}`); }}>Many</button>
+    <SubmitButtons />
   </div>
 );
 (window as any).mount = () => createRoot(document.getElementById('root')!).render(<AppFeedbackProvider><Page /></AppFeedbackProvider>);
 (window as any).mutations = () => mutations;
+(window as any).saves = () => saves;

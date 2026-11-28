@@ -31,6 +31,7 @@ const PEOPLE = [
   { id: 't1', name: 'Chetan Lead', team: 'Sales', teamId: 'tm1', role: 'Team Lead', kind: 'TEAM_LEAD', subRole: null, mode: 'LEADS', openContacts: 0, openLeads: 2, departmentId: 'd1', department: 'M Pillar' }
 ];
 let mode = 'ceo';
+let failCommit = false;
 let calls = [];
 let received = [];
 const ok = (res, data) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ success: true, data })); };
@@ -43,6 +44,11 @@ function api(req, res, body) {
   if (p === '/sales-head/received-sheets') return ok(res, received);
   if (p === '/sales-head/received-sheets/r1/assignees') return ok(res, [{ id: 't1', name: 'Chetan Lead', team: 'Sales', role: 'Team Lead', openLeads: 2 }]);
   if (p === '/sales-head/received-sheets/r1/forward') { received = [{ ...received[0], openWithMe: 1, forwarded: 2 }]; return ok(res, { moved: body.count ?? 3, assignee: { id: 't1', name: 'Chetan Lead', role: 'Team Lead' } }); }
+  if (p === '/sales-head/sheets' && req.method === 'POST' && body.commit && failCommit) {
+    failCommit = false;
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: false, error: { code: 'INTERNAL', message: 'duplicate key value violates unique constraint "lead_sheets_pkey"' } }));
+  }
   if (p === '/sales-head/sheets' && req.method === 'POST') {
     const a = PEOPLE.find(x => x.id === body.assigneeId);
     return ok(res, { committed: !!body.commit, sheetId: body.commit ? 's1' : null, mode: 'LEADS', alreadyAssigned: false,
@@ -104,8 +110,16 @@ try {
     await page.locator('#la-file').setInputFiles(file);
     await page.getByRole('button', { name: /Review and give 2 leads to Asha Head/ }).click();
     check(await page.getByTestId('confirm-department').innerText() === 'M Pillar' && await page.getByText('Expo leads').last().isVisible(), `${label}: the confirmation shows the department and the note`);
+    // a failure first (Phase 1): an error toast in plain words, never the database text; nothing is shown as assigned
+    failCommit = true;
+    await page.getByRole('button', { name: 'Confirm and assign' }).click();
+    await page.getByTestId('toast-error').getByText('The sheet could not be assigned. Nothing was changed.').waitFor();
+    check(await page.getByText(/unique constraint|lead_sheets_pkey/).count() === 0 && await page.getByTestId('toast-success').count() === 0,
+      `${label}: a failed assignment shows a clear error toast, no database text and no success`);
+    await page.getByRole('button', { name: /Review and give 2 leads to Asha Head/ }).click();
     await page.getByRole('button', { name: 'Confirm and assign' }).click();
     await page.getByRole('status').filter({ hasText: /2 leads/ }).waitFor();
+    check(await page.getByTestId('toast-error').count() === 0, `${label}: trying again turns into the success toast`);
     const commit = calls.filter(c => c.method === 'POST' && c.path === '/sales-head/sheets' && c.body.commit).at(-1);
     check(commit && commit.body.assigneeId === 'h1' && !('departmentId' in commit.body), `${label}: the request names the recipient only (the server decides the department)`, commit?.body);
 
@@ -122,7 +136,7 @@ try {
     await page.getByRole('dialog').getByRole('combobox').selectOption('t1');
     await page.getByRole('dialog').getByRole('textbox').fill('2');
     await page.getByRole('dialog').getByRole('button', { name: 'Forward', exact: true }).click();
-    await page.getByText(/2 leads of expo.xlsx forwarded to Chetan Lead/).waitFor();
+    await page.getByTestId('toast-success').getByText(/2 leads of expo.xlsx forwarded successfully to Chetan Lead/).waitFor();
     const fw = calls.find(c => c.path === '/sales-head/received-sheets/r1/forward');
     check(fw && fw.body.assigneeId === 't1' && fw.body.count === 2, `${label}: forwarding sends the member and the number`, fw?.body);
     check(/1 open with you · 2 forwarded/.test(await page.getByTestId('received-sheets').innerText()), `${label}: the list is refreshed`);

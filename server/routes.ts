@@ -434,6 +434,12 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/ai-studio/hr-performance/access', handler: aiStudio.hrAccess },
   { method: 'POST', path: '/ai-studio/hr-performance/viewers', handler: aiStudio.setHrViewer, options: S },
   { method: 'GET', path: '/ai-studio/hr-performance', handler: aiStudio.hrPerformance },
+  // the AI Studio weekly report: Team Lead -> the Super Admin (20270308000100)
+  { method: 'GET', path: '/ai-studio/weekly-reports/week', handler: aiStudio.weeklyWeek },
+  { method: 'POST', path: '/ai-studio/weekly-reports', handler: aiStudio.weeklySave, options: S },
+  { method: 'GET', path: '/ai-studio/weekly-reports', handler: aiStudio.weeklyList },
+  { method: 'GET', path: '/ai-studio/weekly-reports/:id', handler: aiStudio.weeklyOpen },
+  { method: 'POST', path: '/ai-studio/weekly-reports/:id/review', handler: aiStudio.weeklyReview, options: S },
   { method: 'GET', path: '/ai-studio/tasks/:id/reports', handler: aiStudio.taskReports },
   { method: 'GET', path: '/ai-studio/daily-reports/options', handler: aiStudio.dailyReportOptions },
   { method: 'POST', path: '/ai-studio/daily-reports/preview', handler: aiStudio.dailyReportPreview },

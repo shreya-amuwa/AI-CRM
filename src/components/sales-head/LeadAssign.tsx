@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet } from 'lucide-react';
 import type { SalesForwardAssignee, SalesLeadAssignee, SalesReceivedSheet, SalesSheet, SalesSheetCheck, SalesSheetIssues } from '../../../shared/contracts';
 import { TELECALLER_SHEET_MAX_BYTES } from '../../../shared/validation';
 import { errorMessage } from '../../lib/api/client';
+import { toast } from '../feedback/AppFeedback';
+import { dismissToast, errorKind, updateToast } from '../../lib/feedback/feedbackStore';
+import { userMessage } from '../../lib/feedback/errors';
 import { salesHeadApi } from '../../lib/api/endpoints';
 import { buildLeadRows, LEAD_FIELDS, missingFields, readLeadSheet, type LeadMapping, type LeadSheetRead } from '../../lib/salesLeadSheet';
 import { downloadContactSample } from '../../lib/sampleSheetDownload';
@@ -60,7 +63,6 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
   const [reading, setReading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [assigning, setAssigning] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
   const [failed, setFailed] = useState<{ sheet: SalesSheet; data: SalesSheetIssues | null; error: string | null } | null>(null);
   const [deptFilter, setDeptFilter] = useState('');
   const [received, setReceived] = useState<SalesReceivedSheet[]>([]);
@@ -95,7 +97,6 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
   };
 
   const onFile = async (file: File | undefined) => {
-    setDone(null);
     setProblem(null);
     setPicked(null);
     setCheck(null);
@@ -138,15 +139,23 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
     return () => { live = false; };
   }, [picked, assigneeId, mapping]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const lastFailure = useRef<number | null>(null);
   const commit = async () => {
     if (!picked || !assignee || busy.current) return; // a double click must not assign the sheet twice
     busy.current = true;
     setAssigning(true);
     setProblem(null);
+    // a large sheet takes a while (rows, then the original file): one toast follows it from "Assigning…" to the result;
+    // trying again replaces the toast of the previous failed attempt instead of leaving a stale error next to the new result
+    if (lastFailure.current !== null) dismissToast(lastFailure.current);
+    const progress = toast.loading(`Assigning ${picked.fileName}…`);
+    lastFailure.current = null;
     try {
       const rows = buildLeadRows(picked.read, mapping);
       const r = await salesHeadApi.checkSheet({ assigneeId, fileName: picked.fileName, note: note.trim() || null, hash: picked.hash, rows, commit: true });
       if (!r.committed || !r.sheetId) {
+        // the server found a problem with the sheet (it is shown in the check summary): nothing was assigned
+        updateToast(progress, 'warning', 'The sheet was not assigned. Check the summary below.');
         setCheck(r);
         setConfirming(false);
         return;
@@ -155,18 +164,20 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
         ? `${r.summary.valid} leads from ${picked.fileName} are now in ${assignee.name}'s pipeline (My Leads).`
         : `${r.summary.valid} contacts from ${picked.fileName} were given to ${assignee.name}, who will call them.`;
       if (r.summary.invalid + r.summary.duplicates > 0) text += ` ${r.summary.invalid + r.summary.duplicates} rows were left out (see the history).`;
+      let stored = true;
       try {
         await salesHeadApi.storeSource(r.sheetId, toBase64(picked.bytes));
       } catch {
+        stored = false;
         text += ' The original file could not be stored; the contacts are assigned.';
       }
-      setDone(text);
+      updateToast(progress, stored ? 'success' : 'warning', text, { durationMs: 9000 });
       setNote('');
       setConfirming(false);
       reset();
       load();
     } catch (err) {
-      setProblem(errorMessage(err));
+      lastFailure.current = updateToast(progress, errorKind(err), userMessage(err, 'The sheet could not be assigned. Nothing was changed.'));
       setConfirming(false);
     } finally {
       busy.current = false;
@@ -190,7 +201,6 @@ export const LeadAssign: React.FC<{ title?: string }> = ({ title = 'Lead Assign'
     <div className="space-y-5">
       <PageTitle title={title} subtitle="Upload an Excel (.xlsx, .xls) or CSV sheet of contacts and give it to a Sales person of your department: a Team Lead or Team Member gets them as leads in their pipeline, a Telecaller as contacts to call." />
       {error && <ErrorBanner message={error} onRetry={load} />}
-      {done && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium flex items-center gap-2"><CheckCircle2 className="w-4 h-4" aria-hidden="true" />{done}</div>}
 
       {people === null ? <Spinner /> : people.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white">
@@ -416,7 +426,6 @@ const ReceivedSheets: React.FC<{ sheets: SalesReceivedSheet[]; onChanged: () => 
   const [count, setCount] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
   const busy = useRef(false);
   const start = (s: SalesReceivedSheet) => {
     setOpen(s); setPeople(null); setTo(''); setCount(''); setProblem(null);
@@ -429,11 +438,12 @@ const ReceivedSheets: React.FC<{ sheets: SalesReceivedSheet[]; onChanged: () => 
     busy.current = true; setSaving(true); setProblem(null);
     try {
       const r = await salesHeadApi.forwardSheet(open.id, to, n);
-      setDone(`${r.moved} lead${r.moved === 1 ? '' : 's'} of ${open.fileName} forwarded to ${r.assignee.name}.`);
+      toast.success(`${r.moved} lead${r.moved === 1 ? '' : 's'} of ${open.fileName} forwarded successfully to ${r.assignee.name}.`);
       setOpen(null);
       onChanged();
     } catch (err) {
-      setProblem(errorMessage(err));
+      // inside the forward form: the person can change the choice and try again
+      setProblem(userMessage(err, 'The leads could not be forwarded. Please try again.'));
     } finally {
       busy.current = false; setSaving(false);
     }
@@ -442,7 +452,6 @@ const ReceivedSheets: React.FC<{ sheets: SalesReceivedSheet[]; onChanged: () => 
     <Card label="Sheets assigned to you">
       <h2 className="px-5 pt-5 pb-1 text-base font-extrabold text-slate-900">Sheets assigned to you</h2>
       <p className="px-5 pb-3 text-xs text-slate-500">Leads the CEO gave you. They are in your pipeline; forward them to your Team Leads and Team Members.</p>
-      {done && <p role="status" className="mx-5 mb-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">{done}</p>}
       <ul className="divide-y divide-slate-100" data-testid="received-sheets">
         {sheets.map(s => (
           <li key={s.id} className="px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2">
