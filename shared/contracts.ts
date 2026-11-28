@@ -7073,7 +7073,7 @@ export interface MeetingMail {
 // ---------------------------------------------------------------------------
 // Bugs for the Developers team (migration 20270122000300)
 // ---------------------------------------------------------------------------
-export type DevBugStatus = 'PENDING' | 'UNDER_REVIEW' | 'IN_PROGRESS' | 'NEEDS_INFO' | 'RESOLVED' | 'REJECTED' | 'CLOSED';
+export type DevBugStatus = 'PENDING' | 'UNDER_REVIEW' | 'IN_PROGRESS' | 'TESTING' | 'NEEDS_INFO' | 'RESOLVED' | 'REJECTED' | 'CLOSED';
 /** Issue routing (20270128000200): EMPLOYEE (an employee reported it), HR_REPORT (HR reported it), HR_ESCALATION (HR escalated an employee issue) */
 export type DevBugSource = 'EMPLOYEE' | 'HR_REPORT' | 'HR_ESCALATION';
 export type DevIssueCategory = 'BUG' | 'FEATURE_REQUEST' | 'ACCESS_LOGIN' | 'DATA_ISSUE' | 'PERFORMANCE' | 'OTHER';
@@ -7092,8 +7092,12 @@ export interface DevBugRow extends DevBugRouting {
   resolutionNote?: string | null;
   /** the last message of the conversation between the reporter and the developers */
   lastMessage?: { from: 'REPORTER' | 'DEVELOPER'; note: string | null; by: string | null; at: string } | null;
+  /** shared tracking (20270312000400): overall progress 0-100, the team members who worked on it (names), the last update */
+  progress?: number; contributors?: string[]; lastUpdateAt?: string | null; lastUpdateBy?: string | null;
 }
-export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT' | 'MESSAGE'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; at: string }
+export interface DevBugHistoryEntry { id: number; kind: 'SUBMITTED' | 'ASSIGNED' | 'STATUS' | 'COMMENT' | 'MESSAGE' | 'PROGRESS'; internal: boolean; note: string | null; data: Record<string, unknown>; by: string | null; byId?: string | null; at: string }
+/** a team member who worked on a bug, derived from its history (shared tracking, 20270312000400) */
+export interface DevBugContributor { id: string; name: string; updates: number; lastAt: string }
 export interface DevBug extends DevBugRouting {
   sourceIssueId?: string | null; affectedDepartmentId?: string | null; affectedEmployeeId?: string | null;
   id: string; reference: string; title: string; description: string; steps: string | null; status: DevBugStatus;
@@ -7107,19 +7111,22 @@ export interface DevBug extends DevBugRouting {
   /** internal comments only for the developers */
   history: DevBugHistoryEntry[];
   duplicate?: boolean;
+  /** shared tracking (20270312000400): overall progress 0-100, the version (a change made on an old screen is refused), the contributors and the last progress update */
+  progress?: number; version?: number; contributors?: DevBugContributor[];
+  latestUpdate?: { by: string | null; at: string; work: string | null; statusTo: string | null; progressTo: number | null } | null;
 }
 export interface DevBugList {
   total: number;
   counts: { PENDING: number; IN_PROGRESS: number; RESOLVED: number; REJECTED: number; MINE: number; UNASSIGNED: number;
-    UNDER_REVIEW?: number; NEEDS_INFO?: number; CLOSED?: number; OPEN?: number };
-  /** the Team Lead sees every bug; a developer the unassigned ones and their own */
+    UNDER_REVIEW?: number; TESTING?: number; NEEDS_INFO?: number; CLOSED?: number; OPEN?: number };
+  /** every developer sees every bug (20270312000400); isLead only says who may name an optional primary contact */
   isLead: boolean;
   /** the lead's view of the team's workload */
-  byDeveloper: { id: string; name: string; open: number; closed: number }[];
+  byDeveloper: { id: string; name: string; open: number; closed: number; updates?: number }[];
   items: DevBugRow[];
 }
 /** developers: who the Team Lead can assign to (empty for everyone else) */
-export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[] }
+export interface DevBugAccess { isDeveloper: boolean; isLead: boolean; meId?: string | null; developers: { id: string; name: string }[]; /** the whole team (20270312000400) */ team?: { id: string; name: string; isLead: boolean }[] }
 export interface DevTeamMember { id: string; name: string; email: string | null; active: boolean; isLead: boolean; department: string | null; addedAt: string }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // Browser test of bugs for the Developers team (20270122000300, 20270122000400), with each of the three developer accounts: an employee
-// reports bugs; Shreya Mande (Team Lead), Ashish Sinha and Siddhesh Shinde all see every new, unassigned bug; only Shreya assigns (a
-// dropdown with Ashish and Siddhesh); after assignment each developer sees only their own, Shreya sees everything with the team's workload;
-// the assigned developer resolves; the employee follows it. Issue routing (20270128000200): the two recipients (HR or the Developer Team, no
+// reports bugs; Shreya Mande (Team Lead), Ashish Sinha and Siddhesh Shinde all see and work on every bug (20270312000400: no mandatory assignee; only
+// Shreya may name an optional primary contact); each adds progress updates that are kept with their author; contributors, progress and a conflict on an
+// out-of-date screen are shown; a bug nobody was assigned to is resolved; the employee follows it. Issue routing (20270128000200): the two recipients (HR or the Developer Team, no
 // meeting request), category and priority, the conversation (a developer asks for information, the employee answers), whole rows that open,
 // and HR's Raise an Issue page (report to the Developer Team with the affected department / employee; escalate an employee issue once).
 // Real React components and the real dashboard shell, real Chromium; the CRM API is answered in the page like the database
@@ -90,22 +90,25 @@ try {
   check(sent[1].category === 'PERFORMANCE' && sent[1].priority === 'HIGH' && sent[0].category === 'BUG' && sent[0].priority === 'MEDIUM' && !('affectedEmployeeId' in sent[0]),
     'the category and priority are sent (an employee names no affected employee)', sent);
 
-  // ---- every new bug is seen by all three developers: Shreya, Ashish AND Siddhesh
+  // ---- every bug is seen by all three developers: Shreya, Ashish AND Siddhesh (nothing is assigned, nothing has to be)
   for (const [who, name] of [['dev', 'Shreya'], ['ashish', 'Ashish'], ['siddhesh', 'Siddhesh']]) {
     await reset(page);
     await open(page, who);
     check(await navHas(page, 'Bugs') === 1, `${name} has "Bugs" in the menu`);
     await openBugs(page);
     const r = await rows(page);
-    check(r.length === 2 && r.some(x => /Invoice PDF is blank/.test(x) && /Priya Sales/.test(x) && /Wabastore/.test(x) && /Unassigned/.test(x)) && r.some(x => /Ticket list is slow/.test(x)),
-      `${name} sees both new, unassigned bugs with the employee's details`, r);
+    check(r.length === 2 && r.some(x => /Invoice PDF is blank/.test(x) && /Priya Sales/.test(x) && /Wabastore/.test(x) && /0%/.test(x) && /No update yet/.test(x)) && r.some(x => /Ticket list is slow/.test(x)) && !r.some(x => /Unassigned/.test(x)),
+      `${name} sees both new bugs with the employee's details, 0% progress and nobody assigned`, r);
   }
-  // Siddhesh (still signed in) opens a new bug: details, but no assignment control and no status change before assignment
+  // Siddhesh (still signed in) opens a new bug: the progress form, replies and requests for information; no assignment control
   await page.click('button[aria-label^="Open BUG-2026-00001"]');
   await page.waitForSelector('[data-testid="bug-drawer"] >> text=The invoice PDF opens with an empty page');
-  check(!(await page.locator('#bug-assignee').count()) && /the Team Lead assigns new bugs/.test(await page.innerText('[data-testid="bug-assignment"]')), 'a developer has no assignment control');
-  check(await page.isVisible('[data-testid="status-locked"]'), 'nor a status control on an unassigned bug');
-  check(!(await page.locator('[data-testid="ask-info"]').count()) && await page.isVisible('[data-testid="bug-reply"]'), 'he can reply to the reporter, but not ask for information before assignment');
+  check(!(await page.locator('#bug-assignee').count()) && await page.isVisible('[data-testid="bug-progress-form"]') && !(await page.locator('[data-testid="status-locked"]').count()),
+    'a developer has no assignment control, but can update any bug at once (nobody has to be assigned first)');
+  check(await page.locator('[data-testid="ask-info"]').count() === 1 && await page.isVisible('[data-testid="bug-reply"]'), 'he can reply to the reporter and ask for information');
+  check(/Nobody yet/.test(await page.innerText('[data-testid="bug-contributor-list"]')) && /No progress update yet/.test(await page.innerText('[data-testid="bug-latest-update"]')), 'the bug shows no contributor and no update yet');
+  const statuses = await page.$$eval('#bug-status option', os => os.map(o => o.textContent));
+  check(JSON.stringify(statuses) === JSON.stringify(['Pending', 'Under Review', 'In Progress', 'Testing', 'Pending Information', 'Resolved', 'Rejected', 'Closed']), 'the statuses include Testing next to the existing ones', statuses);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
   // the whole row opens a bug (here: a click on the reporter's name)
@@ -115,42 +118,40 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
 
-  // ---- Shreya (Team Lead) assigns: bug 1 to Ashish, bug 2 to Siddhesh
+  // ---- Shreya (Team Lead) may name an optional primary contact; it hides nothing
   await reset(page);
   await open(page, 'dev');
   await openBugs(page);
-  check(/Team Lead view/.test(await page.innerText('[data-testid="bugs-page"]')), 'Shreya has the Team Lead view');
-  for (const [ref, dev] of [['BUG-2026-00001', 'd2'], ['BUG-2026-00002', 'd3']]) {
-    await page.click(`button[aria-label^="Open ${ref}"]`);
-    await page.waitForSelector('#bug-assignee');
-    const opts = await page.$$eval('#bug-assignee option', os => os.map(o => o.textContent));
-    check(opts.length === 3 && opts.includes('Ashish Sinha') && opts.includes('Siddhesh Shinde') && !opts.includes('Shreya Mande'), 'her assignment dropdown offers Ashish Sinha and Siddhesh Shinde', opts);
-    await page.selectOption('#bug-assignee', dev);
-    await page.waitForSelector('text=only you and them see it now');
-    check(/Assigned by Shreya Mande/.test(await page.innerText('[data-testid="bug-assignment"]')), `${ref} assigned, with who and when`);
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(250);
-  }
+  check(/whole team works on them together/.test(await page.innerText('[data-testid="bugs-page"]')), 'the Bugs page says the team works on the bugs together');
+  await page.click('button[aria-label^="Open BUG-2026-00001"]');
+  await page.waitForSelector('#bug-assignee');
+  const contacts = await page.$$eval('#bug-assignee option', os => os.map(o => o.textContent));
+  check(contacts.length === 3 && contacts[0].startsWith('None') && contacts.includes('Ashish Sinha') && contacts.includes('Siddhesh Shinde') && !contacts.includes('Shreya Mande'), 'her optional primary-contact list: none, Ashish Sinha or Siddhesh Shinde', contacts);
+  await page.selectOption('#bug-assignee', 'd2');
+  await page.waitForSelector('text=is the primary contact');
+  check(/Named by Shreya Mande/.test(await page.innerText('[data-testid="bug-assignment"]')), 'the primary contact is named, with who and when');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
   await page.waitForSelector('[data-testid="team-workload"]');
   const wl = await page.innerText('[data-testid="team-workload"]');
-  check(/Ashish Sinha\s*1 open/.test(wl) && /Siddhesh Shinde\s*1 open/.test(wl), 'her consolidated view shows each developer\'s workload', wl);
+  check(/Shreya Mande\s*0 progress updates/.test(wl) && /Ashish Sinha\s*0 progress updates/.test(wl) && /Siddhesh Shinde\s*0 progress updates/.test(wl), 'the team panel lists the three developers with their updates', wl);
   check((await rows(page)).length === 2, 'and she still sees both bugs');
 
-  // ---- after assignment: each developer sees only their own
+  // ---- Ashish (the primary contact) asks the reporter for information; the others still see the bug
   await reset(page);
   await open(page, 'ashish');
   await openBugs(page);
   let r = await rows(page);
-  check(r.length === 1 && /Invoice PDF is blank/.test(r[0]), 'Ashish now sees only the bug assigned to him', r);
+  check(r.length === 2, 'Ashish sees both bugs', r);
   await page.click('button[aria-label^="Open BUG-2026-00001"]');
   await page.waitForSelector('[data-testid="ask-info"]');
   await page.fill('#bug-reply-text', 'Which customer was it? Please send the invoice number.');
   await page.click('[data-testid="ask-info"]');
   await page.waitForSelector('[data-testid="bug-drawer"] [data-testid="bug-status"][data-status="NEEDS_INFO"]');
-  check(/The developers asked for information/.test(await page.innerText('[data-testid="bug-history"]')), 'the assigned developer asks the reporter for information: Pending Information');
+  check(/The developers asked for information/.test(await page.innerText('[data-testid="bug-history"]')), 'a developer asks the reporter for information: Pending Information');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(250);
-  // the employee answers: back to the developer
+  // the employee answers: back to the developers
   await reset(page);
   await open(page, 'employee');
   await page.click('[data-testid="recipient-dev"]');
@@ -160,43 +161,114 @@ try {
   await page.fill('#bug-follow-up-text', 'Sharma Traders, invoice INV-2026-0042.');
   await page.click('[data-testid="send-follow-up"]');
   await page.waitForSelector('text=Sent. Status: In Progress.');
-  check(/Message from the reporter/.test(await page.innerText('[data-testid="my-bug-dialog"] [data-testid="bug-history"]')), 'the employee answers; the issue goes back to the developer (In Progress)');
-  await reset(page);
-  await open(page, 'ashish');
-  await openBugs(page);
-  r = await rows(page);
+  check(/Message from the reporter/.test(await page.innerText('[data-testid="my-bug-dialog"] [data-testid="bug-history"]')), 'the employee answers; the issue goes back to the developers (In Progress)');
+
+  // ---- the three developers add progress updates to the same bug
+  const addUpdate = async (who, workText, status, progress, notes) => {
+    await reset(page);
+    await open(page, who);
+    await openBugs(page);
+    await page.click('button[aria-label^="Open BUG-2026-00001"]');
+    await page.waitForSelector('[data-testid="bug-progress-form"]');
+    await page.fill('#bug-work', workText);
+    await page.selectOption('#bug-status', status);
+    await page.fill('#bug-progress', String(progress));
+    if (notes) await page.fill('#bug-notes', notes);
+    await page.click('[data-testid="bug-save-update"]');
+    await page.waitForSelector('text=Progress update saved.');
+  };
+  await addUpdate('ashish', 'Reproduced with INV-2026-0042: the PDF font is missing', 'IN_PROGRESS', 30, 'Needs the embedded font');
+  check(await page.inputValue('#bug-work') === '' && await page.inputValue('#bug-notes') === '' && /30%/.test(await page.innerText('[data-testid="bug-drawer"] [data-testid="bug-progress"]')), 'after saving, the form is empty again and the bar shows 30%');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  await addUpdate('siddhesh', 'Embedded the font in the PDF template', 'TESTING', 60);
+  check(await page.isVisible('[data-testid="bug-drawer"] [data-testid="bug-status"][data-status="TESTING"]'), 'Siddhesh (not the primary contact) moves the bug to Testing, 60%');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  await addUpdate('dev', 'Reviewed the fix on staging', 'TESTING', 75, 'Ready once Accounts confirms');
+  const drawer = await page.innerText('[data-testid="bug-drawer"]');
+  const contrib = await page.innerText('[data-testid="bug-contributor-list"]');
+  check(/Ashish Sinha/.test(contrib) && /Siddhesh Shinde/.test(contrib) && /Shreya Mande/.test(contrib), 'the bug lists all three contributors', contrib);
+  check(/Shreya Mande/.test(await page.innerText('[data-testid="bug-latest-update"]')) && /Reviewed the fix on staging/.test(await page.innerText('[data-testid="bug-latest-update"]')), 'the latest update names who made it');
+  check(await page.getAttribute('[data-testid="bug-drawer"] [data-testid="bug-progress"]', 'data-progress') === '75', 'the overall progress is 75%');
+  const hist = await page.$$eval('[data-testid="bug-history"] li[data-kind="PROGRESS"]', ls => ls.map(l => l.innerText));
+  check(hist.length === 3 && /Reproduced with INV-2026-0042/.test(hist[0]) && /Ashish Sinha/.test(hist[0]) && /Needs the embedded font/.test(hist[0]) && /Embedded the font/.test(hist[1]) && /Siddhesh Shinde/.test(hist[1])
+    && /Reviewed the fix/.test(hist[2]) && /Shreya Mande/.test(hist[2]) && /Pending → In Progress|In Progress → Testing/.test(hist.join(' ')) && /30% → 60%/.test(hist[1]),
+    'the history keeps three separate progress updates, each with its author, notes and what changed', hist);
+  check(/Created/.test(drawer) && /High|Medium/.test(await page.innerText('[data-testid="bug-drawer"] [data-testid="bug-tags"]')) && /description/i.test(drawer), 'the bug shows its created date, priority and description');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  let tr = await rows(page);
+  check(/75%/.test(tr.find(x => /Invoice PDF is blank/.test(x))) && /Ashish Sinha/.test(tr.find(x => /Invoice PDF is blank/.test(x))), 'the list shows the progress and the contributors', tr);
+
+  // ---- a colleague saved first: the old screen is told, nothing is overwritten
   await reset(page);
   await open(page, 'siddhesh');
   await openBugs(page);
-  r = await rows(page);
-  check(r.length === 1 && /Ticket list is slow/.test(r[0]), 'Siddhesh now sees only the bug assigned to him', r);
-  const blocked = await page.evaluate(async () => (await fetch('/api/v1/bugs/b1')).status);
-  check(blocked === 404, 'and the server refuses Ashish\'s bug to him');
-  // Siddhesh resolves his bug
+  await page.click('button[aria-label^="Open BUG-2026-00001"]');
+  await page.waitForSelector('[data-testid="bug-progress-form"]');
+  await page.evaluate(async () => {
+    const mine = window.__profile;
+    window.__profile = { ...mine, id: 'd2', fullName: 'Ashish Sinha' };
+    const v = (await (await fetch('/api/v1/bugs/b1')).json()).data.version;
+    await fetch('/api/v1/bugs/b1/updates', { method: 'POST', body: JSON.stringify({ work: 'Verified on production data', status: 'TESTING', progress: 90, expectedVersion: v }) });
+    window.__profile = mine;
+  });
+  await page.fill('#bug-work', 'Closing the loop from my old screen');
+  await page.selectOption('#bug-status', 'IN_PROGRESS');
+  await page.fill('#bug-progress', '10');
+  await page.click('[data-testid="bug-save-update"]');
+  await page.waitForSelector('[data-testid="bug-reload"]');
+  check(/Another developer updated this bug/.test(await page.innerText('[data-testid="bug-drawer"] [role="alert"]')), 'saving from an out-of-date screen shows a clear conflict message');
+  check(await page.inputValue('#bug-work') === 'Closing the loop from my old screen', 'and what he typed is kept');
+  await page.click('[data-testid="bug-reload"]');
+  await page.waitForFunction(() => document.querySelector('[data-testid="bug-drawer"] [data-testid="bug-progress"]')?.getAttribute('data-progress') === '90');
+  check(/Verified on production data/.test(await page.innerText('[data-testid="bug-history"]')), 'loading the latest version shows his colleague\'s update (90%, not overwritten)');
+  await page.fill('#bug-progress', '95');
+  await page.selectOption('#bug-status', 'TESTING');
+  await page.dblclick('[data-testid="bug-save-update"]');
+  await page.waitForSelector('text=Progress update saved.');
+  await page.waitForTimeout(300);
+  const progressEntries = await page.$$eval('[data-testid="bug-history"] li[data-kind="PROGRESS"]', ls => ls.length);
+  check(progressEntries === 5 && await page.getAttribute('[data-testid="bug-drawer"] [data-testid="bug-progress"]', 'data-progress') === '95',
+    'saving again works, and a double click stores one update (five in all: three, his colleague\'s, his own)', progressEntries);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+
+  // ---- Siddhesh resolves the other bug through the same form
   await page.click('button[aria-label^="Open BUG-2026-00002"]');
   await page.waitForSelector('#bug-status');
   await page.selectOption('#bug-status', 'RESOLVED');
-  check(await page.isDisabled('button:has-text("Update status")'), 'resolving needs the resolution note first');
-  await page.fill('#bug-note', 'Added an index; the list opens in a second.');
-  await page.click('button:has-text("Update status")');
+  check(await page.isDisabled('[data-testid="bug-save-update"]'), 'resolving needs the update text first');
+  await page.fill('#bug-work', 'Added an index; the list opens in a second.');
+  check(!(await page.isDisabled('[data-testid="bug-save-update"]')) && await page.inputValue('#bug-progress') !== '', 'then it can be saved');
+  await page.fill('#bug-progress', '100');
+  await page.click('[data-testid="bug-save-update"]');
   await page.waitForSelector('[data-testid="bug-drawer"] [data-testid="bug-status"][data-status="RESOLVED"]');
-  check(true, 'Siddhesh resolves the bug assigned to him');
+  check(await page.getAttribute('[data-testid="bug-drawer"] [data-testid="bug-progress"]', 'data-progress') === '100', 'Siddhesh resolves a bug nobody was assigned to: 100%');
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'nothing runs off the screen');
 
-  // ---- Shreya monitors the result; the employee sees the resolution, never internal comments
+  // ---- Shreya monitors the result; the employee sees the resolution, never internal comments or the work log
   await reset(page);
   await open(page, 'dev');
   await openBugs(page);
   await page.click('[role="tab"]:has-text("Resolved")');
   await page.waitForSelector('[data-testid="bug-row"]:has-text("Ticket list is slow")');
   await page.waitForFunction(() => document.querySelectorAll('[data-testid="bug-row"]').length === 1);
-  check(/Resolved/.test((await rows(page))[0]), 'Shreya sees the resolved bug under Resolved');
+  check(/Resolved/.test((await rows(page))[0]) && /100%/.test((await rows(page))[0]) && /Siddhesh Shinde/.test((await rows(page))[0]), 'Shreya sees the resolved bug under Resolved, 100%, with who worked on it');
+  await page.click('[role="tab"]:has-text("Testing")');
+  await page.waitForSelector('[data-testid="bug-row"]:has-text("Invoice PDF is blank")');
+  check((await rows(page)).length === 1, 'and the other one under Testing');
+  await page.click('[role="tab"]:has-text("I worked on")');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid="bug-row"]').length === 1);
+  check(/Invoice PDF is blank/.test((await rows(page))[0]), '"I worked on" lists the bug she added an update to');
   await reset(page);
   await open(page, 'employee');
   await page.click('[data-testid="recipient-dev"]');
   await page.waitForSelector('[data-testid="my-bug-row"]');
   const mine = await page.$$eval('[data-testid="my-bug-row"]', rs => rs.map(x => x.innerText).join(' | '));
-  check(/Resolved/.test(mine) && /Developer: Siddhesh Shinde/.test(mine) && /Added an index/.test(mine) && /Developer: Ashish Sinha/.test(mine), 'the employee sees who works on each bug and the resolution', mine);
+  check(/Resolved/.test(mine) && /Added an index/.test(mine) && /Developer: Ashish Sinha/.test(mine), 'the employee sees the resolution and the primary contact', mine);
+  check(!/Reproduced with INV-2026-0042|Needs the embedded font|Reviewed the fix/.test(mine), 'but none of the developers\' internal work log', mine);
   await page.close();
 
   // ---- HR's Raise an Issue: A. report to the Developer Team, B. the employee issues received (escalate once)

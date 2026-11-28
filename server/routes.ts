@@ -607,6 +607,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/bugs/:id', handler: bugs.detail },
   { method: 'POST', path: '/bugs/:id/assign', handler: bugs.assign, options: S },
   { method: 'POST', path: '/bugs/:id/status', handler: bugs.setStatus, options: S },
+  { method: 'POST', path: '/bugs/:id/updates', handler: bugs.addUpdate, options: S },
   { method: 'POST', path: '/bugs/:id/comment', handler: bugs.comment, options: S },
   { method: 'POST', path: '/bugs/:id/reply', handler: bugs.reply, options: S },
   // Company Notice Board (20270131000200): everyone reads what is addressed to them; publishers send, edit, archive and see read receipts
