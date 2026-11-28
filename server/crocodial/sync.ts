@@ -4,6 +4,7 @@ import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { CrocodialClient, CrocodialError, crocodialToken, safeNextUrl, type ClientOptions, type CrocodialResource } from './client.js';
 import { credentialCheck, credentialProblem, reportRuntime, runtimeInfo } from './runtime.js';
 import { testCrocodialConnection } from './directory.js';
+import { keySecret, openKey } from './keys.js';
 
 /**
  * The read-only Crocodial sync (migration 20270115000200, docs/CROCODIAL_INTEGRATION.md). Runs with the automation dispatch and on the
@@ -185,7 +186,7 @@ export async function runCrocodialSync(
   if (!opts.db && !hasServiceClient()) return { ...out, note: 'The server has no service key.' };
   const db = opts.db ?? getServiceClient();
   const deadline = Date.now() + (opts.budgetMs ?? 15_000);
-  let due: { id: string; credentialRef: string }[];
+  let due: { id: string; credentialRef: string | null; tokenCiphertext?: string | null }[];
   try {
     // Sync now (one connection) is always due; scheduled runs only for connections not synced within the setting
     due = await rpc(db, 'croc_sync_due', { p_connection: opts.connectionId ?? null, p_min_interval: `${syncEveryMinutes(opts.env)} minutes` });
@@ -196,7 +197,22 @@ export async function runCrocodialSync(
     if (Date.now() > deadline) break;
     const summary: ConnectionSummary = { connectionId: c.id, health: 'OK', resources: [] };
     out.connections.push(summary);
-    const token = crocodialToken(c.credentialRef, opts.env);
+    // a key stored by the CRM comes first; one this server can no longer decrypt (AUTOMATION_SECRET_KEY changed) is never guessed around:
+    // the connection is marked "Key needs to be entered again" and skipped
+    const stored = c.tokenCiphertext ? openKey(c.tokenCiphertext, keySecret(opts.env)) : null;
+    if (c.tokenCiphertext && !stored) {
+      summary.health = 'KEY_UNREADABLE';
+      summary.error = 'Key needs to be entered again.';
+      await db.rpc('croc_connection_status', { p_connection: c.id, p_health: 'KEY_UNREADABLE', p_error: null });
+      continue;
+    }
+    const token = stored ?? crocodialToken(c.credentialRef, opts.env);
+    if (!token && !c.credentialRef) {
+      summary.health = 'NO_CREDENTIAL';
+      summary.error = 'No Crocodial key has been entered for this connection yet.';
+      await db.rpc('croc_connection_status', { p_connection: c.id, p_health: 'NO_CREDENTIAL', p_error: summary.error });
+      continue;
+    }
     if (!token) {
       // A server without the token never marks a connection broken while another server (for example the Cloudflare Worker, when an
       // old Vercel deployment still receives the scheduled call) has a valid one: it leaves the read to that server.
@@ -208,12 +224,12 @@ export async function runCrocodialSync(
         summary.error = 'Skipped: this server has no token; another server that has it reads this connection.';
         continue;
       }
-      summary.error = credentialProblem(c.credentialRef, check, rt);
+      summary.error = credentialProblem(c.credentialRef ?? '', check, rt);
       await db.rpc('croc_connection_status', { p_connection: c.id, p_health: 'NO_CREDENTIAL', p_error: summary.error });
       continue;
     }
     // the account's users first: a new Crocodial user appears for mapping, a removed one is marked missing
-    const dir = await testCrocodialConnection(c, { ...opts, db, context: opts.context ?? 'SYNC' });
+    const dir = await testCrocodialConnection(c, { ...opts, db, context: opts.context ?? 'SYNC', token: stored ?? undefined });
     out.requests += dir.requests;
     if (!dir.ok) {
       summary.health = dir.health;

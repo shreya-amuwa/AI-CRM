@@ -296,5 +296,132 @@ select test.check((select count(*) >= 2 from crocodial_connections where credent
 set role authenticated;
 select test.login('sa');
 select test.must_fail($$select croc_connection_save('{"name":"CC Dup","credentialRef":"CROCODIAL_TOKEN_CCTEST_MP"}'::jsonb)$$, 'a credential name is still used by one connection only', 'CONFLICT');
+
+\echo '   the MD''s kill switch also blocks a connection or link that is already off'
+set role authenticated;
+select test.login('sa');
+select croc_rollout_set(test.dept('whatsbox'), 'SALES', true);
+select test.login('lt_ceo_a');
+select test.check(not (croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', false)) ->> 'enabled')::boolean, 'the CEO switches their connection off');
+select croc_department_link_save((select id from cc where k = 'a'), test.dept('wabastore'), 'SALES', false);
+select test.login('sa');
+select test.check((croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', false)) ->> 'mdDisabledAt') is not null,
+  'the MD saving it off while it is already off records the MD''s switch-off');
+select test.check((croc_department_link_save((select id from cc where k = 'a'), test.dept('wabastore'), 'SALES', false) ->> 'mdDisabledAt') is not null,
+  'and the same for a link that is already off');
+reset role;
+create temp table cc_md_at as select md_disabled_at as t from crocodial_connections where id = (select id from cc where k = 'a');
+set role authenticated;
+select croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', false));
+reset role;
+select test.check((select md_disabled_at from crocodial_connections where id = (select id from cc where k = 'a')) = (select t from cc_md_at), 'saving it off again keeps the first time');
+set role authenticated;
+select test.check((croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A')) ->> 'mdDisabledAt') is not null, 'a rename by the MD (no enabled) leaves it');
+select test.login('lt_ceo_a');
+select test.cc_fails($$select croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', true))$$, 'so the CEO cannot switch it on', :'md_off');
+select test.cc_fails($$select croc_department_link_save((select id from cc where k = 'a'), test.dept('wabastore'), 'SALES', true)$$, 'nor the link', :'md_off');
+select test.login('sa');
+select test.check((croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', true)) ->> 'mdDisabledAt') is null, 'the MD switching it on clears it');
+select test.check((croc_department_link_save((select id from cc where k = 'a'), test.dept('wabastore'), 'SALES', true) ->> 'mdDisabledAt') is null, 'and the link''s');
+
+\echo '   the write paths lock the connection before checking the manager (two CEOs adding links at once)'
+reset role;
+drop table cc_md_at;
+select test.check((select bool_and(position('for update' in p.prosrc) > 0 and position('for update' in p.prosrc) < position('require_manager' in p.prosrc))
+                     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'public' and p.proname in ('croc_department_link_save', 'croc_connection_save', 'croc_token_store', 'croc_token_clear')),
+  'croc_department_link_save, croc_connection_save, croc_token_store and croc_token_clear lock the connection row first');
+select test.check((select count(*) = 4 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'public' and p.proname in ('croc_department_link_save', 'croc_connection_save', 'croc_token_store', 'croc_token_clear')), '(all four exist)');
+
+\echo '   stored keys (Task 8): the service role stores them; the plain key never reaches the database'
+\set fp_a '''aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'''
+\set fp_b '''bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'''
+\set cipher_a '''v1:aXZhaXZhaXZh:dGFndGFndGFn:Y2lwaGVyLWEtc2VhbGVk'''
+select test.check(not has_function_privilege('authenticated', 'public.croc_token_store(uuid, text, text, text, uuid)', 'execute')
+              and not has_function_privilege('anon', 'public.croc_token_store(uuid, text, text, text, uuid)', 'execute')
+              and has_function_privilege('service_role', 'public.croc_token_store(uuid, text, text, text, uuid)', 'execute'),
+  'croc_token_store is not executable by authenticated (service role only)');
+select test.check(not has_function_privilege('authenticated', 'public.croc_token_clear(uuid, uuid)', 'execute')
+              and not has_function_privilege('authenticated', 'public.croc_token_ciphertext(uuid)', 'execute')
+              and not has_function_privilege('authenticated', 'public.croc_sync_due(interval, uuid)', 'execute'),
+  'nor croc_token_clear, croc_token_ciphertext or croc_sync_due');
+select test.check(has_function_privilege('authenticated', 'public.croc_can_manage_check(uuid)', 'execute'), 'croc_can_manage_check is (the server checks as the user)');
+select test.check(not has_table_privilege('authenticated', 'public.crocodial_connections', 'select'), 'and nobody signed in reads the table itself');
+select test.check((select count(*) = 5 from information_schema.columns where table_name = 'crocodial_connections'
+                    and column_name in ('token_ciphertext', 'token_fingerprint', 'token_last4', 'token_set_by', 'token_set_at')), 'the five token columns exist');
+set role authenticated;
+select test.login('lt_ceo_a');
+select test.must_fail($$select croc_token_store((select id from cc where k = 'a'), 'v1:x:y:z', repeat('c', 64), 'zzzz', test.id('lt_ceo_a'))$$, 'a signed-in CEO cannot call croc_token_store', 'permission denied');
+select croc_can_manage_check((select id from cc where k = 'a'));
+select test.login('lt_ceo_b');
+select test.cc_fails($$select croc_can_manage_check((select id from cc where k = 'a'))$$, 'croc_can_manage_check refuses a CEO who does not manage it (exact copy)', :'forbidden');
+select test.login('sh_head');
+select test.cc_fails($$select croc_can_manage_check((select id from cc where k = 'b'))$$, 'and a plain Department Head', :'forbidden');
+reset role;
+select set_config('request.jwt.claims', '', false);
+grant all on cc, cc_t0 to service_role;
+grant usage on schema test to service_role;
+grant execute on all functions in schema test to service_role;
+set role service_role;
+create temp table cc_store as select croc_token_store((select id from cc where k = 'a'), :cipher_a, :fp_a, '1a2b', test.id('lt_ceo_a')) as j;
+select test.check((select j ->> 'keySource' = 'DATABASE' and j ->> 'keyLast4' = '1a2b' from cc_store), 'stored: keySource DATABASE and the last 4');
+select test.check((select position('v1:aXZh' in j::text) = 0 and position('aaaaaaaa' in j::text) = 0 from cc_store), 'the answer has no ciphertext or fingerprint');
+select test.cc_fails(format($$select croc_token_store(%L, 'v1:x:y:z', repeat('d', 64), 'dddd', %L)$$, (select id from cc where k = 'a'), test.id('lt_ceo_b')),
+  'an actor who does not manage the connection is refused (exact copy)', :'forbidden');
+select test.cc_fails(format($$select croc_token_store(%L, 'v1:x:y:z', %L, '1a2b', %L)$$, (select id from cc where k = 'b'), :fp_a, test.id('lt_ceo_a')),
+  'the same key on a second connection: CONFLICT (exact copy)', 'CONFLICT: This Crocodial account is already connected (by another department).');
+select test.must_fail(format($$select croc_token_store(%L, 'plain-key-here', repeat('e', 64), 'here', %L)$$, (select id from cc where k = 'b'), test.id('lt_ceo_a')),
+  'a value that is not a v1: ciphertext is refused (never a plain key)', 'VALIDATION_ERROR');
+select test.must_fail(format($$select croc_token_store(%L, 'v1:x:y:z', 'not-a-fingerprint', 'zzzz', %L)$$, (select id from cc where k = 'b'), test.id('lt_ceo_a')),
+  'and so is a malformed fingerprint', 'VALIDATION_ERROR');
+select test.check((croc_token_store((select id from cc where k = 'a'), :cipher_a, :fp_a, '1a2b', test.id('lt_ceo_a')) ->> 'keyLast4') = '1a2b', 'the same key again on its own connection (replace) is fine');
+select test.check((croc_token_store((select id from cc where k = 'mp'), 'v1:bXA=:bXA=:bXA=', :fp_b, '9z9z', test.id('sa')) ->> 'keySource') = 'DATABASE', 'the MD stores a key on any connection');
+select test.check((select position('v1:' in coalesce(croc_token_ciphertext((select id from cc where k = 'a')), '')) = 1), 'croc_token_ciphertext gives the server the ciphertext');
+select test.check((select d ->> 'tokenCiphertext' = 'v1:aXZhaXZhaXZh:dGFndGFndGFn:Y2lwaGVyLWEtc2VhbGVk' from jsonb_array_elements(croc_sync_due('1 minute', (select id from cc where k = 'a'))) d),
+  'croc_sync_due returns tokenCiphertext');
+select croc_connection_status((select id from cc where k = 'a'), 'KEY_UNREADABLE', null);
+reset role;
+select test.check((select health = 'KEY_UNREADABLE' and token_set_by = test.id('lt_ceo_a') and token_set_at is not null and token_last4 = '1a2b'
+                     from crocodial_connections where id = (select id from cc where k = 'a')), 'health KEY_UNREADABLE is accepted; who set the key and when are kept');
+select test.check((select count(*) >= 2 and bool_and(actor_id = test.id('lt_ceo_a')) and bool_and(metadata ->> 'last4' = '1a2b')
+                     from audit_logs where action = 'CROCODIAL_KEY_SET' and entity_id = (select id from cc where k = 'a')), 'CROCODIAL_KEY_SET is audited as the actor, with the last 4 only');
+select test.check(not exists (select 1 from audit_logs where created_at >= (select t from cc_t0)
+                               and (metadata::text like '%v1:aXZh%' or metadata::text like '%aaaaaaaaaaaaaaaa%' or metadata::text like '%v1:bXA=%' or metadata::text like '%bbbbbbbbbbbbbbbb%')),
+  'no audit row contains a ciphertext or a fingerprint');
+set role authenticated;
+select test.login('lt_ceo_a');
+create temp table cc_ov2 as select croc_admin_overview() as o;
+select test.check((select c ->> 'keySource' = 'DATABASE' and c ->> 'keyLast4' = '1a2b' and c ->> 'health' = 'KEY_UNREADABLE'
+                     from cc_ov2, jsonb_array_elements(o -> 'connections') c where (c ->> 'id')::uuid = (select id from cc where k = 'a')), 'the CEO''s overview shows keySource and keyLast4');
+select test.check((select position('v1:aXZh' in o::text) = 0 and position('aaaaaaaaaaaaaaaa' in o::text) = 0 from cc_ov2), 'and never the ciphertext or the fingerprint');
+select test.check((select c ->> 'keySource' = 'NONE' and c -> 'keyLast4' = 'null'::jsonb from cc_ov2, jsonb_array_elements(o -> 'connections') c where (c ->> 'id')::uuid = (select id from cc where k = 'b')),
+  'a connection without a key: NONE');
+select test.check((croc_admin_connection((select id from cc where k = 'a')) ->> 'keySource') = 'DATABASE', 'croc_admin_connection has keySource too');
+drop table cc_ov2;
+select test.login('sa');
+select test.check((select c ->> 'keySource' = 'DATABASE' from jsonb_array_elements(croc_admin_overview() -> 'connections') c where (c ->> 'id')::uuid = (select id from cc where k = 'mp')),
+  'a stored key comes before the server setting (M Pillar: DATABASE)');
+reset role;
+update crocodial_connections set token_ciphertext = null, token_fingerprint = null, token_last4 = null where id = (select id from cc where k = 'mp');
+set role authenticated;
+select test.login('sa');
+select test.check((select c ->> 'keySource' = 'SERVER_SETTING' from jsonb_array_elements(croc_admin_overview() -> 'connections') c where (c ->> 'id')::uuid = (select id from cc where k = 'mp')),
+  'and without one: SERVER_SETTING');
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select test.cc_fails(format($$select croc_token_clear(%L, %L)$$, (select id from cc where k = 'a'), test.id('lt_ceo_b')), 'removing: an actor who does not manage it is refused', :'forbidden');
+select test.check((select j ->> 'keySource' = 'NONE' and not (j ->> 'enabled')::boolean from (select croc_token_clear((select id from cc where k = 'a'), test.id('lt_ceo_a')) j) x),
+  'removing the key clears it and switches the connection off');
+reset role;
+select test.check((select token_ciphertext is null and token_fingerprint is null and token_last4 is null and not enabled and md_disabled_at is null
+                     from crocodial_connections where id = (select id from cc where k = 'a')), 'nothing of the key is left (and the switch-off is the CEO''s, not the MD''s)');
+select test.check((select count(*) = 1 from audit_logs where action = 'CROCODIAL_KEY_REMOVED' and entity_id = (select id from cc where k = 'a') and actor_id = test.id('lt_ceo_a')),
+  'CROCODIAL_KEY_REMOVED is audited');
+set role service_role;
+select test.check((croc_token_store((select id from cc where k = 'b'), 'v1:x:y:z', :fp_a, '1a2b', test.id('lt_ceo_a')) ->> 'keySource') = 'DATABASE', 'once removed, the account can be connected elsewhere');
+reset role;
+drop table cc_store;
 reset role;
 select set_config('request.jwt.claims', '', false);

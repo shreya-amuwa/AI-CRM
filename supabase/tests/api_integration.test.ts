@@ -14087,6 +14087,85 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// ---------------------------------------------------------------------------
+// Crocodial keys stored by the CRM (20270307000100, Task 8): a CEO pastes the key of a connection they manage; the server checks it with
+// one live read, encrypts it and stores it through the service role. The key never comes back in an answer.
+// ---------------------------------------------------------------------------
+{
+  const KEY = 'croc-api-key-not-real-7c3e9d1a';
+  const savedSecret = process.env.AUTOMATION_SECRET_KEY;
+  process.env.AUTOMATION_SECRET_KEY = 'local-test-automation-secret';
+  r = await api('sa', 'POST', '/users', { email: 'api.croc.ceo@amuwa.com', fullName: 'API Croc CEO', password: 'Sup3rSecret!', role: 'DEPARTMENT_HEAD', departmentId: wab.id, headDivision: 'SALES', operationsHead: true });
+  check(r.status === 201 && r.json.data.isOperationsHead === true, 'crocodial keys API: a CEO of Wabastore + Whatsbox is created', r);
+  const ceoId = r.json.data.id as string;
+  await db.query(`delete from public.operations_head_departments where profile_id = $1`, [ceoId]);
+  await db.query(`insert into public.operations_head_departments (profile_id, department_id, division) values ($1, $2, null), ($1, $3, null)`, [ceoId, wab.id, wbx.id]);
+  tokens.set('crocceo', tokenFor(ceoId));
+  const mpDept = (await db.query(`select id from public.departments where slug = 'mpillar'`)).rows[0].id as string;
+  const conn = async (name: string, dept: string, ref: string | null) => {
+    const id = (await db.query(`insert into public.crocodial_connections (name, credential_ref, enabled) values ($1, $2, false) returning id`, [name, ref])).rows[0].id as string;
+    await db.query(`insert into public.crocodial_department_links (connection_id, department_id, division, enabled) values ($1, $2, 'SALES', false)`, [id, dept]);
+    return id;
+  };
+  const ownA = await conn('API key A', wab.id, null);
+  const ownB = await conn('API key B', wbx.id, null);
+  const mdConn = await conn('API key MP', mpDept, 'CROCODIAL_TOKEN_APIKEYMP');
+  // a fake Crocodial: `answer` decides the status of the one live read; every request's Authorization header is kept
+  const realFetch = globalThis.fetch;
+  let answer = 200;
+  const seen: string[] = [];
+  globalThis.fetch = (async (input: any, init?: any) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith('https://app.crocodial.app/')) {
+      seen.push(String(init?.headers?.Authorization ?? ''));
+      return new Response(JSON.stringify(answer === 200 ? { success: true, data: [{ id: 1, name: 'Seller' }], meta: { page: 1, per_page: 1, total: 9, next_page_url: null } } : { message: 'no' }),
+        { status: answer, headers: { 'Content-Type': 'application/json' } });
+    }
+    return realFetch(input, init);
+  }) as typeof fetch;
+  try {
+    r = await api('crocceo', 'POST', `/crocodial/connections/${mdConn}/key`, { key: KEY });
+    check(r.status === 403 && r.json.error.message === 'You can manage Crocodial only for departments you run.' && seen.length === 0,
+      'crocodial keys API: a CEO cannot store a key on a connection they do not manage (403, Crocodial not called)', r);
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownA}/key`, { key: `  ${KEY}\n` });
+    check(r.status === 200 && r.json.data.ok === true && r.json.data.last4 === KEY.slice(-4) && r.json.data.users === 9, 'crocodial keys API: the key is checked and stored (200, last 4, users)', r);
+    check(!JSON.stringify(r.json).includes(KEY) && seen.length === 1 && seen[0] === `Bearer ${KEY}`, 'crocodial keys API: the answer does not contain the key; Crocodial got it once, normalised', { r: r.json, n: seen.length });
+    const row = (await db.query(`select token_ciphertext, token_fingerprint, token_last4, token_set_by from public.crocodial_connections where id = $1`, [ownA])).rows[0];
+    check(row.token_ciphertext.startsWith('v1:') && !row.token_ciphertext.includes(KEY) && row.token_fingerprint === crypto.createHash('sha256').update(KEY).digest('hex')
+      && row.token_last4 === KEY.slice(-4) && row.token_set_by === ceoId, 'crocodial keys API: the database has the ciphertext, the fingerprint and the last 4, not the key', row);
+    r = await api('crocceo', 'GET', '/crocodial/admin');
+    const shown = r.json.data?.connections?.find((c: any) => c.id === ownA);
+    check(r.status === 200 && shown?.keySource === 'DATABASE' && shown?.keyLast4 === KEY.slice(-4) && shown?.credentialConfigured === true,
+      'crocodial keys API: the overview shows keySource DATABASE and keyLast4', shown);
+    const body = JSON.stringify(r.json);
+    check(!body.includes(KEY) && !body.includes(row.token_ciphertext) && !body.includes(row.token_fingerprint), 'crocodial keys API: the overview has no key, ciphertext or fingerprint');
+    const audits = (await db.query(`select metadata::text m from public.audit_logs where entity_id = $1`, [ownA])).rows.map((x: any) => x.m).join(' ');
+    check(/CROCODIAL_KEY_SET/.test((await db.query(`select string_agg(action, ' ') a from public.audit_logs where entity_id = $1`, [ownA])).rows[0].a ?? '')
+      && !audits.includes(KEY) && !audits.includes(row.token_ciphertext) && !audits.includes(row.token_fingerprint), 'crocodial keys API: audited, without the key, ciphertext or fingerprint');
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownB}/key`, { key: KEY });
+    check(r.status === 409 && r.json.error.message === 'This Crocodial account is already connected (by another department).', 'crocodial keys API: the same key on a second connection is refused (409)', r);
+    answer = 401;
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownB}/key`, { key: 'croc-api-key-other-1111' });
+    check(r.status === 422 && r.json.error.message === 'Crocodial refused this key.', 'crocodial keys API: a key Crocodial refuses is not stored (422)', r);
+    check((await db.query(`select token_ciphertext from public.crocodial_connections where id = $1`, [ownB])).rows[0].token_ciphertext === null, 'crocodial keys API: nothing stored for it');
+    answer = 200;
+    delete process.env.AUTOMATION_SECRET_KEY;
+    r = await api('crocceo', 'POST', `/crocodial/connections/${ownB}/key`, { key: 'croc-api-key-other-2222' });
+    check(r.status === 503 && r.json.error.message === "Crocodial keys can't be stored on this server. Ask the Managing Director.", 'crocodial keys API: no AUTOMATION_SECRET_KEY: 503 with the exact copy', r);
+    process.env.AUTOMATION_SECRET_KEY = 'local-test-automation-secret';
+    r = await api('crocceo', 'DELETE', `/crocodial/connections/${mdConn}/key`);
+    check(r.status === 403, 'crocodial keys API: nor remove the key of a connection they do not manage', r);
+    r = await api('crocceo', 'DELETE', `/crocodial/connections/${ownA}/key`);
+    check(r.status === 200 && r.json.data.keySource === 'NONE' && r.json.data.enabled === false, 'crocodial keys API: Disconnect clears the key and switches the connection off', r);
+    check((await db.query(`select token_ciphertext is null and token_fingerprint is null n from public.crocodial_connections where id = $1`, [ownA])).rows[0].n, 'crocodial keys API: nothing of the key is left');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (savedSecret === undefined) delete process.env.AUTOMATION_SECRET_KEY; else process.env.AUTOMATION_SECRET_KEY = savedSecret;
+    await db.query(`delete from private.rate_limit_counters where bucket = $1`, [`croc-key:${ceoId}`]);
+    await db.query(`delete from public.crocodial_connections where id = any($1::uuid[])`, [[ownA, ownB, mdConn]]);
+  }
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

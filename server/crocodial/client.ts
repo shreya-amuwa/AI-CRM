@@ -12,7 +12,8 @@ import { resolveCredential } from './runtime.js';
  */
 export const CROCODIAL_BASE = 'https://app.crocodial.app/api/datalake/outbound';
 export type CrocodialResource = 'employees' | 'branches' | 'leads' | 'call-logs' | 'followups' | 'remarks';
-export type CrocodialHealth = 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR';
+// KEY_UNREADABLE: a key stored by the CRM that this server can no longer decrypt (server/crocodial/keys.ts)
+export type CrocodialHealth = 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR' | 'KEY_UNREADABLE';
 
 export class CrocodialError extends Error {
   constructor(readonly health: Exclude<CrocodialHealth, 'OK'>, message: string, readonly status: number | null = null) {
@@ -27,7 +28,7 @@ export type CrocodialFetch = (url: string, init: RequestInit) => Promise<Respons
  * The connection's token, from this server's settings (process.env, then the Worker's bindings; with an explicit env, only that). A name
  * that does not follow the convention is never looked up, and a value that is not shaped like a token is not used (server/crocodial/runtime.ts).
  */
-export function crocodialToken(credentialRef: string, env?: NodeJS.ProcessEnv): string | null {
+export function crocodialToken(credentialRef: string | null, env?: NodeJS.ProcessEnv): string | null {
   return resolveCredential(credentialRef, env);
 }
 

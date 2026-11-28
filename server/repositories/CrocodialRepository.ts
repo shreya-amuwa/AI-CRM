@@ -68,5 +68,16 @@ export class CrocodialRepository {
   teamLeads(departmentId: string | null, teamId: string | null) { return this.rpc<CrocodialTeamLeads>('croc_team_leads', { p_department: departmentId, p_team: teamId }); }
   leadActivity(customerId: string) { return this.rpc<CrocodialLeadActivity>('croc_lead_activity', { p_customer: customerId }); }
   /** Checks the caller (Super Admin), the connection is on, and the 5-minute limit; records the request. */
-  syncRequest(id: string) { return this.rpc<{ id: string; credentialRef: string }>('croc_sync_request', { p_connection: id }); }
+  syncRequest(id: string) { return this.rpc<{ id: string; credentialRef: string | null }>('croc_sync_request', { p_connection: id }); }
+  // ---- stored Crocodial keys (20270307000100)
+  /** As the signed-in user: refused (FORBIDDEN) unless they manage the connection. */
+  canManageCheck(id: string) { return this.rpc<void>('croc_can_manage_check', { p_connection: id }); }
+  /** Service role only: the ciphertext, fingerprint and last 4 of a key the server encrypted (never the key itself). */
+  tokenStore(id: string, ciphertext: string, fingerprint: string, last4: string, actorId: string) {
+    return this.rpc<CrocodialConnection>('croc_token_store', { p_connection: id, p_ciphertext: ciphertext, p_fingerprint: fingerprint, p_last4: last4, p_actor: actorId });
+  }
+  /** Service role only: clears the key and switches the connection off. */
+  tokenClear(id: string, actorId: string) { return this.rpc<CrocodialConnection>('croc_token_clear', { p_connection: id, p_actor: actorId }); }
+  /** Service role only: the stored ciphertext (the server decrypts it), or null. */
+  tokenCiphertext(id: string) { return this.rpc<string | null>('croc_token_ciphertext', { p_connection: id }); }
 }

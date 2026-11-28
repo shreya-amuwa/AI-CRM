@@ -3464,6 +3464,8 @@ export const crocodialConnectionSaveSchema = z
     enabled: z.boolean().optional()
   })
   .strict();
+// A Crocodial key pasted by its manager (Task 8): only its size here; the server normalises it and checks its shape and a live read
+export const crocodialKeySchema = z.object({ key: z.string({ required_error: 'Paste the Crocodial key.' }).max(5000, 'That is too long to be a Crocodial key.') }).strict();
 export const crocodialRolloutSchema = z
   .object({ departmentId: uuidSchema, division: z.literal('SALES'), allowed: z.boolean(), note: z.string().trim().max(300).optional().nullable() })
   .strict();

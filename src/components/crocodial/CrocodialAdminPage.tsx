@@ -25,7 +25,8 @@ const HEALTH: Record<string, [string, string]> = {
   AUTH_FAILED: ['Token refused by Crocodial', 'bg-rose-50 text-rose-800'],
   DISABLED_AT_SOURCE: ['Token turned off in Crocodial', 'bg-rose-50 text-rose-800'],
   RATE_LIMITED: ['Crocodial rate limit reached', 'bg-amber-50 text-amber-800'],
-  ERROR: ['Error', 'bg-rose-50 text-rose-800']
+  ERROR: ['Error', 'bg-rose-50 text-rose-800'],
+  KEY_UNREADABLE: ['Key needs to be entered again', 'bg-amber-50 text-amber-800']
 };
 const Pill: React.FC<{ tone: string; children: React.ReactNode }> = ({ tone, children }) => (
   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${tone}`}>{children}</span>
@@ -314,7 +315,7 @@ export const CrocodialAdminPage: React.FC = () => {
                       {busy === `t-${c.id}` ? 'Testing…' : 'Test connection'}
                     </button>
                     <button type="button" className={btn.secondary} disabled={busy !== null}
-                      onClick={() => void run(`e-${c.id}`, () => crocodialApi.saveConnection({ id: c.id, name: c.name, externalAccountLabel: c.externalAccountLabel, credentialRef: c.credentialRef, enabled: !c.enabled }))}>
+                      onClick={() => void run(`e-${c.id}`, () => crocodialApi.saveConnection({ id: c.id, name: c.name, externalAccountLabel: c.externalAccountLabel, credentialRef: c.credentialRef ?? undefined, enabled: !c.enabled }))}>
                       {c.enabled ? 'Switch off' : 'Switch on'}
                     </button>
                     <button type="button" className={btn.secondary} onClick={() => setEditing(c.id)}>Edit</button>

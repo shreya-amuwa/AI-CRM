@@ -25,6 +25,18 @@
 --  * The MD's kill switch: the MD switching a connection or a link off records md_disabled_at; while it is set, nobody but the MD can
 --    switch it on again ("CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on."). The MD
 --    switching it on clears it. A rollout the MD withdrew (crocodial_rollout.allowed = false) is not allowed again by a CEO (same copy).
+--    The MD saving a connection or link OFF records it even when it is already off (so the MD can block one a CEO switched off); saving it
+--    off again keeps the first time.
+--  * The write paths (croc_connection_save on an existing connection, croc_department_link_save, croc_token_store, croc_token_clear) lock
+--    the connection row BEFORE checking the manager, so two CEOs changing its links at the same time cannot both pass the check.
+--  * Stored Crocodial keys ("Token storage", "Encryption key lifetime"): the server encrypts the key (AES-256-GCM with
+--    AUTOMATION_SECRET_KEY, "v1:" format) after one live read proved it works; the database keeps only the ciphertext, a sha256 fingerprint
+--    (one active connection per Crocodial account: "CONFLICT: This Crocodial account is already connected (by another department)."), the
+--    last 4 characters, who and when. croc_token_store / croc_token_clear / croc_token_ciphertext / croc_sync_due are the service role's;
+--    the server first checks the signed-in user with croc_can_manage_check, and store / clear check the actor again under the row lock.
+--    Overviews show keySource (DATABASE, SERVER_SETTING or NONE) and keyLast4, never the ciphertext or the fingerprint; the audit gets the
+--    last 4 only. A stored key comes before the server setting. Health KEY_UNREADABLE: a stored key the server can no longer decrypt
+--    (AUTOMATION_SECRET_KEY changed); the sync skips it and the manager is asked to enter the key again.
 -- Additive and safe to run twice; pasteable in the SQL editor. Nothing is deleted. Every change is audited.
 --
 -- Rollback: re-run the definitions this file replaces from their earlier migrations (croc_connection_json, croc_admin_overview,
@@ -38,7 +50,13 @@
 --   drop function if exists private.croc_require_manager(uuid);
 --   drop function if exists private.croc_can_manage(uuid);
 --   drop function if exists private.croc_ceo_runs(uuid, uuid);
--- The md_disabled_at columns can stay. credential_ref can be made required again only once every connection has one:
+--   drop function if exists public.croc_token_store(uuid, text, text, text, uuid);
+--   drop function if exists public.croc_token_clear(uuid, uuid);
+--   drop function if exists public.croc_token_ciphertext(uuid);
+--   drop function if exists public.croc_can_manage_check(uuid);
+--   drop function if exists private.croc_actor_require_manager(uuid, uuid);
+--   (croc_sync_due: 20270204000100; croc_connection_status: 20270115000100, after setting any KEY_UNREADABLE health back to 'UNKNOWN')
+-- The md_disabled_at and token_* columns can stay (clear token_ciphertext to stop using stored keys). credential_ref can be made required again only once every connection has one:
 --   alter table public.crocodial_connections alter column credential_ref set not null;
 -- =============================================================================
 
@@ -50,6 +68,18 @@ alter table public.crocodial_connections add column if not exists md_disabled_at
 alter table public.crocodial_department_links add column if not exists md_disabled_at timestamptz;
 -- a connection created by a CEO has no server setting (its key is stored by the server, Task 8); still one connection per name when set
 alter table public.crocodial_connections alter column credential_ref drop not null;
+-- a key stored by the server (encrypted there; the plain key never reaches the database)
+alter table public.crocodial_connections add column if not exists token_ciphertext text;
+alter table public.crocodial_connections add column if not exists token_fingerprint text;
+alter table public.crocodial_connections add column if not exists token_last4 text;
+alter table public.crocodial_connections add column if not exists token_set_by uuid references public.profiles(id) on delete set null;
+alter table public.crocodial_connections add column if not exists token_set_at timestamptz;
+-- one connection per Crocodial account (a removed key is cleared, so the account can be connected again)
+create unique index if not exists crocodial_connections_token_fingerprint_key on public.crocodial_connections (token_fingerprint) where token_fingerprint is not null;
+-- KEY_UNREADABLE: a stored key the server can no longer decrypt
+alter table public.crocodial_connections drop constraint if exists crocodial_connections_health_check;
+alter table public.crocodial_connections add constraint crocodial_connections_health_check
+  check (health in ('UNKNOWN', 'OK', 'NO_CREDENTIAL', 'AUTH_FAILED', 'DISABLED_AT_SOURCE', 'RATE_LIMITED', 'ERROR', 'KEY_UNREADABLE'));
 
 -- ---------------------------------------------------------------------------
 -- 2. Who manages a connection
@@ -144,7 +174,10 @@ create or replace function private.croc_connection_json(c public.crocodial_conne
 returns jsonb language sql stable security definer set search_path = '' as $$
   select jsonb_build_object('id', c.id, 'name', c.name, 'externalAccountLabel', c.external_account_label, 'credentialRef', c.credential_ref,
     'enabled', c.enabled, 'health', c.health, 'lastError', c.last_error, 'lastAttemptAt', c.last_attempt_at, 'lastSuccessAt', c.last_success_at,
-    'timezone', c.timezone, 'createdAt', c.created_at, 'updatedAt', c.updated_at, 'mdDisabledAt', c.md_disabled_at)
+    'timezone', c.timezone, 'createdAt', c.created_at, 'updatedAt', c.updated_at, 'mdDisabledAt', c.md_disabled_at,
+    -- where the key comes from (a stored key first) and its last 4 characters; never the ciphertext or the fingerprint
+    'keySource', case when c.token_ciphertext is not null then 'DATABASE' when c.credential_ref is not null then 'SERVER_SETTING' else 'NONE' end,
+    'keyLast4', case when c.token_ciphertext is not null then c.token_last4 end)
 $$;
 revoke all on function private.croc_connection_json(public.crocodial_connections) from public, anon, authenticated;
 
@@ -212,6 +245,8 @@ declare
   l public.crocodial_department_links;
 begin
   if v_id is not null then
+    -- the row is locked before the check: a concurrent change of its links waits, and the check sees it
+    select * into v_old from public.crocodial_connections x where x.id = v_id for update;
     perform private.croc_require_manager(v_id);
   elsif not v_md and not private.croc_is_ceo() then
     raise exception 'FORBIDDEN: You can manage Crocodial only for departments you run.' using errcode = '42501';
@@ -249,7 +284,6 @@ begin
         jsonb_build_object('connectionId', c.id, 'division', 'SALES', 'before', null, 'after', to_jsonb(l)));
     end loop;
   else
-    select * into v_old from public.crocodial_connections x where x.id = v_id for update;
     if v_old.id is null then
       raise exception 'NOT_FOUND: Connection not found.' using errcode = 'P0002';
     end if;
@@ -263,8 +297,9 @@ begin
            -- only the MD sets the server credential name (left as it is when none is given)
            credential_ref = case when v_md then coalesce(v_ref, credential_ref) else credential_ref end,
            enabled = coalesce(v_enabled, enabled),
+           -- the MD saving it off records it, also when it is already off (the first time is kept)
            md_disabled_at = case when v_md and v_enabled then null
-                                 when v_md and not v_enabled and enabled then now()
+                                 when v_md and not v_enabled then coalesce(md_disabled_at, now())
                                  else md_disabled_at end,
            health = case when v_md and v_ref is not null and credential_ref is distinct from v_ref then 'UNKNOWN' else health end, updated_at = now()
      where id = v_id returning * into c;
@@ -285,6 +320,8 @@ declare
   v_before jsonb;
   v_md boolean := coalesce(private.is_super_admin(), false);
 begin
+  -- the connection row is locked before the check: two CEOs adding links at the same time are checked one after the other
+  perform 1 from public.crocodial_connections where id = p_connection for update;
   if not v_md then
     -- the manager of the connection, for a department they run, Sales only
     perform private.croc_require_manager(p_connection);
@@ -322,7 +359,7 @@ begin
   on conflict (connection_id, department_id, division) do update set enabled = excluded.enabled, stage = excluded.stage, updated_at = now(),
     -- the MD switching a link off is recorded; the MD switching it on clears it
     md_disabled_at = case when v_md and excluded.enabled then null
-                          when v_md and not excluded.enabled and public.crocodial_department_links.enabled then now()
+                          when v_md and not excluded.enabled then coalesce(public.crocodial_department_links.md_disabled_at, now())
                           else public.crocodial_department_links.md_disabled_at end
   returning * into l;
   perform private.write_audit('CROCODIAL_DEPARTMENT_LINK_SAVED', 'crocodial_department_link', l.id, p_department, null,
@@ -698,6 +735,136 @@ begin
 end $$;
 revoke all on function public.croc_lead_link_resolve(uuid, text, uuid) from public, anon;
 grant execute on function public.croc_lead_link_resolve(uuid, text, uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 4b. Stored Crocodial keys (Task 8): the server encrypts; the service role stores; nobody signed in reads them
+-- ---------------------------------------------------------------------------
+-- The server's check, as the signed-in user, before it touches a key (the exact FORBIDDEN copy otherwise)
+create or replace function public.croc_can_manage_check(p_connection uuid)
+returns void language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.croc_require_manager(p_connection);
+end $$;
+revoke all on function public.croc_can_manage_check(uuid) from public, anon;
+grant execute on function public.croc_can_manage_check(uuid) to authenticated, service_role;
+
+-- croc_require_manager for a named profile (the service role has no signed-in user): the MD, or an active CEO who runs every linked
+-- department (private.croc_ceo_runs, as private.is_ceo_for_sales does for the caller)
+create or replace function private.croc_actor_require_manager(p_connection uuid, p_actor uuid)
+returns void language plpgsql stable security definer set search_path = '' as $$
+begin
+  if not (exists (select 1 from public.profiles p where p.id = p_actor and p.status = 'ACTIVE' and p.role = 'SUPER_ADMIN')
+          or (exists (select 1 from public.crocodial_department_links l where l.connection_id = p_connection)
+              and not exists (select 1 from public.crocodial_department_links l
+                               where l.connection_id = p_connection and not coalesce(private.croc_ceo_runs(p_actor, l.department_id), false)))) then
+    raise exception 'FORBIDDEN: You can manage Crocodial only for departments you run.' using errcode = '42501';
+  end if;
+end $$;
+revoke all on function private.croc_actor_require_manager(uuid, uuid) from public, anon, authenticated;
+
+-- The audit of a key change, as the actor: the last 4 characters only (never the ciphertext or the fingerprint)
+create or replace function private.croc_key_audit(p_action text, p_connection uuid, p_actor uuid, p_metadata jsonb)
+returns void language sql security definer set search_path = '' as $$
+  insert into public.audit_logs (actor_id, action, entity_type, entity_id, department_id, team_id, metadata)
+  values ((select id from public.profiles where id = p_actor), p_action, 'crocodial_connection', p_connection, null, null,
+          private.scrub_audit_metadata(coalesce(p_metadata, '{}'::jsonb)))
+$$;
+revoke all on function private.croc_key_audit(text, uuid, uuid, jsonb) from public, anon, authenticated;
+
+-- Store (or replace) a connection's key: the server has checked the caller, the key's shape and one live read, and encrypted it
+create or replace function public.croc_token_store(p_connection uuid, p_ciphertext text, p_fingerprint text, p_last4 text, p_actor uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  c public.crocodial_connections;
+  v_replaced boolean;
+begin
+  select * into c from public.crocodial_connections where id = p_connection for update;
+  perform private.croc_actor_require_manager(p_connection, p_actor);
+  if c.id is null then
+    raise exception 'NOT_FOUND: Connection not found.' using errcode = 'P0002';
+  end if;
+  -- only what the server sends: a "v1:" ciphertext (never a plain key), a sha256 hex fingerprint, 4 characters
+  if p_ciphertext is null or p_ciphertext !~ '^v1:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$' or length(p_ciphertext) > 20000
+     or p_fingerprint is null or p_fingerprint !~ '^[0-9a-f]{64}$' or p_last4 is null or length(p_last4) <> 4 then
+    raise exception 'VALIDATION_ERROR: The key could not be stored.' using errcode = '22023';
+  end if;
+  v_replaced := c.token_ciphertext is not null;
+  begin
+    update public.crocodial_connections set token_ciphertext = p_ciphertext, token_fingerprint = p_fingerprint, token_last4 = p_last4,
+           token_set_by = (select id from public.profiles where id = p_actor), token_set_at = now(), health = 'UNKNOWN', last_error = null, updated_at = now()
+     where id = p_connection returning * into c;
+  exception when unique_violation then
+    -- the other connection's name is not revealed
+    raise exception 'CONFLICT: This Crocodial account is already connected (by another department).' using errcode = 'P0001';
+  end;
+  perform private.croc_key_audit('CROCODIAL_KEY_SET', c.id, p_actor, jsonb_build_object('last4', p_last4, 'replaced', v_replaced));
+  return private.croc_connection_json(c);
+end $$;
+
+-- Disconnect: the key is cleared and the connection switched off (what was synced stays)
+create or replace function public.croc_token_clear(p_connection uuid, p_actor uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  c public.crocodial_connections;
+  v_old public.crocodial_connections;
+begin
+  select * into v_old from public.crocodial_connections where id = p_connection for update;
+  perform private.croc_actor_require_manager(p_connection, p_actor);
+  if v_old.id is null then
+    raise exception 'NOT_FOUND: Connection not found.' using errcode = 'P0002';
+  end if;
+  update public.crocodial_connections set token_ciphertext = null, token_fingerprint = null, token_last4 = null, token_set_by = null, token_set_at = null,
+         enabled = false, updated_at = now()
+   where id = p_connection returning * into c;
+  perform private.croc_key_audit('CROCODIAL_KEY_REMOVED', c.id, p_actor,
+    jsonb_build_object('last4', v_old.token_last4, 'hadKey', v_old.token_ciphertext is not null, 'wasEnabled', v_old.enabled));
+  return private.croc_connection_json(c);
+end $$;
+
+-- The ciphertext, for the server's "Test connection" (after croc_admin_connection checked the caller); the server decrypts it
+create or replace function public.croc_token_ciphertext(p_connection uuid)
+returns text language sql stable security definer set search_path = '' as $$
+  select c.token_ciphertext from public.crocodial_connections c where c.id = p_connection
+$$;
+
+-- croc_sync_due (from 20270204000100; also the stored key's ciphertext, decrypted by the server)
+create or replace function public.croc_sync_due(p_min_interval interval default interval '15 minutes', p_connection uuid default null)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'credentialRef', c.credential_ref, 'timezone', c.timezone, 'tokenCiphertext', c.token_ciphertext)
+                            order by c.created_at), '[]'::jsonb)
+    from public.crocodial_connections c
+   where private.croc_connection_syncable(c.id)
+     and (p_connection is null or c.id = p_connection)
+     and (p_connection is not null
+          or not exists (select 1 from public.crocodial_sync_state s where s.connection_id = c.id and s.last_run_at > now() - p_min_interval and s.next_page is null)
+          or exists (select 1 from public.crocodial_sync_state s where s.connection_id = c.id and s.next_page is not null)
+          or (c.refresh_requested_at is not null
+              and c.refresh_requested_at > coalesce((select min(s.last_run_at) from public.crocodial_sync_state s where s.connection_id = c.id), '-infinity'::timestamptz)))
+$$;
+
+-- croc_connection_status (from 20270115000100; and KEY_UNREADABLE)
+create or replace function public.croc_connection_status(p_connection uuid, p_health text, p_error text default null)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if p_health not in ('OK', 'NO_CREDENTIAL', 'AUTH_FAILED', 'DISABLED_AT_SOURCE', 'RATE_LIMITED', 'ERROR', 'KEY_UNREADABLE') then
+    raise exception 'VALIDATION_ERROR: Unknown health.' using errcode = '22023';
+  end if;
+  update public.crocodial_connections set health = p_health, last_attempt_at = now(),
+         last_success_at = case when p_health = 'OK' then now() else last_success_at end,
+         last_error = case when p_health = 'OK' then null else left(p_error, 500) end
+   where id = p_connection;
+end $$;
+
+do $$
+declare
+  f text;
+begin
+  foreach f in array array['public.croc_token_store(uuid, text, text, text, uuid)', 'public.croc_token_clear(uuid, uuid)',
+    'public.croc_token_ciphertext(uuid)', 'public.croc_sync_due(interval, uuid)', 'public.croc_connection_status(uuid, text, text)'] loop
+    execute format('revoke all on function %s from public, anon, authenticated', f);
+    execute format('grant execute on function %s to service_role', f);
+  end loop;
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- 5. Grants (as before: signed-in callers; the functions check who may)
