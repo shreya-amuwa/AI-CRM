@@ -1132,7 +1132,8 @@ export const crocodialApi = {
   leadLinks: (connectionId: string, q: { status?: string; page?: number; pageSize?: number }) => api.get<CrocodialLeadLinkList>(`/crocodial/connections/${connectionId}/lead-links`, q),
   reconcileNow: (connectionId: string) => api.post<CrocodialReconcileRun>(`/crocodial/connections/${connectionId}/reconcile`),
   setLeadImport: (connectionId: string, departmentId: string, mode: 'OFF' | 'PREVIEW' | 'IMPORT') => api.post<{ mode: string }>(`/crocodial/connections/${connectionId}/lead-import`, { departmentId, mode }),
-  setStatusMapping: (connectionId: string, status: string, disposition: string | null) => api.post<{ status: string; disposition: string | null }>(`/crocodial/connections/${connectionId}/status-mappings`, { status, disposition }),
+  /** Map a Crocodial status to a lead tag (tagId), to Ignore (ignore: true) or to nothing (null, false: the mapping is removed). Always send both. */
+  setStatusMappingTag: (connectionId: string, status: string, tagId: string | null, ignore: boolean) => api.post<{ status: string; tagId: string | null; ignored: boolean }>(`/crocodial/connections/${connectionId}/status-mappings`, { status, tagId, ignore }),
   resolveLeadLink: (id: string, action: 'LINK' | 'IGNORE' | 'RETRY' | 'RELEASE_OVERRIDE', customerId?: string) => api.post<{ id: string; status: string }>(`/crocodial/lead-links/${id}/resolve`, customerId ? { action, customerId } : { action }),
   leadActivity: (customerId: string) => api.get<CrocodialLeadActivity>(`/crocodial/lead-activity/${customerId}`),
   teamLeads: (q: { departmentId?: string; teamId?: string } = {}) => api.get<CrocodialTeamLeads>('/crocodial/team-leads', { ...q }),

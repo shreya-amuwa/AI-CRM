@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { GitMerge, RefreshCw } from 'lucide-react';
 import type { CrocodialLeadLink, CrocodialLeadLinkList, CrocodialLinkStatus, CrocodialReconcileOverview } from '../../../shared/contracts';
-import { CROCODIAL_DISPOSITIONS } from '../../../shared/validation';
+import { LEAD_STATUSES, type LeadTag } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
 import { crocodialApi } from '../../lib/api/endpoints';
 import { confirmAction } from '../feedback/AppFeedback';
-import { btn, ErrorBanner, selectCls, Spinner } from '../team-member/pipeline/shared';
+import { btn, ErrorBanner, LEAD_STATUS_LABEL, selectCls, Spinner } from '../team-member/pipeline/shared';
+import { TagChip } from '../leadTags/TagChip';
+import { TagForm } from '../leadTags/LeadTagsPage';
+import { useLeadTags } from '../leadTags/useLeadTags';
 
 const errText = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'never');
@@ -25,10 +28,7 @@ const STATUS: Record<CrocodialLinkStatus, string> = {
   FAILED: 'Failed'
 };
 const HELD: CrocodialLinkStatus[] = ['UNMAPPED_ASSIGNEE', 'AMBIGUOUS', 'OWNER_CONFLICT', 'OUT_OF_SCOPE', 'FAILED', 'PENDING_CREATE', 'PENDING_LINK', 'PROTECTED', 'IGNORED', 'LINKED'];
-const DISPOSITION_LABEL: Record<string, string> = {
-  NEW: 'New', CONTACTED: 'Contacted', FOLLOW_UP: 'Follow-up', INTERESTED: 'Interested', DEMO_SCHEDULED: 'Demo scheduled (no demo record is created)',
-  NOT_INTERESTED: 'Not interested', LOST: 'Lost (lifecycle unchanged)', CONVERTED: 'Converted (never skips Accounts verification)', IGNORE: 'Ignore (no CRM status)'
-};
+const IGNORE = '__ignore';
 
 /**
  * Super Admin > Crocodial Integration > a connection > "Leads in the CRM" (20270304000100): the import switch per department (Off -> Preview ->
@@ -43,6 +43,8 @@ export const CrocodialLeadPipeline: React.FC<{ connectionId: string }> = ({ conn
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [creating, setCreating] = useState<string | null>(null);
+  const { tags, byId, reload: reloadTags } = useLeadTags();
 
   const load = useCallback(() => {
     setError('');
@@ -115,18 +117,46 @@ export const CrocodialLeadPipeline: React.FC<{ connectionId: string }> = ({ conn
 
               <details>
                 <summary className="cursor-pointer text-xs font-bold text-slate-700">Status mapping ({o.mappings.length} mapped, {o.unknownStatuses.length} unknown)</summary>
-                <p className="text-xs text-slate-500 my-1">Crocodial statuses differ per account. Map each one to a CRM disposition; an unmapped status is kept as it is and changes nothing in the CRM.</p>
-                <ul className="space-y-1">
-                  {[...o.unknownStatuses.map(u => ({ status: u.status, disposition: '', leads: u.leads })), ...o.mappings.map(m => ({ ...m, leads: null as number | null }))].map(m => (
-                    <li key={m.status} className="flex items-center justify-between gap-2">
-                      <span className="text-xs break-all">“{m.status}”{m.leads != null ? <span className="text-amber-700"> · unknown · {m.leads} leads</span> : null}</span>
-                      <select className={`${selectCls} max-w-[13rem]`} value={m.disposition} disabled={busy !== null} aria-label={`CRM disposition for ${m.status}`}
-                        onChange={e => void act(`s-${m.status}`, () => crocodialApi.setStatusMapping(connectionId, m.status, e.target.value || null), `“${m.status}” mapped.`)}>
-                        <option value="">Not mapped</option>
-                        {CROCODIAL_DISPOSITIONS.map(d => <option key={d} value={d}>{DISPOSITION_LABEL[d]}</option>)}
-                      </select>
-                    </li>
-                  ))}
+                <p className="text-xs text-slate-500 my-1">Crocodial statuses differ per account. Map each one to a lead tag; a lead whose status is mapped takes that tag. An unmapped status changes nothing in the CRM, and Ignore skips it on purpose.</p>
+                <ul className="space-y-2" data-testid="croc-status-mappings">
+                  {[...o.unknownStatuses.map(u => ({ status: u.status, tagId: null as string | null, ignored: false, leads: u.leads as number | null })), ...o.mappings.map(m => ({ status: m.status, tagId: m.tagId ?? null, ignored: !!m.ignored, leads: null as number | null }))].map(m => {
+                    const deptIds = o.departments.map(d => d.departmentId);
+                    const usable = (t: LeadTag) => t.id === m.tagId || (!t.retired && (t.scope === 'COMPANY' || deptIds.every(id => t.departmentIds.includes(id))));
+                    const options = tags.filter(usable);
+                    const current = byId.get(m.tagId ?? '');
+                    const value = m.ignored ? IGNORE : m.tagId ?? '';
+                    const apply = (tagId: string | null, ignore: boolean, done: string) => act(`s-${m.status}`, () => crocodialApi.setStatusMappingTag(connectionId, m.status, tagId, ignore), done);
+                    return (
+                      <li key={m.status} className="space-y-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs break-all min-w-0">“{m.status}”{m.leads != null ? <span className="text-amber-700"> · unknown · {m.leads} leads</span> : null}</span>
+                          <div className="flex items-center gap-2 min-w-0 max-w-full">
+                            {current ? <TagChip tag={current} /> : null}
+                            <select className={`${selectCls} max-w-[13rem]`} value={value} disabled={busy !== null} aria-label={`Lead tag for ${m.status}`}
+                              onChange={e => void apply(e.target.value === IGNORE || e.target.value === '' ? null : e.target.value, e.target.value === IGNORE, `“${m.status}” mapped.`)}>
+                              <option value="">Not mapped</option>
+                              <option value={IGNORE}>Ignore</option>
+                              {LEAD_STATUSES.map(stage => {
+                                const inStage = options.filter(t => t.stage === stage);
+                                return inStage.length ? <optgroup key={stage} label={LEAD_STATUS_LABEL[stage]}>{inStage.map(t => <option key={t.id} value={t.id}>{t.label}{t.retired ? ' (retired)' : ''}</option>)}</optgroup> : null;
+                              })}
+                            </select>
+                          </div>
+                        </div>
+                        {creating === m.status ? (
+                          <TagForm tag={null} departments={o.departments.map(d => ({ id: d.departmentId, name: d.name }))} canCompanyWide={false} initialLabel={m.status} submitLabel="Create tag and map"
+                            onClose={() => setCreating(null)}
+                            onSaved={async saved => {
+                              setCreating(null); reloadTags();
+                              try { await crocodialApi.setStatusMappingTag(connectionId, m.status, saved.id, false); setFlash(`“${m.status}” mapped to the new tag “${saved.label}”.`); load(); }
+                              catch (e) { setFlash(''); setError(`Tag “${saved.label}” was created, but mapping failed: ${errText(e)} Pick it in the select.`); }
+                            }} />
+                        ) : (
+                          <button type="button" className="text-[11px] font-semibold text-[#2F5BEA] hover:underline" disabled={busy !== null} onClick={() => setCreating(m.status)}>Create a tag from this status</button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </details>
 

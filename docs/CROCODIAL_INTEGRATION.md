@@ -203,8 +203,16 @@ Review the preview before importing. Historical leads are imported only after th
 - Ownership changes seen by a sync are kept in `crocodial_lead_owner_history`. The time is when the CRM saw the change. Crocodial does not say who assigned a lead, and `created_by` is kept separately, never treated as the assigner.
 
 **Status mapping** (per connection; unknown statuses are listed in the monitor and change nothing):
+- Each Crocodial status maps to a **lead tag**. A lead whose Crocodial status is mapped takes that tag, and the tag counts as its lead status.
+- In the monitor each status has a select of tags grouped by stage, plus **Ignore** (skip it on purpose) and **Not mapped** (removes the mapping).
+- **Create a tag from this status** opens the tag form pre-filled with the status label and the connection's departments. Saving creates the tag and maps the status in one go.
+- Only tags usable in every department linked to the connection are offered. The API refuses others with a 422, shown inline.
+- API: `POST /crocodial/connections/:id/status-mappings` takes `{status, tagId, ignore}`. Send both: a body with neither a tag nor Ignore removes the mapping.
+- Mappings reset by the migration are listed as unknown again.
 
-| CRM disposition | `lead_status` | Note |
+**Migration table.** Mappings made before lead tags were moved to the basic tag of the stage in the last column. The old disposition is still accepted by the API.
+
+| Old CRM disposition | Stage of the tag it moved to (`lead_status`) | Note |
 |---|---|---|
 | New | NEW | |
 | Contacted | CONTACTED | |

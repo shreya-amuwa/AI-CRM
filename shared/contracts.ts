@@ -6701,12 +6701,15 @@ export interface CrocodialReconcileOverview {
   externalLeads: number;
   missingAtSource: number;
   unknownStatuses: { status: string; leads: number }[];
-  mappings: { status: string; disposition: string }[];
+  /** tagId: the lead tag the status sets; ignored: "Ignore" (20270306000100). disposition: the old value, readable for one release. */
+  mappings: { status: string; disposition: string | null; tagId: string | null; ignored: boolean }[];
   unmappedAssignees: { externalId: number; name: string | null; leads: number }[];
   reconcile: { last_run_at: string | null; last_ok_at: string | null; last_error: string | null; processed_last_run: number; created_last_run: number; updated_last_run: number; duration_ms_last_run: number | null; pending: number } | null;
   resources: { resource: string; lastOkAt: string | null; lastRunAt: string | null; lastError: string | null; rowsLastRun: number | null; inProgress: boolean }[];
   recentRuns: { resource: string; outcome: string; rows: number; pages: number; finishedAt: string; seconds: number; error: string | null; rateLimited: boolean }[];
 }
+/** The answer of POST /crocodial/connections/:id/status-mappings (no tag and no Ignore: the mapping was removed). */
+export interface CrocodialStatusMappingResult { status: string; tagId: string | null; ignored: boolean; disposition: string | null }
 export interface CrocodialLeadLink {
   id: string;
   externalLeadId: number;
