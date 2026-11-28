@@ -14663,7 +14663,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 // ---------------------------------------------------------------------------
-// HR dashboard upgrade, Phase 4: internship reviews (20270312000400)
+// HR dashboard upgrade, Phase 4: internship reviews (20270312000500)
 // ---------------------------------------------------------------------------
 {
   const due = (await db.query(`select (private.hr_today() + 5)::text d, (private.hr_today() - interval '3 months' + interval '5 days')::date::text j`)).rows[0];
