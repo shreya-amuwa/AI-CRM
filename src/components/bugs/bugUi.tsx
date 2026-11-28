@@ -4,6 +4,7 @@ import type { DevBug, DevBugAccess, DevBugRouting, DevBugStatus } from '../../..
 import { DEV_ISSUE_CATEGORY_LABELS } from '../../../shared/validation';
 import { bugsApi } from '../../lib/api/bugs';
 import { employeeCasesApi } from '../../lib/api/employeeCases';
+import { Paged } from '../common/Paged';
 
 /** Shared pieces of the bug screens (the employee's report and the developers' Bugs section). */
 export const BUG_STATUS_LABEL: Record<DevBugStatus, string> = {
@@ -74,14 +75,16 @@ const KIND_TEXT = (h: DevBug['history'][number]) => {
   return 'Internal comment';
 };
 export const BugHistory: React.FC<{ history: DevBug['history'] }> = ({ history }) => (
+  <Paged items={history} noun="changes">{rows => (
   <ol className="space-y-2" data-testid="bug-history">
-    {history.map(h => (
+    {rows.map(h => (
       <li key={h.id} data-kind={h.kind} className={`rounded-lg border px-3 py-2 text-xs ${h.internal ? 'border-violet-200 bg-violet-50/60' : h.kind === 'MESSAGE' ? 'border-indigo-200 bg-indigo-50/50' : 'border-slate-200 bg-white'}`}>
         <div className="flex flex-wrap justify-between gap-2"><b className="text-slate-800">{KIND_TEXT(h)}{h.internal ? ' (developers only)' : ''}</b><span className="text-slate-500">{h.by ?? 'System'} · {bugWhen(h.at)}</span></div>
         {h.note && <p className="mt-1 whitespace-pre-wrap text-slate-700">{h.note}</p>}
       </li>
     ))}
   </ol>
+  )}</Paged>
 );
 
 /** Whether the signed-in person is one of the developers (the database decides; asked when the dashboard opens, never cached across users). */

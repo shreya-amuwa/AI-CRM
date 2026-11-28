@@ -7,6 +7,7 @@ import { hrApi } from '../../lib/api/endpoints';
 import { fmtDay } from '../../lib/support';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pill, Spinner, useDebounced } from '../team-member/pipeline/shared';
 import { HrPageHeader, hrBtn } from './hrUi';
+import { Paged } from '../common/Paged';
 
 /**
  * HR dashboard > Paid Leave. Confirmed full-time employees earn paid leave every month (unused days carry forward). Every figure here is the
@@ -140,14 +141,16 @@ const DetailDialog: React.FC<{ profileId: string; onClose: () => void; onChanged
       {!d ? <Spinner /> : (
         <div className="space-y-4 text-xs">
           <p><b>Balance {days(d.balance)}</b> · reserved for waiting requests {days(d.pendingPaidDays)} · available {days(d.available)}</p>
-          <ol className="max-h-64 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl" aria-label="Ledger">
-            {d.entries.length === 0 ? <li className="p-3 text-slate-500">No entry yet.</li> : d.entries.map((x, i) => (
+          <Paged items={d.entries} noun="entries">{rows => (
+          <ol className="divide-y divide-slate-100 border border-slate-200 rounded-xl" aria-label="Ledger">
+            {d.entries.length === 0 ? <li className="p-3 text-slate-500">No entry yet.</li> : rows.map((x, i) => (
               <li key={i} className="px-3 py-2 flex justify-between gap-3">
                 <span><b>{ENTRY[x.type] ?? x.type}</b> · {monthText(x.month)}{x.note ? ` · ${x.note}` : ''}{x.by ? ` · ${x.by}` : ''}</span>
                 <span className={`font-bold ${Number(x.days) < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{Number(x.days) > 0 ? '+' : ''}{days(x.days)}</span>
               </li>
             ))}
           </ol>
+          )}</Paged>
           <form onSubmit={save} className="grid gap-3 sm:grid-cols-[auto_8rem_1fr_auto] items-end" noValidate>
             <Field label="Entry" htmlFor="pl-kind">
               <select id="pl-kind" className={inputCls} value={kind} onChange={e => setKind(e.target.value as 'CORRECTION' | 'OPENING_BALANCE')}>

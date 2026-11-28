@@ -9,6 +9,7 @@ import { Dialog, ErrorBanner, Pager, Spinner, useDebounced } from '../team-membe
 import { CallStatusBadge, EmptyState, TemperatureBadge, dateText, dateTimeText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
 import { AssignVisitDialog } from '../field-visit/AssignVisitDialog';
 import type { SalesHeadNavigate } from './SalesHeadDashboard';
+import { Paged } from '../common/Paged';
 
 const FILTER_LABEL: Record<SalesLeadFilter, string> = {
   ALL: 'All Leads', HOT: 'Hot Leads', WARM: 'Warm Leads', COLD: 'Cold Leads', UNASSIGNED: 'Unassigned', ASSIGNED: 'Assigned', FOLLOW_UP: 'Follow-up Required', CONVERTED: 'Converted'
@@ -239,11 +240,13 @@ const LeadDetailBody: React.FC<{ lead: SalesLeadDetail }> = ({ lead }) => {
       <div>
         <h3 className="text-sm font-extrabold text-slate-900 mb-2">Latest follow-up details</h3>
         {lead.history.length === 0 ? <p className="text-sm text-slate-500">No activity recorded yet.</p> : (
+          <Paged items={lead.history} noun="entries">{rows => (
           <ul className="space-y-2 max-h-64 overflow-y-auto">
-            {lead.history.map((h, i) => (
+            {rows.map((h, i) => (
               <li key={i} className="text-sm border-l-2 border-blue-100 pl-3"><div className="text-xs text-slate-500">{dateTimeText(h.at)} · {h.type.toLowerCase().replace(/_/g, ' ')}</div>{h.note && <div className="text-slate-800">{h.note}</div>}</li>
             ))}
           </ul>
+          )}</Paged>
         )}
       </div>
     </div>

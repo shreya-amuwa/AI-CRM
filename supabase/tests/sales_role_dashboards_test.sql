@@ -41,16 +41,21 @@ select '5a1e0000-0000-4000-8000-00000000cc01', r, now(), now(), now() from unnes
 -- rd_tc today: 5 outgoing (2 connected 60 + 40 s, 2 not connected, 1 with "connected" empty), to 3 numbers (+919811000001 and 09811000001
 -- are one number), 1 incoming; a call by an unmapped Crocodial user and one from before the mapping never count.
 -- rd_tc2 today: 1 outgoing, connected, to the same number and lead as rd_tc.
+-- The calls of "today" must fall on today's India date whenever the suite runs: just after midnight IST, "50 minutes ago" is yesterday
+-- and today's row of the daily figures came up short. test.rd_ago keeps each call's offset when there is room since midnight and
+-- squeezes the offsets proportionally (same order) when there is not.
+create or replace function test.rd_ago(p interval) returns timestamptz language sql stable as $$
+  select now() - p * least(1.0, extract(epoch from now() - (date_trunc('day', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata')) / extract(epoch from interval '61 minutes'))::double precision $$;
 insert into crocodial_ext_calls (connection_id, external_id, called_by_ext, lead_ext, call_type, call_at, duration_seconds, connected, phone_number, contact_name) values
-  ('5a1e0000-0000-4000-8000-00000000cc01', 1, 7001, 801, 'outgoing', now() - interval '10 minutes', 60, true, '+919811000001', 'Ravi'),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 2, 7001, 801, 'outgoing', now() - interval '20 minutes', 40, true, '09811000001', 'Ravi'),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 3, 7001, 802, 'outgoing', now() - interval '30 minutes', 0, false, '9811000002', null),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 4, 7001, null, 'outgoing', now() - interval '40 minutes', 0, false, '9811000003', null),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 5, 7001, null, 'outgoing', now() - interval '50 minutes', null, null, '9811000003', null),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 6, 7001, 801, 'incoming', now() - interval '60 minutes', 30, true, '9811000001', 'Ravi'),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 7, 7999, 801, 'outgoing', now() - interval '5 minutes', 500, true, '9811000001', null),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 1, 7001, 801, 'outgoing', test.rd_ago(interval '10 minutes'), 60, true, '+919811000001', 'Ravi'),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 2, 7001, 801, 'outgoing', test.rd_ago(interval '20 minutes'), 40, true, '09811000001', 'Ravi'),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 3, 7001, 802, 'outgoing', test.rd_ago(interval '30 minutes'), 0, false, '9811000002', null),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 4, 7001, null, 'outgoing', test.rd_ago(interval '40 minutes'), 0, false, '9811000003', null),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 5, 7001, null, 'outgoing', test.rd_ago(interval '50 minutes'), null, null, '9811000003', null),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 6, 7001, 801, 'incoming', test.rd_ago(interval '60 minutes'), 30, true, '9811000001', 'Ravi'),
+  ('5a1e0000-0000-4000-8000-00000000cc01', 7, 7999, 801, 'outgoing', test.rd_ago(interval '5 minutes'), 500, true, '9811000001', null),
   ('5a1e0000-0000-4000-8000-00000000cc01', 8, 7001, 801, 'outgoing', now() - interval '90 days', 99, true, '9811000001', null),
-  ('5a1e0000-0000-4000-8000-00000000cc01', 9, 7002, 801, 'outgoing', now() - interval '15 minutes', 20, true, '9811000001', 'Ravi');
+  ('5a1e0000-0000-4000-8000-00000000cc01', 9, 7002, 801, 'outgoing', test.rd_ago(interval '15 minutes'), 20, true, '9811000001', 'Ravi');
 insert into crocodial_ext_leads (connection_id, external_id, name, status, assigned_to_ext) values
   ('5a1e0000-0000-4000-8000-00000000cc01', 801, 'Ravi Kumar', 'Interested', 7001);
 

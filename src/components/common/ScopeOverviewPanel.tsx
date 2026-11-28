@@ -5,6 +5,7 @@ import { errorMessage } from '../../lib/api/client';
 import { dashboardApi } from '../../lib/api/endpoints';
 import { money } from '../accounts/finance/FinanceBits';
 import { Avatar, Card, CardHead, ghostBtn, LoadingLine, StatCard } from '../tasks/head/headParts';
+import { Paged } from './Paged';
 
 /**
  * The customers, people and work of the signed-in Team Lead (their team) or Department Head (their department).
@@ -210,8 +211,9 @@ export const ScopeOverviewPanel: React.FC<{ heading?: string; hint?: string }> =
             {data.recentActivity.length === 0 ? (
               <p className="p-5 rounded-2xl bg-white border border-slate-200 text-sm text-slate-500" role="status">No activity has been logged yet.</p>
             ) : (
+              <Paged items={data.recentActivity} pageSize={5} noun="updates">{rows => (
               <ul className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
-                {data.recentActivity.map((a, i) => (
+                {rows.map((a, i) => (
                   <li
                     key={`${a.at}-${i}`}
                     className="px-4 sm:px-5 py-3 grid gap-x-4 gap-y-0.5 grid-cols-[minmax(0,1fr)_auto] md:grid-cols-[minmax(0,15rem)_minmax(0,12rem)_minmax(0,1fr)_6rem] md:items-baseline"
@@ -229,6 +231,7 @@ export const ScopeOverviewPanel: React.FC<{ heading?: string; hint?: string }> =
                   </li>
                 ))}
               </ul>
+              )}</Paged>
             )}
           </section>
         </>

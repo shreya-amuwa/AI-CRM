@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, CalendarDays, Send } from 'lucide-react';
 import { isOverdue, type Person, type TaskPriority, type TaskStatus, type WorkTask, type WorkTaskUpdate } from '../../lib/workTasks';
+import { Paged } from '../common/Paged';
 
 export const STATUS_UI: Record<TaskStatus, { label: string; cls: string }> = {
   ASSIGNED: { label: 'Pending', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -155,8 +156,9 @@ export const UpdateTimeline: React.FC<{ updates: WorkTaskUpdate[]; people: Perso
   updates.length === 0 ? (
     <p className="text-[11px] text-slate-400">{empty || 'No updates yet.'}</p>
   ) : (
+    <Paged items={updates} noun="updates">{rows => (
     <ol className="space-y-2">
-      {updates.map(u => (
+      {rows.map(u => (
         <li key={u.id} className="flex gap-2 text-xs">
           <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0" aria-hidden="true" />
           <div className="min-w-0">
@@ -171,6 +173,7 @@ export const UpdateTimeline: React.FC<{ updates: WorkTaskUpdate[]; people: Perso
         </li>
       ))}
     </ol>
+    )}</Paged>
   );
 
 export const EmptyState: React.FC<{ title: string; hint?: string }> = ({ title, hint }) => (

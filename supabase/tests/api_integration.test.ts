@@ -4034,7 +4034,12 @@ provider.close();
 
   const punchHeaders = (secret?: string) => ({ 'content-type': 'application/json', ...(secret ? { authorization: `Bearer ${secret}` } : {}) });
   const punch = (secret: string | undefined, body: unknown) => fetch(`${base}/integrations/biometric/punch`, { method: 'POST', headers: punchHeaders(secret), body: JSON.stringify(body) }).then(async x => ({ status: x.status, json: (await x.json()) as any }));
-  const { rows: [rm] } = await db.query(`select rm_login_at from public.attendance_records where profile_id = (select id from public.profiles where email = 'a@amuwa.com') and attendance_date = (now() at time zone 'Asia/Kolkata')::date`);
+  // The punch is 22 minutes before today's CRM login. Just after midnight IST (login before 00:22) that would be yesterday and the gap
+  // could not be found, so CI failed in that window: there, today's login is moved to 00:23 IST first (same day, same 22-minute gap).
+  const { rows: [rm] } = await db.query(`update public.attendance_records
+      set rm_login_at = greatest(rm_login_at, (date_trunc('day', now() at time zone 'Asia/Kolkata') + interval '23 minutes') at time zone 'Asia/Kolkata')
+    where profile_id = (select id from public.profiles where email = 'a@amuwa.com') and attendance_date = (now() at time zone 'Asia/Kolkata')::date
+    returning rm_login_at`);
   const punchAt = new Date(new Date(rm.rm_login_at).getTime() - 22 * 60_000).toISOString();
   delete process.env.BIOMETRIC_INGEST_SECRET;
   r = await punch('x'.repeat(24), { email: 'a@amuwa.com', punchedAt: punchAt });

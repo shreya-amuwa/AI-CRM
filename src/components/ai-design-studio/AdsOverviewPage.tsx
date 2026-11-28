@@ -6,6 +6,7 @@ import {
   aiDesignStudioApi, AssignmentStatusBadge, Badge, Card, CardHead, EmptyState, ErrorLine, EVENT_LABEL, fmtDate, fmtDateTime, ghostBtn, isHead, isLead, isMember, LoadingLine,
   NoticeStatusBadge, primaryBtn, PriorityBadge, ROLE_TITLE, StatCard, useAdsData, useAdsSession
 } from './adsUi';
+import { Paged } from '../common/Paged';
 
 type Page = 'client-add' | 'client-notice' | 'assign' | 'report' | 'issue';
 
@@ -126,8 +127,9 @@ export const AdsOverviewPage: React.FC<{ onNavigate: (page: Page) => void }> = (
               <CardHead title="Recent activity" hint="What changed lately in your work" />
               <div className="px-5 pb-5">
                 {data.activity.length === 0 ? <EmptyState title="No activity yet" /> : (
+                  <Paged items={data.activity} pageSize={5} noun="updates">{rows => (
                   <ul className="divide-y divide-slate-100">
-                    {data.activity.map(a => (
+                    {rows.map(a => (
                       <li key={a.id} className="py-2.5 text-sm">
                         <span className="font-semibold text-slate-900">{a.actorName || 'Someone'}</span>{' '}
                         <span className="text-slate-700">· {activityText(a)} · {ENTITY_NOUN[a.entityType]}{a.title ? ` “${a.title}”` : ''}</span>
@@ -135,6 +137,7 @@ export const AdsOverviewPage: React.FC<{ onNavigate: (page: Page) => void }> = (
                       </li>
                     ))}
                   </ul>
+                  )}</Paged>
                 )}
               </div>
             </Card>

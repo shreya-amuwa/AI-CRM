@@ -7,6 +7,7 @@ import { errorMessage } from '../../../lib/api/client';
 import type { Employee } from '../../../types/amuwaHq';
 import { ErrorBanner, inputCls, Spinner } from '../../team-member/pipeline/shared';
 import { HrEmptyState, HrSectionTitle, hrBtn, hrCard } from '../hrUi';
+import { Paged } from '../../common/Paged';
 
 /**
  * HR > Offer Letter Generation (migration 20270206000100). HR chooses the employee's designation: the matching template (its own fields,
@@ -245,8 +246,9 @@ export const OfferLetterGenerator: React.FC<Props> = ({ employees, onToast }) =>
           <section className={`${hrCard} p-4 sm:p-5 space-y-3`} aria-labelledby="offer-history">
             <HrSectionTitle id="offer-history" icon={FileText} title="Offer letters issued to this employee" count={history.length} />
             {!history.length ? <p className="text-xs text-slate-500">None yet.</p> : (
+              <Paged items={history} noun="letters">{rows => (
               <ul className="divide-y divide-slate-100">
-                {history.map(d => {
+                {rows.map(d => {
                   const f = d.fields as { templateDesignation?: string; templateVersion?: number };
                   return (
                     <li key={d.id} className="py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -259,6 +261,7 @@ export const OfferLetterGenerator: React.FC<Props> = ({ employees, onToast }) =>
                   );
                 })}
               </ul>
+              )}</Paged>
             )}
           </section>
         )}

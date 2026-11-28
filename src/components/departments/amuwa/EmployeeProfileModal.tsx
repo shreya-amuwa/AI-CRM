@@ -11,6 +11,7 @@ import { HR_EMPLOYEE_FILE_KIND_LABEL, HR_EMPLOYEE_FILE_KINDS, type HrEmployeeFil
 import { hrEmployeeFilesApi } from '../../../lib/api/endpoints';
 import { hrEmployeeKeyOf, uploadHrEmployeeFile } from '../../../lib/hrEmployeeFiles';
 import { confirmAction } from '../../feedback/AppFeedback';
+import { Paged } from '../../common/Paged';
 
 /** What HR picks from when uploading to the documents vault (leave mails are uploaded from the leave form). */
 const VAULT_KINDS = HR_EMPLOYEE_FILE_KINDS.filter(k => k !== 'LEAVE_MAIL' && k !== 'LEAVE_CANCELLATION_MAIL');
@@ -696,6 +697,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
             {/* Leave History List */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
               {emp.leaveHistory && emp.leaveHistory.length > 0 ? (
+                <Paged items={emp.leaveHistory} noun="entries">{rows => (
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono uppercase">
                     <tr>
@@ -707,7 +709,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {emp.leaveHistory.map(rec => (
+                    {rows.map(rec => (
                       <tr key={rec.id} className={rec.status === 'Cancelled' ? 'bg-slate-50/60 opacity-60' : 'hover:bg-slate-50'}>
                         <td className="p-3 font-mono">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -770,6 +772,7 @@ export const EmployeeProfileModal: React.FC<EmployeeProfileModalProps> = ({
                     ))}
                   </tbody>
                 </table>
+                )}</Paged>
               ) : (
                 <p className="text-xs text-slate-400 italic py-4 text-center">No leaves or half-days filed for this employee.</p>
               )}

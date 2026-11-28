@@ -174,9 +174,22 @@ reset role;
 set role anon;
 select test.must_fail($$select mtg_public_book('{}'::jsonb)$$, 'the public cannot call the booking functions directly (only the server can)', 'permission denied');
 reset role;
--- the server (service role) books for a guest: next Wednesday 10:00 IST
+-- the server (service role) books for a guest: next Wednesday 10:00 IST, or 13:00 when an earlier meeting in this file holds that morning.
+-- The meetings above are placed relative to the current hour, so on some run times (e.g. Saturday 00:00-02:00 IST) "Weekly pipeline
+-- review" (moved to now + 4 days, 09:00-10:00) ends at 10:00 next Wednesday and the booking link's 10-minute buffer made 10:00 a clash.
+-- One meeting of an hour cannot block both times, so the slot is always free, whenever the suite runs.
+create or replace function test.free_slot(p_host uuid, p_day date, p_hours integer[]) returns timestamptz language sql stable as $$
+  select ((p_day + make_interval(hours => h)) at time zone 'Asia/Kolkata')
+  from unnest(p_hours) with ordinality as c(h, n)
+  where not exists (select 1 from public.meetings x where x.host_id = p_host and x.status in ('REQUESTED', 'PROPOSED', 'SCHEDULED')
+                      and tstzrange(x.starts_at - interval '1 hour', x.ends_at + interval '1 hour')
+                          && tstzrange((p_day + make_interval(hours => h)) at time zone 'Asia/Kolkata', (p_day + make_interval(hours => h, mins => 30)) at time zone 'Asia/Kolkata'))
+  order by n limit 1 $$;
 select set_config('request.jwt.claims', '', false);   -- the server's calls carry no login
-create temp table slot as select ((date_trunc('week', (now() at time zone 'Asia/Kolkata')) + interval '9 days 10 hours') at time zone 'Asia/Kolkata') as t;
+create temp table slot as select test.free_slot(test.id('tm_a'), (date_trunc('week', (now() at time zone 'Asia/Kolkata')) + interval '9 days')::date, array[10, 13]) as t;
+-- the CEO's link below: next Thursday 12:00 IST, or 16:00 when one of the CEO meetings above holds that time
+create temp table ceo_slot as select test.free_slot(test.id('sa'), (date_trunc('week', (now() at time zone 'Asia/Kolkata')) + interval '10 days')::date, array[12, 16]) as t;
+select test.check((select t is not null from slot) and (select t is not null from ceo_slot), 'a free time is found for the guest bookings');
 select test.check((select (mtg_public_page('tm-a-demo') ->> 'durationMinutes')::integer = 30), 'the booking page shows the link');
 insert into mt select 'pub', (x ->> 'id')::uuid, null from (select mtg_public_book(jsonb_build_object('slug', 'tm-a-demo', 'startsAt', (select t from slot),
   'name', 'Asha Customer', 'email', 'asha@example.com', 'phone', '+91 90000 00000', 'notes', 'Interested in WhatsApp API')) x) s;
@@ -198,7 +211,7 @@ select test.check((select mtg_public_cancel((select id from mt where k = 'pub'),
 select test.check((select count(*) = 1 from meeting_mail_outbox where meeting_id = (select id from mt where k = 'pub') and kind = 'CANCELLED'), 'and gets the cancellation e-mail');
 -- the CEO's link: a request
 insert into mt select 'pubceo', (x ->> 'id')::uuid, null from (select mtg_public_book(jsonb_build_object('slug', 'meet-the-ceo',
-  'startsAt', (select t from slot) + interval '1 day' + interval '2 hours', 'name', 'Investor Ravi', 'email', 'ravi@example.com')) x) s;
+  'startsAt', (select t from ceo_slot), 'name', 'Investor Ravi', 'email', 'ravi@example.com')) x) s;
 select test.check((select status = 'REQUESTED' from meetings where id = (select id from mt where k = 'pubceo')), 'booking the CEO''s link makes a request');
 select test.check((select count(*) = 1 from meeting_mail_outbox where meeting_id = (select id from mt where k = 'pubceo') and kind = 'REQUEST_RECEIVED'),
   'the guest is told the request was received (not confirmed)');

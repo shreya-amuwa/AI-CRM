@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ReportPackage } from '../../../shared/contracts';
 import { timeLabel, WeeklyStatusPill } from './reportUi';
+import { Paged } from '../common/Paged';
 
 const ACTION: Record<string, string> = {
   COMPILED: 'Compiled', SAVED: 'Draft saved', SUBMITTED: 'Submitted to the CEO', RESUBMITTED: 'Resubmitted to the CEO',
@@ -38,8 +39,9 @@ export const WeeklyPackageView: React.FC<{ pkg: ReportPackage; showHistory?: boo
         </div>
       ) : null}
       {showHistory && pkg.events && pkg.events.length > 0 ? (
+        <Paged items={pkg.events} noun="entries">{rows => (
         <ol className="space-y-1 border-l border-slate-200 pl-4" aria-label="Weekly report history">
-          {pkg.events.map((e, i) => (
+          {rows.map((e, i) => (
             <li key={`${e.at}-${i}`} className="text-xs text-slate-700 relative">
               <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-indigo-300" aria-hidden="true" />
               <b>{ACTION[e.action] ?? e.action}</b> by {e.actor} <span className="text-slate-400">- {timeLabel(e.at)}</span>
@@ -48,6 +50,7 @@ export const WeeklyPackageView: React.FC<{ pkg: ReportPackage; showHistory?: boo
             </li>
           ))}
         </ol>
+        )}</Paged>
       ) : null}
     </div>
   );
