@@ -12,6 +12,8 @@ select set_config('request.jwt.claims', '', false);
 -- earlier suites run older copies of the report functions again: this migration is applied last, twice (it must be safe to run twice)
 \i supabase/migrations/20270302000100_ai_studio_hr_performance.sql
 \i supabase/migrations/20270302000100_ai_studio_hr_performance.sql
+-- 20270308000100: the Team Lead's approval of a Team Member's report is final (Team Member -> Team Lead -> HR); report_hierarchy_test.sql tests it in full
+\i supabase/migrations/20270308000100_report_hierarchy.sql
 
 create or replace function test.hd(p_day integer) returns date language sql stable as $$ select (now() at time zone 'Asia/Kolkata')::date + p_day $$;
 create or replace function test.words(n integer) returns text language sql immutable as $$ select string_agg('word' || g, ' ') from generate_series(1, n) g $$;
@@ -105,7 +107,7 @@ select test.login('ai_tl1');
 select test.check(exists (select 1 from jsonb_array_elements(ai_studio_reports_page('team', p_status => 'PENDING_TL_APPROVAL') -> 'items') x where x ->> 'id' = test.hr('m1')::text),
   'the member''s Team Lead has it in their approval list');
 select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT')$$, 'a rejection needs a reason', 'reason');
-select test.check((ai_studio_report_review(test.hr('m1'), 'APPROVE') ->> 'status') = 'PENDING_DH_APPROVAL', 'the Team Lead approves');
+select test.check((ai_studio_report_review(test.hr('m1'), 'APPROVE') ->> 'status') = 'APPROVED', 'the Team Lead approves: final (20270308000100)');
 reset role;
 select test.check((test.hrow('m1')).tl_reviewed_by = test.id('ai_tl1') and (test.hrow('m1')).tl_reviewed_at is not null and (test.hrow('m1')).hr_sent_at is not null
                   and (test.hrow('m1')).hr_sent_revision = 1, 'the approver and the time are recorded, and it is sent to HR');
@@ -146,7 +148,7 @@ select test.login('ai_tm2a');
 select test.must_fail($$select ai_studio_daily_report_save(test.hr('m2x'), test.hd(-21), '{}'::uuid[], 'x', null, null, null, null, true, p_description => test.words(12))$$,
   'a rejected report cannot be resubmitted', 'already submitted');
 select test.login('ai_dh');
-select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT', 'Not needed today')$$, 'the Department Head returns, never rejects', 'Only the Team Lead rejects');
+select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT', 'Not needed today')$$, 'the Department Head no longer decides a report its Team Lead approved (20270308000100)', 'not waiting for your decision');
 
 \echo '   the Team Lead report'
 select test.login('ai_tl1');
@@ -178,20 +180,21 @@ select test.check((select exists (select 1 from jsonb_array_elements(j -> 'teams
 select test.check((select jsonb_array_length(j -> 'projects') > 0 from hp_v), 'projects with the people on them');
 select test.must_fail($$select ai_studio_hr_performance(test.hd(-200), test.hd(0))$$, 'a period of more than 93 days is refused', 'at most 93 days');
 
-\echo '   a report returned later by the Department Head leaves HR''s approved list; a new approval is sent once more'
+\echo '   the Team Lead''s approval is final (20270308000100): the Department Head cannot send it back; a corrected revision is sent to HR once more'
 select test.login('ai_dh');
-select ai_studio_report_review(test.hr('m1'), 'RETURN', 'Please add the API work');
+select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'RETURN', 'Please add the API work')$$, 'the Department Head cannot return a report the Team Lead approved', 'not waiting for your decision');
 select test.login('hrp_viewer');
-select test.check(not exists (select 1 from jsonb_array_elements(ai_studio_hr_performance(test.hd(-30), test.hd(0)) -> 'memberReports') x where x ->> 'id' = test.hr('m1')::text),
-  'returned by the Department Head: no longer shown as approved');
-select test.login('ai_tm1b');
-select ai_studio_daily_report_save(test.hr('m1'), test.hd(-20), '{}'::uuid[], 'Wrote the onboarding screens and the API calls', 'The tests', null, null, null, true,
-  p_description => 'Built the onboarding screens for the client dashboard, connected the API and fixed two bugs.');
-select test.login('ai_tl1');
-select ai_studio_report_review(test.hr('m1'), 'APPROVE');
+select test.check(exists (select 1 from jsonb_array_elements(ai_studio_hr_performance(test.hd(-30), test.hd(0)) -> 'memberReports') x where x ->> 'id' = test.hr('m1')::text),
+  'it stays in HR''s approved list');
+-- the report the Team Lead returned: corrected, approved, sent to HR once (revision 2)
+select test.login('ai_tm2a');
+select ai_studio_daily_report_save(test.hr('m2r'), test.hd(-20), '{}'::uuid[], 'Designed the QR flow and its three screens', null, null, null, null, true,
+  p_description => 'Designed the QR code flow for the AIQR studio, finished its three screens and discussed them with the Team Lead.');
+select test.login('ai_tl2');
+select test.check((ai_studio_report_review(test.hr('m2r'), 'APPROVE') ->> 'status') = 'APPROVED', 'the corrected report is approved by its Team Lead');
 reset role;
-select test.check((test.hrow('m1')).hr_sent_revision = 2 and test.hevents(test.hr('m1'), 'SENT_TO_HR') = 2 and test.hnotes('hrp_viewer', 'AI_STUDIO_REPORT_TO_HR', test.hr('m1')) = 2,
-  'the corrected revision is sent to HR once more (one entry and one notification per revision)');
+select test.check((test.hrow('m2r')).hr_sent_revision = 2 and test.hevents(test.hr('m2r'), 'SENT_TO_HR') = 1 and test.hnotes('hrp_viewer', 'AI_STUDIO_REPORT_TO_HR', test.hr('m2r')) = 1,
+  'the corrected revision is sent to HR once (one entry and one notification)');
 
 \echo '   taking the access away'
 set role authenticated;

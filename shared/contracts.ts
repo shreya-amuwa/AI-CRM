@@ -4952,6 +4952,10 @@ export interface ReportPackage {
   title?: string | null;
   assignedOverview?: string | null;
   completedOverview?: string | null;
+  /** (20270308000100) */
+  pendingOverview?: string | null;
+  achievements?: string | null;
+  challenges?: string | null;
   note?: string | null;
   revision?: number;
   submittedBy?: string | null;
@@ -6603,6 +6607,21 @@ export interface AiStudioHrLeadReport {
 }
 export interface AiStudioHrTeam { leadId: string | null; leadName: string | null; teamName: string; projects: { id: string; name: string }[]; members: { id: string; name: string; projects: { id: string; name: string }[] }[] }
 export interface AiStudioHrProject { id: string; name: string; status: AiStudioProjectStatus; people: { id: string; name: string; role: 'LEAD' | 'MEMBER'; leadId: string | null }[] }
+/** AI Studio weekly report: Team Lead -> the Super Admin (20270308000100) */
+export type AiStudioWeeklyStatus = 'DRAFT' | 'SUBMITTED' | 'RETURNED' | 'ACKNOWLEDGED';
+export interface AiStudioWeeklyMember { id: string; name: string; isLead: boolean; reportsSubmitted: number; reportsApproved: number; tasksCompleted: number; tasksPending: number; tasksOverdue: number }
+export interface AiStudioWeeklyProject { id: string; name: string; tasksCompleted: number; tasksPending: number; people: number }
+export interface AiStudioWeeklyStats {
+  weekStart: string; weekEnd: string; team: string; members: AiStudioWeeklyMember[]; projects: AiStudioWeeklyProject[];
+  totals: { members: number; reportsSubmitted: number; reportsApproved: number; tasksCompleted: number; tasksPending: number; projects: number };
+}
+export interface AiStudioWeeklyReport {
+  id: string; leadId: string; leadName: string | null; team: string; weekStart: string; weekEnd: string; status: AiStudioWeeklyStatus;
+  completedWork: string | null; pendingWork: string | null; achievements: string | null; challenges: string | null; remarks: string | null;
+  stats: AiStudioWeeklyStats; revision: number; submittedAt: string | null; reviewedBy: string | null; reviewedAt: string | null; reviewComment: string | null; updatedAt: string;
+  events: { at: string; action: string; fromStatus: string | null; toStatus: string; actor: string | null; comment: string | null; revision: number }[];
+}
+export interface AiStudioWeeklyWeek { weekStart: string; weekEnd: string; report: AiStudioWeeklyReport | null; liveStats: AiStudioWeeklyStats }
 export interface AiStudioHrPerformance { from: string; to: string; teams: AiStudioHrTeam[]; projects: AiStudioHrProject[]; memberReports: AiStudioHrMemberReport[]; leadReports: AiStudioHrLeadReport[] }
 export interface AiStudioHrAccess {
   allowed: boolean;

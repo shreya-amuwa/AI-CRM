@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Bell, ClipboardList, FileText, FolderKanban, LayoutDashboard, LineChart, ListChecks, Users } from 'lucide-react';
+import { Bell, CalendarRange, ClipboardList, FileText, FolderKanban, LayoutDashboard, LineChart, ListChecks, Users } from 'lucide-react';
 import type { AiStudioOverview } from '../../../shared/contracts';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
@@ -18,12 +18,13 @@ import { AiStudioOverviewPage } from './AiStudioOverview';
 import { DepartmentTasks, MemberProjects, ProjectManagement } from './AiStudioProjects';
 import { DailyReportsPage, DepartmentReports } from './AiStudioReports';
 import { AiStudioTeam } from './AiStudioTeam';
+import { LeadWeeklyReport } from './AiStudioWeekly';
 import { AI_STUDIO_CHANGED_EVENT, useOpenAiStudioRequest } from './aiStudioEvents';
 
-export type AiStudioPage = 'overview' | 'projects' | 'tasks' | 'team' | 'daily-report' | 'performance' | 'raise-issue' | 'chat' | 'notifications';
+export type AiStudioPage = 'overview' | 'projects' | 'tasks' | 'team' | 'daily-report' | 'weekly-report' | 'performance' | 'raise-issue' | 'chat' | 'notifications';
 
 export const AI_STUDIO_BASE = (userId: string) => `/ai-studio/dashboard/${userId}`;
-const PAGES: readonly AiStudioPage[] = ['projects', 'tasks', 'team', 'daily-report', 'performance', 'raise-issue', 'chat', 'notifications'];
+const PAGES: readonly AiStudioPage[] = ['projects', 'tasks', 'team', 'daily-report', 'weekly-report', 'performance', 'raise-issue', 'chat', 'notifications'];
 
 export function parseAiStudioPage(path: string): AiStudioPage {
   const seg = path.replace(/\/+$/, '').split('/')[4] as AiStudioPage;
@@ -63,7 +64,8 @@ export const AiStudioDashboard: React.FC = () => {
   const [rawPage, setPage] = useState<AiStudioPage>(() => parseAiStudioPage(window.location.pathname));
   // Performance Management is the Team Lead's and the Department Head's (20270213000100): a Team Member who opens its address gets the Overview
   // (the database refuses them too)
-  const page: AiStudioPage = rawPage === 'performance' && who === 'MEMBER' ? 'overview' : rawPage;
+  // the Weekly Report is the Team Lead's (20270308000100: Team Lead -> the Super Admin); anyone else who opens its address gets the Overview
+  const page: AiStudioPage = (rawPage === 'performance' && who === 'MEMBER') || (rawPage === 'weekly-report' && who !== 'LEAD') ? 'overview' : rawPage;
   // a notification opens the item again even when its page is already on screen
   const [nonce, setNonce] = useState(0);
 
@@ -79,7 +81,7 @@ export const AiStudioDashboard: React.FC = () => {
 
   useOpenChatRequest(useCallback(() => setPage('chat'), []));
   useOpenIssuesRequest(useCallback(() => setPage('raise-issue'), []));
-  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); go(d.kind === 'task' ? (who === 'HEAD' ? 'tasks' : 'projects') : d.kind === 'project' ? 'projects' : 'daily-report'); }, [go, who]));
+  useOpenAiStudioRequest(useCallback(d => { setNonce(n => n + 1); go(d.kind === 'task' ? (who === 'HEAD' ? 'tasks' : 'projects') : d.kind === 'project' ? 'projects' : d.kind === 'weekly' ? 'weekly-report' : 'daily-report'); }, [go, who]));
 
   const items = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -95,6 +97,8 @@ export const AiStudioDashboard: React.FC = () => {
           { id: 'projects', label: 'Projects', icon: ClipboardList },
           { id: 'daily-report', label: 'Daily Report', icon: FileText, badge: who === 'LEAD' ? waiting : 0 },
           // its own side-panel entry for the Team Lead (not a tab of Daily Report); the Team Member has none
+          // (20270308000100) the Team Lead's weekly team report for the Super Admin
+          ...(who === 'LEAD' ? [{ id: 'weekly-report', label: 'Weekly Report', icon: CalendarRange }] : []),
           ...(who === 'LEAD' ? [{ id: 'performance', label: 'Performance Management', icon: LineChart }] : [])
         ]),
     { ...ISSUES_NAV },
@@ -103,7 +107,7 @@ export const AiStudioDashboard: React.FC = () => {
   ];
   // Attendance and Meeting Request come first (the shell adds them); then the AI Studio work; then the shared sections, as in the other dashboards
   const groups: ShellNavGroup[] = groupNavItems(items, [
-    { ids: who === 'HEAD' ? ['overview', 'projects', 'tasks', 'team', 'daily-report', 'performance'] : who === 'LEAD' ? ['overview', 'projects', 'daily-report', 'performance'] : ['overview', 'projects', 'daily-report'] },
+    { ids: who === 'HEAD' ? ['overview', 'projects', 'tasks', 'team', 'daily-report', 'performance'] : who === 'LEAD' ? ['overview', 'projects', 'daily-report', 'weekly-report', 'performance'] : ['overview', 'projects', 'daily-report'] },
     { label: 'Team', ids: ['raise-issue', 'chat', 'notifications'] }
   ]);
   const displayName = profile?.fullName || user?.name || 'AI Studio';
@@ -140,6 +144,7 @@ export const AiStudioDashboard: React.FC = () => {
       {page === 'tasks' && who === 'HEAD' && <DepartmentTasks key={key} role="HEAD" />}
       {page === 'team' && who === 'HEAD' && <AiStudioTeam canChange departmentSlug={profile?.department?.slug || 'ai-studio'} />}
       {page === 'daily-report' && (who === 'HEAD' ? <DepartmentReports key={key} role="HEAD" /> : <DailyReportsPage key={key} role={who} />)}
+      {page === 'weekly-report' && who === 'LEAD' && <LeadWeeklyReport key={key} />}
       {page === 'performance' && who !== 'MEMBER' && (
         <PerformanceApprovals title="Performance Management"
           subtitle={who === 'LEAD'
