@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/contracts';
 import { btn, Card, Dialog, ErrorBanner, Field, inputCls, Pager, Pill, selectCls, Spinner, type Tone } from '../team-member/pipeline/shared';
 import { HrPageHeader, hrBtn } from './hrUi';
+import { Paged } from '../common/Paged';
 
 /**
  * HR dashboard > Recruitment Management. Candidates live in the database (hr_candidates and its pending items, calls and history); the table
@@ -456,9 +457,11 @@ const CandidateDialog: React.FC<{ id: string | 'new'; positions: RecruitmentPosi
 
               <section aria-label="History" className="space-y-2">
                 <h3 className="text-sm font-extrabold text-slate-900">History</h3>
+                <Paged items={d.history} noun="entries">{rows => (
                 <ul className="divide-y divide-slate-100 border border-slate-100 rounded-xl max-h-56 overflow-y-auto">
-                  {d.history.map(h => <li key={h.id} className="px-3 py-2 text-xs flex flex-wrap justify-between gap-2"><span className="text-slate-800">{h.summary}</span><span className="text-slate-500">{h.actor ?? 'System'} · {when(h.at)}</span></li>)}
+                  {rows.map(h => <li key={h.id} className="px-3 py-2 text-xs flex flex-wrap justify-between gap-2"><span className="text-slate-800">{h.summary}</span><span className="text-slate-500">{h.actor ?? 'System'} · {when(h.at)}</span></li>)}
                 </ul>
+                )}</Paged>
               </section>
             </>
           )}

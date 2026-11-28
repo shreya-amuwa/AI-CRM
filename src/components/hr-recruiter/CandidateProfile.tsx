@@ -7,6 +7,7 @@ import { btn, Card, ErrorBanner, Spinner, inputCls } from '../team-member/pipeli
 import { CallDialog, CorrectionDialog, DecisionDialog, HoldDialog, InterviewDialog, InterviewResultDialog, InviteDialog } from './Dialogs';
 import { CALL_OUTCOME_LABEL, CATEGORY_LABEL, Empty, MODE_LABEL, RESULT_LABEL, ROUND_LABEL, STAGE_LABEL, STEP_LABEL, StagePill, fmtDate, fmtDateTime, useLoad } from './ui';
 import { confirmAction } from '../feedback/AppFeedback';
+import { Paged } from '../common/Paged';
 
 type Tab = 'details' | 'resume' | 'history' | 'calls' | 'assessment' | 'interviews' | 'notes';
 const TABS: { id: Tab; label: string }[] = [
@@ -127,13 +128,15 @@ export const CandidateProfile: React.FC<{ id: string; ctx: RecruiterContext; onB
         )}
         {tab === 'history' && (
           d.history.length === 0 ? <Empty title="No history yet" /> : (
-            <ol className="space-y-3">{d.history.map((h, i) => (
+            <Paged items={d.history} noun="entries">{rows => (
+            <ol className="space-y-3">{rows.map((h, i) => (
               <li key={i} className="border-l-2 border-indigo-200 pl-3">
                 <p className="text-sm font-semibold text-slate-900">{h.previous ? <>{STAGE_LABEL[h.previous as keyof typeof STAGE_LABEL] ?? h.previous} → </> : null}{STAGE_LABEL[h.new as keyof typeof STAGE_LABEL] ?? h.new.replace(/^CAREER_/, '').replace(/_/g, ' ').toLowerCase()}</p>
                 <p className="text-[11px] text-slate-500">{fmtDateTime(h.at)}{h.by ? ` · ${h.by}` : ''}</p>
                 {h.comment && <p className="text-xs text-slate-700 mt-0.5">{h.comment}</p>}
               </li>
             ))}</ol>
+            )}</Paged>
           )
         )}
         {tab === 'calls' && (
@@ -186,8 +189,8 @@ export const CandidateProfile: React.FC<{ id: string; ctx: RecruiterContext; onB
               <textarea id="note-body" className={`${inputCls} min-h-24`} value={note} onChange={e => setNote(e.target.value)} maxLength={2000} placeholder="Write a note or evaluation" />
               <div className="flex justify-end"><button type="submit" className={btn.primary} disabled={busy || !note.trim()}>Add</button></div>
             </form>
-            {d.notes.length === 0 ? <Empty title="No notes yet" /> : <ul className="space-y-3">{d.notes.map(n => (
-              <li key={n.id} className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] text-slate-500">{n.kind === 'EVALUATION' ? 'Evaluation' : 'Note'} · {n.author ?? 'Recruiter'} · {fmtDateTime(n.at)}</p><p className="text-sm whitespace-pre-wrap mt-1">{n.body}</p></li>))}</ul>}
+            {d.notes.length === 0 ? <Empty title="No notes yet" /> : <Paged items={d.notes} noun="notes">{rows => (<ul className="space-y-3">{rows.map(n => (
+              <li key={n.id} className="rounded-xl border border-slate-200 p-3"><p className="text-[11px] text-slate-500">{n.kind === 'EVALUATION' ? 'Evaluation' : 'Note'} · {n.author ?? 'Recruiter'} · {fmtDateTime(n.at)}</p><p className="text-sm whitespace-pre-wrap mt-1">{n.body}</p></li>))}</ul>)}</Paged>}
             {d.decisions.length > 0 && (
               <div><h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Decision history</h3>
                 <ul className="space-y-2">{d.decisions.map(x => (

@@ -7,6 +7,7 @@ import {
 import { INITIAL_AIQR_CLIENTS, AiqrClient, AiqrScanLog, CustomAppLink, DEFAULT_APP_LINKS } from '../../data/initialAiqrData';
 
 import { AiqrTab } from './AiqrSidebar';
+import { Paged } from '../common/Paged';
 
 interface AiqrStudioPanelProps {
   departmentName?: string;
@@ -729,6 +730,7 @@ export const AiqrStudioPanel: React.FC<AiqrStudioPanelProps> = ({
               </div>
             ) : (
               <div className="overflow-x-auto">
+                <Paged items={selectedClient.scanLogs} noun="scans">{rows => (
                 <table className="w-full text-left font-mono text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 uppercase text-[10px] font-bold">
@@ -742,7 +744,7 @@ export const AiqrStudioPanel: React.FC<AiqrStudioPanelProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {selectedClient.scanLogs.map(log => (
+                    {rows.map(log => (
                       <tr key={log.id} className="hover:bg-purple-50/30 transition-colors">
                         <td className="p-3 font-bold text-slate-900 flex items-center gap-2">
                           <div className="w-6 h-6 rounded-full bg-purple-100 text-purple-700 font-bold flex items-center justify-center text-[10px]">
@@ -768,6 +770,7 @@ export const AiqrStudioPanel: React.FC<AiqrStudioPanelProps> = ({
                     ))}
                   </tbody>
                 </table>
+                )}</Paged>
               </div>
             )}
 

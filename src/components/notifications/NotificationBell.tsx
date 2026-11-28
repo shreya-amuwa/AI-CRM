@@ -5,6 +5,7 @@ import { SideDrawer } from '../common/SideDrawer';
 import { openNotificationTarget } from './openNotification';
 import { MyAvailabilityBadge } from '../meetings/CeoPresence';
 import { fullTime } from '../../lib/notifications/notificationCategory';
+import { Paged } from '../common/Paged';
 
 /**
  * The bell in the header: the unread count, and a side panel with the person's own notifications (newest first),
@@ -52,8 +53,9 @@ export const NotificationBell: React.FC = () => {
               <p className="text-xs mt-1">New alerts show up here.</p>
             </div>
           ) : (
+            <Paged items={notifications} noun="notifications">{rows => (
             <ul className="divide-y divide-slate-100">
-              {notifications.map(n => (
+              {rows.map(n => (
                 <li key={n.id}>
                   <button
                     type="button"
@@ -81,6 +83,7 @@ export const NotificationBell: React.FC = () => {
                 </li>
               ))}
             </ul>
+            )}</Paged>
           )}
         </SideDrawer>
       )}

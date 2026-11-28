@@ -12,6 +12,7 @@ import { ReportStatusBadge, SentToHrBadge, TableWrap, dateText, dateTimeText, is
 import { DailyReportForm } from './DailyReportForm';
 import { ReportWorkView, WorkSummary } from './ReportWork';
 import { TaskDialog } from './AiStudioTasks';
+import { Paged } from '../common/Paged';
 
 // the person's own additional remarks on a consolidated report (the work itself comes from the tasks)
 const DAILY_EXTRA: { key: 'workCompleted' | 'pendingWork' | 'blockers' | 'tomorrowPlan' | 'remarks'; label: string }[] = [
@@ -256,8 +257,9 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
           {r.canEdit && <div><button type="button" className={primaryBtn} onClick={() => setEditing(true)}>{r.status === 'DRAFT' ? 'Edit draft' : 'Edit and resubmit'}</button></div>}
           <div>
             <h3 className="text-sm font-extrabold text-slate-900 mb-2">Approval history</h3>
+            <Paged items={r.history} noun="entries">{rows => (
             <ol className="space-y-2">
-              {r.history.map(h => (
+              {rows.map(h => (
                 <li key={h.id} className="text-sm border-l-2 border-slate-200 pl-3">
                   <div className="font-semibold text-slate-800">
                     {h.action === 'SENT_TO_HR' ? 'Sent to HR' : h.action === 'RETURNED' && h.toStatus === 'REJECTED_BY_TL' ? 'Rejected by Team Lead' : h.action === 'CREATED' ? 'Draft created' : h.action === 'SUBMITTED' ? 'Submitted' : h.action === 'RESUBMITTED' ? 'Resubmitted' : h.action === 'EDITED' ? 'Edited by the Team Lead' : h.action === 'APPROVED' ? `Approved by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}` : `Returned by ${h.stage === 'TEAM_LEAD' ? 'Team Lead' : 'Department Head'}`}
@@ -272,6 +274,7 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
                 </li>
               ))}
             </ol>
+            )}</Paged>
           </div>
           <div className="flex justify-end"><button type="button" className={ghostBtn} onClick={onClose}>Close</button></div>
         </div>

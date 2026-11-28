@@ -42,6 +42,7 @@ import { JourneyStrip, useJourney } from '../../journey/JourneyPanel';
 import { SubscriptionPanel } from '../../journey/SubscriptionPanel';
 import { checkTerms, emptyTerms, TermsFields, type TermsDraft, type TermsErrors } from '../../journey/SubscriptionTerms';
 import { startsSameAsMobile, whatsappValue } from '../../../../shared/whatsapp';
+import { Paged } from '../../common/Paged';
 
 type Errors = Record<string, string>;
 
@@ -1274,9 +1275,9 @@ export const ActivityCard: React.FC<{ activities: PipelineCustomerDetail['activi
     {activities.length === 0 ? (
       <p className="text-xs text-slate-500">No activity yet.</p>
     ) : (
+      <Paged items={activities} pageSize={5} noun="updates">{rows => (
       <ol className="space-y-3">
-        {/* Only the five most recent entries. */}
-        {activities.slice(0, 5).map(a => (
+        {rows.map(a => (
           <li key={a.id} className="flex gap-2.5">
             <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${ACTIVITY_DOT[a.type] || 'bg-indigo-400'}`} aria-hidden="true" />
             <div className="min-w-0">
@@ -1289,6 +1290,7 @@ export const ActivityCard: React.FC<{ activities: PipelineCustomerDetail['activi
           </li>
         ))}
       </ol>
+      )}</Paged>
     )}
     {footer}
   </Card>

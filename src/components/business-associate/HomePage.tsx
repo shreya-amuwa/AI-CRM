@@ -16,6 +16,7 @@ import type { BaNavigate } from './BusinessAssociateDashboard';
 import { BA_CHANGED } from './ui';
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
+import { Paged } from '../common/Paged';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -116,8 +117,9 @@ export const HomePage: React.FC<HomeProps> = ({ go, workspace, pipelineCounts, o
                 {data.recent.length === 0 ? (
                   <EmptyState title="No activity yet">When a Telecaller hands a contact over, it appears here and in Tasks.</EmptyState>
                 ) : (
+                  <Paged items={data.recent} pageSize={5} noun="updates">{rows => (
                   <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                    {data.recent.map((e, i) => (
+                    {rows.map((e, i) => (
                       <li key={`${e.at}-${i}`} className="flex items-start justify-between gap-3 px-5 py-3 text-sm">
                         <div className="min-w-0">
                           <span className="font-semibold text-slate-900">{e.client}</span> <span className="text-slate-600">· {e.note}</span>
@@ -127,6 +129,7 @@ export const HomePage: React.FC<HomeProps> = ({ go, workspace, pipelineCounts, o
                       </li>
                     ))}
                   </ul>
+                  )}</Paged>
                 )}
               </Card>
             </div>
