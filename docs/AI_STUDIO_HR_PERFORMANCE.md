@@ -46,6 +46,10 @@ Management are used.
 
 ## The Daily Work Description: 10 to 150 words
 
+> **Superseded by `20270305000100`** ([DAILY_REPORT_FIELDS.md](DAILY_REPORT_FIELDS.md)): the form no longer asks for the description. The
+> daily report has three optional fields (Work Completed 150 words, Work Pending 100, Additional Note 50). Reports already made keep their
+> description, and HR still sees it. The rule below still applies to reports made between the two migrations.
+
 * **Words, not characters.** A word is a whitespace-separated piece that contains a letter or a digit, so "-" or "..." alone is not a word.
   * Shared rule: `countWords` / `dailyDescriptionProblem` in `shared/validation.ts`.
   * The database uses the same rule: `private.word_count`.

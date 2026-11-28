@@ -8,6 +8,7 @@ import { officeToday } from '../../lib/officeTime';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
 import { dateLabel, Stat, timeLabel } from './reportUi';
 import { Paged } from '../common/Paged';
+import { ReportWordFields, reportWordsWithinLimits } from '../common/ReportWordFields';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 
@@ -29,8 +30,10 @@ const FILTERS: { id: '' | TaskReportStatus; label: string }[] = [
 ];
 
 // ------------------------------------------------------------------------------------------------ the Team Member's form
-interface Draft { taskId: string; reportDate: string; workCompleted: string; progress: string; pendingWork: string; delayReason: string; remarks: string }
-const emptyDraft = (taskId = ''): Draft => ({ taskId, reportDate: officeToday(), workCompleted: '', progress: '', pendingWork: '', delayReason: '', remarks: '' });
+// (20270305000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50); progress and the reason for delay
+// are no longer asked for (the report keeps the task's own progress)
+interface Draft { taskId: string; reportDate: string; workCompleted: string; pendingWork: string; remarks: string }
+const emptyDraft = (taskId = ''): Draft => ({ taskId, reportDate: officeToday(), workCompleted: '', pendingWork: '', remarks: '' });
 
 const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyReport) => void; onCancel?: () => void }> = ({ initial, onDone, onCancel }) => {
   const [tasks, setTasks] = useState<TaskReportTaskOption[] | null>(null);
@@ -44,24 +47,21 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
   useEffect(() => { taskReportsApi.myTasks().then(setTasks, e => setLoadError(errText(e))); }, []);
 
   const task = useMemo(() => tasks?.find(t => t.id === d.taskId) ?? null, [tasks, d.taskId]);
-  const progress = d.progress === '' ? NaN : Number(d.progress);
-  const overdue = !!task?.dueDate && task.dueDate < d.reportDate && !(progress >= 100);
+  const withinLimits = reportWordsWithinLimits(d);
   const set = (k: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setD(v => ({ ...v, [k]: e.target.value }));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerError('');
     const body = {
-      taskId: d.taskId, reportDate: d.reportDate, workCompleted: d.workCompleted.trim(), progress: progress,
-      pendingWork: d.pendingWork.trim() || undefined, delayReason: d.delayReason.trim() || undefined, remarks: d.remarks.trim() || undefined
+      taskId: d.taskId, reportDate: d.reportDate, workCompleted: d.workCompleted.trim() || undefined,
+      pendingWork: d.pendingWork.trim() || undefined, remarks: d.remarks.trim() || undefined
     };
     // the same schema the server uses
     const parsed = taskReportSubmitSchema.safeParse(body);
     const next: Partial<Record<keyof Draft, string>> = {};
-    if (!parsed.success) for (const i of parsed.error.issues) next[(i.path[0] === 'progress' ? 'progress' : (i.path[0] as keyof Draft))] = i.message;
+    if (!parsed.success) for (const i of parsed.error.issues) next[i.path[0] as keyof Draft] = i.message;
     if (!d.taskId) next.taskId = 'Choose the task you are reporting on.';
-    if (Number.isNaN(progress)) next.progress = 'Enter the progress, 0 to 100.';
-    if (overdue && !d.delayReason.trim()) next.delayReason = 'The task is past its deadline: give the reason for the delay.';
     setErrors(next);
     if (Object.keys(next).length) return;
     setSaving(true);
@@ -103,27 +103,10 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
             {task.dueDate ? ` · due ${dateLabel(task.dueDate)}` : ' · no deadline'}
           </div>
         ) : null}
-        <Field label="Work completed during the day" htmlFor="tr-work" required error={errors.workCompleted}>
-          <textarea id="tr-work" rows={3} className={inputCls} value={d.workCompleted} onChange={set('workCompleted')} disabled={saving} maxLength={4000} placeholder="What did you finish today on this task?" />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Progress made on the task (%)" htmlFor="tr-progress" required error={errors.progress}>
-            <input id="tr-progress" type="number" inputMode="numeric" min={0} max={100} className={inputCls} value={d.progress} onChange={set('progress')} disabled={saving} placeholder="0 to 100" />
-          </Field>
-          <Field label="Pending work" htmlFor="tr-pending" required={!(progress >= 100)} error={errors.pendingWork}>
-            <input id="tr-pending" className={inputCls} value={d.pendingWork} onChange={set('pendingWork')} disabled={saving} maxLength={2000} placeholder={progress >= 100 ? 'Nothing is pending' : 'What is still left to do?'} />
-          </Field>
-        </div>
-        <Field label={`Reason for delay${overdue ? '' : ' (if any)'}`} htmlFor="tr-delay" required={overdue} error={errors.delayReason}>
-          <textarea id="tr-delay" rows={2} className={inputCls} value={d.delayReason} onChange={set('delayReason')} disabled={saving} maxLength={2000}
-            placeholder={overdue ? 'The deadline has passed: why is the task late?' : 'Only if something delayed the work'} />
-        </Field>
-        <Field label="Remarks or additional details" htmlFor="tr-remarks" error={errors.remarks}>
-          <textarea id="tr-remarks" rows={2} className={inputCls} value={d.remarks} onChange={set('remarks')} disabled={saving} maxLength={2000} />
-        </Field>
+        <ReportWordFields idPrefix="tr" values={d} errors={errors} disabled={saving} inputClassName={inputCls} onChange={(k, v) => setD(x => ({ ...x, [k]: v }))} />
         {serverError ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{serverError}</div> : null}
         <div className="flex gap-2">
-          <button type="submit" className={btn.primary} disabled={saving || tasks.length === 0}>{saving ? 'Submitting…' : initial ? 'Resubmit for approval' : 'Submit to Team Lead'}</button>
+          <button type="submit" className={btn.primary} disabled={saving || tasks.length === 0 || !withinLimits} data-testid="task-report-submit">{saving ? 'Submitting…' : initial ? 'Resubmit for approval' : 'Submit to Team Lead'}</button>
           {onCancel ? <button type="button" className={btn.secondary} onClick={onCancel} disabled={saving}>Cancel</button> : null}
         </div>
       </form>
@@ -138,16 +121,17 @@ const ReportCard: React.FC<{ r: TaskDailyReport; onReview?: (r: TaskDailyReport)
       <div className="min-w-0">
         <div className="text-sm font-bold text-slate-900 break-words">{r.taskTitle}</div>
         <div className="text-xs text-slate-500">
-          {showAuthor ? <>{r.author} · </> : null}{dateLabel(r.reportDate)} · progress {r.progress}%{r.revision > 1 ? ` · revision ${r.revision}` : ''}
+          {showAuthor ? <>{r.author} · </> : null}{dateLabel(r.reportDate)} · task progress {r.progress}%{r.revision > 1 ? ` · revision ${r.revision}` : ''}
         </div>
       </div>
       <ApprovalPill status={r.status} />
     </div>
     <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-      <div><dt className="font-semibold text-slate-500">Work completed</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.workCompleted}</dd></div>
-      {r.pendingWork ? <div><dt className="font-semibold text-slate-500">Pending work</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.pendingWork}</dd></div> : null}
+      {/* the three fields of the report (20270305000100); a reason for delay is shown only on an older report that has one */}
+      {r.workCompleted ? <div><dt className="font-semibold text-slate-500">Work Completed</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.workCompleted}</dd></div> : null}
+      {r.pendingWork ? <div><dt className="font-semibold text-slate-500">Work Pending</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.pendingWork}</dd></div> : null}
+      {r.remarks ? <div><dt className="font-semibold text-slate-500">Additional Note</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.remarks}</dd></div> : null}
       {r.delayReason ? <div><dt className="font-semibold text-slate-500">Reason for delay</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.delayReason}</dd></div> : null}
-      {r.remarks ? <div><dt className="font-semibold text-slate-500">Remarks</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.remarks}</dd></div> : null}
     </dl>
     {r.editedAt ? (
       <div className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-900" data-testid="task-report-edited">Edited by {r.editedBy ?? 'the Team Lead'} on {timeLabel(r.editedAt)} before the decision (see the approval history for what changed)</div>
@@ -189,7 +173,7 @@ const HistoryPanel: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
   );
 };
 
-const FIELD_LABEL: Record<string, string> = { workCompleted: 'Work completed', progress: 'Progress (%)', pendingWork: 'Pending work', delayReason: 'Reason for delay', remarks: 'Remarks', rating: 'Rating' };
+const FIELD_LABEL: Record<string, string> = { workCompleted: 'Work Completed', progress: 'Progress (%)', pendingWork: 'Work Pending', delayReason: 'Reason for delay', remarks: 'Additional Note', rating: 'Rating' };
 /** What a reviewer changed: each field, before and after. */
 export const ChangeList: React.FC<{ changes: FieldChanges }> = ({ changes }) => (
   <ul className="mt-1 space-y-0.5" data-testid="change-list">
@@ -200,24 +184,23 @@ export const ChangeList: React.FC<{ changes: FieldChanges }> = ({ changes }) => 
 );
 
 // ------------------------------------------------------------------------------------------------ the Team Lead edits a waiting report
-interface EditDraft { workCompleted: string; progress: string; pendingWork: string; delayReason: string; remarks: string; reason: string }
+// (20270305000100) the same three fields as the member's form; progress and the reason for delay stay as the report has them
+interface EditDraft { workCompleted: string; pendingWork: string; remarks: string; reason: string }
 const ReviewerEditForm: React.FC<{ r: TaskDailyReport; onSaved: (r: TaskDailyReport) => void; onCancel: () => void }> = ({ r, onSaved, onCancel }) => {
-  const [d, setD] = useState<EditDraft>({ workCompleted: r.workCompleted, progress: String(r.progress), pendingWork: r.pendingWork ?? '', delayReason: r.delayReason ?? '', remarks: r.remarks ?? '', reason: '' });
+  const [d, setD] = useState<EditDraft>({ workCompleted: r.workCompleted ?? '', pendingWork: r.pendingWork ?? '', remarks: r.remarks ?? '', reason: '' });
   const [errors, setErrors] = useState<Partial<Record<keyof EditDraft, string>>>({});
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState('');
   const set = (k: keyof EditDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD(v => ({ ...v, [k]: e.target.value }));
-  const progress = d.progress === '' ? NaN : Number(d.progress);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerError('');
-    const body = { workCompleted: d.workCompleted.trim(), progress, pendingWork: d.pendingWork.trim() || undefined, delayReason: d.delayReason.trim() || undefined,
+    const body = { workCompleted: d.workCompleted.trim() || undefined, pendingWork: d.pendingWork.trim() || undefined, delayReason: r.delayReason ?? undefined,
       remarks: d.remarks.trim() || undefined, reason: d.reason.trim() };
     // the same schema the server uses (the database checks again, with the task's deadline)
     const parsed = taskReportReviewerEditSchema.safeParse(body);
     const next: Partial<Record<keyof EditDraft, string>> = {};
     if (!parsed.success) for (const i of parsed.error.issues) next[i.path[0] as keyof EditDraft] = i.message;
-    if (Number.isNaN(progress)) next.progress = 'Enter the progress, 0 to 100.';
     setErrors(next);
     if (Object.keys(next).length) return;
     setBusy(true);
@@ -227,29 +210,13 @@ const ReviewerEditForm: React.FC<{ r: TaskDailyReport; onSaved: (r: TaskDailyRep
   return (
     <form onSubmit={save} noValidate className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3" data-testid="task-report-edit">
       <p className="text-xs text-slate-600">Correct the report before you decide it. The team member is told what you changed and why; the change is kept in the approval history.</p>
-      <Field label="Work completed" htmlFor={id('work')} required error={errors.workCompleted}>
-        <textarea id={id('work')} rows={3} className={inputCls} value={d.workCompleted} onChange={set('workCompleted')} disabled={busy} maxLength={4000} />
-      </Field>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Progress (%)" htmlFor={id('progress')} required error={errors.progress}>
-          <input id={id('progress')} type="number" inputMode="numeric" min={0} max={100} className={inputCls} value={d.progress} onChange={set('progress')} disabled={busy} />
-        </Field>
-        <Field label="Pending work" htmlFor={id('pending')} required={!(progress >= 100)} error={errors.pendingWork}>
-          <input id={id('pending')} className={inputCls} value={d.pendingWork} onChange={set('pendingWork')} disabled={busy} maxLength={2000} />
-        </Field>
-      </div>
-      <Field label="Reason for delay" htmlFor={id('delay')} error={errors.delayReason}>
-        <textarea id={id('delay')} rows={2} className={inputCls} value={d.delayReason} onChange={set('delayReason')} disabled={busy} maxLength={2000} />
-      </Field>
-      <Field label="Remarks" htmlFor={id('remarks')} error={errors.remarks}>
-        <textarea id={id('remarks')} rows={2} className={inputCls} value={d.remarks} onChange={set('remarks')} disabled={busy} maxLength={2000} />
-      </Field>
+      <ReportWordFields idPrefix={`tre-${r.id}`} values={d} errors={errors} disabled={busy} inputClassName={inputCls} onChange={(k, v) => setD(x => ({ ...x, [k]: v }))} />
       <Field label="Why you changed it (the team member reads this)" htmlFor={id('reason')} required error={errors.reason}>
         <input id={id('reason')} className={inputCls} value={d.reason} onChange={set('reason')} disabled={busy} maxLength={1000} />
       </Field>
       {serverError ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{serverError}</div> : null}
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+        <button type="submit" className={btn.primary} disabled={busy || !reportWordsWithinLimits(d)}>{busy ? 'Saving…' : 'Save changes'}</button>
         <button type="button" className={btn.secondary} disabled={busy} onClick={onCancel}>Cancel editing</button>
       </div>
     </form>
@@ -383,7 +350,7 @@ export const TaskReports: React.FC<{ level: 'MEMBER' | 'TEAM_LEAD' | 'DEPARTMENT
         />
         <h2 className="text-sm font-bold text-slate-900">My task reports</h2>
         <ReportList scope="MINE" reloadKey={reloadKey} onChanged={bump} onEdit={r => setEditing({
-          taskId: r.taskId, reportDate: r.reportDate, workCompleted: r.workCompleted, progress: String(r.progress), pendingWork: r.pendingWork ?? '', delayReason: r.delayReason ?? '', remarks: r.remarks ?? ''
+          taskId: r.taskId, reportDate: r.reportDate, workCompleted: r.workCompleted ?? '', pendingWork: r.pendingWork ?? '', remarks: r.remarks ?? ''
         })} />
       </div>
     );

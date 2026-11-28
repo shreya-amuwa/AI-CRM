@@ -3244,7 +3244,8 @@ export const adsReportSchema = z
     reportDate: z.preprocess(v => (v === '' ? undefined : v), isoDate.optional()),
     clientId: adsOptionalId,
     assignmentId: adsOptionalId,
-    workCompleted: adsRequiredText(4000, 'work completed today'),
+    // (20270305000100) Work Completed / Work Pending / Additional Note (remarks): optional, at least one, with word limits
+    workCompleted: optionalText(4000),
     workInProgress: optionalText(4000),
     pendingWork: optionalText(4000),
     challenges: optionalText(4000),
@@ -3252,7 +3253,11 @@ export const adsReportSchema = z
     attachments: adsLinks.optional(),
     clientRequestId: trimmed(80).optional()
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    addReportWordIssues(ctx, { workCompleted: v.workCompleted ?? undefined, pendingWork: v.pendingWork ?? undefined, remarks: v.remarks ?? undefined });
+  });
 export type AdsReportInput = z.infer<typeof adsReportSchema>;
 export const adsReportListQuerySchema = z
   .object({
@@ -3362,7 +3367,9 @@ export const aiStudioReportSchema = z
     submit: z.boolean().default(false)
   })
   .strict()
-  .refine(v => !v.submit || (v.workCompleted ?? '').length > 0, { message: 'Describe the work completed today before you submit.', path: ['workCompleted'] });
+  .refine(v => !v.submit || (v.workCompleted ?? '').length > 0, { message: 'Describe the work completed today before you submit.', path: ['workCompleted'] })
+  // (20270305000100) the same word limits as every daily report (this older one-task form is only used to correct reports made with it)
+  .superRefine((v, ctx) => { if (v.submit) addReportWordIssues(ctx, { workCompleted: v.workCompleted ?? undefined, pendingWork: v.pendingWork ?? undefined, remarks: v.remarks ?? undefined }); });
 export type AiStudioReportInput = z.infer<typeof aiStudioReportSchema>;
 
 export const aiStudioReportReviewSchema = z
@@ -3421,10 +3428,30 @@ export const aiStudioDailyReportSchema = z
   .strict()
   .superRefine((v, ctx) => {
     if (!v.submit) return;
-    const problem = dailyDescriptionProblem(v.workDescription);
-    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['workDescription'] });
+    // (20270305000100) the three fields' word limits; the Daily Work Description is no longer asked for
+    addReportWordIssues(ctx, { workCompleted: v.workCompleted, pendingWork: v.pendingWork, remarks: v.remarks });
   });
 export type AiStudioDailyReportInput = z.infer<typeof aiStudioDailyReportSchema>;
+
+// ---- Daily report fields, every department (20270305000100): Work Completed / Work Pending / Additional Note, all optional, each with a word limit ----
+export const DAILY_REPORT_FIELDS = [
+  { key: 'workCompleted', label: 'Work Completed', maxWords: 150 },
+  { key: 'pendingWork', label: 'Work Pending', maxWords: 100 },
+  { key: 'remarks', label: 'Additional Note', maxWords: 50 }
+] as const;
+export type DailyReportFieldKey = (typeof DAILY_REPORT_FIELDS)[number]['key'];
+/** The message for a field over its word limit, or null (the database's private.report_word_limits says the same). */
+export function dailyReportWordProblem(key: DailyReportFieldKey, text: string | null | undefined): string | null {
+  const f = DAILY_REPORT_FIELDS.find(x => x.key === key)!;
+  const n = countWords(text);
+  return n > f.maxWords ? `${f.label} can have at most ${f.maxWords} words (now ${n}).` : null;
+}
+function addReportWordIssues(ctx: z.RefinementCtx, v: Partial<Record<DailyReportFieldKey, string | null | undefined>>) {
+  for (const f of DAILY_REPORT_FIELDS) {
+    const problem = dailyReportWordProblem(f.key, v[f.key]);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: [f.key] });
+  }
+}
 
 // ---- AI Studio Daily Work Description and HR's AI Studio Performance (20270302000100) ----
 export const DAILY_DESCRIPTION_MIN_WORDS = 10;
@@ -3982,18 +4009,23 @@ export const hrRoleOfferFieldsSchema = z.object({
 export const offerTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);
 
 // ---- Task daily reports and performance approval ----
+// (20270305000100) three optional fields with word limits (at least one written); progress and the reason for delay are no longer asked for (the report
+// keeps the task's own progress) but an older client may still send them
 export const taskReportSubmitSchema = z
   .object({
     taskId: uuidSchema,
     reportDate: isoDate.optional(),
-    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
-    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    workCompleted: trimmed(4000).optional(),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.').optional(),
     pendingWork: trimmed(2000).optional(),
     delayReason: trimmed(2000).optional(),
     remarks: trimmed(2000).optional()
   })
   .strict()
-  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+  .superRefine((v, ctx) => {
+    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    addReportWordIssues(ctx, v);
+  });
 export const taskReportReviewSchema = z
   .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional() })
   .strict()
@@ -4002,15 +4034,18 @@ export const taskReportReviewSchema = z
 /** The Team Lead edits a member's waiting report: the member's own rules apply, plus a reason the member reads. */
 export const taskReportReviewerEditSchema = z
   .object({
-    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
-    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    workCompleted: trimmed(4000).optional(),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.').optional(),
     pendingWork: trimmed(2000).optional(),
     delayReason: trimmed(2000).optional(),
     remarks: trimmed(2000).optional(),
     reason: trimmed(1000).min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.')
   })
   .strict()
-  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+  .superRefine((v, ctx) => {
+    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    addReportWordIssues(ctx, v);
+  });
 /** The reviewer updates the rating and remarks of an approved evaluation. */
 export const performanceEvaluationUpdateSchema = z
   .object({ rating: z.number().int().min(1, 'The rating is from 1 to 5.').max(5, 'The rating is from 1 to 5.'), remarks: trimmed(2000).optional() })

@@ -54,14 +54,22 @@ try {
   check((await text(page)).includes('You have not submitted a task report'), 'and an empty list says so');
   await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
   let t = await text(page);
-  check(t.includes('Choose the task you are reporting on.') && t.includes('Describe the work completed'), 'an empty form shows what is missing', t.slice(0, 400));
+  check(t.includes('Choose the task you are reporting on.') && t.includes('Write the work completed, the work pending or an additional note.'), 'an empty form shows what is missing', t.slice(0, 400));
+  // (20270305000100) three optional fields with live word counters: Work Completed 150, Work Pending 100, Additional Note 50; no progress, no reason for delay
+  const formNow = await page.getByTestId('task-report-form').innerText();
+  check(/Work Completed/.test(formNow) && /Work Pending/.test(formNow) && /Additional Note/.test(formNow) && !/Progress made/.test(formNow) && !/Reason for delay/.test(formNow)
+    && await page.locator('#tr-progress').count() === 0 && await page.getByTestId('task-report-form').locator('textarea').count() === 3, 'the form has exactly Work Completed, Work Pending and Additional Note', formNow);
+  check((await page.getByTestId('report-count-workCompleted').innerText()) === '0/150 words' && (await page.getByTestId('report-count-pendingWork').innerText()) === '0/100 words'
+    && (await page.getByTestId('report-count-remarks').innerText()) === '0/50 words', 'each field shows its word counter');
+  await page.fill('#tr-remarks', Array.from({ length: 51 }, (_, i) => `w${i}`).join(' '));
+  check(/51\/50 words · 1 over the limit/.test(await page.getByTestId('report-count-remarks').innerText()) && await page.getByTestId('task-report-submit').isDisabled(),
+    'a field over its limit says so and Submit is disabled');
+  await page.fill('#tr-remarks', '');
   await page.selectOption('#tr-task', '11111111-1111-4111-8111-111111111111');
   check((await page.getByTestId('task-report-task').innerText()).includes('Update the account list'), 'choosing a task shows it');
-  await page.fill('#tr-work', 'Updated forty of the eighty accounts');
-  await page.fill('#tr-progress', '40');
-  await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
-  check((await text(page)).includes('Say what work is still pending'), 'an unfinished task needs the pending work');
-  await page.fill('#tr-pending', 'The last forty accounts');
+  await page.fill('#tr-workCompleted', 'Updated forty of the eighty accounts');
+  check((await page.getByTestId('report-count-workCompleted').innerText()) === '6/150 words', 'the counter counts words as they are typed');
+  await page.fill('#tr-pendingWork', 'The last forty accounts');
   await page.fill('#tr-remarks', 'Will finish tomorrow');
   await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
   await rows(page).first().waitFor();
@@ -69,20 +77,12 @@ try {
   check((await rows(page).first().innerText()).includes('Updated forty of the eighty accounts') && (await rows(page).first().innerText()).includes('The last forty accounts'), 'the card shows the work, the pending work and the progress');
   // the same task and day again
   await page.selectOption('#tr-task', '11111111-1111-4111-8111-111111111111');
-  await page.fill('#tr-work', 'Another update on the same day');
-  await page.fill('#tr-progress', '50');
-  await page.fill('#tr-pending', 'More');
+  await page.fill('#tr-workCompleted', 'Another update on the same day');
+  await page.fill('#tr-pendingWork', 'More');
   await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
   await page.getByRole('alert').first().waitFor();
   check((await page.getByRole('alert').first().innerText()).includes('already waiting for approval'), 'a second report for the same task and day is refused with the database\'s message');
-  // an overdue task needs the reason for the delay
-  await page.selectOption('#tr-task', '22222222-2222-4222-8222-222222222222');
-  await page.fill('#tr-work', 'Started on the paperwork today');
-  await page.fill('#tr-progress', '20');
-  await page.fill('#tr-pending', 'Most of the forms');
-  check(await page.locator('label[for="tr-delay"]').innerText().then(x => x.includes('*')), 'the reason for the delay becomes required when the task is past its deadline');
-  await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
-  check((await text(page)).includes('past its deadline'), 'and is asked for');
+  // (20270305000100) an overdue task no longer asks for a reason for the delay (the field is gone); nothing is sent for it here
 
   // ============================================================ the Team Lead returns it
   await mount(page, 'reports-lead');
@@ -104,8 +104,8 @@ try {
   check(await pill(page, 'RETURNED').count() === 1 && (await rows(page).first().innerText()).includes('Give the number of accounts updated'), 'the member sees Returned for correction with the reason');
   await page.getByRole('button', { name: 'Correct and resubmit' }).click();
   await page.waitForTimeout(200);
-  check(await page.locator('#tr-task').isDisabled() && (await page.inputValue('#tr-work')).includes('forty of the eighty') && await page.getByRole('button', { name: 'Resubmit for approval' }).isVisible(), 'the report opens in the form with its task fixed');
-  await page.fill('#tr-work', 'Updated 40 of 80 accounts: 25 manufacturing, 15 retail');
+  check(await page.locator('#tr-task').isDisabled() && (await page.inputValue('#tr-workCompleted')).includes('forty of the eighty') && await page.getByRole('button', { name: 'Resubmit for approval' }).isVisible(), 'the report opens in the form with its task fixed');
+  await page.fill('#tr-workCompleted', 'Updated 40 of 80 accounts: 25 manufacturing, 15 retail');
   await page.getByRole('button', { name: 'Resubmit for approval' }).click();
   await page.waitForTimeout(300);
   check(await pill(page, 'PENDING').count() === 1 && (await rows(page).first().innerText()).includes('revision 2') && await rows(page).count() === 1, 'it is Pending again, as revision 2 of the same report (no duplicate)');
@@ -158,7 +158,7 @@ try {
   await page.getByTestId('task-report-review').waitFor();
   await page.getByRole('button', { name: 'Edit report' }).click();
   await page.getByTestId('task-report-edit').waitFor();
-  await page.locator('input[id^="tre-progress-"]').fill('55');
+  await page.locator('textarea[id^="tre-"][id$="-remarks"]').fill('Checked against the sheet');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForTimeout(150);
   check((await page.getByTestId('task-report-edit').innerText()).includes('Say why you changed the report') && !(await page.evaluate(() => window.__calls.some(c => c.path.endsWith('/edit')))),
@@ -168,8 +168,8 @@ try {
   await page.getByRole('button', { name: 'Save changes' }).click();
   await page.waitForTimeout(300);
   const edited = await page.evaluate(() => window.__calls.filter(c => c.path === '/task-reports/r1/edit').pop()?.body);
-  check(edited && edited.progress === 55 && edited.reason === 'Progress checked against the sheet' && edited.workCompleted === 'Updated half of the account list' && edited.pendingWork === 'The other half',
-    'the Team Lead\'s edit is sent with the reason (the other fields as they were)', edited);
+  check(edited && edited.progress === undefined && edited.remarks === 'Checked against the sheet' && edited.reason === 'Progress checked against the sheet' && edited.workCompleted === 'Updated half of the account list' && edited.pendingWork === 'The other half',
+    'the Team Lead\'s edit is sent with the reason (the three fields; no progress)', edited);
   check((await page.getByTestId('task-report-review').locator('..').innerText()).includes('Your changes are saved') && (await page.getByTestId('person-work').innerText()).includes('Edited by Leena Lead'),
     'the review stays open after the edit and the report shows who edited it');
   await page.getByTestId('task-report-review').locator('..').getByRole('button', { name: 'Approve', exact: true }).click();
@@ -179,8 +179,8 @@ try {
   await page.getByTestId('task-report-history').waitFor();
   await page.getByTestId('change-list').first().waitFor();
   const reportHist = await page.getByTestId('task-report-history').locator('..').innerText();
-  check(reportHist.includes('Edited by the Team Lead') && reportHist.includes('Progress checked against the sheet') && /Progress \(%\):\s*40\s*→\s*55/.test(reportHist),
-    'the report\'s history shows the edit, the reason and the change (40 → 55)', reportHist);
+  check(reportHist.includes('Edited by the Team Lead') && reportHist.includes('Progress checked against the sheet') && /Additional Note:\s*\(empty\)\s*→\s*Checked against the sheet/.test(reportHist),
+    'the report\'s history shows the edit, the reason and the change (the Additional Note added)', reportHist);
 
   await page.evaluate(() => window.reset());
   await mount(page, 'perf-head');
@@ -278,44 +278,44 @@ try {
   await page.waitForTimeout(150);
   check((await page.getByTestId('people-table').innerText()).includes('Mohan Member'), 'Super Admin: opening a Team Lead shows their members and approval status');
 
-  // ===== AI Studio daily report: only Work Completed Today, Pending Work and Challenges / Blockers
+  // ===== AI Studio daily report (the older one-task form): Work Completed, Work Pending and Additional Note (20270305000100)
   await page.evaluate(() => window.reset());
   await mount(page, 'ai-report');
   await page.locator('form[aria-label="Daily report"]').waitFor();
   const formText = await page.locator('form[aria-label="Daily report"]').innerText();
-  check(/Work Completed Today/.test(formText) && /Pending Work/.test(formText) && /Challenges \/ Blockers/.test(formText), 'AI Studio report: Work Completed Today, Pending Work and Challenges / Blockers are asked');
-  check(!/Work In Progress/.test(formText) && !/Remarks or Additional Updates/.test(formText) && await page.locator('textarea').count() === 3, 'AI Studio report: no Work In Progress and no Remarks (three boxes only)', formText);
+  check(/Work Completed/.test(formText) && /Work Pending/.test(formText) && /Additional Note/.test(formText), 'AI Studio report: Work Completed, Work Pending and Additional Note are asked');
+  check(!/Work In Progress/.test(formText) && !/Challenges/.test(formText) && await page.locator('textarea').count() === 3, 'AI Studio report: no Work In Progress and no Challenges (three boxes only)', formText);
   await page.fill('#ai-rp-workCompleted', 'Built the login screen');
   await page.fill('#ai-rp-pendingWork', 'Error messages');
   await page.getByRole('button', { name: 'Submit Daily Report' }).click();
   await page.waitForTimeout(300);
   const sentAi = await page.evaluate(() => window.aiReports().pop());
-  check(sentAi && sentAi.workCompleted === 'Built the login screen' && sentAi.pendingWork === 'Error messages' && sentAi.submit === true && !sentAi.workInProgress && !sentAi.remarks,
+  check(sentAi && sentAi.workCompleted === 'Built the login screen' && sentAi.pendingWork === 'Error messages' && sentAi.submit === true && !sentAi.workInProgress && !sentAi.blockers,
     'AI Studio report: it is submitted with the three parts', sentAi);
   // an older report that has "Work In Progress" keeps showing it (and keeps it when edited)
   await mount(page, 'ai-report-old');
   await page.locator('form[aria-label="Daily report"]').waitFor();
-  check(await page.locator('#ai-rp-workInProgress').inputValue() === 'Old progress notes' && await page.locator('#ai-rp-remarks').count() === 0,
-    'AI Studio report: an older report shows its Work In Progress text (Remarks stays hidden when empty)');
+  check(await page.locator('#ai-rp-workInProgress').inputValue() === 'Old progress notes' && await page.locator('#ai-rp-blockers').count() === 0,
+    'AI Studio report: an older report shows its Work In Progress text (Challenges stays hidden when empty)');
   await page.evaluate(() => window.reset());
 
   // ===== AI Design Studio daily report: the same three parts
   await mount(page, 'ads-report');
   await page.locator('form[aria-label="Daily report"]').waitFor();
   const adsText = await page.locator('form[aria-label="Daily report"]').innerText();
-  check(/Work completed today/.test(adsText) && /Pending work/.test(adsText) && /Challenges or blockers/.test(adsText) && !/Work in progress/.test(adsText) && !/\bRemarks\b/.test(adsText)
-    && await page.locator('textarea').count() === 3, 'Design Studio report: Work completed today, Pending work and Challenges or blockers only (no Work in progress, no Remarks)', adsText);
-  await page.fill('#rep-done', 'Designed the festival poster');
-  await page.fill('#rep-pending', 'Two more sizes');
+  check(/Work Completed/.test(adsText) && /Work Pending/.test(adsText) && /Additional Note/.test(adsText) && !/Work in progress/.test(adsText) && !/Challenges/.test(adsText) && !/attachments/i.test(adsText)
+    && await page.locator('textarea').count() === 3, 'Design Studio report: Work Completed, Work Pending and Additional Note only (no Work in progress, Challenges or links)', adsText);
+  await page.fill('#rep-workCompleted', 'Designed the festival poster');
+  await page.fill('#rep-pendingWork', 'Two more sizes');
   await page.getByRole('button', { name: 'Submit report' }).click();
   await page.waitForTimeout(300);
   const sentAds = await page.evaluate(() => window.aiReports().filter(r => r.ads).pop());
-  check(sentAds && sentAds.workCompleted === 'Designed the festival poster' && sentAds.pendingWork === 'Two more sizes' && !sentAds.workInProgress && !sentAds.remarks,
+  check(sentAds && sentAds.workCompleted === 'Designed the festival poster' && sentAds.pendingWork === 'Two more sizes' && !sentAds.workInProgress && !sentAds.challenges,
     'Design Studio report: it is submitted with the three parts', sentAds);
   await mount(page, 'ads-report-old');
   await page.locator('form[aria-label="Edit and send the report again"]').waitFor();
   check(await page.locator('#rep-remarks').inputValue() === 'Old remark kept' && await page.locator('#rep-wip').count() === 0,
-    'Design Studio report: an older report shows its Remarks text (Work in progress stays hidden when empty)');
+    'Design Studio report: an older report shows its note in Additional Note (Work in progress is not asked for)');
   await page.evaluate(() => window.reset());
 
   // phone width: the page itself does not scroll sideways (wide tables scroll inside their own box)

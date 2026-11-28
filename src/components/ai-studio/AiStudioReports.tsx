@@ -10,28 +10,31 @@ import { Card, Tabs, fieldCls, ghostBtn, primaryBtn, textareaCls } from '../task
 import { notifyAiStudioChanged, peekPendingAiStudio, usePendingAiStudio, useAiStudioChanged } from './aiStudioEvents';
 import { ReportStatusBadge, SentToHrBadge, TableWrap, dateText, dateTimeText, isSentToHr, tdCls, thCls, todayIso, useLoad } from './ui';
 import { DailyReportForm } from './DailyReportForm';
+import { ReportWordFields, reportWordsWithinLimits } from '../common/ReportWordFields';
 import { ReportWorkView, WorkSummary } from './ReportWork';
 import { TaskDialog } from './AiStudioTasks';
 import { Paged } from '../common/Paged';
 
 // the person's own additional remarks on a consolidated report (the work itself comes from the tasks)
+// (20270305000100) the report's three fields; the challenges and tomorrow's plan are shown only on an older report that has them
 const DAILY_EXTRA: { key: 'workCompleted' | 'pendingWork' | 'blockers' | 'tomorrowPlan' | 'remarks'; label: string }[] = [
-  { key: 'workCompleted', label: 'Additional work completed' },
-  { key: 'pendingWork', label: 'Additional pending work' },
-  { key: 'blockers', label: 'Additional challenges / blockers' },
-  { key: 'tomorrowPlan', label: "Tomorrow's work plan" },
-  { key: 'remarks', label: 'General remarks' }
+  { key: 'workCompleted', label: 'Work Completed' },
+  { key: 'pendingWork', label: 'Work Pending' },
+  { key: 'remarks', label: 'Additional Note' },
+  { key: 'blockers', label: 'Challenges / blockers' },
+  { key: 'tomorrowPlan', label: "Tomorrow's work plan" }
 ];
 const isDaily = (r: { kind?: string; projectId: string | null }) => r.kind === 'DAILY' || r.projectId == null;
 
 // The daily report asks three things: what was completed, what is pending, and any challenge. "Work In Progress" (the same as pending work) and "Remarks" were
 // dropped from the form to keep it short; they are shown (and kept when the report is edited) only on an older report that already has them.
+// (20270305000100) the three fields of every daily report; "Challenges / Blockers" and "Work In Progress" are shown only on an older report that has them
 const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean; legacy?: boolean }[] = [
-  { key: 'workCompleted', label: 'Work Completed Today', required: true },
-  { key: 'pendingWork', label: 'Pending Work' },
-  { key: 'blockers', label: 'Challenges / Blockers' },
-  { key: 'workInProgress', label: 'Work In Progress', legacy: true },
-  { key: 'remarks', label: 'Remarks or Additional Updates', legacy: true }
+  { key: 'workCompleted', label: 'Work Completed', required: true },
+  { key: 'pendingWork', label: 'Work Pending' },
+  { key: 'remarks', label: 'Additional Note' },
+  { key: 'blockers', label: 'Challenges / Blockers', legacy: true },
+  { key: 'workInProgress', label: 'Work In Progress', legacy: true }
 ];
 /** The parts to show: the three of the form, and an older report's extra parts only when they have text. */
 const shownParts = (values: Partial<Record<(typeof PARTS)[number]['key'], string | null>>) => PARTS.filter(p => !p.legacy || (values[p.key] ?? '').trim() !== '');
@@ -96,9 +99,10 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
             </select>
           </Field>
         </div>
-        {shownParts(existing ?? {}).map(p => (
-          <Field key={p.key} label={p.label} htmlFor={`ai-rp-${p.key}`} required={p.required}>
-            <textarea id={`ai-rp-${p.key}`} className={textareaCls} rows={p.key === 'workCompleted' ? 4 : 3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
+        <ReportWordFields idPrefix="ai-rp" values={text} inputClassName={textareaCls} onChange={(k, v) => setText(t => ({ ...t, [k]: v }))} />
+        {shownParts(existing ?? {}).filter(p => p.legacy).map(p => (
+          <Field key={p.key} label={p.label} htmlFor={`ai-rp-${p.key}`}>
+            <textarea id={`ai-rp-${p.key}`} className={textareaCls} rows={3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
           </Field>
         ))}
         <p className="text-xs text-slate-500">
@@ -112,7 +116,7 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
         </p>
         {error && <ErrorBanner message={error} />}
         <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
+          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || !reportWordsWithinLimits(text)}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
           <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
           {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
         </div>
@@ -221,7 +225,7 @@ export const ReportDialog: React.FC<{ id: string; onClose: () => void; onChanged
                 : <p className="text-sm text-slate-500">No specific task: the work is described below.</p>}
               {DAILY_EXTRA.some(p => (r[p.key] ?? '').trim() !== '') && (
                 <div className="rounded-xl border border-slate-200 p-4 space-y-3" data-testid="report-extra">
-                  <h3 className="text-sm font-extrabold text-slate-900">Additional remarks from {r.authorName}</h3>
+                  <h3 className="text-sm font-extrabold text-slate-900">{r.authorName}'s report</h3>
                   {DAILY_EXTRA.filter(p => (r[p.key] ?? '').trim() !== '').map(p => (
                     <div key={p.key}>
                       <div className="text-xs font-semibold text-slate-500 mb-1">{p.label}</div>

@@ -6275,7 +6275,8 @@ export interface AdsReport {
   clientName: string | null;
   assignmentId: string | null;
   assignmentTitle: string | null;
-  workCompleted: string;
+  /** Empty when only Work Pending or the Additional Note was written (20270305000100). */
+  workCompleted: string | null;
   workInProgress: string | null;
   pendingWork: string | null;
   challenges: string | null;
@@ -7546,7 +7547,8 @@ export interface TaskDailyReport {
   teamId: string | null;
   reviewerId: string | null;
   reportDate: string;
-  workCompleted: string;
+  /** Empty when only Work Pending or the Additional Note was written (20270305000100). */
+  workCompleted: string | null;
   progress: number;
   pendingWork: string | null;
   delayReason: string | null;

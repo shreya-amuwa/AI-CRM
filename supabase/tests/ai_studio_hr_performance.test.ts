@@ -22,12 +22,11 @@ check(countWords('नमस्ते दुनिया 2026') === 3, 'other scr
 check(dailyDescriptionProblem(words(9))?.includes('at least 10') && dailyDescriptionProblem(words(151))?.includes('at most 150'), '9 and 151 words are refused with a clear message');
 check(dailyDescriptionProblem(words(10)) === null && dailyDescriptionProblem(words(150)) === null, '10 and 150 words are accepted');
 
+// (20270305000100) the description is no longer asked for: the three fields' word limits apply instead
 const base = { reportDate: '2026-11-20', taskIds: [], workCompleted: 'Work' };
-check(aiStudioDailyReportSchema.safeParse({ ...base, submit: false, workDescription: 'short' }).success, 'a draft may hold a short description');
-check(!aiStudioDailyReportSchema.safeParse({ ...base, submit: true, workDescription: 'short' }).success, 'a submission needs 10 words');
-check(!aiStudioDailyReportSchema.safeParse({ ...base, submit: true }).success, 'a submission without a description is refused');
-check(!aiStudioDailyReportSchema.safeParse({ ...base, submit: true, workDescription: words(151) }).success, 'a submission over 150 words is refused');
-check(aiStudioDailyReportSchema.safeParse({ ...base, submit: true, workDescription: words(20) }).success, 'a valid description is accepted');
+check(aiStudioDailyReportSchema.safeParse({ ...base, submit: true }).success, 'a submission without a description is accepted');
+check(!aiStudioDailyReportSchema.safeParse({ ...base, submit: true, workCompleted: words(151) }).success, 'Work Completed over 150 words is refused');
+check(aiStudioDailyReportSchema.safeParse({ ...base, submit: false, workCompleted: words(151) }).success, 'a draft may hold more (checked on submission)');
 
 check(aiStudioReportReviewSchema.safeParse({ decision: 'REJECT', comment: 'Same as yesterday' }).success && !aiStudioReportReviewSchema.safeParse({ decision: 'DELETE' }).success,
   'Approve, Return and Reject only');
