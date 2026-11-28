@@ -17,6 +17,7 @@ import { CeoArrivalBanner, CeoArrivalChip, CeoNotArrivedPopup, useCeoOffice } fr
 import { ClientMeetingComposer, ClientMeetingsTab, MeetingMailLog, clientStatus } from './ClientMeetings';
 import { relabelRoles } from '../../../shared/roleNames';
 import { confirmAction, promptInput } from '../feedback/AppFeedback';
+import { Paged } from '../common/Paged';
 
 /**
  * Meetings: one calendar for appointments, demos, interviews, meetings and meetings with the CEO.
@@ -606,11 +607,13 @@ const MeetingDrawer: React.FC<{ id: string; intent?: 'reject' | 'reschedule'; on
             {!!m.history.length && (
               <details className="text-xs text-slate-500">
                 <summary className="cursor-pointer font-semibold">History</summary>
+                <Paged items={m.history} noun="entries">{rows => (
                 <ul className="mt-2 space-y-1">
-                  {m.history.map((h, i) => (
+                  {rows.map((h, i) => (
                     <li key={i}>{new Date(h.at).toLocaleString()} — {h.kind.replace(/_/g, ' ').toLowerCase()}{h.actorName ? ` by ${h.actorName}` : ''}{h.note ? `: ${h.note}` : ''}</li>
                   ))}
                 </ul>
+                )}</Paged>
               </details>
             )}
           </>

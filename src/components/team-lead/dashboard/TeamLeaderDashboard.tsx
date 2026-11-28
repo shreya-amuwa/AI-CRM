@@ -11,6 +11,7 @@ import { TicketDetail } from '../../support-member/TicketsPage';
 import { ErrorBanner, Loading, Modal, TicketPriorityPill, TicketStatusPill } from '../../support-member/SupportParts';
 import { EMPTY_CUSTOMER_FILTERS, TlCustomersSection, type CustomerFilters } from './TlCustomersSection';
 import { EMPTY_TICKET_FILTERS, TlTicketsSection, type TicketFilters } from './TlTicketsSection';
+import { Paged } from '../../common/Paged';
 
 /**
  * Team Leader dashboard. Everything comes from the database through functions
@@ -378,8 +379,9 @@ const Activity: React.FC<{ d: TlDashboard; onOpenCustomer: (id: string) => void 
     {d.activity.length === 0 ? (
       <p className="text-sm text-slate-500">No activity yet.</p>
     ) : (
+      <Paged items={d.activity} pageSize={5} noun="updates">{rows => (
       <ol className="space-y-3">
-        {d.activity.map(a => (
+        {rows.map(a => (
           <li key={a.id} className="flex gap-3">
             <span className="mt-1 w-7 h-7 rounded-lg bg-slate-50 text-slate-400 flex items-center justify-center shrink-0" aria-hidden="true">
               <Clock className="w-3.5 h-3.5" />
@@ -400,6 +402,7 @@ const Activity: React.FC<{ d: TlDashboard; onOpenCustomer: (id: string) => void 
           </li>
         ))}
       </ol>
+      )}</Paged>
     )}
   </Panel>
 );

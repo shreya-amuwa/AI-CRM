@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { PhoneCall } from 'lucide-react';
 import type { CrocodialLeadActivity } from '../../../shared/contracts';
 import { crocodialApi } from '../../lib/api/endpoints';
+import { Paged } from '../common/Paged';
 
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '-');
 const dur = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.round(s / 60)}m` : `${s}s`);
@@ -55,13 +56,17 @@ export const CrocodialLeadActivityCard: React.FC<{ customerId: string }> = ({ cu
       )}
       {d.callHistory && d.callHistory.length > 0 && (
         <details className="text-sm"><summary className="cursor-pointer font-bold text-slate-800">Call history ({d.callHistory.length})</summary>
-          <ul className="mt-1 space-y-1">{d.callHistory.map((h, i) => <li key={i} className="text-xs text-slate-700">{when(h.at)} · {h.type}{h.connected === true ? ' · connected' : h.connected === false ? ' · not connected' : ''} · {dur(h.seconds)}{h.by ? ` · by ${h.by}` : ''}</li>)}</ul>
+          <Paged items={d.callHistory} noun="calls">{rows => (
+          <ul className="mt-1 space-y-1">{rows.map((h, i) => <li key={i} className="text-xs text-slate-700">{when(h.at)} · {h.type}{h.connected === true ? ' · connected' : h.connected === false ? ' · not connected' : ''} · {dur(h.seconds)}{h.by ? ` · by ${h.by}` : ''}</li>)}</ul>
+          )}</Paged>
         </details>
       )}
       {d.ownerHistory && d.ownerHistory.length > 0 && (
         <details className="text-sm"><summary className="cursor-pointer font-bold text-slate-800">Assignment seen by the CRM ({d.ownerHistory.length})</summary>
           <p className="text-[11px] text-slate-500 mt-1">Times are when a sync first saw the assignment; Crocodial does not say who assigned it.</p>
-          <ul className="mt-1 space-y-1">{d.ownerHistory.map((h, i) => <li key={i} className="text-xs text-slate-700">{when(h.observedAt)} · {h.owner ?? 'unassigned'}</li>)}</ul>
+          <Paged items={d.ownerHistory} noun="changes">{rows => (
+          <ul className="mt-1 space-y-1">{rows.map((h, i) => <li key={i} className="text-xs text-slate-700">{when(h.observedAt)} · {h.owner ?? 'unassigned'}</li>)}</ul>
+          )}</Paged>
         </details>
       )}
     </section>

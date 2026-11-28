@@ -9,6 +9,7 @@ import { ADS_CHANGED_EVENT } from './adsEvents';
 // The AI Design Studio pages use the same building blocks as the Department Head / Team Lead dashboards (headParts): one look for the CRM.
 export { Card, CardHead, StatCard, Tabs, LoadingLine, Avatar, fieldCls, textareaCls, primaryBtn, ghostBtn } from '../tasks/head/headParts';
 import { fieldCls, ghostBtn } from '../tasks/head/headParts';
+import { Paged } from '../common/Paged';
 
 // ---------------------------------------------------------------------------------------------------- who is signed in
 interface AdsSession {
@@ -145,8 +146,9 @@ export const EVENT_LABEL: Record<string, string> = {
 
 /** The history of a record: who did what and when. */
 export const Timeline: React.FC<{ events: { id: number; event: string; fromValue: string | null; toValue: string | null; note: string | null; actorName: string | null; createdAt: string }[] }> = ({ events }) => (
+  <Paged items={events} noun="entries">{rows => (
   <ol className="space-y-3" aria-label="History">
-    {events.map(e => (
+    {rows.map(e => (
       <li key={e.id} className="border-l-2 border-slate-200 pl-3">
         <div className="text-[13px] font-semibold text-slate-800">{EVENT_LABEL[e.event] || e.event}</div>
         <div className="text-xs text-slate-500">{e.actorName || 'Someone'} · {fmtDateTime(e.createdAt)}</div>
@@ -154,6 +156,7 @@ export const Timeline: React.FC<{ events: { id: number; event: string; fromValue
       </li>
     ))}
   </ol>
+  )}</Paged>
 );
 
 // ---------------------------------------------------------------------------------------------------- attachment links

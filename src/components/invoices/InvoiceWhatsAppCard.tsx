@@ -4,6 +4,7 @@ import type { InvoiceWhatsAppDispatch, InvoiceWhatsAppSettings, InvoiceWhatsAppS
 import { errorMessage } from '../../lib/api/client';
 import { generatedInvoicesApi } from '../../lib/api/endpoints';
 import { btn, ErrorBanner, Field, inputCls, Pill, type Tone } from '../team-member/pipeline/shared';
+import { Paged } from '../common/Paged';
 
 const stamp = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true }) : '-');
 
@@ -117,8 +118,9 @@ export const InvoiceWhatsAppCard: React.FC<{ invoiceId: string; invoiceNumber: s
       {history && history.length > 0 && (
         <details className="text-[11px]">
           <summary className="cursor-pointer text-slate-600 font-semibold">History</summary>
+          <Paged items={history} noun="messages">{rows => (
           <ul className="mt-2 space-y-2">
-            {history.map(d => (
+            {rows.map(d => (
               <li key={d.id} className="border border-slate-100 rounded-lg px-3 py-2">
                 <div className="font-semibold text-slate-800">{d.recipient} · {STATUS[d.status].text}</div>
                 <ol className="mt-1 space-y-0.5 text-slate-500">
@@ -129,6 +131,7 @@ export const InvoiceWhatsAppCard: React.FC<{ invoiceId: string; invoiceNumber: s
               </li>
             ))}
           </ul>
+          )}</Paged>
         </details>
       )}
       {editing && settings && <SettingsForm settings={settings} onSaved={s => { setSettings(s); setEditing(false); }} />}

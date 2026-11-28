@@ -49,6 +49,7 @@ import { CustomerForm, customerToInput } from './CustomerForm';
 import { DueLabel, PriorityPill, ProgressBar, StatusPill } from '../tasks/TaskParts';
 import { getSupabase } from '../../services/supabaseClient';
 import { ClientLoginCard } from './ClientLoginCard';
+import { Paged } from '../common/Paged';
 
 const PAGE_SIZE = 10;
 
@@ -482,8 +483,9 @@ export const CustomerProfile: React.FC<{
               {activities.length === 0 ? (
                 <p className="text-xs text-slate-400">No communication recorded yet.</p>
               ) : (
+                <Paged items={activities} noun="updates">{rows => (
                 <ol className="space-y-3 border-l border-slate-200 pl-4">
-                  {activities.map(a => (
+                  {rows.map(a => (
                     <li key={a.id} className="text-xs relative">
                       <span className="absolute -left-[21px] top-1 w-2 h-2 rounded-full bg-blue-400" aria-hidden="true" />
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -495,6 +497,7 @@ export const CustomerProfile: React.FC<{
                     </li>
                   ))}
                 </ol>
+                )}</Paged>
               )}
             </div>
           )}

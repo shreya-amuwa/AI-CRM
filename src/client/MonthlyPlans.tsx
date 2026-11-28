@@ -4,7 +4,7 @@ import type { MonthlyPlan } from '../../shared/contracts';
 import { clientApi } from './api';
 import { useLoad } from './hooks';
 import { errorMessage } from '../lib/api/client';
-import { Badge, Button, Card, EmptyState, Field, Modal, PageHeader, Query, fmtDate, inr } from './ui';
+import { Badge, Button, Card, ClientPaged, EmptyState, Field, Modal, PageHeader, Query, fmtDate, inr } from './ui';
 
 export const MonthlyPlans: React.FC = () => {
   const q = useLoad(() => clientApi.plans());
@@ -72,12 +72,12 @@ export const MonthlyPlans: React.FC = () => {
             <Card>
               <h2 className="cd-section-title">Plan history</h2>
               {d.history.length === 0 ? <EmptyState title="No plan history yet" text="Plans you have had will be listed here." /> : (
-                <table className="cd-table stack">
+                <ClientPaged items={d.history}>{rows => (<table className="cd-table stack">
                   <thead><tr><th>Plan</th><th>Started</th><th>Ended</th><th>Price</th><th>Status</th></tr></thead>
-                  <tbody>{d.history.map((h, i) => (
+                  <tbody>{rows.map((h, i) => (
                     <tr key={i}><td data-label="Plan" style={{ fontWeight: 600 }}>{h.name}</td><td data-label="Started">{fmtDate(h.startedAt)}</td><td data-label="Ended">{h.endedAt ? fmtDate(h.endedAt) : '-'}</td>
                       <td data-label="Price">{inr(h.price)} / month</td><td data-label="Status"><Badge tone={h.status === 'ACTIVE' ? 'success' : 'neutral'}>{h.status === 'ACTIVE' ? 'Active' : 'Ended'}</Badge></td></tr>))}</tbody>
-                </table>
+                </table>)}</ClientPaged>
               )}
             </Card>
           </div>

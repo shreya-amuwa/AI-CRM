@@ -6,6 +6,7 @@ import { employeesApi } from '../../lib/api/endpoints';
 import { EmployeeRequestsPanel } from '../employees/EmployeeRequestsPanel';
 import { btn, ErrorBanner, longDateTime, Pill, Spinner } from '../team-member/pipeline/shared';
 import { TeamAttendanceSummary } from '../attendance/TeamAttendance';
+import { Paged } from '../common/Paged';
 
 // The Operations Head marks attendance like every employee (Punch In / Lunch / Punch Out with location); loaded with the dashboard's home page.
 const MyAttendanceCard = React.lazy(() => import('../attendance/AttendancePage').then(m => ({ default: m.MyAttendance })));
@@ -158,10 +159,10 @@ const DepartmentView: React.FC<{ department: OperationsDashboardDepartment; onCl
       <div>
         <h4 className="text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5"><Activity className="w-3.5 h-3.5" aria-hidden="true" /> Department Head activity</h4>
         {!activity ? <Spinner /> : activity.length === 0 ? <p className="text-xs text-slate-500">No recorded activity yet.</p> : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[600px] text-xs">
+          <div className="overflow-x-auto"><Paged items={activity} noun="entries">{rows => (<table className="w-full min-w-[600px] text-xs">
             <thead><tr className="text-left text-slate-500 border-b border-slate-100"><th className="py-1.5 font-semibold">When</th><th className="font-semibold">Department Head</th><th className="font-semibold">Activity</th><th className="font-semibold">Reference</th><th className="font-semibold">Outcome</th></tr></thead>
-            <tbody>{activity.map((a, i) => <tr key={i} className="border-b border-slate-50"><td className="py-1.5 whitespace-nowrap">{longDateTime(a.at)}</td><td>{a.departmentHead}</td><td>{(a.type ?? '').replace(/_/g, ' ').toLowerCase()}</td><td className="text-slate-500">{a.reference}</td><td>{a.outcome}</td></tr>)}</tbody>
-          </table></div>
+            <tbody>{rows.map((a, i) => <tr key={i} className="border-b border-slate-50"><td className="py-1.5 whitespace-nowrap">{longDateTime(a.at)}</td><td>{a.departmentHead}</td><td>{(a.type ?? '').replace(/_/g, ' ').toLowerCase()}</td><td className="text-slate-500">{a.reference}</td><td>{a.outcome}</td></tr>)}</tbody>
+          </table>)}</Paged></div>
         )}
       </div>
     </section>

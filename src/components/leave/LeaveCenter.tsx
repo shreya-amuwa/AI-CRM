@@ -7,6 +7,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { formatDay, officeToday } from '../../lib/officeTime';
 import { SideDrawer } from '../common/SideDrawer';
 import { LeaveStatusBadge } from './LeaveStatusBadge';
+import { Paged } from '../common/Paged';
 
 const inputCls = 'w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-xs bg-white';
 
@@ -60,8 +61,9 @@ export const PaidLeaveCard: React.FC<{ b: PaidLeaveBalance }> = ({ b }) => {
 
 /** Who decided what, in order: the audit trail shown on each request (the multi-level chain has a full timeline). */
 const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (r.timeline && r.timeline.length > 0 ? (
+  <Paged items={r.timeline} noun="entries">{rows => (
   <ol className="mt-2 space-y-0.5 text-[11px] text-slate-500" aria-label="Approval timeline">
-    {r.timeline.map((t, i) => (
+    {rows.map((t, i) => (
       <li key={i}>
         {when(t.at)} · {STAGE_LABEL[t.stage] ?? t.stage}{t.by ? ` (${t.by})` : ''}{DECISION_LABEL[t.decision] ? `: ${DECISION_LABEL[t.decision]}` : ''}
         {t.onBehalf ? ' (Managing Director, nobody else could decide this step)' : ''}{t.note ? ` - "${t.note}"` : ''}
@@ -69,6 +71,7 @@ const Trail: React.FC<{ r: LeaveRequest }> = ({ r }) => (r.timeline && r.timelin
     ))}
     {r.currentStage && <li className="font-semibold text-slate-600">Waiting for {STAGE_LABEL[r.currentStage]}{r.waitingFor?.length ? ` (${r.waitingFor.join(', ')})` : ''}</li>}
   </ol>
+  )}</Paged>
 ) : (
   <ul className="mt-2 space-y-0.5 text-[11px] text-slate-500">
     <li>Requested {new Date(r.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })}</li>

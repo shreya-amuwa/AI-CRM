@@ -11,6 +11,7 @@ import {
   attendanceApi, captureLocation, coords, isLowPrecision, istClock, istDate, istLongDate, istStamp, istToday, locationHelp, locationLabel, mapsUrl, minutesLabel, shiftDate,
   STATUS_LABEL, STATUS_TONE, newPunchRequestId, type PunchOutPreview, type AttendanceDayData, type AttendanceRegister, type AttendanceStatus, type LunchRow, type PunchInfo, type RegisterRow
 } from '../../lib/attendance';
+import { Paged } from '../common/Paged';
 const RemindersPanel = React.lazy(() => import('./RemindersPanel'));
 const NotificationHealth = React.lazy(() => import('../notifications/NotificationHealth'));
 
@@ -240,15 +241,15 @@ export const MyAttendance: React.FC<{ compact?: boolean }> = ({ compact = false 
       {compact ? null : <section className={card} aria-label="Last two weeks">
         <h3 className="text-sm font-extrabold text-slate-900 mb-2">Last two weeks</h3>
         {history === null ? <p className="text-xs text-slate-500">Loading…</p> : history.length === 0 ? <p className="text-xs text-slate-500">No attendance recorded yet.</p> : (
-          <div className="overflow-x-auto"><table className="min-w-full text-xs">
+          <Paged items={history} noun="days">{rows => (<div className="overflow-x-auto"><table className="min-w-full text-xs">
             <thead className="text-slate-500"><tr>{['Day', 'Status', 'Punch In', 'Punch Out', 'Worked', 'Lunch'].map(h => <th key={h} scope="col" className="px-2 py-1.5 text-left font-semibold">{h}</th>)}</tr></thead>
-            <tbody className="divide-y divide-slate-100">{history.map(h => (
+            <tbody className="divide-y divide-slate-100">{rows.map(h => (
               <tr key={h.date}><th scope="row" className="px-2 py-1.5 text-left font-semibold whitespace-nowrap">{istDate(h.date)}</th>
                 <td className="px-2 py-1.5">{h.status ? <StatusBadge status={h.status} /> : '-'}</td>
                 <td className="px-2 py-1.5 whitespace-nowrap">{istClock(h.punchIn?.at)}</td><td className="px-2 py-1.5 whitespace-nowrap">{istClock(h.punchOut?.at)}</td>
                 <td className="px-2 py-1.5">{minutesLabel(h.workedMinutes)}</td><td className={`px-2 py-1.5 ${h.lunch.exceededMinutes ? 'text-rose-700 font-semibold' : ''}`}>{minutesLabel(h.lunch.minutes)}{h.lunch.exceededMinutes ? ` (+${h.lunch.exceededMinutes})` : ''}</td></tr>
             ))}</tbody>
-          </table></div>
+          </table></div>)}</Paged>
         )}
       </section>}
     </div>

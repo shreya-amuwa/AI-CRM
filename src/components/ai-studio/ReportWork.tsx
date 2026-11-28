@@ -2,6 +2,7 @@ import React from 'react';
 import { ExternalLink, GitBranch } from 'lucide-react';
 import type { AiStudioReportWorkEntry, AiStudioReportWorkSummary, AiStudioReportWorkTask } from '../../../shared/contracts';
 import { TaskStatusBadge, dateText, dateTimeText } from './ui';
+import { Paged } from '../common/Paged';
 
 /**
  * The work of a consolidated daily report (20270219000100), read straight from the tasks' history: nothing here is typed again or copied.
@@ -36,8 +37,9 @@ export const LinkList: React.FC<{ links: string[] }> = ({ links }) => {
 };
 
 export const WorkEntries: React.FC<{ entries: AiStudioReportWorkEntry[]; showDate?: boolean }> = ({ entries, showDate }) => (
+  <Paged items={entries} noun="entries">{rows => (
   <ol className="space-y-2" aria-label="Work updates">
-    {entries.map(e => (
+    {rows.map(e => (
       <li key={e.id} className="border-l-2 border-slate-200 pl-3">
         <div className="text-xs text-slate-500">
           {showDate ? dateTimeText(e.at) : timeText(e.at)} · {e.status === 'COMPLETED' ? 'Completed' : e.status === 'ON_HOLD' ? 'On hold' : 'In progress'} · {e.progress}%
@@ -46,6 +48,7 @@ export const WorkEntries: React.FC<{ entries: AiStudioReportWorkEntry[]; showDat
       </li>
     ))}
   </ol>
+  )}</Paged>
 );
 
 const TaskBlock: React.FC<{ t: AiStudioReportWorkTask; frozen?: boolean; onOpenTask?: (taskId: string) => void }> = ({ t, frozen, onOpenTask }) => {

@@ -6,6 +6,7 @@ import { pipelineApi } from '../../lib/api/endpoints';
 import { Empty, ErrorBanner, FormField, Loading, PageHeader, inputClass } from '../support-member/SupportParts';
 import { btn } from '../team-member/pipeline/shared';
 import { confirmAction } from '../feedback/AppFeedback';
+import { Paged } from '../common/Paged';
 
 const KIND_LABEL: Record<ClientActivityKind, string> = {
   CAMPAIGN: 'Campaign', CALL_CAMPAIGN: 'Call campaign', POST: 'Post', AD: 'Ad', SETUP: 'Setup / configuration', REPORT: 'Report', MEETING: 'Meeting / call with the client', OTHER: 'Other update'
@@ -102,8 +103,9 @@ const CustomerActivity: React.FC<{ customer: { id: string; name: string }; onBac
       {!data && !error ? <Loading label="Loading..." /> : null}
       {data && data.events.length === 0 && <Empty title="Nothing logged yet" hint="Log a campaign, a post or a call campaign and it appears on the client's Calendar with its insights." />}
       {data && data.events.length > 0 && (
+        <Paged items={data.events} noun="events">{rows => (
         <ul className="space-y-3">
-          {data.events.map(e => (
+          {rows.map(e => (
             <li key={e.id} className="bg-white rounded-2xl border border-slate-200/80 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -128,6 +130,7 @@ const CustomerActivity: React.FC<{ customer: { id: string; name: string }; onBac
             </li>
           ))}
         </ul>
+        )}</Paged>
       )}
       {editing && data && (
         <ActivityForm customerId={customer.id} services={data.services} event={editing === 'new' ? null : editing}
