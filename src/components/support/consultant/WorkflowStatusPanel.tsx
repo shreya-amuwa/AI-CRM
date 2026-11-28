@@ -4,10 +4,10 @@ import {
   META_STATUS_LABELS, META_WORKFLOW_STATUSES, TC_MANUAL_STATUSES, TC_STATUS_LABELS,
   type CustomerWorkflow, type CustomerWorkflowStatuses, type MetaWorkflowStatus, type TcWorkflowStatus
 } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner, longDateTime, usePipelineRealtime, notifyPipelineChanged } from '../../team-member/pipeline/shared';
 import { Paged } from '../../common/Paged';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * The two workflow statuses of ONE customer: the Technical Consultant's (technical verification, add-on services, purchase tracking, technical
@@ -79,7 +79,7 @@ const TrackCard: React.FC<{
       setStatus('');
       setText('');
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -120,7 +120,7 @@ export const WorkflowStatusPanel: React.FC<{ customerId: string; onChanged?: () 
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const load = useCallback(() => {
-    pipelineApi.workflow(customerId).then(d => { setW(d); setError(null); }, e => setError(errorMessage(e)));
+    pipelineApi.workflow(customerId).then(d => { setW(d); setError(null); }, e => setError(userMessage(e)));
   }, [customerId]);
   useEffect(load, [load]);
   usePipelineRealtime(load);

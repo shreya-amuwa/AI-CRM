@@ -22,6 +22,8 @@ import {
 } from '../../lib/support';
 import { ErrorBanner, FormField, inputClass, Loading, Modal, PageHeader } from './SupportParts';
 import { personName, TicketPane, TicketWorkspace } from './TicketChat';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 interface TicketsPageProps {
   /** member: own tickets; manager: the team's / department's tickets (team lead, department head). */
@@ -199,7 +201,7 @@ export const NewTicketModal: React.FC<{
       const id = await ticketApi.create({ customerId: customer, subject: subject.trim(), description: description.trim(), category, priority, assigneeId: assignee || undefined, attachmentIds: files.ids });
       onCreated(id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the ticket.');
+      setError(userMessage(err, 'The ticket could not be created. Please try again.'));
       setBusy(false);
     }
   };
@@ -343,7 +345,6 @@ const SlaSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [tlHours, setTlHours] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
   useEffect(() => {
     ticketSlaApi.get().then(
       s => {
@@ -351,7 +352,7 @@ const SlaSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         setRmHours(String(+(s.rmMinutes / 60).toFixed(2)));
         setTlHours(String(+(s.tlMinutes / 60).toFixed(2)));
       },
-      e => setError(e instanceof Error ? e.message : 'Could not load the SLA.')
+      e => setError(userMessage(e, 'The SLA could not be loaded.'))
     );
   }, []);
   const save = async (e: React.FormEvent) => {
@@ -363,9 +364,10 @@ const SlaSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     setError(null);
     try {
       setSla(await ticketSlaApi.set(rm, tl));
-      setDone(true);
+      toast.success('SLA saved successfully. New deadlines use it from now on.');
+      onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the SLA.');
+      setError(userMessage(err, 'The SLA could not be saved. Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -397,11 +399,6 @@ const SlaSettingsModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {error && (
             <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2" role="alert">
               {error}
-            </p>
-          )}
-          {done && (
-            <p className="text-xs text-emerald-700" role="status">
-              SLA saved. New deadlines use it from now on.
             </p>
           )}
           <div className="flex justify-end gap-2">

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import type { ConsultantOpenServiceRequest, ConsultantServiceRequest, ServiceRequestStatus } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { clientWorkApi } from '../../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, notifyPipelineChanged, Pill, inputCls, usePipelineRealtime, type Tone } from '../../team-member/pipeline/shared';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const STATUS: Record<ServiceRequestStatus, { label: string; tone: Tone }> = {
   REQUESTED: { label: 'New request', tone: 'orange' },
@@ -45,7 +45,7 @@ export const ClientServiceRequestsCard: React.FC<{ customerId: string }> = ({ cu
       await clientWorkApi.decideServiceRequest(r.id, { decision, note: note || null });
       setDeclining(null); setReason('');
       reload(); notifyPipelineChanged();
-    } catch (e) { setError(errorMessage(e)); }
+    } catch (e) { setError(userMessage(e)); }
     finally { setBusy(''); }
   };
 
@@ -94,7 +94,7 @@ export const OpenClientRequests: React.FC<{ onOpenCustomer: (customerId: string)
   const [declining, setDeclining] = useState<ConsultantOpenServiceRequest | null>(null);
   const [reason, setReason] = useState('');
   const load = useCallback(() => {
-    clientWorkApi.openServiceRequests().then(r => { setItems(r); setError(null); }, e => { setItems([]); setError(errorMessage(e)); });
+    clientWorkApi.openServiceRequests().then(r => { setItems(r); setError(null); }, e => { setItems([]); setError(userMessage(e)); });
   }, []);
   useEffect(load, [load]);
   usePipelineRealtime(load);
@@ -102,7 +102,7 @@ export const OpenClientRequests: React.FC<{ onOpenCustomer: (customerId: string)
   const decide = async (r: ConsultantOpenServiceRequest, decision: 'IN_REVIEW' | 'REJECTED', note?: string) => {
     setBusy(r.id); setError(null);
     try { await clientWorkApi.decideServiceRequest(r.id, { decision, note: note || null }); setDeclining(null); setReason(''); load(); notifyPipelineChanged(); }
-    catch (e) { setError(errorMessage(e)); } finally { setBusy(''); }
+    catch (e) { setError(userMessage(e)); } finally { setBusy(''); }
   };
 
   if (!items || (items.length === 0 && !error)) return null;

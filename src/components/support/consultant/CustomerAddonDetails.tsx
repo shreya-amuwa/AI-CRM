@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock, Download, Eye, FileText, XCircle } from 'lucide-react';
 import type { AddonRequest, ChecklistItem, CustomerDocument } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { addonsApi, documentsApi, pipelineApi } from '../../../lib/api/endpoints';
 import { ErrorBanner, money, usePipelineRealtime } from '../../team-member/pipeline/shared';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * One customer's add-on services (what the Technical Consultant priced and Accounts approved) and the
@@ -31,7 +31,7 @@ export const CustomerAddonDetails: React.FC<{ customerId: string; documents: Cus
         setItems(c);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [customerId]);
   useEffect(load, [load]);
@@ -50,7 +50,7 @@ export const CustomerAddonDetails: React.FC<{ customerId: string; documents: Cus
       }
     } catch (e) {
       win?.close();
-      setError(errorMessage(e));
+      setError(userMessage(e));
     }
   };
 

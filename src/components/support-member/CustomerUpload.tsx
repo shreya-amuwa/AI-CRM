@@ -8,6 +8,7 @@ import { isCustomerRowsSheet, parseExistingCustomers } from '../../lib/existingC
 import { parseCsv } from '../../lib/csv';
 import { readXlsx } from '../../lib/xlsxReader';
 import { importApi, Preview, Saved, type Step } from '../support/ExistingCustomerImport';
+import { userMessage } from '../../lib/feedback/errors';
 
 const MAX_FILE_BYTES = 1_000_000;
 const MAX_XLSX_BYTES = 5 * 1024 * 1024;
@@ -64,7 +65,7 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
         setExcel(step);
       } catch (e) {
         setExcel({ kind: 'idle' });
-        setError(e instanceof Error ? e.message : 'The file could not be read.');
+        setError(userMessage(e, 'The file could not be read.'));
       }
       return;
     }
@@ -90,7 +91,7 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
       setExcel({ kind: 'saved', result: res });
     } catch (e) {
       setExcel(checked);
-      setError(e instanceof Error ? e.message : 'The customers could not be saved.');
+      setError(userMessage(e, 'The customers could not be saved. Please try again.'));
     }
   };
   const resetExcel = () => {
@@ -121,7 +122,7 @@ export const CustomerUpload: React.FC<{ onDone?: () => void }> = ({ onDone }) =>
           await customerApi.create(row.input!);
           imported++;
         } catch (e) {
-          skipped.push({ line: row.line, name: row.name, reason: e instanceof Error ? e.message : 'Could not be saved.' });
+          skipped.push({ line: row.line, name: row.name, reason: userMessage(e, 'Could not be saved.') });
         }
         setProgress(i + 1);
       }

@@ -10,6 +10,7 @@ import { buildPreviewIdentity } from './runtime/previewIdentity';
 import { setPreviewIdentity } from './runtime/PreviewAuthContext';
 import { startDemo } from './runtime/demoStore';
 import { loadFixtures } from './fixtures';
+import { clearToasts } from '../lib/feedback/feedbackStore';
 
 /**
  * The preview runtime (docs/DASHBOARD_EXPLORER.md). Waits for Dashboard Explorer's launch message (dashboard, department, scenario), builds
@@ -64,6 +65,8 @@ async function launch(l: PreviewLaunch) {
   // a fresh start: nothing remembered from the previous preview (pages, filters, drafts) and the dashboard's own first page
   localStorage.clear();
   sessionStorage.clear();
+  // the messages of the previous preview ("... was added") belong to the demonstration that was just thrown away
+  clearToasts();
   lastPage = '';
   history.replaceState(null, '', '/');
   root.render(

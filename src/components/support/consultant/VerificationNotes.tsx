@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { VERIFICATION_OUTCOMES, type VerificationNote, type VerificationOutcome } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { workflowApi } from '../../../lib/api/endpoints';
 import { btn, ErrorBanner, inputCls, Pill, Spinner, usePipelineRealtime, type Tone } from '../../team-member/pipeline/shared';
 import { Paged } from '../../common/Paged';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const OUTCOME_LABEL: Record<VerificationOutcome, string> = {
   NOTE: 'Note',
@@ -32,7 +32,7 @@ export const VerificationNotes: React.FC<{ customerId: string; canWrite: boolean
         setNotes(n);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [customerId]);
   useEffect(load, [load]);
@@ -48,7 +48,7 @@ export const VerificationNotes: React.FC<{ customerId: string; canWrite: boolean
       setDraft('');
       setOutcome('NOTE');
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }

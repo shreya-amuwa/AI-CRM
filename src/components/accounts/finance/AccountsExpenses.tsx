@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import type { ExpenseRow, ExpensesPage } from '../../../../shared/contracts';
 import { expenseSchema } from '../../../../shared/validation';
-import { errorMessage } from '../../../lib/api/client';
 import { financeApi } from '../../../lib/api/endpoints';
 import { Badge } from '../../payments/PaymentBits';
 import { Empty, ErrorBanner, FormField, inputClass, Loading, Modal, PageHeader, Pager } from '../../support-member/SupportParts';
 import { fmtDay, money, notifyFinanceChanged, todayIso, useFinanceRefresh } from './FinanceBits';
 import { useDepartments } from './AccountsIncome';
+import { toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const PAGE = 15;
 
@@ -68,7 +69,7 @@ const ExpenseForm: React.FC<{ editing: ExpenseRow | null; categories: string[]; 
       notifyFinanceChanged();
       onSaved();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -165,7 +166,6 @@ export const AccountsExpenses: React.FC = () => {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ExpensesPage | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [form, setForm] = useState<{ editing: ExpenseRow | null } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ExpenseRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -196,7 +196,7 @@ export const AccountsExpenses: React.FC = () => {
           setData(r);
           setError(null);
         },
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       );
   }, [term, department, category, status, from, to, page]);
   useEffect(load, [load]);
@@ -209,11 +209,11 @@ export const AccountsExpenses: React.FC = () => {
     try {
       await financeApi.deleteExpense(confirmDelete.id);
       notifyFinanceChanged();
-      setNotice('Expense deleted.');
+      toast.success('Expense deleted successfully.');
       setConfirmDelete(null);
       load();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
       setConfirmDelete(null);
     } finally {
       setDeleting(false);
@@ -279,11 +279,6 @@ export const AccountsExpenses: React.FC = () => {
         </div>
       </div>
 
-      {notice && (
-        <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-          {notice}
-        </p>
-      )}
       {error && <ErrorBanner message={error} onRetry={load} />}
 
       {!data && !error ? (
@@ -366,7 +361,7 @@ export const AccountsExpenses: React.FC = () => {
           categories={data?.categories ?? []}
           onClose={() => setForm(null)}
           onSaved={() => {
-            setNotice(form.editing ? 'Expense updated.' : 'Expense added.');
+            toast.success(form.editing ? 'Expense updated successfully.' : 'Expense added successfully.');
             setForm(null);
             load();
           }}

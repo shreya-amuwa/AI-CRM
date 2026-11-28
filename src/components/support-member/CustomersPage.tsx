@@ -61,13 +61,12 @@ interface CustomersPageProps {
   onOpenCustomer: (id: string) => void;
   onAddCustomer?: () => void;
   /** e.g. "Neha Verma was added." after Add Customer. */
-  notice?: string | null;
   /** Super Admin / Department Head: only the customers of these (Support division) teams. */
   teamIds?: string[];
 }
 
 /** Dashboard - Existing Customers (the landing page) and the supervisor's customer list. */
-export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer, notice, teamIds }) => {
+export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tasks, onOpenCustomer, onAddCustomer, teamIds }) => {
   const { profile } = useAuth();
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<CustomerStatusValue | 'ALL'>('ALL');
@@ -117,11 +116,6 @@ export const CustomersPage: React.FC<CustomersPageProps> = ({ mode, tickets, tas
         <KpiCard label="Pending tasks" value={myPendingTasks} icon={ClipboardList} tone="text-amber-700" />
       </div>
 
-      {notice && (
-        <p className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold" role="status">
-          {notice}
-        </p>
-      )}
       <div>
         <div className="bg-white rounded-2xl border border-slate-200/80">
           <div className="p-4 flex flex-col lg:flex-row gap-3 border-b border-slate-100">

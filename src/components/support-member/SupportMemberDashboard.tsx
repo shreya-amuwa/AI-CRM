@@ -29,6 +29,7 @@ import { ClientDocumentsReview } from '../client-portal/ClientDocumentsReview';
 import { ClientActivityManager } from '../client-portal/ClientActivityManager';
 import { ExistingCustomerImport } from '../support/ExistingCustomerImport';
 import { RechargesPage } from '../recharges/RechargesPage';
+import { toast } from '../feedback/AppFeedback';
 
 export type SupportPage = 'customers' | 'my-clients' | 'tasks' | 'add-customer' | 'import' | 'tickets' | 'invoices' | 'notifications' | 'chat' | 'raise-issue' | 'work-reports' | PipelineSection | 'delivery' | 'client-documents' | 'client-calendar' | 'recharges';
 
@@ -86,7 +87,6 @@ export const SupportMemberDashboard: React.FC = () => {
   const userId = user?.id || profile?.id || '';
   const [page, setPage] = useState<SupportPage>(() => parseSupportPage(window.location.pathname));
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const tickets = useTickets();
   const tasks = useWorkTasks();
@@ -105,7 +105,6 @@ export const SupportMemberDashboard: React.FC = () => {
 
   const go = (next: SupportPage) => {
     setProfileId(null);
-    setNotice(null);
     setPage(next);
     navigateTo(next === 'customers' ? SUPPORT_BASE(userId) : `${SUPPORT_BASE(userId)}/${next}`);
   };
@@ -163,7 +162,7 @@ export const SupportMemberDashboard: React.FC = () => {
           onBack={() => setProfileId(null)}
         />
       ) : page === 'customers' ? (
-        <CustomersPage mode="member" tickets={tickets} tasks={tasks} notice={notice} onOpenCustomer={openCustomer} onAddCustomer={() => go('add-customer')} />
+        <CustomersPage mode="member" tickets={tickets} tasks={tasks} onOpenCustomer={openCustomer} onAddCustomer={() => go('add-customer')} />
       ) : PIPELINE_PAGES.includes(page) ? (
         <SupportPipelinePage section={page as PipelineSection} onNavigate={section => go(section)} />
       ) : page === 'delivery' ? (
@@ -184,7 +183,7 @@ export const SupportMemberDashboard: React.FC = () => {
           onCancel={() => go('customers')}
           onCreated={name => {
             go('customers');
-            setNotice(`${name} was added to your customers.`);
+            toast.success(`Customer added successfully: ${name} is now one of your customers.`);
           }}
         />
       ) : page === 'tickets' ? (

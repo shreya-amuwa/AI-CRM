@@ -1,12 +1,13 @@
 import React, { useRef, useState } from 'react';
 import { CheckCircle2, Download, FileSpreadsheet, Mail, RotateCcw, Upload } from 'lucide-react';
 import type { CustomerDataImportLogin, CustomerDataImportResult } from '../../../shared/contracts';
-import { api, errorMessage } from '../../lib/api/client';
+import { api } from '../../lib/api/client';
 import { IMPORT_SHEETS, ONE_SHEET_BLOCKS, SHEET_LABEL, parseExistingCustomers, type ParsedImport } from '../../lib/existingCustomerImport';
 import { readXlsx } from '../../lib/xlsxReader';
 import { useAuth } from '../../context/AuthContext';
 import { btn, Card, ErrorBanner, Pill } from '../team-member/pipeline/shared';
 import { SheetSyncPanel } from './SheetSyncPanel';
+import { userMessage } from '../../lib/feedback/errors';
 
 /**
  * Import existing customers from the Excel template: their services and plans, WhatsApp / AI Calling / RCS usage,
@@ -50,7 +51,7 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
       setStep(s);
     } catch (e) {
       setStep({ kind: 'idle' });
-      setError(errorMessage(e));
+      setError(userMessage(e));
     }
   };
 
@@ -70,7 +71,7 @@ export const ExistingCustomerImport: React.FC<{ onDone?: () => void }> = ({ onDo
       setStep({ kind: 'saved', result });
     } catch (e) {
       setStep(checked);
-      setError(errorMessage(e));
+      setError(userMessage(e));
     }
   };
 
@@ -262,7 +263,7 @@ export const Saved: React.FC<{ result: CustomerDataImportResult; onReset: () => 
       const r = await api.post<{ sent: boolean; detail?: string }>(`/customers/${l.customerId}/client-password-email`);
       setLogins(list => list.map(x => (x.customerId === l.customerId ? { ...x, mail: r.sent ? 'SENT' : 'NOT_SENT', detail: r.detail } : x)));
     } catch (e) {
-      setLogins(list => list.map(x => (x.customerId === l.customerId ? { ...x, detail: errorMessage(e) } : x)));
+      setLogins(list => list.map(x => (x.customerId === l.customerId ? { ...x, detail: userMessage(e) } : x)));
     } finally {
       setBusy(null);
     }
