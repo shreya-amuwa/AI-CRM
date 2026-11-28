@@ -4135,7 +4135,7 @@ export const walletNewPinSchema = z.object({ pin: walletPinSchema, confirm: z.st
   .refine(v => v.pin === v.confirm, { message: 'The two PINs do not match.', path: ['confirm'] });
 
 // ---------------------------------------------------------------------------
-// Support Recharges (migrations 20270228000200, 20270308000100): Panel and Message recharges for a customer, GST / Non-GST, a payment screenshot, and Accounts
+// Support Recharges (migrations 20270228000200, 20270310000100): Panel and Message recharges for a customer, GST / Non-GST, a payment screenshot, and Accounts
 // verifying the payment. The database re-checks every rule; the customer's Relationship Manager is never taken from a request.
 // ---------------------------------------------------------------------------
 export const RECHARGE_KINDS = ['PANEL', 'MESSAGE'] as const;
