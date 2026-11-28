@@ -83,7 +83,7 @@ select test.check((select status = 'PENDING_TL_APPROVAL' and work_description is
 select test.must_fail($$update public.ai_studio_daily_reports set remarks = test.dw(51) where id = test.drf('ai')$$, 'a correction over a limit is refused', 'at most 50 words');
 set role authenticated;
 select test.login('ai_tl1');
-select test.check((ai_studio_report_review(test.drf('ai'), 'APPROVE') ->> 'status') = 'PENDING_DH_APPROVAL', 'the Team Lead approves it as before');
+select test.check((ai_studio_report_review(test.drf('ai'), 'APPROVE') ->> 'status') = 'APPROVED', 'the Team Lead approves it (final since the reporting hierarchy: Approved, sent to HR)');
 reset role;
 select test.check((select hr_sent_at is not null from public.ai_studio_daily_reports where id = test.drf('ai')), 'and it is sent to HR as before');
 
