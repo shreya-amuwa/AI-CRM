@@ -1,5 +1,5 @@
 -- =============================================================================
--- Internship reviews (20270312000400): an intern gets one internship cycle (3 months by default, or their own length), the same T-10 / T-4
+-- Internship reviews (20270312000500): an intern gets one internship cycle (3 months by default, or their own length), the same T-10 / T-4
 -- reminders and evaluations as a confirmation review, and HR's outcomes: complete, convert to full-time (same record, a new probation cycle,
 -- no paid leave, nothing confirmed), and never the probation-only decisions. Runs after hr_review_cycles_test.sql (its people and helpers).
 -- =============================================================================
@@ -8,8 +8,8 @@
 \echo '--- 143. Internship reviews'
 reset role;
 \i supabase/migrations/20270312000100_employee_review_cycles.sql
-\i supabase/migrations/20270312000400_internship_reviews.sql
-\i supabase/migrations/20270312000400_internship_reviews.sql
+\i supabase/migrations/20270312000500_internship_reviews.sql
+\i supabase/migrations/20270312000500_internship_reviews.sql
 
 do $$
 begin

@@ -56,7 +56,8 @@ select hr_schedule_emails(date '2027-03-06');
 select test.check((select probation_end = date '2027-03-14' and status = 'PENDING' from hr_probation_cycles where employee_name = 'Hrx Prob'),
   'probation ends six months after the joining date (14 Sep -> 14 Mar)');
 select test.check(test.ev('PROBATION_REMINDER_EMPLOYEE', 'Hrx Prob') = 0, 'no reminder eight days before the end');
-select test.check((select count(*) = 0 from hr_probation_cycles where employee_name in ('Hrx Old', 'Hrx Intern')), 'long-standing employees and interns have no probation cycle');
+-- (20270312000500: an active intern now has an INTERNSHIP cycle; an intern still never has a PROBATION cycle)
+select test.check((select count(*) = 0 from hr_probation_cycles where employee_name = 'Hrx Old' or (employee_name = 'Hrx Intern' and cycle_type = 'PROBATION')), 'long-standing employees and interns have no probation cycle');
 select test.check((select count(*) = 1 from hr_probation_cycles where employee_name = 'Hrx Prob2' and status = 'PENDING'), 'an employee marked "Training / Probation" gets a cycle');
 select hr_schedule_emails(date '2027-03-07');
 select test.check(test.ev('PROBATION_REMINDER_EMPLOYEE', 'Hrx Prob') = 1, 'exactly seven days before the end the employee gets the reminder');
