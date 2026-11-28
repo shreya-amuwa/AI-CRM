@@ -199,7 +199,7 @@ import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuer
 import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
 import type { AwardNominateInput } from '../../../shared/validation';
 import type { OfferLetterhead, OfferLetterheadOption, OfferTemplate, OfferTemplateContent, OfferTemplateFile, OfferTemplateHistory, OfferTemplateList, OfferTemplateVersion } from '../../../shared/contracts';
-import type { RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../../shared/contracts';
+import type { RechargeCustomer, RechargeInvoice, RechargeInvoicePlan, RechargeRmPerformance, RechargeSendResult, RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../../shared/contracts';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -990,18 +990,35 @@ export const ticketFilesApi = {
   abort: (id: string) => api.post<null>(`/support/ticket-uploads/${id}/abort`, {}),
   url: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/support/ticket-attachments/${id}/url`, { action })
 };
-/** Support Recharges (Panel / Message): the server checks the person, the record and the screenshot; the screenshot opens through a short-lived link only. */
+/** Support Recharges (Panel / Message) and Accounts' payment verification: the server checks the person and the record; the screenshot opens through a short-lived link only. */
 export interface RechargeFormInput {
-  customerName: string; rechargeDate: string; gstAmount: number; gstDetails?: string | null; nonGstAmount: number; nonGstDetails?: string | null;
-  totalAmount?: number; remarks?: string | null; screenshotId?: string | null;
+  rechargeDate: string; billingType: 'GST' | 'NON_GST'; rechargeAmount: number; gstAmount: number; gstNumber?: string | null; totalAmount?: number;
+  paymentReference?: string | null; remarks?: string | null; screenshotId?: string | null;
 }
-export interface RechargeListQuery { kind: 'PANEL' | 'MESSAGE'; search?: string; status?: string; from?: string; to?: string; min?: number | ''; max?: number | ''; limit?: number; offset?: number }
+export interface RechargeListQuery {
+  kind?: 'PANEL' | 'MESSAGE'; search?: string; paymentStatus?: string; invoiceStatus?: string; from?: string; to?: string; min?: number | ''; max?: number | ''; rm?: string; limit?: number; offset?: number;
+}
 export const rechargesApi = {
   list: (q: RechargeListQuery) => api.get<SupportRechargeList>('/support/recharges', { ...q }),
   get: (id: string) => api.get<SupportRecharge>(`/support/recharges/${id}`),
-  create: (kind: 'PANEL' | 'MESSAGE', body: RechargeFormInput, requestId: string) => api.post<SupportRecharge>('/support/recharges', { kind, requestId, ...body }),
+  /** the customer's Relationship Manager is not sent: the database reads it from the customer */
+  create: (kind: 'PANEL' | 'MESSAGE', customerId: string, body: RechargeFormInput, requestId: string) => api.post<SupportRecharge>('/support/recharges', { kind, customerId, requestId, ...body }),
   update: (id: string, body: RechargeFormInput) => api.post<SupportRecharge>(`/support/recharges/${id}/update`, body),
-  setStatus: (id: string, status: string, note?: string) => api.post<SupportRecharge>(`/support/recharges/${id}/status`, { status, note: note || null }),
+  customers: (search = '') => api.get<RechargeCustomer[]>('/support/recharge-customers', { search }),
+  customerContext: (id: string) => api.get<RechargeCustomer>(`/support/recharge-customers/${id}`),
+  performance: (q: { from?: string; to?: string; rm?: string } = {}) => api.get<RechargeRmPerformance[]>('/support/recharge-performance', { ...q }),
+  verify: (id: string, decision: 'RECEIVED' | 'NOT_RECEIVED' | 'REJECTED', note?: string, receivedAmount?: number) =>
+    api.post<SupportRecharge & { replayed: boolean }>(`/support/recharges/${id}/verify`, { decision, note: note || null, ...(receivedAmount !== undefined ? { receivedAmount } : {}) }),
+  correct: (id: string, body: { note: string; billingType?: 'GST' | 'NON_GST'; rechargeAmount?: number; gstAmount?: number; gstNumber?: string | null; paymentReference?: string | null; customerEmail?: string | null; customerPhone?: string | null; customerAddress?: string | null }) =>
+    api.post<SupportRecharge>(`/support/recharges/${id}/correct`, body),
+  // ---- Accounts: the invoice of a verified recharge, reviewed and then sent (nothing is sent without Send)
+  invoicePlan: (id: string, q: { hsnSac?: string; taxTreatment?: string } = {}) => api.get<RechargeInvoicePlan>(`/support/recharges/${id}/invoice/plan`, { ...q }),
+  generateInvoice: (id: string, body: { hsnSac?: string; taxTreatment?: 'INTRA_STATE' | 'INTER_STATE' } = {}) =>
+    api.post<{ invoice: RechargeInvoice; pdf: { status: 'READY' | 'FAILED'; message: string | null } }>(`/support/recharges/${id}/invoice`, body),
+  retryInvoicePdf: (id: string) => api.post<{ invoice: RechargeInvoice; pdf: { status: 'READY' | 'FAILED'; message: string | null } }>(`/support/recharges/${id}/invoice/pdf`, {}),
+  invoiceFileUrl: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/support/recharges/${id}/invoice/file`, { action }),
+  sendInvoice: (id: string, channels: ('EMAIL' | 'WHATSAPP')[], resend = false) => api.post<{ results: RechargeSendResult[]; invoiceStatus: string | null }>(`/support/recharges/${id}/invoice/send`, { channels, resend }),
+  setContact: (id: string, body: { note: string; customerEmail?: string | null; customerPhone?: string | null }) => api.post<SupportRecharge>(`/support/recharges/${id}/contact`, body),
   beginUpload: (body: { fileName: string; mimeType: string; sizeBytes: number }) => api.post<RechargeUploadTicket>('/support/recharge-uploads', body),
   completeUpload: (id: string) => api.post<{ id: string; name: string; mime: string; size: number }>(`/support/recharge-uploads/${id}/complete`, {}),
   abortUpload: (id: string) => api.post<null>(`/support/recharge-uploads/${id}/abort`, {}),

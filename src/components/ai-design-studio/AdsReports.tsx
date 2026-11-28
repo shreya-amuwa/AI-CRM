@@ -4,6 +4,7 @@ import type { AdsLink, AdsReport, AdsReportStatus } from '../../../shared/contra
 import { ADS_REPORT_STATUSES, ADS_REPORT_STATUS_LABELS } from '../../../shared/contracts';
 import { adsReportReviewSchema, adsReportSchema } from '../../../shared/validation';
 import { SideDrawer } from '../common/SideDrawer';
+import { ReportWordFields, reportWordsWithinLimits } from '../common/ReportWordFields';
 import { notifyAdsChanged, takePendingAds, useOpenAdsRequest } from './adsEvents';
 import {
   aiDesignStudioApi, Card, CardHead, ClientSelect, cleanLinks, DetailRow, EmptyState, ErrorLine, errorMessage, fieldCls, FormField, Flash, fmtDate, fmtDateTime, ghostBtn,
@@ -47,10 +48,9 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(newRequestId());
-  // The report asks what was completed, what is pending and any challenge. "Work in progress" (the same as pending work) and "Remarks" were dropped from the form to
-  // keep it short; an older report that already has them still shows them here (and keeps them when it is sent again).
-  const showWip = !!initial?.workInProgress?.trim();
-  const showRemarks = !!initial?.remarks?.trim();
+  // (20270308000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). Work in progress,
+  // challenges and links are no longer asked for; an older report that has them keeps them unchanged when it is sent again.
+  const withinLimits = reportWordsWithinLimits({ workCompleted, pendingWork, remarks });
 
   const route = isHead(ctx)
     ? null
@@ -110,32 +110,12 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
             {(assignments.data ?? []).filter(a => a.status !== 'COMPLETED' || a.id === assignmentId).map(a => <option key={a.id} value={a.id}>{a.title}{a.clientName ? ` · ${a.clientName}` : ''}</option>)}
           </select>
         </FormField>
-        <FormField label="Work completed today" htmlFor="rep-done" required error={errors.workCompleted} className="md:col-span-3">
-          <textarea id="rep-done" rows={3} className={textareaCls} value={workCompleted} maxLength={4000} disabled={busy} aria-invalid={!!errors.workCompleted} aria-describedby={errors.workCompleted ? 'rep-done-error' : undefined} onChange={e => setWorkCompleted(e.target.value)} />
-        </FormField>
-        <FormField label="Pending work" htmlFor="rep-pending" error={errors.pendingWork} className="md:col-span-3">
-          <textarea id="rep-pending" rows={3} className={textareaCls} value={pendingWork} maxLength={4000} disabled={busy} onChange={e => setPendingWork(e.target.value)} />
-        </FormField>
-        <FormField label="Challenges or blockers" htmlFor="rep-challenges" error={errors.challenges} className="md:col-span-3">
-          <textarea id="rep-challenges" rows={3} className={textareaCls} value={challenges} maxLength={4000} disabled={busy} onChange={e => setChallenges(e.target.value)} />
-        </FormField>
-        {showWip && (
-          <FormField label="Work in progress" htmlFor="rep-wip" error={errors.workInProgress} className="md:col-span-3">
-            <textarea id="rep-wip" rows={3} className={textareaCls} value={workInProgress} maxLength={4000} disabled={busy} onChange={e => setWorkInProgress(e.target.value)} />
-          </FormField>
-        )}
-        {showRemarks && (
-          <FormField label="Remarks" htmlFor="rep-remarks" error={errors.remarks} className="md:col-span-3">
-            <textarea id="rep-remarks" rows={2} className={textareaCls} value={remarks} maxLength={2000} disabled={busy} onChange={e => setRemarks(e.target.value)} />
-          </FormField>
-        )}
         <div className="md:col-span-3">
-          <div className="text-[13px] font-semibold text-slate-700 mb-1">Supporting attachments (links)</div>
-          <LinksField idPrefix="rep-link" value={links} onChange={setLinks} disabled={busy} />
-          {errors.attachments && <p className="text-xs text-rose-700 mt-1" role="alert">{errors.attachments}</p>}
+          <ReportWordFields idPrefix="rep" values={{ workCompleted, pendingWork, remarks }} errors={errors} disabled={busy} inputClassName={textareaCls}
+            onChange={(k, v) => (k === 'workCompleted' ? setWorkCompleted(v) : k === 'pendingWork' ? setPendingWork(v) : setRemarks(v))} />
         </div>
       </div>
-      <button type="submit" className={primaryBtn} disabled={busy}>{busy ? 'Sending…' : initial ? 'Send again' : 'Submit report'}</button>
+      <button type="submit" className={primaryBtn} disabled={busy || !withinLimits} data-testid="ads-report-submit">{busy ? 'Sending…' : initial ? 'Send again' : 'Submit report'}</button>
     </form>
   );
 };
@@ -150,7 +130,7 @@ const ReportTable: React.FC<{ rows: AdsReport[]; showAuthor: boolean; onOpen: (i
           {showAuthor && <th scope="col" className="px-3 py-2.5 font-semibold">Employee</th>}
           <th scope="col" className="px-3 py-2.5 font-semibold">Client</th>
           <th scope="col" className="px-3 py-2.5 font-semibold">Assignment</th>
-          <th scope="col" className="px-3 py-2.5 font-semibold">Work completed</th>
+          <th scope="col" className="px-3 py-2.5 font-semibold">Work Completed</th>
           <th scope="col" className="px-5 py-2.5 font-semibold">Status</th>
         </tr>
       </thead>
@@ -164,7 +144,7 @@ const ReportTable: React.FC<{ rows: AdsReport[]; showAuthor: boolean; onOpen: (i
             {showAuthor && <td className="px-3 py-3 text-slate-700">{r.authorName || '–'}{r.leadName && r.authorId !== r.leadId ? <div className="text-xs text-slate-500">Lead: {r.leadName}</div> : null}</td>}
             <td className="px-3 py-3 text-slate-700">{r.clientName || '–'}</td>
             <td className="px-3 py-3 text-slate-700">{r.assignmentTitle || '–'}</td>
-            <td className="px-3 py-3 text-slate-700 max-w-xs"><span className="line-clamp-2">{r.workCompleted}</span></td>
+            <td className="px-3 py-3 text-slate-700 max-w-xs"><span className="line-clamp-2">{r.workCompleted || r.pendingWork || r.remarks || '–'}</span></td>
             <td className="px-5 py-3"><ReportStatusBadge status={r.status} />{r.canReview && <div className="text-xs font-semibold text-amber-700 mt-1">Waiting for you</div>}</td>
           </tr>
         ))}
@@ -249,13 +229,13 @@ const ReportDrawer: React.FC<{ id: string; onClose: () => void }> = ({ id, onClo
               <DetailRow label="Team Lead">{data.authorRole === 'TEAM_MEMBER' ? data.leadName || 'None assigned yet' : '–'}</DetailRow>
               <DetailRow label="Client">{data.clientName}</DetailRow>
               <DetailRow label="Assignment">{data.assignmentTitle}</DetailRow>
-              <div className="col-span-2"><DetailRow label="Work completed today">{data.workCompleted}</DetailRow></div>
-              <div className="col-span-2"><DetailRow label="Pending work">{data.pendingWork}</DetailRow></div>
-              <div className="col-span-2"><DetailRow label="Challenges or blockers">{data.challenges}</DetailRow></div>
+              <div className="col-span-2"><DetailRow label="Work Completed">{data.workCompleted}</DetailRow></div>
+              <div className="col-span-2"><DetailRow label="Work Pending">{data.pendingWork}</DetailRow></div>
+              {data.challenges?.trim() ? <div className="col-span-2"><DetailRow label="Challenges or blockers">{data.challenges}</DetailRow></div> : null}
               {/* parts no longer asked for: shown only on an older report that has them */}
               {data.workInProgress?.trim() ? <div className="col-span-2"><DetailRow label="Work in progress">{data.workInProgress}</DetailRow></div> : null}
-              {data.remarks?.trim() ? <div className="col-span-2"><DetailRow label="Remarks">{data.remarks}</DetailRow></div> : null}
-              <div className="col-span-2"><DetailRow label="Attachments"><LinksList links={data.attachments} /></DetailRow></div>
+              {data.remarks?.trim() ? <div className="col-span-2"><DetailRow label="Additional Note">{data.remarks}</DetailRow></div> : null}
+              {data.attachments.length > 0 ? <div className="col-span-2"><DetailRow label="Attachments"><LinksList links={data.attachments} /></DetailRow></div> : null}
               <DetailRow label="Last sent">{fmtDateTime(data.submittedAt)}</DetailRow>
             </dl>
 

@@ -383,11 +383,26 @@ export const supportRechargesController = {
   get: (async ctx => ok(await svc(ctx).supportRecharges.get(ctx.params.id))) as Handler,
   create: (async ctx => ok(await svc(ctx).supportRecharges.create(ctx.req.body), 201)) as Handler,
   update: (async ctx => ok(await svc(ctx).supportRecharges.update(ctx.params.id, ctx.req.body))) as Handler,
-  setStatus: (async ctx => ok(await svc(ctx).supportRecharges.setStatus(ctx.params.id, ctx.req.body))) as Handler,
+  customers: (async ctx => ok(await svc(ctx).supportRecharges.customers(ctx.req.query))) as Handler,
+  customerContext: (async ctx => ok(await svc(ctx).supportRecharges.customerContext(ctx.params.id))) as Handler,
+  performance: (async ctx => ok(await svc(ctx).supportRecharges.performance(ctx.req.query))) as Handler,
+  verify: (async ctx => ok(await svc(ctx).supportRecharges.verify(ctx.params.id, ctx.req.body))) as Handler,
+  correct: (async ctx => ok(await svc(ctx).supportRecharges.correct(ctx.params.id, ctx.req.body))) as Handler,
   beginUpload: (async ctx => ok(await svc(ctx).supportRecharges.beginUpload(ctx.req.body), 201)) as Handler,
   completeUpload: (async ctx => ok(await svc(ctx).supportRecharges.completeUpload(ctx.params.id))) as Handler,
   abortUpload: (async ctx => ok(await svc(ctx).supportRecharges.abortUpload(ctx.params.id))) as Handler,
   screenshotUrl: (async ctx => ok(await svc(ctx).supportRecharges.screenshotUrl(ctx.params.id, ctx.req.query))) as Handler
+};
+
+/** The invoice of a verified recharge and its delivery (Accounts only: the database checks every call). */
+export const rechargeInvoicesController = {
+  prefill: (async ctx => ok(await svc(ctx).rechargeInvoices.prefill(ctx.params.id, ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).rechargeInvoices.get(ctx.params.id))) as Handler,
+  generate: (async ctx => ok(await svc(ctx).rechargeInvoices.generate(ctx.params.id, ctx.req.body), 201)) as Handler,
+  retryPdf: (async ctx => ok(await svc(ctx).rechargeInvoices.retryPdf(ctx.params.id))) as Handler,
+  fileUrl: (async ctx => ok(await svc(ctx).rechargeInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
+  send: (async ctx => ok(await svc(ctx).rechargeInvoices.send(ctx.params.id, ctx.req.body))) as Handler,
+  setContact: (async ctx => ok(await svc(ctx).rechargeInvoices.setContact(ctx.params.id, ctx.req.body))) as Handler
 };
 
 export const notificationsController = {

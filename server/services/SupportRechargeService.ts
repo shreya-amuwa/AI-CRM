@@ -1,5 +1,5 @@
-import type { ClientDocumentUrl, RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../shared/contracts.js';
-import { clientFileQuerySchema, rechargeBodySchema, rechargeCreateSchema, rechargeListQuerySchema, rechargeStatusBodySchema, rechargeUploadSchema, uuidSchema } from '../../shared/validation.js';
+import type { ClientDocumentUrl, RechargeCustomer, RechargeRmPerformance, RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../shared/contracts.js';
+import { clientFileQuerySchema, rechargeBodySchema, rechargeCorrectSchema, rechargeCreateSchema, rechargeCustomerQuerySchema, rechargeListQuerySchema, rechargePerformanceQuerySchema, rechargeUploadSchema, rechargeVerifySchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import type { RechargeFileRow, SupportRechargeRepository } from '../repositories/SupportRechargeRepository.js';
@@ -22,18 +22,29 @@ export class SupportRechargeService {
 
   list(query: unknown): Promise<SupportRechargeList> {
     const q = parse(rechargeListQuerySchema, query ?? {});
-    return this.repo.list({ kind: q.kind, search: q.search, status: q.status || undefined, from: q.from || undefined, to: q.to || undefined, min: q.min, max: q.max, limit: q.limit, offset: q.offset });
+    return this.repo.list({ kind: q.kind, search: q.search, paymentStatus: q.paymentStatus || undefined, invoiceStatus: q.invoiceStatus || undefined, from: q.from || undefined, to: q.to || undefined,
+      min: q.min, max: q.max, rm: q.rm, limit: q.limit, offset: q.offset });
   }
   get(id: string): Promise<SupportRecharge> { return this.repo.get(parse(uuidSchema, id)); }
+  /** The customer's Relationship Manager is not part of the request: the database reads it from the customer. */
   create(body: unknown): Promise<SupportRecharge> {
     const { kind, requestId, ...rest } = parse(rechargeCreateSchema, body);
     return this.repo.create({ kind, requestId: requestId ?? null, ...rest });
   }
   update(id: string, body: unknown): Promise<SupportRecharge> { return this.repo.update(parse(uuidSchema, id), parse(rechargeBodySchema, body)); }
-  setStatus(id: string, body: unknown): Promise<SupportRecharge> {
-    const b = parse(rechargeStatusBodySchema, body);
-    return this.repo.setStatus(parse(uuidSchema, id), b.status, b.note);
+  customers(query: unknown): Promise<RechargeCustomer[]> { return this.repo.customers(parse(rechargeCustomerQuerySchema, query ?? {}).search); }
+  customerContext(id: string): Promise<RechargeCustomer> { return this.repo.customerContext(parse(uuidSchema, id)); }
+  performance(query: unknown): Promise<RechargeRmPerformance[]> {
+    const q = parse(rechargePerformanceQuerySchema, query ?? {});
+    return this.repo.performance({ from: q.from || undefined, to: q.to || undefined, rm: q.rm });
   }
+  /** Accounts only (the database checks): the payment arrived, did not arrive, or the recharge is rejected. */
+  verify(id: string, body: unknown) {
+    const b = parse(rechargeVerifySchema, body);
+    return this.repo.verify(parse(uuidSchema, id), b.decision, b.note, b.receivedAmount);
+  }
+  /** Accounts only (the database checks): a correction of the billing details, with the reason. */
+  correct(id: string, body: unknown): Promise<SupportRecharge> { return this.repo.correct(parse(uuidSchema, id), parse(rechargeCorrectSchema, body)); }
 
   // ---- the screenshot
   /** Books the upload in the database (it checks the person, the type and the size), then hands out the one signed upload for it. */

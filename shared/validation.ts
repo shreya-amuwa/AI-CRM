@@ -680,7 +680,7 @@ export const pipelineListQuerySchema = z.object({
   service: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).optional(),
   source: trimmed(60).optional(),
   leadStatus: z.enum(LEAD_STATUSES).optional(),
-  /** Leads with this tag (migration 20270305000100). */
+  /** Leads with this tag (migration 20270308000100). */
   leadTagId: uuidSchema.optional(),
   /** Follow-up window computed by the client in the user's timezone. */
   followUpFrom: datetime.optional(),
@@ -3251,7 +3251,8 @@ export const adsReportSchema = z
     reportDate: z.preprocess(v => (v === '' ? undefined : v), isoDate.optional()),
     clientId: adsOptionalId,
     assignmentId: adsOptionalId,
-    workCompleted: adsRequiredText(4000, 'work completed today'),
+    // (20270308000100) Work Completed / Work Pending / Additional Note (remarks): optional, at least one, with word limits
+    workCompleted: optionalText(4000),
     workInProgress: optionalText(4000),
     pendingWork: optionalText(4000),
     challenges: optionalText(4000),
@@ -3259,7 +3260,11 @@ export const adsReportSchema = z
     attachments: adsLinks.optional(),
     clientRequestId: trimmed(80).optional()
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    addReportWordIssues(ctx, { workCompleted: v.workCompleted ?? undefined, pendingWork: v.pendingWork ?? undefined, remarks: v.remarks ?? undefined });
+  });
 export type AdsReportInput = z.infer<typeof adsReportSchema>;
 export const adsReportListQuerySchema = z
   .object({
@@ -3369,7 +3374,9 @@ export const aiStudioReportSchema = z
     submit: z.boolean().default(false)
   })
   .strict()
-  .refine(v => !v.submit || (v.workCompleted ?? '').length > 0, { message: 'Describe the work completed today before you submit.', path: ['workCompleted'] });
+  .refine(v => !v.submit || (v.workCompleted ?? '').length > 0, { message: 'Describe the work completed today before you submit.', path: ['workCompleted'] })
+  // (20270308000100) the same word limits as every daily report (this older one-task form is only used to correct reports made with it)
+  .superRefine((v, ctx) => { if (v.submit) addReportWordIssues(ctx, { workCompleted: v.workCompleted ?? undefined, pendingWork: v.pendingWork ?? undefined, remarks: v.remarks ?? undefined }); });
 export type AiStudioReportInput = z.infer<typeof aiStudioReportSchema>;
 
 export const aiStudioReportReviewSchema = z
@@ -3428,10 +3435,30 @@ export const aiStudioDailyReportSchema = z
   .strict()
   .superRefine((v, ctx) => {
     if (!v.submit) return;
-    const problem = dailyDescriptionProblem(v.workDescription);
-    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['workDescription'] });
+    // (20270308000100) the three fields' word limits; the Daily Work Description is no longer asked for
+    addReportWordIssues(ctx, { workCompleted: v.workCompleted, pendingWork: v.pendingWork, remarks: v.remarks });
   });
 export type AiStudioDailyReportInput = z.infer<typeof aiStudioDailyReportSchema>;
+
+// ---- Daily report fields, every department (20270308000100): Work Completed / Work Pending / Additional Note, all optional, each with a word limit ----
+export const DAILY_REPORT_FIELDS = [
+  { key: 'workCompleted', label: 'Work Completed', maxWords: 150 },
+  { key: 'pendingWork', label: 'Work Pending', maxWords: 100 },
+  { key: 'remarks', label: 'Additional Note', maxWords: 50 }
+] as const;
+export type DailyReportFieldKey = (typeof DAILY_REPORT_FIELDS)[number]['key'];
+/** The message for a field over its word limit, or null (the database's private.report_word_limits says the same). */
+export function dailyReportWordProblem(key: DailyReportFieldKey, text: string | null | undefined): string | null {
+  const f = DAILY_REPORT_FIELDS.find(x => x.key === key)!;
+  const n = countWords(text);
+  return n > f.maxWords ? `${f.label} can have at most ${f.maxWords} words (now ${n}).` : null;
+}
+function addReportWordIssues(ctx: z.RefinementCtx, v: Partial<Record<DailyReportFieldKey, string | null | undefined>>) {
+  for (const f of DAILY_REPORT_FIELDS) {
+    const problem = dailyReportWordProblem(f.key, v[f.key]);
+    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: [f.key] });
+  }
+}
 
 // ---- AI Studio Daily Work Description and HR's AI Studio Performance (20270302000100) ----
 export const DAILY_DESCRIPTION_MIN_WORDS = 10;
@@ -4034,18 +4061,23 @@ export const hrRoleOfferFieldsSchema = z.object({
 export const offerTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);
 
 // ---- Task daily reports and performance approval ----
+// (20270308000100) three optional fields with word limits (at least one written); progress and the reason for delay are no longer asked for (the report
+// keeps the task's own progress) but an older client may still send them
 export const taskReportSubmitSchema = z
   .object({
     taskId: uuidSchema,
     reportDate: isoDate.optional(),
-    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
-    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    workCompleted: trimmed(4000).optional(),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.').optional(),
     pendingWork: trimmed(2000).optional(),
     delayReason: trimmed(2000).optional(),
     remarks: trimmed(2000).optional()
   })
   .strict()
-  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+  .superRefine((v, ctx) => {
+    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    addReportWordIssues(ctx, v);
+  });
 export const taskReportReviewSchema = z
   .object({ decision: z.enum(['APPROVE', 'RETURN']), remarks: trimmed(2000).optional() })
   .strict()
@@ -4054,15 +4086,18 @@ export const taskReportReviewSchema = z
 /** The Team Lead edits a member's waiting report: the member's own rules apply, plus a reason the member reads. */
 export const taskReportReviewerEditSchema = z
   .object({
-    workCompleted: trimmed(4000).min(10, 'Describe the work completed (at least 10 characters).'),
-    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.'),
+    workCompleted: trimmed(4000).optional(),
+    progress: z.number().int().min(0, 'Progress is between 0 and 100.').max(100, 'Progress is between 0 and 100.').optional(),
     pendingWork: trimmed(2000).optional(),
     delayReason: trimmed(2000).optional(),
     remarks: trimmed(2000).optional(),
     reason: trimmed(1000).min(5, 'Say why you changed the report (at least 5 characters); the team member reads it.')
   })
   .strict()
-  .refine(v => v.progress >= 100 || !!v.pendingWork, { message: 'Say what work is still pending (the task is not finished).', path: ['pendingWork'] });
+  .superRefine((v, ctx) => {
+    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    addReportWordIssues(ctx, v);
+  });
 /** The reviewer updates the rating and remarks of an approved evaluation. */
 export const performanceEvaluationUpdateSchema = z
   .object({ rating: z.number().int().min(1, 'The rating is from 1 to 5.').max(5, 'The rating is from 1 to 5.'), remarks: trimmed(2000).optional() })
@@ -4135,57 +4170,96 @@ export const walletNewPinSchema = z.object({ pin: walletPinSchema, confirm: z.st
   .refine(v => v.pin === v.confirm, { message: 'The two PINs do not match.', path: ['confirm'] });
 
 // ---------------------------------------------------------------------------
-// Support Recharges (migration 20270228000200): Panel and Message recharges with a payment screenshot. The database re-checks every rule.
+// Support Recharges (migrations 20270228000200, 20270310000100): Panel and Message recharges for a customer, GST / Non-GST, a payment screenshot, and Accounts
+// verifying the payment. The database re-checks every rule; the customer's Relationship Manager is never taken from a request.
 // ---------------------------------------------------------------------------
 export const RECHARGE_KINDS = ['PANEL', 'MESSAGE'] as const;
-export const RECHARGE_STATUSES = ['PENDING', 'VERIFIED', 'COMPLETED', 'REJECTED'] as const;
+export const RECHARGE_BILLING_TYPES = ['GST', 'NON_GST'] as const;
+export const RECHARGE_PAYMENT_STATUSES = ['PENDING_VERIFICATION', 'PAYMENT_RECEIVED', 'PAYMENT_NOT_RECEIVED', 'REJECTED'] as const;
+export const RECHARGE_INVOICE_STATUSES = ['NOT_GENERATED', 'GENERATED', 'SENT', 'EMAIL_SENT', 'WHATSAPP_SENT', 'PARTIALLY_SENT', 'FAILED'] as const;
+export const RECHARGE_VERIFY_DECISIONS = ['RECEIVED', 'NOT_RECEIVED', 'REJECTED'] as const;
 export const RECHARGE_PROOF_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'] as const;
 export const RECHARGE_MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const rechargeKindSchema = z.enum(RECHARGE_KINDS, { errorMap: () => ({ message: 'Choose Panel Recharge or Message Recharge.' }) });
-export const rechargeStatusSchema = z.enum(RECHARGE_STATUSES, { errorMap: () => ({ message: 'Choose a valid status.' }) });
+export const rechargeBillingTypeSchema = z.enum(RECHARGE_BILLING_TYPES, { errorMap: () => ({ message: 'Choose GST or Non-GST.' }) });
+export const rechargePaymentStatusSchema = z.enum(RECHARGE_PAYMENT_STATUSES, { errorMap: () => ({ message: 'Choose a valid payment status.' }) });
 /** A money amount: a number with at most 2 decimals, never negative. */
 const rechargeAmount = z.coerce.number({ invalid_type_error: 'Amounts must be numbers.' }).min(0, 'Amounts cannot be negative.').max(100000000, 'Amounts cannot be more than 10 crore.')
   .refine(v => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, 'Amounts can have at most 2 decimal places.');
 const rechargeText = (max: number, message: string) => z.string().trim().max(max, message).optional().nullable().transform(v => (v ? v : null));
+/** A GST number as typed: spaces and case do not matter; the database checks the format again. */
+const rechargeGstin = z.string().trim().transform(v => v.replace(/\s+/g, '').toUpperCase()).refine(v => v === '' || /^[0-9]{2}[A-Z0-9]{10}[0-9A-Z]{3}$/.test(v), 'Enter a valid 15-character GST number.')
+  .optional().nullable().transform(v => (v ? v : null));
 const rechargeFields = z.object({
-  customerName: z.string().trim().min(2, 'Enter the customer name (2 to 150 characters).').max(150, 'The customer name is too long.'),
   rechargeDate: isoDate,
+  billingType: rechargeBillingTypeSchema,
+  /** the amount before GST (for a Non-GST recharge, the whole amount) */
+  rechargeAmount: rechargeAmount.refine(v => v > 0, 'Enter the recharge amount (above zero).'),
   gstAmount: rechargeAmount.default(0),
-  gstDetails: rechargeText(500, 'GST details can be at most 500 characters.'),
-  nonGstAmount: rechargeAmount.default(0),
-  nonGstDetails: rechargeText(500, 'Non-GST details can be at most 500 characters.'),
-  /** Optional: when sent it must equal GST + non-GST (the database always computes it). */
+  gstNumber: rechargeGstin,
+  /** Optional: when sent it must equal amount + GST (the database always computes it). */
   totalAmount: rechargeAmount.optional(),
+  paymentReference: rechargeText(100, 'The payment reference can be at most 100 characters.'),
   remarks: rechargeText(1000, 'Remarks can be at most 1000 characters.'),
   screenshotId: uuidSchema.optional().nullable().transform(v => v ?? null)
 });
-const rechargeTotals = (v: { gstAmount: number; nonGstAmount: number; totalAmount?: number }, ctx: z.RefinementCtx) => {
-  const sum = Math.round(v.gstAmount * 100 + v.nonGstAmount * 100) / 100;
-  if (sum <= 0) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'Enter the GST amount, the non-GST amount or both (the total must be above zero).' });
-  if (v.totalAmount !== undefined && Math.abs(v.totalAmount - sum) > 0.001) ctx.addIssue({ code: 'custom', path: ['totalAmount'], message: 'The total recharge amount must equal the GST amount plus the non-GST amount.' });
+const rechargeRules = (v: { billingType: string; rechargeAmount: number; gstAmount: number; gstNumber: string | null; totalAmount?: number }, ctx: z.RefinementCtx) => {
+  const sum = Math.round(v.rechargeAmount * 100 + v.gstAmount * 100) / 100;
+  if (v.billingType === 'NON_GST' && v.gstAmount !== 0) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'A Non-GST recharge has no GST amount.' });
+  if (v.billingType === 'GST' && v.gstAmount > v.rechargeAmount) ctx.addIssue({ code: 'custom', path: ['gstAmount'], message: 'The GST amount cannot be more than the recharge amount.' });
+  if (v.totalAmount !== undefined && Math.abs(v.totalAmount - sum) > 0.001) ctx.addIssue({ code: 'custom', path: ['totalAmount'], message: 'The total must equal the recharge amount plus the GST amount.' });
 };
-export const rechargeBodySchema = rechargeFields.strict().superRefine(rechargeTotals);
-export const rechargeCreateSchema = rechargeFields.extend({ kind: rechargeKindSchema, requestId: uuidSchema.optional() }).strict().superRefine(rechargeTotals)
+/** Editing: the customer, the kind and the RM are fixed, so none of them can be sent. */
+export const rechargeBodySchema = rechargeFields.strict().superRefine(rechargeRules);
+/** Creating: the customer is chosen; the Relationship Manager, the department and the status are never accepted from the browser. */
+export const rechargeCreateSchema = rechargeFields.extend({ kind: rechargeKindSchema, customerId: uuidSchema, requestId: uuidSchema.optional() }).strict().superRefine(rechargeRules)
   .refine(v => !!v.screenshotId, { message: 'Upload the screenshot of the payment.', path: ['screenshotId'] });
-export const rechargeStatusBodySchema = z
-  .object({ status: rechargeStatusSchema, note: z.string().trim().max(500, 'The note can be at most 500 characters.').optional().nullable().transform(v => (v ? v : null)) })
+/** Accounts: the money arrived, did not arrive, or the recharge is rejected. */
+export const rechargeVerifySchema = z
+  .object({
+    decision: z.enum(RECHARGE_VERIFY_DECISIONS, { errorMap: () => ({ message: 'Choose Payment received, Payment not received or Reject.' }) }),
+    note: z.string().trim().max(500, 'The note can be at most 500 characters.').optional().nullable().transform(v => (v ? v : null)),
+    /** what Accounts saw arrive: when sent it must equal the recharge total */
+    receivedAmount: rechargeAmount.optional()
+  })
   .strict()
-  .refine(v => v.status !== 'REJECTED' || (v.note ?? '').length >= 3, { message: 'Say why the recharge is rejected.', path: ['note'] });
+  .refine(v => v.decision === 'RECEIVED' || (v.note ?? '').length >= 3, { message: 'Say why (a short note is required).', path: ['note'] });
+/** Accounts: a correction of the billing details, with the reason. */
+export const rechargeCorrectSchema = z
+  .object({
+    note: z.string({ required_error: 'Say what was corrected and why.' }).trim().min(3, 'Say what was corrected and why.').max(500, 'The note can be at most 500 characters.'),
+    billingType: rechargeBillingTypeSchema.optional(),
+    rechargeAmount: rechargeAmount.refine(v => v > 0, 'Enter the recharge amount (above zero).').optional(),
+    gstAmount: rechargeAmount.optional(),
+    gstNumber: rechargeGstin,
+    paymentReference: rechargeText(100, 'The payment reference can be at most 100 characters.'),
+    customerEmail: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional().nullable().or(z.literal('')),
+    customerPhone: z.string().trim().max(40).optional().nullable(),
+    customerAddress: z.string().trim().max(500, 'The address can be at most 500 characters.').optional().nullable()
+  })
+  .strict();
 export const rechargeListQuerySchema = z
   .object({
-    kind: rechargeKindSchema,
+    kind: rechargeKindSchema.optional().or(z.literal('').transform(() => undefined)),
     search: z.string().trim().max(100).optional(),
-    status: z.union([z.literal(''), rechargeStatusSchema]).optional(),
+    paymentStatus: z.union([z.literal(''), rechargePaymentStatusSchema]).optional(),
+    invoiceStatus: z.union([z.literal(''), z.enum([...RECHARGE_INVOICE_STATUSES, 'GENERATED_ANY', 'DELIVERY_ANY'])]).optional(),
     from: isoDate.optional().or(z.literal('')),
     to: isoDate.optional().or(z.literal('')),
     min: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
     max: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
+    rm: uuidSchema.optional().or(z.literal('').transform(() => undefined)),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     offset: z.coerce.number().int().min(0).max(100000).default(0)
   })
   .strict()
   .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The "from" date must not be after the "to" date.', path: ['to'] })
   .refine(v => v.min === undefined || v.max === undefined || v.min <= v.max, { message: 'The minimum amount must not be above the maximum.', path: ['max'] });
+export const rechargePerformanceQuerySchema = z
+  .object({ from: isoDate.optional().or(z.literal('')), to: isoDate.optional().or(z.literal('')), rm: uuidSchema.optional().or(z.literal('').transform(() => undefined)) })
+  .strict()
+  .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The "from" date must not be after the "to" date.', path: ['to'] });
+export const rechargeCustomerQuerySchema = z.object({ search: z.string().trim().max(100).optional() }).strict();
 /** The payment proof: an image or a PDF, at most 5 MB. */
 export const rechargeUploadSchema = z
   .object({
@@ -4208,3 +4282,26 @@ export const leadTagSaveSchema = z
   .strict();
 export const leadTagRetireSchema = z.object({ retired: z.boolean() }).strict();
 export const leadTagSetSchema = z.object({ tagId: uuidSchema }).strict();
+/** Accounts: make the invoice of a verified recharge. Nothing here is a number or an amount: the database builds the invoice from the recharge. */
+export const rechargeInvoiceGenerateSchema = z
+  .object({
+    hsnSac: z.string().trim().regex(/^[0-9]{4,8}$/, 'The HSN/SAC code is 4 to 8 digits.').optional().or(z.literal('').transform(() => undefined)),
+    taxTreatment: z.enum(['INTRA_STATE', 'INTER_STATE'], { errorMap: () => ({ message: 'Choose intra-state (CGST + SGST) or inter-state (IGST).' }) }).optional()
+  })
+  .strict();
+export const RECHARGE_DELIVERY_CHANNELS = ['EMAIL', 'WHATSAPP'] as const;
+/** Accounts: send the invoice. "resend" is the deliberate second send of a channel that already went. */
+export const rechargeInvoiceSendSchema = z
+  .object({
+    channels: z.array(z.enum(RECHARGE_DELIVERY_CHANNELS, { errorMap: () => ({ message: 'Choose e-mail or WhatsApp.' }) })).min(1, 'Choose e-mail, WhatsApp or both.').max(2).refine(v => new Set(v).size === v.length, 'Each channel once.'),
+    resend: z.boolean().default(false)
+  })
+  .strict();
+/** Accounts: the customer's contact for sending, with the reason. */
+export const rechargeContactSchema = z
+  .object({
+    customerEmail: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional().nullable().or(z.literal('')),
+    customerPhone: z.string().trim().max(40).optional().nullable(),
+    note: z.string({ required_error: 'Say what was corrected and why.' }).trim().min(3, 'Say what was corrected and why.').max(500)
+  })
+  .strict();
