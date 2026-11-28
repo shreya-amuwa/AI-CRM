@@ -1,6 +1,6 @@
 # CRM enhancement roadmap (six phases)
 
-Status: **Phase 0 (audit and plan) complete. Phase 1 not started: waiting for approval.**
+Status: **Phase 0 complete and approved (decisions D1–D9 approved as recommended). Phase 1 in progress: part 1 of 4 (core + Sales Department Head) done.**
 Branch of the audit: `claude/crm-enhancement-roadmap` (from `main` at `70fd7741`). Baseline on that commit: `npm run typecheck` and `npm run build` pass.
 There is no lint script in this repository (`package.json` has none), so "run linting" cannot be executed until one is added.
 
@@ -299,10 +299,31 @@ the destination with validation or request an exception; nothing is tracked outs
 
 | Phase | Status | Pull request | Notes |
 | --- | --- | --- | --- |
-| 0. Audit and plan | Done | this branch | Waiting for approval and decisions D1–D9 |
-| 1. Toast notifications | Not started | | |
+| 0. Audit and plan | Done, approved | `claude/crm-enhancement-roadmap` | D1–D9 approved as recommended |
+| 1. Toast notifications | In progress (part 1 of 4) | part 1: `claude/crm-enhancement-roadmap` | Part 1: core (loading, `toast.promise`, `toast.fromError`, `useSubmit`, offline warning, clear defaults) + Sales Department Head (sheet assign, forward, inbound lead, task). Next: Support + Accounts + verification; HR + studios + field visit; Super Admin + the rest. |
 | 2. Mandatory contacts + automation retry | Not started | | |
 | 3. Support-originated workflow | Not started | | |
 | 4. Lead capture and drafts | Not started | | |
 | 5. Birthdays and anniversaries | Not started | | |
 | 6. Field visit tracking | Not started | | |
+
+### Phase 1, part 1 (core + Sales Department Head): what was done
+
+* `src/lib/feedback/feedbackStore.ts`: a `loading` kind (never auto-dismissed), `updateToast`, `toast.loading`, `toast.promise`, `toast.fromError`
+  and `errorKind` (VALIDATION_ERROR / CONFLICT → warning, everything else → error).
+* `src/lib/feedback/errors.ts`: clear defaults for no permission, an expired session, too many attempts and offline (a readable server
+  message is still kept as it is).
+* `src/lib/feedback/useSubmit.ts`: one request at a time, a busy flag, toasts, `{ ok, value | error }`.
+* `src/components/feedback/AppFeedback.tsx`: the spinner style and one persistent "You are offline" warning, then "Back online."
+* Sales Department Head (`src/components/sales-head/`):
+  * the sheet assignment uses one loading toast that becomes the result (a warning when the original file could not be stored), and retrying
+    replaces the stale failure;
+  * forwarding a sheet, assigning an inbound enquiry and creating a task show success toasts;
+  * dialog errors stay in the dialog, with safe text;
+  * the timed green banners were removed.
+* The rule "where a result goes" is in `docs/APP_FEEDBACK_SYSTEM.md`.
+* Tests:
+  * `app_feedback.test.ts` (+14 checks);
+  * `ui_app_feedback.test.mjs` (double click saves once, loading → success in place, safe failure text, offline / back online, at desktop
+    and two phone widths);
+  * `ui_ceo_lead_assign.test.mjs` (failed assignment → clear error toast without database text, retry → success, forward → success toast).

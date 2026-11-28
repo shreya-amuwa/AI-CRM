@@ -16,11 +16,22 @@ const TECHNICAL = [
 
 export const NETWORK_MESSAGE = 'Connection lost. Please check your internet and try again.';
 
+export const OFFLINE_MESSAGE = 'Internet connection unavailable. Please check your connection and try again.';
+export const PERMISSION_MESSAGE = 'You do not have permission to perform this action.';
+export const SESSION_MESSAGE = 'Your session has expired. Please sign in again.';
+export const RATE_MESSAGE = 'Too many attempts. Please wait a moment and try again.';
+
 export function userMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
-  const e = err as { message?: unknown; code?: unknown; name?: unknown } | null | undefined;
-  if (e && (e.code === 'NETWORK_ERROR' || e.name === 'AbortError' || (e.name === 'TypeError' && /fetch/i.test(String(e.message))))) return NETWORK_MESSAGE;
+  const e = err as { message?: unknown; code?: unknown; name?: unknown; status?: unknown } | null | undefined;
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (e && (e.code === 'NETWORK_ERROR' || e.name === 'AbortError' || (e.name === 'TypeError' && /fetch/i.test(String(e.message))))) return offline ? OFFLINE_MESSAGE : NETWORK_MESSAGE;
   const raw = typeof err === 'string' ? err : typeof e?.message === 'string' ? e.message : '';
   const msg = raw.replace(/\s+/g, ' ').trim();
-  if (!msg || msg.length > 300 || TECHNICAL.some(rx => rx.test(msg))) return fallback;
-  return msg;
+  const readable = msg && msg.length <= 300 && !TECHNICAL.some(rx => rx.test(msg));
+  if (readable) return msg;
+  // no readable message: a clear default for the common refusals instead of the generic fallback
+  if (e?.code === 'FORBIDDEN' || e?.status === 403) return PERMISSION_MESSAGE;
+  if (e?.code === 'UNAUTHENTICATED' || e?.status === 401) return SESSION_MESSAGE;
+  if (e?.code === 'RATE_LIMITED' || e?.status === 429) return RATE_MESSAGE;
+  return fallback;
 }

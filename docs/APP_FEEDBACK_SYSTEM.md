@@ -129,3 +129,41 @@ desktop, 390 px and 320 px. Test pages mount the provider by importing `supabase
 | Notification centre (sent / refused), training panels (saved), member follow-up details | `alert` | toast / details dialog |
 | Wabastore sample views (export, page engineering, capacity, SLA nudge) | `alert` claiming an action that never happened | an honest information toast ("not available on this view yet") |
 | Wabastore lead update without an outcome | `alert` | inline error |
+
+## Loading, submitting and offline (Phase 1, docs/crm-enhancement-roadmap.md)
+
+* **`toast.loading('Uploading document…')`** shows a toast with a spinner that never disappears by itself. `updateToast(id, kind, message)`
+  turns it into the result in place.
+* **`await toast.promise(request, { loading, success, error })`** is one toast for the whole request: "Saving changes…" while it runs, then
+  the success message (only after the server answered) or the failure. The failure is a **warning** when the person can fix it (the API said
+  `VALIDATION_ERROR` or `CONFLICT`, for example a duplicate number) and an **error** otherwise. Its text goes through `userMessage`. The
+  promise still resolves or rejects as the request did.
+* **`toast.fromError(err, 'Unable to save lead.')`** applies the same rule for a failure handled in a `catch`.
+* **`useSubmit()`** (`src/lib/feedback/useSubmit.ts`) for forms and action buttons:
+
+  ```tsx
+  const save = useSubmit();
+  <button disabled={save.busy} onClick={() => save.run(() => leadsApi.create(form), { success: 'Lead saved successfully.', error: 'Unable to save lead.' })}>
+  ```
+
+  It runs one request at a time (a double click sends once) and keeps a `busy` flag for the button. It shows the toasts, with `loading` for
+  slow requests and uploads. It resolves `{ ok, value | error }`, so the form can stay open on failure. Field validation stays inline: call
+  `run()` only for a valid form.
+* **Offline.** While the browser has no connection, one persistent warning says *You are offline: Internet connection unavailable*. It is
+  replaced by *Back online.* when the connection returns. Failed requests still say what could not be done.
+* **Clear defaults** when the server gives no readable message:
+  * no permission: *You do not have permission to perform this action.*;
+  * an expired session: *Your session has expired. Please sign in again.*;
+  * too many attempts: *Too many attempts. Please wait a moment and try again.*;
+  * offline: *Internet connection unavailable…*.
+
+### Where an action's result goes (rule used from Phase 1 on)
+
+| Result | Where |
+| --- | --- |
+| Success | Always a toast, after the server answered. |
+| Failure of an **open form or dialog** (assign, create, forward) | Inside that form, with `userMessage(err, fallback)`. The form stays open so the person can correct it and try again. |
+| Failure of a row, button or background action (a large upload, a row action) | A toast. A long action uses one loading toast that turns into the result. Trying again replaces the previous failure toast instead of leaving a stale error. |
+| Field validation | Inline next to the field. |
+
+Temporary green success banners that disappeared on a timer are replaced by success toasts.
