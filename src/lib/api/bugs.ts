@@ -15,6 +15,8 @@ export const bugsApi = {
   detail: (id: string) => api.get<DevBug>(`/bugs/${encodeURIComponent(id)}`),
   assign: (id: string, developerId: string | null) => api.post<DevBug>(`/bugs/${encodeURIComponent(id)}/assign`, { developerId }),
   setStatus: (id: string, status: DevBugStatus, note?: string | null) => api.post<DevBug>(`/bugs/${encodeURIComponent(id)}/status`, { status, note: note || null }),
+  addUpdate: (id: string, b: { work: string; status?: DevBugStatus; progress?: number; notes?: string | null; expectedVersion?: number; clientRequestId?: string }) =>
+    api.post<DevBug>(`/bugs/${encodeURIComponent(id)}/updates`, b),
   comment: (id: string, note: string) => api.post<DevBug>(`/bugs/${encodeURIComponent(id)}/comment`, { note }),
   team: () => api.get<DevTeamMember[]>('/bugs/team'),
   setTeam: (profileId: string, member: boolean, lead?: boolean) => api.post<DevTeamMember[]>('/bugs/team', { profileId, member, ...(lead === undefined ? {} : { lead }) })

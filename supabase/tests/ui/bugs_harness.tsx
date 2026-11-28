@@ -18,18 +18,26 @@ w.__calls = [];
 const bugs: any[] = [];
 const isDev = () => DEVS.some(d => d.id === w.__profile?.id);
 const isLead = () => DEVS.some(d => d.id === w.__profile?.id && d.lead);
-// the rule of 20270122000400: the lead every bug; a developer the unassigned ones and their own
-const sees = (b: any) => isLead() || (isDev() && (!b.assigneeId || b.assigneeId === w.__profile?.id));
+// the rule of 20270312000100: every developer sees every bug (the optional primary contact hides nothing)
+const sees = (_b: any) => isDev();
 const json = (data: unknown, code = 200) => new Response(JSON.stringify(code < 400 ? { success: true, data } : { success: false, error: data }), { status: code, headers: { 'Content-Type': 'application/json' } });
 const forbidden = () => json({ code: 'FORBIDDEN', message: 'The Bugs section is for the Developers team only.' }, 403);
-const OPEN = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'NEEDS_INFO'];
+const OPEN = ['PENDING', 'UNDER_REVIEW', 'IN_PROGRESS', 'TESTING', 'NEEDS_INFO'];
+// the team members who worked on a bug, from its history (20270312000100)
+const contributors = (b: any) => { const m = new Map<string, { id: string; name: string; updates: number; lastAt: string }>();
+  for (const h of b.history) if (h.by && (h.kind === 'PROGRESS' || h.kind === 'COMMENT' || (h.kind === 'STATUS' && !h.data.byReporter) || (h.kind === 'MESSAGE' && h.data.from === 'DEVELOPER'))) {
+    const c = m.get(h.by) ?? { id: h.by, name: h.by, updates: 0, lastAt: h.at }; c.updates++; c.lastAt = h.at; m.set(h.by, c); }
+  return [...m.values()]; };
 const lastMessage = (b: any) => { const m = [...b.history].reverse().find((h: any) => h.kind === 'MESSAGE'); return m ? { from: m.data.from, note: m.note, by: m.by, at: m.at } : null; };
 const row = (b: any) => ({ id: b.id, reference: b.reference, title: b.title, status: b.status, reporterName: b.reporterName, department: b.department, designation: b.designation,
   category: b.category, priority: b.priority, source: b.source, sourceIssueReference: b.sourceIssueReference ?? null, affectedDepartment: b.affectedDepartment ?? null,
   affectedEmployee: b.affectedEmployee ?? null, lastMessage: lastMessage(b),
   assigneeId: b.assigneeId, assigneeName: DEVS.find(d => d.id === b.assigneeId)?.name ?? null, attachmentCount: 0, createdAt: b.createdAt, updatedAt: b.createdAt,
+  progress: b.progress ?? 0, contributors: contributors(b).map(c => c.name), lastUpdateAt: b.lastUpdateAt ?? null, lastUpdateBy: b.lastUpdateBy ?? null,
   resolvedAt: null, resolutionNote: b.resolutionNote, assignmentStatus: b.assigneeId ? 'ASSIGNED' : 'UNASSIGNED', assignedByName: b.assignedBy ?? null, assignedAt: b.assignedAt ?? null });
+const latest = (b: any) => { const h = [...b.history].reverse().find((x: any) => x.kind === 'PROGRESS'); return h ? { by: h.by, at: h.at, work: h.note, statusTo: h.data.statusTo, progressTo: h.data.progressTo } : null; };
 const full = (b: any, dev: boolean) => ({ ...row(b), description: b.description, steps: b.steps, reporterId: b.reporterId, attachments: [],
+  progress: b.progress ?? 0, version: b.version ?? 1, contributors: dev ? contributors(b) : [], latestUpdate: dev ? latest(b) : null,
   assignedById: null, assignments: dev ? b.assignments : [], history: b.history.filter((h: any) => dev || !h.internal) });
 const counts = () => {
   const v = bugs.filter(sees);
@@ -37,7 +45,7 @@ const counts = () => {
     RESOLVED: v.filter(b => b.status === 'RESOLVED').length, REJECTED: v.filter(b => b.status === 'REJECTED').length,
     MINE: v.filter(b => b.assigneeId === w.__profile?.id && OPEN.includes(b.status)).length,
     UNASSIGNED: v.filter(b => !b.assigneeId && OPEN.includes(b.status)).length, OPEN: v.filter(b => OPEN.includes(b.status)).length,
-    UNDER_REVIEW: v.filter(b => b.status === 'UNDER_REVIEW').length, NEEDS_INFO: v.filter(b => b.status === 'NEEDS_INFO').length, CLOSED: v.filter(b => b.status === 'CLOSED').length };
+    UNDER_REVIEW: v.filter(b => b.status === 'UNDER_REVIEW').length, TESTING: v.filter(b => b.status === 'TESTING').length, NEEDS_INFO: v.filter(b => b.status === 'NEEDS_INFO').length, CLOSED: v.filter(b => b.status === 'CLOSED').length };
 };
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -48,13 +56,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   w.__calls.push({ method, path: url.pathname, body, query: Object.fromEntries(url.searchParams) });
   const p = url.pathname.replace('/api/v1', '');
   const me = w.__profile;
-  if (p === '/bugs/access') return json({ isDeveloper: isDev(), isLead: isLead(), meId: me.id, developers: isLead() ? DEVS.filter(d => !d.lead).map(({ id, name }) => ({ id, name })) : [] });
+  if (p === '/bugs/access') return json({ isDeveloper: isDev(), isLead: isLead(), meId: me.id, developers: isLead() ? DEVS.filter(d => !d.lead).map(({ id, name }) => ({ id, name })) : [],
+    team: isDev() ? DEVS.map(({ id, name, lead }) => ({ id, name, isLead: lead })) : [] });
   if (p === '/employee/case-details') return json({ name: me.fullName, department: me.department, designation: me.designation, employeeCode: 'EMP-1' });
   if (p === '/bugs' && method === 'POST') {
     const dup = bugs.find(b => b.requestId === body.clientRequestId && b.reporterId === me.id);
     if (dup) return json({ ...full(dup, false), duplicate: true }, 201);
     const b = { id: `b${bugs.length + 1}`, reference: `BUG-2026-${String(bugs.length + 1).padStart(5, '0')}`, title: body.title, description: body.description, steps: body.steps,
-      status: 'PENDING', reporterId: me.id, reporterName: me.fullName, department: me.department, designation: me.designation, assigneeId: null, resolutionNote: null,
+      status: 'PENDING', reporterId: me.id, reporterName: me.fullName, department: me.department, designation: me.designation, assigneeId: null, resolutionNote: null, progress: 0, version: 1,
       createdAt: new Date().toISOString(), requestId: body.clientRequestId, assignments: [], history: [{ id: 1, kind: 'SUBMITTED', internal: false, note: null, data: {}, by: me.fullName, at: new Date().toISOString() }],
       category: body.category ?? 'BUG', priority: body.priority ?? 'MEDIUM', source: me.hr ? 'HR_REPORT' : 'EMPLOYEE',
       affectedDepartment: DEPTS.find(d => d.id === body.affectedDepartmentId)?.name ?? null, affectedEmployee: PEOPLE.find(x => x.id === body.affectedEmployeeId)?.name ?? null };
@@ -83,11 +92,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (!isDev()) return forbidden();
     const st = url.searchParams.get('status'), as = url.searchParams.get('assignee');
     const items = bugs.filter(sees).filter(b => (!st || (st === 'OPEN' ? OPEN.includes(b.status) : st === 'DONE' ? !OPEN.includes(b.status) : b.status === st))
-      && (!as || (as === 'ME' ? b.assigneeId === me.id : as === 'UNASSIGNED' ? !b.assigneeId : b.assigneeId === as)));
+      && (!as || (as === 'ME' ? b.assigneeId === me.id : as === 'UNASSIGNED' ? !b.assigneeId : as === 'CONTRIBUTED' ? contributors(b).some(c => c.name === me.fullName) : b.assigneeId === as)));
     return json({ total: items.length, counts: counts(), isLead: isLead(), items: items.map(row),
-      byDeveloper: isLead() ? DEVS.filter(d => !d.lead).map(d => ({ id: d.id, name: d.name, open: bugs.filter(b => b.assigneeId === d.id && ['PENDING', 'IN_PROGRESS'].includes(b.status)).length, closed: 0 })) : [] });
+      byDeveloper: DEVS.map(d => ({ id: d.id, name: d.name, open: bugs.filter(b => b.assigneeId === d.id && OPEN.includes(b.status)).length, closed: 0,
+        updates: bugs.reduce((n, b) => n + b.history.filter((h: any) => h.kind === 'PROGRESS' && h.by === d.name).length, 0) })) });
   }
-  const one = p.match(/^\/bugs\/(\w+)(?:\/(assign|status|comment|reply))?$/);
+  const one = p.match(/^\/bugs\/(\w+)(?:\/(assign|status|comment|reply|updates))?$/);
   if (one) {
     if (!isDev()) return forbidden();
     const b = bugs.find(x => x.id === one[1]);
@@ -100,13 +110,27 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       ev('ASSIGNED', false, null, { toName: DEVS.find(d => d.id === body.developerId)?.name });
     }
     if (one[2] === 'status') {
-      if (!isLead() && b.assigneeId !== me.id) return json({ code: 'FORBIDDEN', message: 'Only the developer the bug is assigned to, or the Team Lead, changes its status.' }, 403);
       if (['RESOLVED', 'REJECTED'].includes(body.status) && (body.note ?? '').length < 5) return json({ code: 'VALIDATION_ERROR', message: 'Write the resolution note.' }, 422);
-      b.status = body.status; if (body.note && ['RESOLVED', 'REJECTED'].includes(body.status)) b.resolutionNote = body.note; ev('STATUS', false, body.note, { to: body.status });
+      b.status = body.status; if (body.note && ['RESOLVED', 'REJECTED'].includes(body.status)) b.resolutionNote = body.note; b.version++; ev('STATUS', false, body.note, { to: body.status });
+    }
+    // "Add Progress Update" (20270312000100): any developer; appended to the history with the person; refused when the screen is out of date
+    if (one[2] === 'updates') {
+      w.__updateCalls = (w.__updateCalls ?? 0) + 1;
+      if (body.clientRequestId && b.history.some((h: any) => h.kind === 'PROGRESS' && h.data.clientRequestId === body.clientRequestId && h.by === me.fullName)) return json({ ...full(b, true), duplicate: true }, 201);
+      if (!body.work || body.work.trim().length < 3) return json({ code: 'VALIDATION_ERROR', message: 'Write what you worked on (at least 3 characters).' }, 422);
+      const to = body.status ?? b.status, prog = body.progress ?? (['RESOLVED', 'CLOSED'].includes(to) ? 100 : b.progress);
+      if (to === 'RESOLVED' && prog !== 100) return json({ code: 'VALIDATION_ERROR', message: 'A resolved bug is 100% done.' }, 422);
+      if ((to !== b.status || prog !== b.progress) && body.expectedVersion && body.expectedVersion !== b.version)
+        return json({ code: 'CONFLICT', message: 'Another developer updated this bug while you were writing. Reload to read their update, then save yours again.' }, 409);
+      const was = b.status, pwas = b.progress;
+      if (['RESOLVED', 'REJECTED'].includes(to) && to !== was) { if ((body.notes ?? body.work).length < 5) return json({ code: 'VALIDATION_ERROR', message: 'Write the resolution note.' }, 422); b.resolutionNote = body.notes ?? body.work; }
+      b.status = to; b.progress = prog; b.version++; b.lastUpdateAt = new Date().toISOString(); b.lastUpdateBy = me.fullName;
+      ev('PROGRESS', true, body.work, { notes: body.notes ?? null, statusFrom: was, statusTo: to, progressFrom: pwas, progressTo: prog, clientRequestId: body.clientRequestId });
+      if (to !== was) ev('STATUS', false, null, { from: was, to });
+      return json({ ...full(b, true), duplicate: false }, 201);
     }
     if (one[2] === 'comment') ev('COMMENT', true, body.note);
     if (one[2] === 'reply') {
-      if (body.requestInfo && !isLead() && b.assigneeId !== me.id) return json({ code: 'FORBIDDEN', message: 'Only the developer the bug is assigned to, or the Team Lead, asks for information.' }, 403);
       ev('MESSAGE', false, body.message, { from: 'DEVELOPER', requestInfo: !!body.requestInfo });
       if (body.requestInfo) b.status = 'NEEDS_INFO';
     }

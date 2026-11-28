@@ -312,6 +312,7 @@ export const bugsController = {
   detail: (async ctx => ok(await svc(ctx).bugs.detail(ctx.params.id))) as Handler,
   assign: (async ctx => ok(await svc(ctx).bugs.assign(ctx.params.id, ctx.req.body))) as Handler,
   setStatus: (async ctx => ok(await svc(ctx).bugs.setStatus(ctx.params.id, ctx.req.body))) as Handler,
+  addUpdate: (async ctx => ok(await svc(ctx).bugs.addUpdate(ctx.params.id, ctx.req.body), 201)) as Handler,
   comment: (async ctx => ok(await svc(ctx).bugs.comment(ctx.params.id, ctx.req.body), 201)) as Handler,
   team: (async ctx => ok(await svc(ctx).bugs.team())) as Handler,
   setTeam: (async ctx => ok(await svc(ctx).bugs.setTeam(ctx.req.body))) as Handler

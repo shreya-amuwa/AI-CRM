@@ -1,14 +1,14 @@
 import type { DevBug, DevBugAccess, DevBugList, DevBugRow, DevTeamMember } from '../../shared/contracts.js';
 import {
-  bugAssignSchema, bugCommentSchema, bugFollowUpSchema, bugListQuerySchema, bugMyListQuerySchema, bugReplySchema, bugStatusSchema, bugSubmitSchema, devTeamSetSchema, uuidSchema
+  bugAssignSchema, bugCommentSchema, bugFollowUpSchema, bugListQuerySchema, bugMyListQuerySchema, bugProgressUpdateSchema, bugReplySchema, bugStatusSchema, bugSubmitSchema, devTeamSetSchema, uuidSchema
 } from '../../shared/validation.js';
 import { parse } from '../http/validate.js';
 import type { BugRepository } from '../repositories/BugRepository.js';
 
 /**
  * Bugs for the Developers team (migration 20270122000300). The database decides who may do what from the caller's own login: an employee
- * reports and follows their own bugs; only the developers on the list open the Bugs section: the Team Lead (Shreya Mande) sees and assigns
- * every bug, the developers (Ashish Sinha, Siddhesh Shinde) see the unassigned ones and their own (20270122000400); the Super Admin keeps the list. This layer only validates. Files use the existing issue upload / download routes.
+ * reports and follows their own bugs; only the developers on the list open the Bugs section, and all of them (the Team Lead, Ashish Sinha,
+ * Siddhesh Shinde) see and work on every bug together (20270312000100: no mandatory assignee); the Super Admin keeps the list. This layer only validates. Files use the existing issue upload / download routes.
  */
 export class BugService {
   constructor(private readonly repo: BugRepository) {}
@@ -31,6 +31,7 @@ export class BugService {
     const i = parse(bugStatusSchema, body);
     return this.repo.setStatus(parse(uuidSchema, id), i.status, i.note);
   }
+  addUpdate(id: string, body: unknown): Promise<DevBug> { return this.repo.addUpdate(parse(uuidSchema, id), parse(bugProgressUpdateSchema, body)); }
   comment(id: string, body: unknown): Promise<DevBug> { return this.repo.comment(parse(uuidSchema, id), parse(bugCommentSchema, body).note); }
   team(): Promise<DevTeamMember[]> { return this.repo.team(); }
   setTeam(body: unknown): Promise<DevTeamMember[]> {

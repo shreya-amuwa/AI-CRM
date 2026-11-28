@@ -11786,8 +11786,9 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 }
 
 // ---------------------------------------------------------------------------
-// Bugs for the Developers team (migrations 20270122000300, 20270122000400): every new bug seen by the whole team; the Team Lead assigns;
-// after assignment only the lead and the assigned developer see it. Each of the three accounts is checked on its own.
+// Bugs for the Developers team (migrations 20270122000300, 20270122000400, 20270312000100): every bug is seen and worked on by the whole team (no
+// mandatory assignee; the Team Lead may name an optional primary contact); progress updates by each developer, kept as written; contributors; conflicts and
+// simultaneous saves. Each of the three accounts is checked on its own.
 // ---------------------------------------------------------------------------
 {
   // the API database has nobody named like the three developers: a Team Lead and two developers for this block
@@ -11834,55 +11835,101 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('sa', 'GET', '/bugs');
   check(r.status === 403, 'bugs API: nor the Super Admin', r);
 
+  // the optional primary contact: only the Team Lead names one, and it never hides a bug or blocks anybody (20270312000100)
   r = await api('bd1', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
-  check(r.status === 403, 'bugs API: a developer cannot assign, not even to themself', r);
+  check(r.status === 403, 'bugs API: a developer cannot name a primary contact, not even for themself', r);
   r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: leadId });
-  check(r.status === 422, 'bugs API: the lead assigns to a developer, not to herself', r);
+  check(r.status === 422, 'bugs API: the lead names a developer, not herself', r);
   r = await api('tl2', 'POST', `/bugs/${bugA}/assign`, { developerId: dev1 });
   check(r.status === 200 && r.json.data.assigneeId === dev1 && r.json.data.assignmentStatus === 'ASSIGNED' && r.json.data.assignedById === leadId && !!r.json.data.assignedAt,
-    'bugs API: the lead assigns bug A to developer 1 (assigned_to, assigned_by, assigned_at)', r);
-  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: dev2 });
-  check(r.status === 200 && r.json.data.assigneeId === dev2, 'bugs API: and bug B to developer 2', r);
-
-  r = await api('tl2', 'GET', '/bugs');
-  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && r.json.data.items.some((b: any) => b.id === bugB)
-    && r.json.data.byDeveloper.some((d: any) => d.id === dev1 && d.open >= 1), 'bugs API: the lead still sees both, and each developer\'s workload', r);
+    'bugs API: the lead names developer 1 the primary contact of bug A', r);
+  for (const who of ['tl2', 'bd1', 'bd2']) {
+    r = await api(who, 'GET', '/bugs');
+    check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && r.json.data.items.some((b: any) => b.id === bugB),
+      `bugs API: ${who} still sees both bugs (a primary contact hides nothing)`, r);
+  }
+  r = await api('bd2', 'GET', `/bugs/${bugA}`);
+  check(r.status === 200 && r.json.data.assigneeId === dev1, 'bugs API: developer 2 opens the bug whose contact is developer 1', r);
   r = await api('bd1', 'GET', '/bugs');
-  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA) && !r.json.data.items.some((b: any) => b.id === bugB), 'bugs API: developer 1 sees A, not B', r);
-  r = await api('bd1', 'GET', `/bugs/${bugB}`);
-  check(r.status === 404, 'bugs API: developer 1 cannot open B', r);
-  r = await api('bd2', 'GET', '/bugs');
-  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugB) && !r.json.data.items.some((b: any) => b.id === bugA)
-    && r.json.data.counts.MINE >= 1, 'bugs API: developer 2 sees B, not A, and the counts follow', r);
-  r = await api('bd2', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed it myself' });
-  check(r.status === 404, 'bugs API: developer 2 cannot change A', r);
-  r = await api('bd2', 'POST', `/bugs/${bugA}/comment`, { note: 'x' });
-  check(r.status === 404, 'bugs API: nor comment on it', r);
+  check(r.status === 200 && r.json.data.byDeveloper.length === 3 && r.json.data.isLead === false, 'bugs API: every developer sees the whole team panel', r);
 
-  r = await api('bd1', 'POST', `/bugs/${bugA}/comment`, { note: 'Reproduced on staging' });
-  check(r.status === 201 && r.json.data.history.some((h: any) => h.internal && h.note === 'Reproduced on staging'), 'bugs API: developer 1 comments (internal)', r);
+  // shared work: any developer changes status and adds updates, assigned or not
+  r = await api('bd2', 'POST', `/bugs/${bugA}/comment`, { note: 'Same stack trace on my side' });
+  check(r.status === 201 && r.json.data.history.some((h: any) => h.internal && h.note === 'Same stack trace on my side'), 'bugs API: developer 2 comments on a bug that is not hers', r);
   r = await api('bd1', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED' });
   check(r.status === 422, 'bugs API: resolving needs a note', r);
-  r = await api('bd1', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed in release 2.4' });
-  check(r.status === 200 && r.json.data.status === 'RESOLVED' && r.json.data.resolutionNote === 'Fixed in release 2.4', 'bugs API: developer 1 resolves A', r);
-  r = await api('tl2', 'GET', '/bugs?status=RESOLVED');
-  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA), 'bugs API: the lead sees it resolved', r);
+  r = await api('a', 'POST', `/bugs/${bugA}/updates`, { work: 'I am the reporter' });
+  check(r.status === 403, 'bugs API: the reporter cannot add a progress update', r);
+  r = await api('th', 'POST', `/bugs/${bugA}/updates`, { work: 'I am another employee' });
+  check(r.status === 403, 'bugs API: nor another employee', r);
+  r = await api('sa', 'POST', `/bugs/${bugA}/updates`, { work: 'I am the Super Admin' });
+  check(r.status === 403, 'bugs API: nor the Super Admin', r);
+  r = await api(null, 'POST', `/bugs/${bugA}/updates`, { work: 'I am a visitor' });
+  check(r.status === 401, 'bugs API: nor a visitor', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/updates`, { work: '' });
+  check(r.status === 422, 'bugs API: an update says what was worked on', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/updates`, { work: 'Some work was done', progress: 101 });
+  check(r.status === 422, 'bugs API: progress is at most 100', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/updates`, { work: 'Some work was done', status: 'DONE' });
+  check(r.status === 422, 'bugs API: an unknown status is refused', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/updates`, { work: 'Some work was done', userId: leadId });
+  check(r.status === 422, 'bugs API: the person making the update cannot be sent', r);
+  r = await api('bd1', 'POST', `/bugs/${crypto.randomUUID()}/updates`, { work: 'Some work was done' });
+  check(r.status === 404, 'bugs API: an unknown bug', r);
 
-  r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: dev1 });
-  check(r.status === 200 && r.json.data.assigneeId === dev1 && r.json.data.assignments.length === 2, 'bugs API: B re-assigned to developer 1; two assignments in the history', r);
-  r = await api('bd2', 'GET', `/bugs/${bugB}`);
-  check(r.status === 404, 'bugs API: developer 2 no longer sees B', r);
+  r = await api('tl2', 'POST', `/bugs/${bugA}/updates`, { work: 'Reproduced it and found the failing query', status: 'IN_PROGRESS', progress: 25, notes: 'Slow join on reports', clientRequestId: 'bgx-up-lead-01' });
+  check(r.status === 201 && r.json.data.status === 'IN_PROGRESS' && r.json.data.progress === 25 && r.json.data.duplicate === false, 'bugs API: the Team Lead adds a progress update (In Progress, 25%)', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/updates`, { work: 'Rewrote the query with an index', status: 'IN_PROGRESS', progress: 60, clientRequestId: 'bgx-up-dev1-01' });
+  check(r.status === 201 && r.json.data.progress === 60, 'bugs API: developer 1 adds one (60%)', r);
+  r = await api('bd2', 'POST', `/bugs/${bugA}/updates`, { work: 'Ran the report against production-sized data', status: 'TESTING', progress: 85, clientRequestId: 'bgx-up-dev2-01' });
+  check(r.status === 201 && r.json.data.status === 'TESTING' && r.json.data.progress === 85, 'bugs API: developer 2 adds one (Testing, 85%)', r);
+  const detA = (await api('tl2', 'GET', `/bugs/${bugA}`)).json.data;
+  const prog = detA.history.filter((h: any) => h.kind === 'PROGRESS');
+  check(prog.length === 3 && new Set(prog.map((h: any) => h.by)).size === 3 && prog.map((h: any) => h.note).join('|') === 'Reproduced it and found the failing query|Rewrote the query with an index|Ran the report against production-sized data',
+    'bugs API: three updates by three people, each kept as written (nobody overwrote anybody)', prog);
+  check(detA.contributors.length === 3 && detA.contributors.every((c: any) => c.updates >= 1) && detA.latestUpdate.progressTo === 85 && detA.version >= 4,
+    'bugs API: the bug lists its three contributors, the latest update and its version', detA);
+  r = await api('bd2', 'POST', `/bugs/${bugA}/updates`, { work: 'Ran the report against production-sized data', status: 'TESTING', progress: 85, clientRequestId: 'bgx-up-dev2-01' });
+  check(r.status === 201 && r.json.data.duplicate === true && (await api('tl2', 'GET', `/bugs/${bugA}`)).json.data.history.filter((h: any) => h.kind === 'PROGRESS').length === 3,
+    'bugs API: the same form sent twice is stored once', r);
+
+  // a screen loaded with version v: if somebody else saved first, its status / progress change is refused, not overwritten
+  const v0 = (await api('bd1', 'GET', `/bugs/${bugA}`)).json.data.version as number;
+  r = await api('bd2', 'POST', `/bugs/${bugA}/updates`, { work: 'Added a regression test', status: 'TESTING', progress: 90, expectedVersion: v0 });
+  check(r.status === 201 && r.json.data.progress === 90, 'bugs API: developer 2 saves first with the version she loaded', r);
+  r = await api('bd1', 'POST', `/bugs/${bugA}/updates`, { work: 'Closing it from an old screen', status: 'IN_PROGRESS', progress: 10, expectedVersion: v0 });
+  check(r.status === 409 && /Another developer updated this bug/.test(JSON.stringify(r.json)), 'bugs API: developer 1 saving from the old screen gets a conflict', r);
+  check((await api('bd1', 'GET', `/bugs/${bugA}`)).json.data.progress === 90, 'bugs API: and the 90% was not overwritten');
+
+  // two developers pressing Save at the same moment
+  const vB = (await api('tl2', 'GET', `/bugs/${bugB}`)).json.data.version as number;
+  const race = await Promise.all(['tl2', 'bd1', 'bd2'].map((who, i) =>
+    api(who, 'POST', `/bugs/${bugB}/updates`, { work: `Simultaneous change ${i + 1} of the status`, status: 'IN_PROGRESS', progress: 10 * (i + 1), expectedVersion: vB })));
+  check(race.filter(x => x.status === 201).length === 1 && race.filter(x => x.status === 409).length === 2, 'bugs API: three simultaneous changes from the same version: one wins, two get a conflict', race.map(x => x.status));
+  const raceDet = (await api('tl2', 'GET', `/bugs/${bugB}`)).json.data;
+  check(raceDet.history.filter((h: any) => h.kind === 'PROGRESS').length === 1 && raceDet.version === vB + 1, 'bugs API: exactly one update was recorded', raceDet.version);
+  const race2 = await Promise.all(['tl2', 'bd1', 'bd2'].map((who, i) =>
+    api(who, 'POST', `/bugs/${bugB}/updates`, { work: `Parallel work note ${i + 1} from ${who}`, clientRequestId: `bgx-par-${who}-${i}01` })));
+  check(race2.every(x => x.status === 201), 'bugs API: three simultaneous notes (no status or progress change) are all accepted', race2.map(x => x.status));
+  const par = (await api('tl2', 'GET', `/bugs/${bugB}`)).json.data.history.filter((h: any) => h.kind === 'PROGRESS');
+  check(par.length === 4 && new Set(par.map((h: any) => h.note)).size === 4 && new Set(par.map((h: any) => h.by)).size === 3, 'bugs API: all three notes are in the history, none lost or merged', par.length);
+
+  r = await api('bd2', 'POST', `/bugs/${bugA}/status`, { status: 'RESOLVED', note: 'Fixed in release 2.4' });
+  check(r.status === 200 && r.json.data.status === 'RESOLVED' && r.json.data.progress === 100 && r.json.data.resolutionNote === 'Fixed in release 2.4', 'bugs API: developer 2 resolves A (100%)', r);
+  r = await api('tl2', 'GET', '/bugs?status=RESOLVED');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA && b.progress === 100 && b.contributors.length >= 3), 'bugs API: the lead sees it resolved with its contributors', r);
+  r = await api('tl2', 'GET', '/bugs?assignee=CONTRIBUTED');
+  check(r.status === 200 && r.json.data.items.some((b: any) => b.id === bugA), 'bugs API: "I worked on" lists it', r);
   r = await api('tl2', 'POST', `/bugs/${bugB}/assign`, { developerId: null });
-  check(r.status === 200 && r.json.data.assignmentStatus === 'UNASSIGNED', 'bugs API: un-assigned', r);
-  r = await api('bd2', 'GET', `/bugs/${bugB}`);
-  check(r.status === 200, 'bugs API: every developer sees it again', r);
+  check(r.status === 200 && r.json.data.assignmentStatus === 'UNASSIGNED', 'bugs API: the primary contact is cleared', r);
   const copies = (await db.query(`select count(*)::int n from public.dev_bugs where title in ('BGX Report page is blank', 'BGX Second bug')`)).rows[0].n;
-  check(copies === 2, 'bugs API: assignments never duplicate a bug', copies);
+  check(copies === 2, 'bugs API: updates and contacts never duplicate a bug', copies);
 
   r = await api('a', 'GET', '/bugs/mine');
   check(r.status === 200 && r.json.data.some((b: any) => b.id === bugA && b.status === 'RESOLVED' && b.resolutionNote === 'Fixed in release 2.4'), 'bugs API: the reporter sees the resolution', r);
   r = await api('a', 'GET', `/bugs/mine/${bugA}`);
-  check(r.status === 200 && !r.json.data.history.some((h: any) => h.internal) && r.json.data.assignments.length === 0, 'bugs API: but never internal comments or the team\'s assignment history', r);
+  check(r.status === 200 && r.json.data.progress === 100 && !r.json.data.history.some((h: any) => h.internal || h.kind === 'PROGRESS') && r.json.data.assignments.length === 0 && r.json.data.contributors.length === 0 && r.json.data.latestUpdate === null,
+    'bugs API: the reporter sees the progress, never the internal work log, the contributors or the team\'s assignment history', r);
   r = await api('th', 'GET', `/bugs/mine/${bugA}`);
   check(r.status === 404, 'bugs API: someone else\'s bug is not found', r);
   r = await api('sa', 'GET', '/bugs/team');

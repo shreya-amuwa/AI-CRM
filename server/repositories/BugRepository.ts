@@ -28,6 +28,11 @@ export class BugRepository {
   detail(id: string) { return this.rpc<DevBug>('bug_dev_detail', { p_id: id }); }
   assign(id: string, developerId: string | null) { return this.rpc<DevBug>('bug_dev_assign', { p_id: id, p_developer: developerId }); }
   setStatus(id: string, status: string, note?: string | null) { return this.rpc<DevBug>('bug_dev_set_status', { p_id: id, p_status: status, p_note: note ?? null }); }
+  /** "Add Progress Update" (20270312000100): any developer, any bug; the database records who made it */
+  addUpdate(id: string, i: { work: string; status?: string | null; progress?: number | null; notes?: string | null; expectedVersion?: number | null; clientRequestId?: string | null }) {
+    return this.rpc<DevBug>('bug_dev_add_update', { p_id: id, p_work: i.work, p_status: i.status ?? null, p_progress: i.progress ?? null, p_notes: i.notes ?? null,
+      p_expected_version: i.expectedVersion ?? null, p_client_request_id: i.clientRequestId ?? null });
+  }
   comment(id: string, note: string) { return this.rpc<DevBug>('bug_dev_comment', { p_id: id, p_note: note }); }
   team() { return this.rpc<DevTeamMember[]>('dev_team_list'); }
   setTeam(profileId: string, member: boolean, lead?: boolean) { return this.rpc<DevTeamMember[]>('dev_team_set', { p_profile: profileId, p_member: member, p_lead: lead ?? null }); }
