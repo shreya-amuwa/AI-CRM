@@ -70,6 +70,10 @@ Migration `20261204000100_login_location_audit.sql`, `server/security/clientNetw
 * **Guard.** `supabase/tests/no_hardcoded_secrets.test.ts` (part of `npm run test:unit`, so of CI) scans `src/`, `server/`, `api/`, `worker/`, `shared/` and `vite.config.ts` for the shape of a credential (a key-like name assigned a UUID or a long token, a `Bearer` UUID, a JWT literal, a well-known key prefix) and fails the build. It holds no secret itself.
 * **Wabastore AI Calling.** The lead-fetch panel (`WabastorePanel.tsx`) no longer ships a default key: staff paste the key into the panel's token field when they fetch AI Calling leads (kept in memory for that page only). The local dev server's optional forwarding of inbound leads to a remote n8n webhook reads `DEV_WEBHOOK_FORWARD_URL`, `DEV_WEBHOOK_FORWARD_URL_AICALL` and `DEV_WEBHOOK_FORWARD_KEY` from `.env.local`; with none set it forwards nothing.
 
+## Third-party keys at rest
+
+Crocodial keys that a CEO or the Managing Director pastes into the CRM are encrypted with `AUTOMATION_SECRET_KEY` before they are stored. The CRM keeps the encrypted value and the last 4 characters; the key itself is never shown again, logged or returned to the browser. If `AUTOMATION_SECRET_KEY` is changed, stored keys can no longer be read and must be entered again. Keys can also still be set as server secrets (Worker secrets); those never enter the database.
+
 ## Remaining risks (not changed, on purpose)
 
 * The lead webhook stays open until `WEBHOOK_SECRET` is set (switching it on by default would silently stop inbound leads from senders that were not updated).

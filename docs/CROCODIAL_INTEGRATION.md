@@ -30,14 +30,17 @@ It is delivered in parts:
 
 | Step | Who | Where |
 | --- | --- | --- |
-| Allow a department + function (rollout) | Super Admin | Crocodial Integration > 1. Rollout |
-| Add a connection (one Crocodial account) | Super Admin | > 2. Connections |
-| Put the token on the server | Whoever deploys | the server's environment (see below) |
-| Test the connection (reads the user and branch lists only) | Super Admin | > Test connection |
-| Link the connection to M Pillar Sales; switch it on | Super Admin | > 3. Departments |
-| Map a Crocodial user to one CRM employee, check, approve or revoke | Super Admin | > 4. People |
+| Allow a department + function (rollout) | Managing Director (Super Admin); allowed automatically when a CEO links a department they run | Crocodial Integration > 1. Rollout |
+| Add a connection (one Crocodial account) | Managing Director; a CEO for departments they run | > 2. Connections |
+| Put the token on the server, or paste the key on the page | Whoever deploys (server setting, MD only); the MD or the CEO (stored key) | the server's environment (see below), or the connection's key field |
+| Test the connection (reads the user and branch lists only) | Managing Director; the CEO who manages it | > Test connection |
+| Link the connection to a department's Sales; switch it on | Managing Director; the CEO who manages it, for departments they run | > 3. Departments |
+| Map a Crocodial user to one CRM employee, check, approve or revoke | Managing Director; the CEO who manages it | > 4. People |
 
-The database enforces each step (`croc_*` functions in `20270115000100_crocodial_integration.sql`). Department Heads and everyone else get `FORBIDDEN`.
+The database enforces each step (`croc_*` functions in `20270115000100_crocodial_integration.sql`, and who manages a connection in
+`20270307000100_crocodial_ceo_connections.sql`): the Managing Director configures every connection; a CEO configures, for their own
+departments, only the connections whose linked departments they ALL run (see "CEOs connect their own departments" below). Plain Department
+Heads and everyone else get `FORBIDDEN`.
 
 **When a person's activity counts.** All of these must hold at the time of the activity:
 1. the connection is on;
@@ -59,7 +62,7 @@ The database enforces each step (`croc_*` functions in `20270115000100_crocodial
 | The person | Their own only. |
 | Team Lead | Only the people they lead (`private.led_by`), not another Team Lead's people in the same team. |
 | Department Head / Operations Head | People in departments + Sales their scope covers (`private.scopes_of`). Support-only heads and other departments see nothing. |
-| Super Admin | Everything, plus configuration. |
+| Super Admin | Everything, plus configuration. (A CEO also configures the connections they manage: see "CEOs connect their own departments".) |
 | Anyone else / no login | Nothing. |
 
 This is `private.croc_can_view(profile, department, division)`. The screens in parts 3 and 4 read only through functions that call it.
@@ -203,8 +206,16 @@ Review the preview before importing. Historical leads are imported only after th
 - Ownership changes seen by a sync are kept in `crocodial_lead_owner_history`. The time is when the CRM saw the change. Crocodial does not say who assigned a lead, and `created_by` is kept separately, never treated as the assigner.
 
 **Status mapping** (per connection; unknown statuses are listed in the monitor and change nothing):
+- Each Crocodial status maps to a **lead tag**. A lead whose Crocodial status is mapped takes that tag, and the tag counts as its lead status.
+- In the monitor each status has a select of tags grouped by stage, plus **Ignore** (skip it on purpose) and **Not mapped** (removes the mapping).
+- **Create a tag from this status** opens the tag form pre-filled with the status label and the connection's departments. Saving creates the tag and maps the status in one go.
+- Only tags usable in every department linked to the connection are offered. The API refuses others with a 422, shown inline.
+- API: `POST /crocodial/connections/:id/status-mappings` takes `{status, tagId, ignore}`. Send both: a body with neither a tag nor Ignore removes the mapping.
+- Mappings reset by the migration are listed as unknown again.
 
-| CRM disposition | `lead_status` | Note |
+**Migration table.** Mappings made before lead tags were moved to the basic tag of the stage in the last column. The old disposition is still accepted by the API.
+
+| Old CRM disposition | Stage of the tag it moved to (`lead_status`) | Note |
 |---|---|---|
 | New | NEW | |
 | Contacted | CONTACTED | |
@@ -588,9 +599,51 @@ yet (phase 2). When they are built, they will read calls and demos only through 
   re-read (which marks records Crocodial no longer returns as missing) happens when the Super Admin presses **Sync now**.
 - To check: `crocodial_sync_runs` (one row per list per run: pages, rows, full or not) and Supabase → Reports → Disk IO.
 
+## CEOs connect their own departments (migration `20270307000100_crocodial_ceo_connections.sql`)
+
+A CEO no longer needs the Managing Director to connect Crocodial. On the Crocodial Integration page a CEO can connect Crocodial for the departments they run, paste the key, and switch it on.
+
+**Who can do what**
+
+- A CEO sees and changes only the connections whose linked departments they run, EVERY one of them (a connection with at least one link). A connection that also serves a department they do not run is the Managing Director's or that department's CEO's, not theirs. They never see the rollout table or other departments' connections.
+- People are chosen from the connection's mapping candidates (`croc_mapping_candidates`): the active people of a linked department who can be mapped there (the same check as proposing a mapping). This works for every department the CEO runs, not only their home department.
+- A CEO runs the Sales side of every department linked to their connection: linking it, switching it on or off, and mapping people.
+- The Managing Director sees every connection. The page shows who manages each one ("Managed by": the CEO names, or "Managing Director only") and where its key comes from.
+
+**The key**
+
+- The CEO pastes the Crocodial key into a password field. The server tests it with one live read, and only if that works does it save it.
+- The key is encrypted with `AUTOMATION_SECRET_KEY` before it is stored. Only the last 4 characters are ever shown ("Stored (•••• 1a2b)"). It is not shown again, not written to logs, and not sent back to the browser.
+- The same Crocodial account cannot be connected twice. The second attempt is refused with "This Crocodial account is already connected".
+- "Replace key" tests and swaps the key. "Disconnect" removes the key and switches the connection off.
+
+**The Managing Director's switch-off**
+
+The Managing Director can switch off any connection or department link. A CEO cannot switch it back on: they see "Switched off by the Managing Director. Ask the Managing Director to switch it back on." The Managing Director sees "Switched off by you". When the Managing Director switches it on again, the CEO can use it as before.
+
+The switch-off is a real stop for every department that connection or link serves, not only for that one item. While it is set, a CEO cannot (same message, `CONFLICT`):
+- create a new connection for any of those departments;
+- add a link for one of them to another connection, or switch on another connection's link for it;
+- switch on another connection that has a link switched on for one of them;
+- change or remove ("Disconnect") the key of the connection the Managing Director switched off (so the key cannot be freed and reused on a new connection).
+
+A CEO may still rename the connection, and change a link that stays off. When the Managing Director switches the connection or link back on, the stop is lifted.
+
+**If `AUTOMATION_SECRET_KEY` changes**
+
+Stored keys can only be read with the `AUTOMATION_SECRET_KEY` they were saved with. If it is changed (rotated), every stored key becomes unreadable. Those connections show "Key needs to be entered again", and each key must be pasted in again. Plan a rotation for a quiet time and tell the CEOs.
+
+A server that has no `AUTOMATION_SECRET_KEY` at all (for example a second deployment that still receives the scheduled call, such as an old
+Vercel cron) does not mark anything: it records that it saw the connection (Connection health) and skips it, leaving the read to the server
+that has the secret. "Key needs to be entered again" is set only by a server that has `AUTOMATION_SECRET_KEY` and still cannot open the key.
+
+**M Pillar is unchanged**
+
+The M Pillar connection still uses its server setting (the `credential_ref` Worker secret) and keeps working. It shows "Server setting". The Managing Director can optionally paste M Pillar's key on the page to move it into the database; nothing requires it.
+
 ## Migration to run (Supabase SQL editor)
 
-- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`, then `20270303000100_sales_ceo_lead_assignment.sql`, then `20270304000100_crocodial_crm_lead_links.sql`
+- `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`, then `20270303000100_sales_ceo_lead_assignment.sql`, then `20270304000100_crocodial_crm_lead_links.sql`, then `20270305000100_lead_tags.sql`, then `20270306000100_crocodial_status_tags.sql`, then `20270307000100_crocodial_ceo_connections.sql`
   - Run them after every earlier migration.
   - It is additive and safe to run twice.
   - It adds the tables (RLS on, no grants), the `croc_*` functions, and the M Pillar Sales rollout row.

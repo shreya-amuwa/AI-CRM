@@ -6653,15 +6653,27 @@ export interface AiStudioOverview {
 }
 
 // ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
-export type CrocodialHealth = 'UNKNOWN' | 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR';
+/** KEY_UNREADABLE: a key stored by the CRM that the server can no longer decrypt ("Key needs to be entered again"). */
+export type CrocodialHealth = 'UNKNOWN' | 'OK' | 'NO_CREDENTIAL' | 'AUTH_FAILED' | 'DISABLED_AT_SOURCE' | 'RATE_LIMITED' | 'ERROR' | 'KEY_UNREADABLE';
+/** Where a connection's Crocodial key comes from: stored by the CRM (encrypted), a server setting (credentialRef), or none yet. */
+export type CrocodialKeySource = 'DATABASE' | 'SERVER_SETTING' | 'NONE';
 export interface CrocodialConnection {
   id: string;
   name: string;
   externalAccountLabel: string | null;
-  /** The NAME of the server setting that holds the token; the token itself never leaves the server. */
-  credentialRef: string;
+  /** The NAME of the server setting that holds the token (null: none; a CEO's connection has its key stored by the CRM). The token itself
+   * never leaves the server. */
+  credentialRef: string | null;
+  /** Where the key comes from (a stored key first); optional until the 20270307000100 migration has run. */
+  keySource?: CrocodialKeySource;
+  /** The stored key's last 4 characters ("•••• 1a2b"); never the key, its ciphertext or its fingerprint. */
+  keyLast4?: string | null;
   /** Whether the server has that setting (added by the server; the database cannot know). */
   credentialConfigured?: boolean;
+  /** (20270307000100) when the Managing Director switched it off: only the MD can switch it on again */
+  mdDisabledAt?: string | null;
+  /** (20270307000100, croc_admin_overview only) the CEOs who could manage it (they run every linked department) */
+  managedBy?: { id: string; name: string }[];
   enabled: boolean;
   health: CrocodialHealth;
   lastError: string | null;
@@ -6701,12 +6713,15 @@ export interface CrocodialReconcileOverview {
   externalLeads: number;
   missingAtSource: number;
   unknownStatuses: { status: string; leads: number }[];
-  mappings: { status: string; disposition: string }[];
+  /** tagId: the lead tag the status sets; ignored: "Ignore" (20270306000100). disposition: the old value, readable for one release. */
+  mappings: { status: string; disposition: string | null; tagId: string | null; ignored: boolean }[];
   unmappedAssignees: { externalId: number; name: string | null; leads: number }[];
   reconcile: { last_run_at: string | null; last_ok_at: string | null; last_error: string | null; processed_last_run: number; created_last_run: number; updated_last_run: number; duration_ms_last_run: number | null; pending: number } | null;
   resources: { resource: string; lastOkAt: string | null; lastRunAt: string | null; lastError: string | null; rowsLastRun: number | null; inProgress: boolean }[];
   recentRuns: { resource: string; outcome: string; rows: number; pages: number; finishedAt: string; seconds: number; error: string | null; rateLimited: boolean }[];
 }
+/** The answer of POST /crocodial/connections/:id/status-mappings (no tag and no Ignore: the mapping was removed). */
+export interface CrocodialStatusMappingResult { status: string; tagId: string | null; ignored: boolean; disposition: string | null }
 export interface CrocodialLeadLink {
   id: string;
   externalLeadId: number;
@@ -6829,12 +6844,18 @@ export interface CrocodialMapping {
 export interface CrocodialAdminOverview {
   rollout: { departmentId: string; departmentName: string; departmentSlug: string; division: 'SALES'; allowed: boolean; note: string | null; updatedAt: string }[];
   connections: CrocodialConnection[];
-  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string }[];
+  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string;
+    /** (20270307000100) when the Managing Director switched the link off */
+    mdDisabledAt?: string | null }[];
+  /** (20270307000100) the Sales departments a connection may be linked to: every one for the MD, the ones they run for a CEO */
+  departments?: { id: string; name: string; slug: string }[];
   mappings: CrocodialMapping[];
   externalEmployees: { connectionId: string; externalId: number; name: string | null; isActive: boolean | null; branchIds: number[]; lastSeenAt: string; missingSince: string | null; mappingStatus: 'PENDING' | 'APPROVED' | null }[];
   externalBranches: { connectionId: string; externalId: number; name: string | null; status: string | null; missingSince: string | null }[];
   audit: { at: string; action: string; actorName: string | null; entityId: string | null; metadata: Record<string, unknown> }[];
 }
+/** POST /crocodial/connections/:id/key (20270307000100): the key was tested and stored; never the key itself. */
+export interface CrocodialKeySaveResult { ok: true; last4: string; users: number }
 export interface CrocodialProfileCheck {
   profileId: string;
   name: string;
@@ -6850,6 +6871,15 @@ export interface CrocodialProfileCheck {
   inDepartment: boolean;
   inFunction: boolean;
   eligible: boolean;
+}
+/** GET /crocodial/connections/:id/mapping-candidates (20270307000100): the ACTIVE people of a linked department who can be mapped there. */
+export interface CrocodialMappingCandidate {
+  id: string;
+  fullName: string;
+  email: string | null;
+  role: string;
+  salesSubRole: string | null;
+  teamName: string | null;
 }
 export interface CrocodialMappingCheck {
   profile: CrocodialProfileCheck | null;
