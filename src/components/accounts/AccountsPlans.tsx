@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Plus, Sparkles } from 'lucide-react';
 import type { AccountsPlanRequest, AccountsPlans as AccountsPlansData, MonthlyPlan } from '../../../shared/contracts';
-import { errorMessage } from '../../lib/api/client';
 import { clientWorkApi } from '../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, notifyPipelineChanged, Pill, Spinner, todayIso, usePipelineRealtime, useServiceCatalog, type Tone } from '../team-member/pipeline/shared';
 import { rupees } from '../invoices/invoiceShared';
+import { userMessage } from '../../lib/feedback/errors';
 
 const STATUS: Record<AccountsPlanRequest['status'], { label: string; tone: Tone }> = {
   REQUESTED: { label: 'To verify', tone: 'orange' }, APPROVED: { label: 'Approved - awaiting payment', tone: 'indigo' },
@@ -24,7 +24,7 @@ export const AccountsPlans: React.FC = () => {
   const [busy, setBusy] = useState('');
 
   const load = useCallback(() => {
-    clientWorkApi.plans().then(d => { setData(d); setError(null); }, e => setError(errorMessage(e)));
+    clientWorkApi.plans().then(d => { setData(d); setError(null); }, e => setError(userMessage(e)));
   }, []);
   useEffect(load, [load]);
   usePipelineRealtime(load);
@@ -32,7 +32,7 @@ export const AccountsPlans: React.FC = () => {
   const approve = async (r: AccountsPlanRequest) => {
     setBusy(r.id); setError(null);
     try { await clientWorkApi.decidePlanRequest(r.id, { decision: 'APPROVE' }); load(); notifyPipelineChanged(); }
-    catch (e) { setError(errorMessage(e)); } finally { setBusy(''); }
+    catch (e) { setError(userMessage(e)); } finally { setBusy(''); }
   };
 
   if (!data) return error ? <ErrorBanner message={error} onRetry={load} /> : <Spinner label="Loading plans…" />;
@@ -120,7 +120,7 @@ const PlanDialog: React.FC<{ plan: (MonthlyPlan & { isActive: boolean }) | null;
     setBusy(true); setError(null);
     const body = { name: name.trim(), description: description.trim() || null, monthlyPrice, features: features.split('\n').map(f => f.trim()).filter(Boolean), services, isActive: active };
     try { if (plan) await clientWorkApi.updatePlan(plan.id, body); else await clientWorkApi.createPlan({ ...body, code: code.trim().toUpperCase() }); onSaved(); }
-    catch (e) { setError(errorMessage(e)); setBusy(false); }
+    catch (e) { setError(userMessage(e)); setBusy(false); }
   };
   return (
     <Dialog title={plan ? `Edit ${plan.name}` : 'Add a monthly plan'} onClose={onClose} wide>
@@ -157,7 +157,7 @@ const DecideDialog: React.FC<{ request: AccountsPlanRequest; decision: 'REJECT' 
   const go = async () => {
     setBusy(true); setError(null);
     try { await clientWorkApi.decidePlanRequest(request.id, { decision, note: note.trim() || null, paymentConfirmed: paid, renewsOn: renews || null }); onDone(); }
-    catch (e) { setError(errorMessage(e)); setBusy(false); }
+    catch (e) { setError(userMessage(e)); setBusy(false); }
   };
   return (
     <Dialog title={decision === 'ACTIVATE' ? `Activate ${request.planName}` : `Decline ${request.planName}`} description={request.customer} onClose={onClose}>

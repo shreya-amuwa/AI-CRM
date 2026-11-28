@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Search } from 'lucide-react';
 import type { CustomerRevenuePage, CustomerRevenueSort } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { financeApi, pipelineApi } from '../../../lib/api/endpoints';
 import { Empty, ErrorBanner, inputClass, Loading, PageHeader, Pager } from '../../support-member/SupportParts';
 import { money, useFinanceRefresh } from './FinanceBits';
 import { useRevenueDepartments } from './AccountsIncome';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const PAGE = 25;
 const COLUMNS: { key: CustomerRevenueSort; label: string; hint: string; right?: boolean }[] = [
@@ -67,7 +67,7 @@ export const CustomerRevenue: React.FC = () => {
           setData(r);
           setError(null);
         },
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       );
   }, [term, from, to, service, department, sort, dir, page]);
   useEffect(load, [load]);

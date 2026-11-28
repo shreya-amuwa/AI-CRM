@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FilePlus2, FileText, Search, UploadCloud } from 'lucide-react';
 import type { Invoice, InvoiceCustomer, InvoiceKind, InvoicePage } from '../../../shared/contracts';
-import { errorMessage } from '../../lib/api/client';
 import { invoicesApi } from '../../lib/api/endpoints';
 import { rowOpen } from '../../lib/rowClick';
 import {
@@ -34,6 +33,8 @@ import {
   toInput,
   validateLines
 } from '../invoices/invoiceShared';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 const PAGE_SIZE = 20;
 
@@ -53,7 +54,6 @@ export const AccountsInvoices: React.FC = () => {
   const [open, setOpen] = useState<Invoice | null>(null);
   const [uploading, setUploading] = useState(false);
   const [building, setBuilding] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const debounced = useDebounced(search.trim());
@@ -66,7 +66,7 @@ export const AccountsInvoices: React.FC = () => {
       .list({ search: debounced || undefined, kind: kind || undefined, status: status || undefined, page, pageSize: PAGE_SIZE })
       .then(
         r => n === seq.current && setData(r),
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       )
       .finally(() => n === seq.current && setLoading(false));
   }, [debounced, kind, status, page]);
@@ -83,7 +83,7 @@ export const AccountsInvoices: React.FC = () => {
       notifyPipelineChanged();
       load();
     } catch (e) {
-      setActionError(errorMessage(e));
+      setActionError(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -133,11 +133,6 @@ export const AccountsInvoices: React.FC = () => {
         </select>
       </div>
 
-      {notice && (
-        <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-          {notice}
-        </p>
-      )}
       {error && <ErrorBanner message={error} onRetry={load} />}
       {loading && !data ? (
         <Spinner label="Loading invoices…" />
@@ -249,7 +244,7 @@ export const AccountsInvoices: React.FC = () => {
           onClose={() => setBuilding(false)}
           onDone={r => {
             setBuilding(false);
-            setNotice(`Invoice ${r.invoice.number} was saved for ${r.invoice.customer}.`);
+            toast.success(`Invoice ${r.invoice.number} was saved for ${r.invoice.customer}.`);
             notifyPipelineChanged();
             load();
             setOpen(r.invoice);
@@ -261,7 +256,7 @@ export const AccountsInvoices: React.FC = () => {
           onClose={() => setUploading(false)}
           onUploaded={inv => {
             setUploading(false);
-            setNotice(`Invoice ${inv.number} was uploaded for ${inv.customer}. Everyone who may see this customer can now open it.`);
+            toast.success(`Invoice ${inv.number} was uploaded for ${inv.customer}. Everyone who may see this customer can now open it.`);
             notifyPipelineChanged();
             load();
             setOpen(inv);

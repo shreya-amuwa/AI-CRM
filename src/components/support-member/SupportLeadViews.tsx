@@ -5,6 +5,7 @@ import { CustomerProfile, CustomersPage } from './CustomersPage';
 import { AddCustomerPage } from './AddCustomerPage';
 import { TicketsPage } from './TicketsPage';
 import { InvoiceRequests } from './InvoiceRequests';
+import { toast } from '../feedback/AppFeedback';
 
 /** Team Lead (Support team): the team's tickets - assign, reassign, monitor, escalate. */
 export const SupportLeadTickets: React.FC<{ teamIds?: string[] }> = ({ teamIds }) => {
@@ -29,10 +30,9 @@ export const SupportLeadCustomers: React.FC<{ teamIds?: string[]; canAdd?: boole
   const tasks = useWorkTasks();
   const invoices = useSupportInvoices();
   const [view, setView] = useState<{ type: 'list' } | { type: 'add' } | { type: 'profile'; id: string }>({ type: 'list' });
-  const [notice, setNotice] = useState<string | null>(null);
   if (view.type === 'add') {
     return <AddCustomerPage people={tasks.people} onCancel={() => setView({ type: 'list' })} onCreated={name => {
-          setNotice(`${name} was added.`);
+          toast.success(`Customer added successfully: ${name}.`);
           setView({ type: 'list' });
         }} />;
   }
@@ -45,16 +45,12 @@ export const SupportLeadCustomers: React.FC<{ teamIds?: string[]; canAdd?: boole
     <CustomersPage
       mode="supervisor"
       teamIds={teamIds}
-      notice={notice}
       tickets={tickets}
       tasks={tasks}
       onOpenCustomer={id => setView({ type: 'profile', id })}
       onAddCustomer={
         canAdd
-          ? () => {
-              setNotice(null);
-              setView({ type: 'add' });
-            }
+          ? () => setView({ type: 'add' })
           : undefined
       }
     />

@@ -4,6 +4,7 @@ import { useSupportInvoices, useTickets } from '../../lib/support';
 import { CustomerProfile, CustomersPage } from '../support-member/CustomersPage';
 import { AddCustomerPage } from '../support-member/AddCustomerPage';
 import { TicketsPage } from '../support-member/TicketsPage';
+import { toast } from '../feedback/AppFeedback';
 
 /**
  * International / Reseller, Support section for a Team Member: the customers they own and the tickets they raise or are given, with the same pages and
@@ -15,16 +16,15 @@ export const UnifiedMemberCustomers: React.FC = () => {
   const tasks = useWorkTasks();
   const invoices = useSupportInvoices();
   const [view, setView] = useState<{ type: 'list' } | { type: 'add' } | { type: 'profile'; id: string }>({ type: 'list' });
-  const [notice, setNotice] = useState<string | null>(null);
   if (view.type === 'add') {
-    return <AddCustomerPage people={tasks.people} onCancel={() => setView({ type: 'list' })} onCreated={name => { setNotice(`${name} was added.`); setView({ type: 'list' }); }} />;
+    return <AddCustomerPage people={tasks.people} onCancel={() => setView({ type: 'list' })} onCreated={name => { toast.success(`Customer added successfully: ${name}.`); setView({ type: 'list' }); }} />;
   }
   if (view.type === 'profile') {
     return <CustomerProfile customerId={view.id} tickets={tickets} tasks={tasks} invoices={invoices.invoices} people={tasks.people} onBack={() => setView({ type: 'list' })} />;
   }
   return (
-    <CustomersPage mode="member" tickets={tickets} tasks={tasks} notice={notice} onOpenCustomer={id => setView({ type: 'profile', id })}
-      onAddCustomer={() => { setNotice(null); setView({ type: 'add' }); }} />
+    <CustomersPage mode="member" tickets={tickets} tasks={tasks} onOpenCustomer={id => setView({ type: 'profile', id })}
+      onAddCustomer={() => setView({ type: 'add' })} />
   );
 };
 

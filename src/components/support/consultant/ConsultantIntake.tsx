@@ -1,8 +1,7 @@
 import { rowOpen } from '../../../lib/rowClick';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, PackagePlus, Pencil, Search, Send } from 'lucide-react';
+import { PackagePlus, Pencil, Search, Send } from 'lucide-react';
 import type { Paginated, PipelineCustomer } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import {
   btn,
@@ -20,6 +19,8 @@ import {
 import { ADDON_STATUS_LABEL, AddonStatusPill } from '../../invoices/invoiceShared';
 import { AddonRequestDialog, AddonRequestEditor } from './AddonRequestPanel';
 import { ConsultationNotes } from './ConsultationNotes';
+import { toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const PAGE_SIZE = 10;
 
@@ -39,7 +40,8 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
   const [data, setData] = useState<Paginated<PipelineCustomer> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ text: string; to: 'onboarding' | 'addons' } | null>(null);
+  // the success toast keeps the shortcut the old banner had: open the page the customer moved to
+  const go = (to: 'onboarding' | 'addons') => ({ label: to === 'addons' ? 'Open Add-ons Services' : 'Open Onboarding Customers', onClick: to === 'addons' ? onGoToAddons : onGoToOnboarding });
   const [open, setOpen] = useState<{ id: string; edit: boolean } | null>(null);
   const debounced = useDebounced(search.trim());
   const seq = useRef(0);
@@ -51,7 +53,7 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
       .list({ stage: 'ONBOARDING', intake: true, search: debounced || undefined, page, pageSize: PAGE_SIZE, sort: 'oldest' })
       .then(
         r => n === seq.current && setData(r),
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       )
       .finally(() => n === seq.current && setLoading(false));
   }, [debounced, page]);
@@ -87,14 +89,6 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
         </label>
       </div>
 
-      {notice && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" role="status">
-          <span>{notice.text}</span>
-          <button type="button" onClick={notice.to === 'addons' ? onGoToAddons : onGoToOnboarding} className="inline-flex items-center gap-1 font-bold text-emerald-900 hover:underline">
-            {notice.to === 'addons' ? 'Open Add-ons Services' : 'Open Onboarding Customers'} <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      )}
       {error && <ErrorBanner message={error} onRetry={load} />}
 
       {loading && !data ? (
@@ -131,13 +125,13 @@ export const ConsultantIntake: React.FC<{ onSent: () => void; onGoToOnboarding: 
                     onChanged={patchRow}
                     onOpen={edit => setOpen({ id: c.id, edit })}
                     onAddonsSubmitted={name => {
-                      setNotice({ text: `The add-ons for ${name} were submitted for Accounts Verification. Follow them in Add-ons Services.`, to: 'addons' });
+                      toast.success(`The add-ons for ${name} were submitted for Accounts Verification. Follow them in Add-ons Services.`, { action: go('addons'), durationMs: 8000 });
                       notifyPipelineChanged();
                       onSent();
                       load();
                     }}
                     onSent={(name, to) => {
-                      setNotice({ text: verifier ? `${name}: verification started.` : `${name} was sent for onboarding.`, to });
+                      toast.success(verifier ? `${name}: verification started.` : `${name} was sent for onboarding successfully.`, { action: go(to), durationMs: 8000 });
                       notifyPipelineChanged();
                       onSent();
                       load();
@@ -200,7 +194,7 @@ const IntakeRow: React.FC<{
     try {
       return await fn();
     } catch (e) {
-      setRowError(errorMessage(e));
+      setRowError(userMessage(e));
       return undefined;
     } finally {
       setBusy(false);
@@ -423,7 +417,7 @@ const CustomerDetailsDialog: React.FC<{
       setEditing(false);
       setSaved(true);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }

@@ -123,13 +123,14 @@ const open = async (vp, mount, waitFor) => {
   await page.fill(input, 'HTTPS://Panel.Example.com/login');
   check(!(await page.isDisabled(`${box} >> button:has-text("Save the URL")`)), 'a valid https address can be saved');
   await page.click(`${box} >> button:has-text("Save the URL")`);
-  await page.waitForSelector(`${box} >> text=Nothing was sent to the customer yet`);
+  // the result of saving is a success toast (docs/APP_FEEDBACK_SYSTEM.md); the box itself still says "Not sent" (checked below)
+  await page.waitForSelector('[data-testid="toast-success"] >> text=Nothing was sent to the customer yet');
   const saved = await page.evaluate(() => window.__bodies.find(b => /\/url$/.test(b.path)));
   check(saved.method === 'PATCH' && saved.body.url === 'https://panel.example.com/login', 'the cleaned URL is what is saved (host in lower case)', saved);
   check(!(await page.evaluate(() => window.__bodies.some(b => /\/link$/.test(b.path)))), 'saving sent no e-mail');
   check(/Not sent/.test(await page.innerText(box)) && await page.isVisible(`${box} >> text=E-mail the panel link`), 'the box says "Not sent" and offers to e-mail the link');
   await page.click(`${box} >> button:has-text("E-mail the panel link")`);
-  await page.waitForSelector(`${box} >> text=on its way`);
+  await page.waitForSelector('[data-testid="toast-success"] >> text=on its way');
   const link = await page.evaluate(() => window.__bodies.filter(b => /\/link$/.test(b.path)));
   check(link.length === 1 && link[0].body.resend === false && /^[0-9a-f-]{36}$/.test(link[0].body.requestId), 'one send request with a request id', link);
   check(/waiting to be sent/.test(await page.innerText(box)) && await page.isDisabled(`${box} >> button:has-text("E-mail the panel link")`), 'while it waits the button is off - no second click can send it again');

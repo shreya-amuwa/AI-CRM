@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Send } from 'lucide-react';
 import { ApiError, api } from '../../lib/api/client';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 /**
  * "Client login" on the customer's page (the relationship manager, their Team Lead and Accounts; 20270212000100): whether the client has
@@ -37,9 +39,10 @@ export const ClientLoginCard: React.FC<{ customerId: string }> = ({ customerId }
     setBusy(true); setNote(null);
     try {
       const r = await api.post<{ sent: boolean; email: string; detail?: string }>(`/customers/${customerId}/client-password-email`);
-      setNote(r.sent ? { ok: true, text: `Sent to ${r.email}. The link works once and for 24 hours.` } : { ok: false, text: r.detail || 'The e-mail could not be sent. Try again later.' });
+      if (r.sent) toast.success(`Password link sent successfully to ${r.email}. It works once and for 24 hours.`);
+      else toast.warning(userMessage(r.detail, 'The e-mail could not be sent. Try again later.'));
     } catch (e) {
-      setNote({ ok: false, text: e instanceof Error ? e.message : 'The link could not be sent.' });
+      toast.fromError(e, 'The password link could not be sent. Please try again.');
     } finally {
       setBusy(false);
       load();
@@ -51,11 +54,11 @@ export const ClientLoginCard: React.FC<{ customerId: string }> = ({ customerId }
     setBusy(true); setNote(null);
     try {
       const r = await api.post<{ email: string; mail: 'SENT' | 'NOT_SENT'; detail?: string }>(`/customers/${customerId}/client-login`, { email: loginEmail.trim() || undefined });
-      setNote(r.mail === 'SENT'
-        ? { ok: true, text: `Login created for ${r.email}. The client was e-mailed a link to set their password (it works once, for 24 hours).` }
-        : { ok: false, text: `Login created for ${r.email}, but the e-mail was not sent${r.detail ? ` (${r.detail})` : ''}. Use "Send password link" below.` });
+      if (r.mail === 'SENT') toast.success(`Client login created successfully for ${r.email}. The client was e-mailed a link to set their password (it works once, for 24 hours).`);
+      else toast.warning(`Login created for ${r.email}, but the e-mail was not sent${r.detail ? ` (${userMessage(r.detail, 'reason not available')})` : ''}. Use "Send password link" below.`, { durationMs: null });
     } catch (err) {
-      setNote({ ok: false, text: err instanceof Error ? err.message : 'The login could not be created.' });
+      // inside the create-login form: the address can be corrected and the request sent again
+      setNote({ ok: false, text: userMessage(err, 'The login could not be created. Please try again.') });
     } finally {
       setBusy(false);
       load();

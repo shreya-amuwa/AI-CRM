@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { FinanceMailItem, FinanceMailList, FinanceMailStatus } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { financeApi } from '../../../lib/api/endpoints';
 import { Badge } from '../../payments/PaymentBits';
 import { Empty, ErrorBanner, Loading, PageHeader, inputClass } from '../../support-member/SupportParts';
 import { money, useFinanceRefresh } from './FinanceBits';
+import { toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const KIND: Record<FinanceMailItem['kind'], string> = { PAYMENT_RECORDED: 'Payment pending verification', PAYMENT_VERIFIED: 'Payment verified', EXPENSE_ADDED: 'Expense allocated' };
 const STATUS: Record<FinanceMailStatus, { label: string; tone: 'green' | 'amber' | 'red' | 'slate' }> = {
@@ -26,7 +27,6 @@ export const FinanceMails: React.FC = () => {
   const [status, setStatus] = useState<'' | FinanceMailStatus>('');
   const [data, setData] = useState<FinanceMailList | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const seq = useRef(0);
 
@@ -38,7 +38,7 @@ export const FinanceMails: React.FC = () => {
         setData(r);
         setError(null);
       },
-      e => n === seq.current && setError(errorMessage(e))
+      e => n === seq.current && setError(userMessage(e))
     );
   }, [status]);
   useEffect(load, [load]);
@@ -47,13 +47,12 @@ export const FinanceMails: React.FC = () => {
   const retry = async (x: FinanceMailItem) => {
     if (busy) return;
     setBusy(x.id);
-    setNotice(null);
     setError(null);
     try {
       await financeApi.retryFinanceMail(x.id);
-      setNotice('Queued again.');
+      toast.success('Queued again.');
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy(null);
       load();
@@ -73,7 +72,6 @@ export const FinanceMails: React.FC = () => {
           ))}
         </select>
       </div>
-      {notice && <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">{notice}</p>}
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!data && !error ? (
         <Loading label="Loading e-mails..." />

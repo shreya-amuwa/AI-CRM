@@ -33,7 +33,6 @@ import type {
   ReviewFilter,
   ServiceCatalogItem
 } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { documentsApi, pipelineApi } from '../../../lib/api/endpoints';
 import {
   Dialog,
@@ -62,6 +61,7 @@ import { useRealtime } from '../../../lib/support';
 import { AddonStatusPill, CustomerInvoices } from '../../invoices/invoiceShared';
 import { EntryDialog } from '../../team-member/pipeline/ChecklistPanel';
 import { acceptFor, MIME_LABEL, uploadChecklistFile } from '../../../lib/checklistUpload';
+import { userMessage } from '../../../lib/feedback/errors';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -160,7 +160,7 @@ export const ConsultantCustomerList: React.FC<{ counts: ReviewCounts | null; onO
       .list({ stage: 'ONBOARDING', forwarded: true, review: tab || undefined, search: debounced || undefined, page, pageSize: PAGE_SIZE, sort: 'newest' })
       .then(
         r => n === seq.current && setData(r),
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       )
       .finally(() => n === seq.current && setLoading(false));
   }, [tab, debounced, page]);
@@ -308,7 +308,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
         setC(d);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
     loadMessages();
   }, [id, loadMessages]);
@@ -350,7 +350,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
       setSendBackOpen(false);
       onBack();
     } catch (e) {
-      setActionError(errorMessage(e));
+      setActionError(userMessage(e));
       setSendBackOpen(false);
     } finally {
       setSendingBack(false);
@@ -364,7 +364,7 @@ export const ConsultantCustomerDetail: React.FC<{ id: string; onBack: () => void
       await pipelineApi.verifyAll(c.id);
       changed();
     } catch (e) {
-      setActionError(errorMessage(e));
+      setActionError(userMessage(e));
     } finally {
       setAuthorizingAll(false);
     }
@@ -700,7 +700,7 @@ const ConsultantItemRow: React.FC<{ item: ChecklistItem; customerId: string; onC
       setEditing(false);
       onChanged();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -814,7 +814,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
       setShowDetails(false);
       onChanged();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -828,7 +828,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
       await uploadChecklistFile(customer.id, item, file, setPhase);
       onChanged();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       if (fileInput.current) fileInput.current.value = '';
     }
@@ -846,7 +846,7 @@ const DocumentRow: React.FC<{ item: ChecklistItem; customer: PipelineCustomerDet
       }
     } catch (e) {
       win?.close();
-      setError(errorMessage(e));
+      setError(userMessage(e));
     }
   };
 

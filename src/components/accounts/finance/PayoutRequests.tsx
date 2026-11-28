@@ -6,7 +6,8 @@ import {
   type Leaver, type PayoutDetail, type PayoutMethod, type PayoutRequest, type PayoutStatus
 } from '../../../lib/payouts';
 import { PageTitle } from '../../layout/shell';
-import { confirmAction } from '../../feedback/AppFeedback';
+import { confirmAction, toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * Accounts > Finance > Payout requests (20270123000100): sales staff's incentive withdrawals. Accounts sends the money from the company's
@@ -19,7 +20,8 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'FAILED', label: 'Failed' }, { id: 'REVERSED', label: 'Reversed' }, { id: 'LEAVERS', label: 'Leavers' }
 ];
 const input = 'h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500';
-const msg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
+// a safe sentence: the API's readable message, never database or script text (docs/APP_FEEDBACK_SYSTEM.md)
+const msg = (e: unknown) => userMessage(e, 'Something went wrong. Please try again.');
 const when = (iso: string) => new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 const CopyRow: React.FC<{ label: string; value?: string | null }> = ({ label, value }) => !value ? null : (
@@ -127,7 +129,6 @@ export const PayoutRequests: React.FC = () => {
   const [leavers, setLeavers] = useState<Leaver[] | null>(null);
   const [detail, setDetail] = useState<PayoutDetail | null>(null);
   const [leaver, setLeaver] = useState<Leaver | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rzpConfigured, setRzpConfigured] = useState(false);
   useEffect(() => { payoutsApi.razorpayStatus().then(s => setRzpConfigured(!!s.configured), () => setRzpConfigured(false)); }, []);
@@ -139,12 +140,11 @@ export const PayoutRequests: React.FC = () => {
   }, [tab]);
   useEffect(() => { setDetail(null); setLeaver(null); load(); }, [load]);
   const open = (id: string) => { setLeaver(null); payoutsApi.detail(id).then(setDetail, e => setError(msg(e))); };
-  const done = (text: string) => { setNotice(text); setDetail(null); setLeaver(null); load(); };
+  const done = (text: string) => { toast.success(text); setDetail(null); setLeaver(null); load(); };
 
   return (
     <div className="space-y-5">
       <PageTitle title="Payout requests" subtitle="Sales staff's incentive withdrawals. Send the money from the company account, then record it here." />
-      {notice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
       <div role="tablist" aria-label="Payout requests" className="flex flex-wrap gap-2">
         {TABS.map(t => (
