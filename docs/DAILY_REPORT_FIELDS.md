@@ -57,3 +57,64 @@ Run the migration, then deploy the app; the order does not matter much:
 * `supabase/tests/daily_report_fields.test.ts` (unit).
 * The API checks in `api_integration.test.ts`.
 * The browser tests `ui_task_reports_performance`, `ui_ai_studio_daily_report` and `ui_ai_studio_hr`.
+
+## One Daily Report form, Work Completed required (migration `20270312000100_daily_report_form.sql`)
+
+This section replaces what the sections above say about the fields being optional.
+
+| Field | Rule | Stored in |
+| --- | --- | --- |
+| Work Completed | **required**, 10 to 150 words | `work_completed` (the work report: `content.workCompleted`) |
+| Work Pending | optional, at most 100 words | `pending_work` (`content.pendingWork`) |
+| Additional Note | optional, at most 50 words | `remarks` (`content.remarks`) |
+
+* **Every daily report** uses the same component (`ReportWordFields`), in the same order and with the same rules and messages:
+  * the Task Daily Report;
+  * the AI Studio daily report (and its older one-task form);
+  * the AI Design Studio daily report;
+  * **the work report of the Reports menu** (`reports/DailyReportForm.tsx`), which keeps its task lists and replaces the 500-character *Remarks / Work
+    Summary* with the three fields.
+* **The form**
+  * A *Daily Report* heading and a one-line purpose.
+  * Each field says whether it is required or optional, with its limit.
+  * Field sizes:
+    * Work Completed is full width and taller.
+    * Work Pending and the Additional Note sit side by side on wide screens and stack on phones.
+    * Each grows while you type, up to a limit, then scrolls.
+  * Counters under each field (`0 / 150 words`):
+    * An over-limit field turns red and says by how much; Submit is disabled.
+    * Below the minimum, Work Completed says how many words are still needed, once the field was left or Submit was pressed.
+  * Actions sit at the bottom right (Cancel, Save draft where drafts exist, Submit Daily Report); on a phone they stack, with Submit on top.
+* **Drafts may be short.** The minimum is checked on submission; the maximums on every save of a work report draft.
+* **Checked three times:**
+  * the shared schema: `dailyReportProblems`, `reportSubmitProblems` in `shared/validation.ts` (422);
+  * the database: `private.report_word_limits` (minimum and maximums) and `private.report_word_max` (maximums);
+  * for AI Studio, the report trigger.
+  * `private.report_word_limits` is already called by every submission and every reviewer correction, so those functions were not copied again.
+  * `private.clean_task_report` and `work_report_submit` (the work report) are copies with the change marked `20270312000100`.
+* **Older reports** are unchanged. When one is submitted again, or a reviewer corrects its text, it must follow the rules (for example, add Work
+  Completed).
+* **Reviewers** see the same three labels: the work report's `ReportContentView` shows Work Completed, Work Pending and Additional Note for reports with
+  task lists.
+
+### Deploying
+
+Run `20270312000100_daily_report_form.sql`, then deploy the app.
+* Before the migration, the new app still works: the old functions accept what it sends. A work report's Work Completed and Work Pending are then not
+  stored.
+* After the migration, an old app can no longer submit a report without Work Completed: deploy together.
+
+### Tests
+
+* `supabase/tests/daily_report_form_test.sql`:
+  * the rules;
+  * the Task Daily Report, including the Team Lead's correction;
+  * AI Studio: a short draft, submission, and the trigger;
+  * AI Design Studio;
+  * the work report: a short draft, submission refused below 10 words, the three fields stored.
+* `daily_report_fields.test.ts` (unit).
+* The API checks in `api_integration.test.ts`.
+* The browser tests:
+  * `ui_task_reports_performance`, including the work report form, desktop and phone layout, and growing fields;
+  * `ui_ai_studio_daily_report`;
+  * `ui_ai_studio_hr`.

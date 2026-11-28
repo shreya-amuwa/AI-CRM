@@ -245,6 +245,7 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/task_deletion_test.sql 2>&1 | sed 
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/ai_studio_cross_team_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/ai_studio_hr_performance_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/daily_report_fields_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/daily_report_form_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/notice_sales_support_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/dashboard_explorer_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/support_recharges_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

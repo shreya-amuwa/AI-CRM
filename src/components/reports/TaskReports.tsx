@@ -30,8 +30,8 @@ const FILTERS: { id: '' | TaskReportStatus; label: string }[] = [
 ];
 
 // ------------------------------------------------------------------------------------------------ the Team Member's form
-// (20270308000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50); progress and the reason for delay
-// are no longer asked for (the report keeps the task's own progress)
+// (20270308000100, 20270312000100) the report has the three fields of every department: Work Completed (required, 10 to 150 words), Work Pending (100),
+// Additional Note (50); progress and the reason for delay are no longer asked for (the report keeps the task's own progress)
 interface Draft { taskId: string; reportDate: string; workCompleted: string; pendingWork: string; remarks: string }
 const emptyDraft = (taskId = ''): Draft => ({ taskId, reportDate: officeToday(), workCompleted: '', pendingWork: '', remarks: '' });
 
@@ -42,6 +42,7 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
   const [saving, setSaving] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [attempted, setAttempted] = useState(false);
 
   useEffect(() => { if (initial) setD(initial); }, [initial]);
   useEffect(() => { taskReportsApi.myTasks().then(setTasks, e => setLoadError(errText(e))); }, []);
@@ -53,6 +54,7 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerError('');
+    setAttempted(true);
     const body = {
       taskId: d.taskId, reportDate: d.reportDate, workCompleted: d.workCompleted.trim() || undefined,
       pendingWork: d.pendingWork.trim() || undefined, remarks: d.remarks.trim() || undefined
@@ -68,6 +70,7 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
     try {
       const r = await taskReportsApi.submit(body);
       setD(emptyDraft());
+      setAttempted(false);
       onDone(r);
     } catch (err) {
       setServerError(errText(err));
@@ -82,8 +85,8 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
     <Card className="p-4 sm:p-5">
       <form onSubmit={submit} className="space-y-4" noValidate data-testid="task-report-form">
         <div>
-          <h2 className="text-base font-bold text-slate-900">{initial ? 'Correct and resubmit your report' : 'Daily report on an assigned task'}</h2>
-          <p className="text-xs text-slate-500">One report for each task and day. Your Team Lead approves it or returns it for correction.</p>
+          <h2 className="text-base font-bold text-slate-900">{initial ? 'Correct and resubmit your Daily Report' : 'Daily Report'}</h2>
+          <p className="text-xs text-slate-500">Tell your Team Lead what you did on an assigned task today. One report for each task and day; your Team Lead approves it or returns it for correction.</p>
         </div>
         {tasks.length === 0 ? <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">You have no assigned task to report on.</p> : null}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -103,11 +106,12 @@ const TaskReportForm: React.FC<{ initial: Draft | null; onDone: (r: TaskDailyRep
             {task.dueDate ? ` · due ${dateLabel(task.dueDate)}` : ' · no deadline'}
           </div>
         ) : null}
-        <ReportWordFields idPrefix="tr" values={d} errors={errors} disabled={saving} inputClassName={inputCls} onChange={(k, v) => setD(x => ({ ...x, [k]: v }))} />
+        <ReportWordFields idPrefix="tr" values={d} errors={errors} disabled={saving} inputClassName={inputCls} showMinimum={attempted}
+          onChange={(k, v) => { setD(x => ({ ...x, [k]: v })); setErrors(x => ({ ...x, [k]: undefined })); }} />
         {serverError ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{serverError}</div> : null}
-        <div className="flex gap-2">
-          <button type="submit" className={btn.primary} disabled={saving || tasks.length === 0 || !withinLimits} data-testid="task-report-submit">{saving ? 'Submitting…' : initial ? 'Resubmit for approval' : 'Submit to Team Lead'}</button>
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
           {onCancel ? <button type="button" className={btn.secondary} onClick={onCancel} disabled={saving}>Cancel</button> : null}
+          <button type="submit" className={btn.primary} disabled={saving || tasks.length === 0 || !withinLimits} data-testid="task-report-submit">{saving ? 'Submitting…' : initial ? 'Resubmit Daily Report' : 'Submit Daily Report'}</button>
         </div>
       </form>
     </Card>
@@ -184,17 +188,19 @@ export const ChangeList: React.FC<{ changes: FieldChanges }> = ({ changes }) => 
 );
 
 // ------------------------------------------------------------------------------------------------ the Team Lead edits a waiting report
-// (20270308000100) the same three fields as the member's form; progress and the reason for delay stay as the report has them
+// (20270308000100, 20270312000100) the same three fields and rules as the member's form; progress and the reason for delay stay as the report has them
 interface EditDraft { workCompleted: string; pendingWork: string; remarks: string; reason: string }
 const ReviewerEditForm: React.FC<{ r: TaskDailyReport; onSaved: (r: TaskDailyReport) => void; onCancel: () => void }> = ({ r, onSaved, onCancel }) => {
   const [d, setD] = useState<EditDraft>({ workCompleted: r.workCompleted ?? '', pendingWork: r.pendingWork ?? '', remarks: r.remarks ?? '', reason: '' });
   const [errors, setErrors] = useState<Partial<Record<keyof EditDraft, string>>>({});
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [attempted, setAttempted] = useState(false);
   const set = (k: keyof EditDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setD(v => ({ ...v, [k]: e.target.value }));
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setServerError('');
+    setAttempted(true);
     const body = { workCompleted: d.workCompleted.trim() || undefined, pendingWork: d.pendingWork.trim() || undefined, delayReason: r.delayReason ?? undefined,
       remarks: d.remarks.trim() || undefined, reason: d.reason.trim() };
     // the same schema the server uses (the database checks again, with the task's deadline)
@@ -210,7 +216,8 @@ const ReviewerEditForm: React.FC<{ r: TaskDailyReport; onSaved: (r: TaskDailyRep
   return (
     <form onSubmit={save} noValidate className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3" data-testid="task-report-edit">
       <p className="text-xs text-slate-600">Correct the report before you decide it. The team member is told what you changed and why; the change is kept in the approval history.</p>
-      <ReportWordFields idPrefix={`tre-${r.id}`} values={d} errors={errors} disabled={busy} inputClassName={inputCls} onChange={(k, v) => setD(x => ({ ...x, [k]: v }))} />
+      <ReportWordFields idPrefix={`tre-${r.id}`} values={d} errors={errors} disabled={busy} inputClassName={inputCls} showMinimum={attempted}
+        onChange={(k, v) => { setD(x => ({ ...x, [k]: v })); setErrors(x => ({ ...x, [k]: undefined })); }} />
       <Field label="Why you changed it (the team member reads this)" htmlFor={id('reason')} required error={errors.reason}>
         <input id={id('reason')} className={inputCls} value={d.reason} onChange={set('reason')} disabled={busy} maxLength={1000} />
       </Field>

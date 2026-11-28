@@ -2,6 +2,7 @@ import React from 'react';
 import { CheckCircle2, Circle, ExternalLink } from 'lucide-react';
 import type { WorkReportContent, WorkReportTask } from '../../../shared/contracts';
 import { REPORT_FIELDS, type ReportKind } from '../../../shared/reportFields';
+import { DAILY_REPORT_FIELDS } from '../../../shared/validation';
 
 /** A list of the member's tasks as they were when the report was saved. */
 export const TaskList: React.FC<{ tasks: WorkReportTask[]; done?: boolean; empty: string }> = ({ tasks, done, empty }) => (
@@ -19,11 +20,13 @@ export const TaskList: React.FC<{ tasks: WorkReportTask[]; done?: boolean; empty
 
 /** The sections of a report that have text, in the order of the form, with the attachment links. */
 export const ReportContentView: React.FC<{ kind: ReportKind; content: WorkReportContent; compact?: boolean }> = ({ kind, content, compact }) => {
-  // the standard form has tasks and a short remark; reports written before it (long-form Team Lead / Department Head sections) still show theirs
-  const sections = REPORT_FIELDS[kind].filter(f => f.key !== 'remarks' && (content[f.key as keyof WorkReportContent] as string | undefined)?.trim());
-  const remarks = content.remarks?.trim();
-  const links = content.attachments ?? [];
+  // the standard form has tasks and (20270312000100) the three fields of every Daily Report; reports written before it (long-form Team Lead / Department Head
+  // sections) still show theirs
   const hasTasks = Array.isArray(content.assignedTasks) || Array.isArray(content.completedTasks);
+  const daily = hasTasks ? DAILY_REPORT_FIELDS.filter(f => (content[f.key] as string | undefined)?.trim()) : [];
+  const sections = REPORT_FIELDS[kind].filter(f => f.key !== 'remarks' && !(hasTasks && f.key === 'workCompleted') && (content[f.key as keyof WorkReportContent] as string | undefined)?.trim());
+  const remarks = hasTasks ? undefined : content.remarks?.trim();
+  const links = content.attachments ?? [];
   if (sections.length === 0 && links.length === 0 && !hasTasks && !remarks) return <p className="text-xs text-slate-500">This report has no written sections.</p>;
   return (
     <dl className={`grid gap-3 ${compact ? 'sm:grid-cols-2' : ''}`}>
@@ -39,6 +42,12 @@ export const ReportContentView: React.FC<{ kind: ReportKind; content: WorkReport
           </div>
         </>
       ) : null}
+      {daily.map(f => (
+        <div key={f.key} className="rounded-xl bg-slate-50/80 px-3 py-2 sm:col-span-2" data-testid={`report-view-${f.key}`}>
+          <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{f.label}</dt>
+          <dd className="mt-1 text-sm text-slate-800 whitespace-pre-wrap break-words">{content[f.key]}</dd>
+        </div>
+      ))}
       {remarks ? (
         <div className="rounded-xl bg-slate-50/80 px-3 py-2 sm:col-span-2">
           <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Remarks / Work Summary</dt>
@@ -78,8 +87,11 @@ export function reportAsText(r: { title: string; author: string; designation: st
     lines.push(`ASSIGNED TASKS (${content.assignedTasks?.length ?? 0})`, ...(content.assignedTasks ?? []).map(t => `- ${t.title}`), '');
     lines.push(`COMPLETED TASKS (${content.completedTasks?.length ?? 0})`, ...(content.completedTasks ?? []).map(t => `- ${t.title}`), '');
   }
-  if (content.remarks?.trim()) lines.push('REMARKS / WORK SUMMARY', content.remarks.trim(), '');
-  for (const f of REPORT_FIELDS[r.kind].filter(x => x.key !== 'remarks')) {
+  const hasTasks = !!(content.assignedTasks || content.completedTasks);
+  // (20270312000100) a task-form report has the three Daily Report fields
+  if (hasTasks) for (const f of DAILY_REPORT_FIELDS) { const v = (content[f.key] as string | undefined)?.trim(); if (v) lines.push(f.label.toUpperCase(), v, ''); }
+  else if (content.remarks?.trim()) lines.push('REMARKS / WORK SUMMARY', content.remarks.trim(), '');
+  for (const f of REPORT_FIELDS[r.kind].filter(x => x.key !== 'remarks' && !(hasTasks && x.key === 'workCompleted'))) {
     const v = (content[f.key as keyof WorkReportContent] as string | undefined)?.trim();
     if (v) lines.push(f.label.toUpperCase(), v, '');
   }

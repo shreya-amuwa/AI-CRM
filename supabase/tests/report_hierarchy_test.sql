@@ -48,7 +48,7 @@ select p.id, x.title, test.id(x.by), test.id(x.who), x.st, x.pg, (test.rh_week()
 \echo '   AI Studio daily: the Team Lead''s approval is final and the report goes to HR'
 set role authenticated;
 select test.login('ai_tm1a');
-insert into rh select 'd1', (ai_studio_daily_report_save(null, test.rh_week() + 1, '{}'::uuid[], 'Built the landing page', 'The contact form', null, null, 'Good day', true,
+insert into rh select 'd1', (ai_studio_daily_report_save(null, test.rh_week() + 1, '{}'::uuid[], 'Built the landing page of the client website with the new photos', 'The contact form', null, null, 'Good day', true,
   p_description => 'Built the landing page of the client website and started the contact form with the validation.') ->> 'id')::uuid;
 reset role;
 select test.check((test.rh_report(test.rh('d1'))).status = 'PENDING_TL_APPROVAL', 'the member submits: it waits for their Team Lead');
@@ -79,7 +79,7 @@ set role authenticated;
 select test.login('hrp_viewer');
 select test.check(exists (select 1 from jsonb_array_elements(ai_studio_hr_performance(test.rh_week(), test.rh_week() + 6) -> 'memberReports') x
                            where x ->> 'id' = test.rh('d1')::text and x ->> 'leadName' = 'AI Lead One' and x ->> 'approvedBy' = 'AI Lead One' and x ->> 'approvedAt' is not null
-                             and x ->> 'workCompleted' = 'Built the landing page' and x ->> 'pendingWork' = 'The contact form' and x ->> 'remarks' = 'Good day'),
+                             and x ->> 'workCompleted' = 'Built the landing page of the client website with the new photos' and x ->> 'pendingWork' = 'The contact form' and x ->> 'remarks' = 'Good day'),
   'Simran sees the approved report: team, Team Lead approval, date, completed work, pending work, remarks');
 select test.login('sa');
 select test.check(jsonb_typeof(ai_studio_hr_performance(test.rh_week(), test.rh_week() + 6) -> 'memberReports') = 'array', 'the Super Admin can open it');
@@ -93,7 +93,7 @@ select test.must_fail($$select ai_studio_hr_performance()$$, 'nor a Team Lead', 
 \echo '   reports a Team Lead approved before this migration (waiting for the Department Head) become Approved'
 reset role;
 insert into ai_studio_daily_reports (project_id, author_id, author_name, author_role, report_date, status, work_completed, work_description, lead_id, tl_reviewed_by, tl_reviewed_at, submitted_at, description_required)
-values (null, test.id('ai_tm1b'), 'AI Member 1B', 'MEMBER', test.rh_week() + 2, 'PENDING_DH_APPROVAL', 'Old flow report', 'An older report approved by the Team Lead and waiting for the Department Head here.',
+values (null, test.id('ai_tm1b'), 'AI Member 1B', 'MEMBER', test.rh_week() + 2, 'PENDING_DH_APPROVAL', 'Old flow report written before the change and approved by the Team Lead', 'An older report approved by the Team Lead and waiting for the Department Head here.',
         test.id('ai_tl1'), test.id('ai_tl1'), now() - interval '2 days', now() - interval '3 days', false)
 returning id \gset old_
 \i supabase/migrations/20270308000100_report_hierarchy.sql
@@ -112,7 +112,7 @@ select test.check((select (w -> 'liveStats' -> 'totals' ->> 'tasksCompleted')::i
                      from (select ai_studio_weekly_report_get(test.rh_week()) w) x),
   'the week''s figures: team-wise (their own members only) and project-wise, from approved reports and tasks');
 select test.must_fail($$select ai_studio_weekly_report_save(test.rh_week(), 'short', null, null, null, null, true)$$, 'submitting needs the completed work', 'VALIDATION_ERROR');
-select test.must_fail($$select ai_studio_weekly_report_save(test.rh_week() + 1, 'Built the landing page', null, null, null, null, false)$$, 'a week starts on a Monday', 'Monday');
+select test.must_fail($$select ai_studio_weekly_report_save(test.rh_week() + 1, 'Built the landing page of the client website with the new photos', null, null, null, null, false)$$, 'a week starts on a Monday', 'Monday');
 insert into rh select 'w1', (ai_studio_weekly_report_save(test.rh_week(), 'Finished the landing page of the client website.', 'The contact form', 'Landing page live',
                                                           'Waiting for the API keys', 'Good week', false) ->> 'id')::uuid;
 reset role;

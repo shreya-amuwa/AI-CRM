@@ -48,9 +48,10 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(newRequestId());
-  // (20270308000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). Work in progress,
-  // challenges and links are no longer asked for; an older report that has them keeps them unchanged when it is sent again.
+  // (20270308000100, 20270312000100) the three fields of every department: Work Completed (required, 10 to 150 words), Work Pending (100), Additional Note (50,
+  // stored as remarks). Work in progress, challenges and links are no longer asked for; an older report that has them keeps them unchanged when it is sent again.
   const withinLimits = reportWordsWithinLimits({ workCompleted, pendingWork, remarks });
+  const [attempted, setAttempted] = useState(false);
 
   const route = isHead(ctx)
     ? null
@@ -70,6 +71,7 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
     e.preventDefault();
     if (busy) return;
     setServerError(null);
+    setAttempted(true);
     const parsed = adsReportSchema.safeParse({
       id: initial?.id, reportDate, clientId, assignmentId, workCompleted, workInProgress, pendingWork, challenges, remarks, attachments: cleanLinks(links),
       clientRequestId: initial ? undefined : requestId.current
@@ -81,6 +83,7 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
       await aiDesignStudioApi.submitReport(parsed.data);
       requestId.current = newRequestId();
       if (!initial) {
+        setAttempted(false);
         setWorkCompleted(''); setWorkInProgress(''); setPendingWork(''); setChallenges(''); setRemarks(''); setLinks([]); setClientId(''); setAssignmentId('');
       }
       notifyAdsChanged();
@@ -111,11 +114,13 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
           </select>
         </FormField>
         <div className="md:col-span-3">
-          <ReportWordFields idPrefix="rep" values={{ workCompleted, pendingWork, remarks }} errors={errors} disabled={busy} inputClassName={textareaCls}
-            onChange={(k, v) => (k === 'workCompleted' ? setWorkCompleted(v) : k === 'pendingWork' ? setPendingWork(v) : setRemarks(v))} />
+          <ReportWordFields idPrefix="rep" values={{ workCompleted, pendingWork, remarks }} errors={errors} disabled={busy} inputClassName={textareaCls} showMinimum={attempted}
+            onChange={(k, v) => { setErrors(x => ({ ...x, [k]: '' })); if (k === 'workCompleted') setWorkCompleted(v); else if (k === 'pendingWork') setPendingWork(v); else setRemarks(v); }} />
         </div>
       </div>
-      <button type="submit" className={primaryBtn} disabled={busy || !withinLimits} data-testid="ads-report-submit">{busy ? 'Sending…' : initial ? 'Send again' : 'Submit report'}</button>
+      <div className="flex justify-end border-t border-slate-100 pt-4">
+        <button type="submit" className={primaryBtn} disabled={busy || !withinLimits} data-testid="ads-report-submit">{busy ? 'Sending…' : initial ? 'Resubmit Daily Report' : 'Submit Daily Report'}</button>
+      </div>
     </form>
   );
 };
