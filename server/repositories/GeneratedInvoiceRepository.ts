@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AgreementReviewItem, Invoice, InvoicePrefill, InvoiceStage, PaymentInvoiceBilling, InvoiceWhatsAppDispatch, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
-import type { GeneratedInvoiceIssueInput } from '../../shared/validation.js';
+import type { AgreementReviewItem, InvoiceSeriesRow, InvoiceSeriesSetResult, Invoice, InvoicePrefill, InvoiceStage, PaymentInvoiceBilling, InvoiceWhatsAppDispatch, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
+import type { GeneratedInvoiceIssueInput, InvoiceSeriesSetInput } from '../../shared/validation.js';
 import { unwrap } from './base.js';
 
 /** What a claimed stage hands the worker: the snapshot to draw the PDF from, and where an earlier run already stored it. */
@@ -33,6 +33,16 @@ export class GeneratedInvoiceRepository {
   /** Older agreements (no recorded basis) that already have invoices: listed for Accounts to reconcile, never changed silently. */
   async agreementReview(): Promise<AgreementReviewItem[]> {
     return unwrap(await this.db.rpc('accounts_agreement_review')) as AgreementReviewItem[];
+  }
+
+  /** The counters of every invoice series (Super Admin only: the database checks). */
+  async seriesList(): Promise<InvoiceSeriesRow[]> {
+    return unwrap(await this.db.rpc('invoice_series_list')) as InvoiceSeriesRow[];
+  }
+
+  /** Continue a series from the real last number: only ever raises the next number (the database refuses a number already used). */
+  async seriesSetNext(input: InvoiceSeriesSetInput): Promise<InvoiceSeriesSetResult> {
+    return unwrap(await this.db.rpc('invoice_series_set_next', { p_type: input.type, p_fy: input.fy, p_next: input.next })) as InvoiceSeriesSetResult;
   }
 
   async issue(input: GeneratedInvoiceIssueInput): Promise<Invoice & { replayed: boolean }> {

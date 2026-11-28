@@ -63,3 +63,39 @@ SQL suite (59 files), API suite (2,614 checks), unit suite incl. browser tests, 
 3. **Super Admin:** set the Technical Consultant follow-up delay (Workflow settings) so waiting follow-ups get their date.
 4. **After the migrations:** open the hand-over reconciliation report and decide: send the "verified, not sent" customers from the verifier's queue; run the follow-up action if "handed over without follow-up" is not empty.
 5. Ask the tax adviser about non-GST invoices for a registered supplier.
+
+## Invoice numbers: GST and Non-GST series, and continuing from the real last number (migration 20270313000100)
+
+Every invoice the CRM generates (Accounts invoices, part payments, recharge invoices) gets its number from the database, never from the browser:
+
+| Type | Format | Example |
+| --- | --- | --- |
+| GST | `GST/YY-YY/NNN` | `GST/26-27/616` |
+| Non-GST | `Amuwa/YY-YY/NNN` | `Amuwa/26-27/251` |
+
+* Each type has its own counter per financial year (`invoice_number_series`), so GST and Non-GST numbers move independently.
+* The year is the Indian financial year (1 April to 31 March) of the **invoice date**: 31 March 2027 is `26-27`, 1 April 2027 is `27-28`, and the new series starts again at `001`.
+* `private.take_invoice_number` is the only way a number is made. It runs inside the transaction that saves the invoice, under a lock on the counter row, so simultaneous
+  requests never share a number and an invoice that is not saved leaves no gap. A draft or a preview (`peek_invoice_number`) takes nothing: the number is final when the
+  invoice is officially generated. A counter never goes down and a deleted or cancelled invoice never gives its number back.
+* Older invoices (`INV-2026-00022` and uploaded numbers) are untouched; a new series continues after the highest number of its shape that already exists.
+
+**Continuing from the real last number.** A series that starts in the CRM starts at `001`. If your real numbers are already higher (for example GST 615 and Non-GST 250 in 26-27),
+the Super Admin sets the next number once per series and year. It can only raise the next number: a number at or below the highest already used is refused.
+
+```bash
+# API (Super Admin only; Accounts and everyone else get 403)
+POST /api/v1/accounts/invoice-series   { "type": "GST", "fy": "26-27", "next": 616 }
+POST /api/v1/accounts/invoice-series   { "type": "NON_GST", "fy": "26-27", "next": 251 }
+GET  /api/v1/accounts/invoice-series   # the counters and the next number of each (nothing is taken)
+```
+
+```sql
+-- or, as the owner in the Supabase SQL editor
+select private.invoice_series_set_next('GST', '26-27', 616);
+select private.invoice_series_set_next('NON_GST', '26-27', 251);
+```
+
+Every change is written to the audit log (`INVOICE_SERIES_SET_NEXT`, with the number before and after). Tests: `supabase/tests/invoice_numbering_requirements_test.sql` (52 checks),
+`invoice_series_test.sql` and `part_payment_invoice_number_test.sql` (existing), `invoice_series_validation.test.ts`, and the "Invoice numbering" block of `api_integration.test.ts`
+(25 connections taking numbers at the same moment, a rolled-back invoice, busy GST and Non-GST series).

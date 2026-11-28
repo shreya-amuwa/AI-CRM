@@ -850,6 +850,8 @@ export const clientWorkflowController = {
 
 /** Accounts: the invoice builder (prefill, issue, confirm payment, retry delivery) and opening the stored PDFs. */
 export const generatedInvoiceController = {
+  seriesList: (async ctx => ok(await svc(ctx).generatedInvoices.seriesList())) as Handler,
+  seriesSetNext: (async ctx => ok(await svc(ctx).generatedInvoices.seriesSetNext(ctx.req.body))) as Handler,
   prefill: (async ctx => ok(await svc(ctx).generatedInvoices.prefill(ctx.params.id, ctx.req.query))) as Handler,
   issue: (async ctx => {
     const r = await svc(ctx).generatedInvoices.issue(ctx.req.body);
