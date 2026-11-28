@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AiStudioHrAccess, AiStudioHrPerformance,
+import type { AiStudioHrAccess, AiStudioHrPerformance, AiStudioWeeklyReport, AiStudioWeeklyWeek,
   AiStudioTaskDeleteResult, AiStudioAssignees,
   AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
   AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
@@ -102,6 +102,19 @@ export class AiStudioRepository {
   hrAccess() { return this.rpc<AiStudioHrAccess>('ai_studio_hr_access_info'); }
   setHrViewer(profileId: string, allowed: boolean) { return this.rpc<AiStudioHrAccess>('ai_studio_hr_viewer_set', { p_profile: profileId, p_allowed: allowed }); }
   hrPerformance(from: string | null, to: string | null) { return this.rpc<AiStudioHrPerformance>('ai_studio_hr_performance', { p_from: from, p_to: to }); }
+  // AI Studio weekly report (20270306000100): Team Lead -> the Super Admin; the database checks the caller
+  weeklyWeek(weekStart: string) { return this.rpc<AiStudioWeeklyWeek>('ai_studio_weekly_report_get', { p_week_start: weekStart }); }
+  weeklySave(i: { weekStart: string; completedWork?: string | null; pendingWork?: string | null; achievements?: string | null; challenges?: string | null; remarks?: string | null; submit: boolean }) {
+    return this.rpc<AiStudioWeeklyReport>('ai_studio_weekly_report_save', {
+      p_week_start: i.weekStart, p_completed: i.completedWork ?? null, p_pending: i.pendingWork ?? null, p_achievements: i.achievements ?? null,
+      p_challenges: i.challenges ?? null, p_remarks: i.remarks ?? null, p_submit: i.submit
+    });
+  }
+  weeklyList(weekStart: string | null, status: string | null) { return this.rpc<AiStudioWeeklyReport[]>('ai_studio_weekly_reports_list', { p_week_start: weekStart, p_status: status }); }
+  weeklyOpen(id: string) { return this.rpc<AiStudioWeeklyReport>('ai_studio_weekly_report_open', { p_id: id }); }
+  weeklyReview(id: string, decision: string, comment: string | null) {
+    return this.rpc<AiStudioWeeklyReport>('ai_studio_weekly_report_review', { p_id: id, p_decision: decision, p_comment: comment });
+  }
   taskReports(taskId: string) { return this.rpc<AiStudioTaskReportEntry[]>('ai_studio_task_reports', { p_task: taskId }); }
   report(id: string) { return this.rpc<AiStudioReportDetail>('ai_studio_report_get', { p_id: id }); }
   saveReport(id: string | null, i: { projectId: string; taskId?: string | null; reportDate: string; workCompleted?: string | null; workInProgress?: string | null; pendingWork?: string | null; blockers?: string | null; remarks?: string | null; submit: boolean }) {

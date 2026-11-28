@@ -28,16 +28,17 @@ export const AiStudioHrPerformance: React.FC = () => {
   const allowed = !!access.data?.allowed;
   const data = useLoad<Data | null>(() => (allowed ? aiStudioApi.hrPerformance(from, to) : Promise.resolve(null)), [allowed, from, to]);
 
-  if (access.loading && !access.data) return <Spinner label="Opening AI Studio Performance…" />;
+  if (access.loading && !access.data) return <Spinner label="Opening Daily Reports – AI Studio…" />;
   if (access.error) return <ErrorBanner message={access.error} onRetry={access.reload} />;
   if (!allowed) {
-    return <Card className="p-8 text-center text-sm text-slate-500" label="No access">AI Studio Performance is open to the HR employees the Super Admin named.</Card>;
+    return <Card className="p-8 text-center text-sm text-slate-500" label="No access">Daily Reports – AI Studio is open only to the HR employees the Super Admin named, and the Super Admin.</Card>;
   }
   const d = data.data;
   return (
-    <section className="space-y-5" aria-label="AI Studio Performance" data-testid="ai-studio-hr-performance">
-      <HrPageHeader as="h2" icon={BarChart3} title="AI Studio Performance"
-        subtitle="Daily reports approved by the AI Studio Team Leads, and the Team Leads' own reports: team-wise, employee-wise and project-wise." />
+    <section className="space-y-5" aria-label="Daily Reports – AI Studio" data-testid="ai-studio-hr-performance">
+      {/* (20270306000100) AI Studio's daily reports go Team Member -> Team Lead -> HR: the Team Lead's approval is final and the report arrives here */}
+      <HrPageHeader as="h2" icon={BarChart3} title="Daily Reports – AI Studio"
+        subtitle="AI Studio daily reports go Team Member → Team Lead → HR. The reports the Team Leads approved, and the Team Leads' own reports: employee-wise, team-wise and project-wise, with the Team Lead's approval." />
       {access.data?.canManage && <AccessManager access={access.data} onChanged={access.reload} />}
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-3">
@@ -57,7 +58,7 @@ export const AiStudioHrPerformance: React.FC = () => {
           )}
         </div>
       </Card>
-      <Tabs<View> label="AI Studio Performance views" value={view} options={VIEWS} onChange={setView} />
+      <Tabs<View> label="Daily Reports – AI Studio views" value={view} options={VIEWS} onChange={setView} />
       {data.error && <ErrorBanner message={data.error} onRetry={data.reload} />}
       {data.loading && !d && <Spinner label="Loading the reports…" />}
       {d && view === 'leads' && <LeadReports d={d} />}

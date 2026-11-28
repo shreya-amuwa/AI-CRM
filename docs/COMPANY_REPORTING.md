@@ -185,3 +185,8 @@ block of `api_integration.test.ts`.
 
 Tests: `supabase/tests/task_hierarchy_test.sql` (33 checks, including: an Operations Head opens only the daily reports of their function), the "people drill-down" block of `api_integration.test.ts`,
 `supabase/tests/ui_task_hierarchy.test.mjs` (browser).
+
+## AI Studio has its own hierarchy (migration `20270306000100_report_hierarchy.sql`)
+
+AI Studio is not in this cycle: its daily reports go Team Member → Team Lead → HR and its weekly reports Team Lead → the Super Admin, in AI Studio. The weekly
+department report here also carries pending work, achievements and challenges. See `docs/REPORTING_HIERARCHY.md`.

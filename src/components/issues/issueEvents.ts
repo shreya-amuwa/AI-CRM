@@ -101,6 +101,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.type === 'AI_STUDIO_REPORT_TO_HR' || n.type === 'AI_STUDIO_REPORT_TO_HR_LEAD' || n.type === 'AI_STUDIO_REPORT_HR_ACCESS') { openHrCase({ section: 'ai-studio' }); return true; }
   if (n.entityType === 'ai_studio_report') { openAiStudio({ kind: 'report', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'ai_studio_project') { openAiStudio({ kind: 'task' }); return true; }
+  // (20270306000100) an AI Studio weekly report: the Team Lead's Weekly Report, the Super Admin's Weekly Reports
+  if (n.entityType === 'ai_studio_weekly_report') { openAiStudio({ kind: 'weekly', id: n.entityId ?? undefined }); return true; }
   if (n.entityType === 'work_report' || n.entityType === 'work_report_package') {
     openReports({ id: n.entityType === 'work_report' ? n.entityId ?? undefined : undefined });
     return true;

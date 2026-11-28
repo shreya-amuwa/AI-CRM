@@ -11212,22 +11212,23 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('aim1', 'PATCH', `/ai-studio/reports/${report1}`, { ...rep, workCompleted: 'Login screen and tests' });
   check(q.status === 200 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.revision === 2, 'AI Studio: the member edits and resubmits', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Good' });
-  check(q.status === 200 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: the Team Lead approves: it moves to the Super Admin', q);
+  // (20270306000100) AI Studio daily: Team Member -> Team Lead -> HR; the Team Lead's approval is final
+  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Team Lead approves: final (it goes to HR, not to the Super Admin)', q);
   q = await api('sa', 'GET', '/ai-studio/reports?view=department&status=PENDING_DH_APPROVAL');
-  check(q.status === 200 && q.json.data.total === 1 && q.json.data.items[0].authorName === 'AI Member One', 'AI Studio: the Super Admin sees the forwarded report', q);
+  check(q.status === 200 && q.json.data.total === 0, 'AI Studio: nothing waits for the Super Admin', q);
   q = await api('sa', 'GET', `/ai-studio/reports?view=department&leadId=${lead2}`);
   check(q.json.data.total === 0, 'AI Studio: and can filter by Team Lead', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE' });
   check(q.status === 409, 'AI Studio: the Team Lead cannot approve it again', q);
   q = await api('sa', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Approved' });
-  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Super Admin gives the final approval', q);
+  check(q.status === 409, 'AI Studio: the Super Admin has no approval step after the Team Lead\'s (20270306000100)', q);
   q = await api('aim1', 'GET', `/ai-studio/reports/${report1}`);
-  // (20270302000100) the Team Lead's approval also sent it to HR: one "Sent to HR" entry besides the six steps
-  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').length === 6
+  // the Team Lead's approval sent it to HR: one "Sent to HR" entry besides the five steps (created, submitted, returned, resubmitted, approved)
+  check(q.status === 200 && q.json.data.status === 'APPROVED' && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').length === 5
     && q.json.data.history.filter((h: any) => h.action === 'SENT_TO_HR').length === 1 && q.json.data.history[0].action === 'CREATED' && q.json.data.history[1].action === 'SUBMITTED'
-    && q.json.data.history[q.json.data.history.length - 1].actorName === 'Root'
+    && q.json.data.history.filter((h: any) => h.action !== 'SENT_TO_HR').slice(-1)[0].actorName === 'AI Lead One'
     && q.json.data.history.some((h: any) => h.action === 'RETURNED' && h.comment === 'Add the test results'),
-    'AI Studio: the final status and the whole history are visible to the member', q);
+    'AI Studio: the final status (the Team Lead\'s approval) and the whole history are visible to the member', q);
   q = await api('sa', 'GET', '/ai-studio/reports?view=department');
   check(q.status === 200 && q.json.data.total === 1, 'AI Studio: the Super Admin sees every report of the department', q);
   q = await api('sa', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'RETURN', comment: 'Too late to return' });
@@ -11334,12 +11335,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: aiqr.id, reportDate: today, workCompleted: 'AIQR review', submit: true });
   check(q.status === 201 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.leadId === lead1, 'AI Studio: a new report follows Team Member -> Team Lead', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${q.json.data.id}/review`, { decision: 'APPROVE' });
-  check(q.status === 200 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: the Team Lead approves it and it goes on to the Super Admin', q);
+  check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Team Lead approves it: final, sent to HR (20270306000100)', q);
 
   // shared features keep working for AI Studio people: notifications, chat, leave
   q = await api('aim1', 'GET', '/notifications?page=1&pageSize=50');
   const types = (q.json.data.items ?? q.json.data).map((n: any) => n.type);
-  check(['AI_STUDIO_TASK_ASSIGNED', 'AI_STUDIO_REPORT_RETURNED', 'AI_STUDIO_REPORT_TL_APPROVED', 'AI_STUDIO_REPORT_APPROVED'].every(t => types.includes(t)), 'AI Studio: the member was notified of the task and of every report decision', types);
+  check(['AI_STUDIO_TASK_ASSIGNED', 'AI_STUDIO_REPORT_RETURNED', 'AI_STUDIO_REPORT_TL_APPROVED'].every(t => types.includes(t)), 'AI Studio: the member was notified of the task and of every report decision', types);
   q = await api('aim1', 'POST', '/leave', { leaveType: 'FULL_DAY', startDate: '2099-03-01', reason: 'Family function' });
   check([200, 201, 404].includes(q.status), 'AI Studio: the leave module is reachable for AI Studio people', q);
 }
@@ -13874,7 +13875,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'REJECT' });
   check(r.status === 422, 'AI Studio HR API: a rejection needs a reason', r);
   r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
-  check(r.status === 200 && r.json.data.status === 'PENDING_DH_APPROVAL' && r.json.data.sentToHrAt && r.json.data.tlReviewedAt, 'AI Studio HR API: the Team Lead approves; it is sent to HR', r);
+  check(r.status === 200 && r.json.data.status === 'APPROVED' && r.json.data.sentToHrAt && r.json.data.tlReviewedAt, 'AI Studio HR API: the Team Lead approves (final); it is sent to HR', r);
   r = await api('hpxl', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });
   check(r.status === 409, 'AI Studio HR API: approving twice is refused', r);
   const notes = (await one(`select count(*)::int as n from public.notifications where recipient_id = $1 and type = 'AI_STUDIO_REPORT_TO_HR' and entity_id = $2`, [viewerId, reportId])).n;
@@ -14060,6 +14061,68 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.customers where phone = $1 or phone = $2`, [leadPhone, leadPhone.replace(/\s/g, '')]);
     await db.query(`delete from public.lead_tag_departments where tag_id = any($1::uuid[])`, [created]);
     await db.query(`delete from public.lead_tags where id = any($1::uuid[])`, [created]);
+  }
+}
+
+// --- Reporting hierarchy (migration 20270306000100): AI Studio weekly Team Lead -> Super Admin; AI Studio out of the Department Head -> Operations Head cycle ---
+{
+  const { rows: [aiTeam] } = await db.query(`select t.id, t.department_id from public.teams t where t.department_id = (select id from public.departments where slug = 'ai-studio') order by t.created_at limit 1`);
+  const { rows: [hrTeam] } = await db.query(`select t.id from public.teams t where t.department_id = (select id from public.departments where slug = 'hr') order by t.created_at limit 1`);
+  const mkUser = async (key: string, email: string, name: string, meta: Record<string, unknown>) => {
+    const { rows: [u] } = await db.query(`insert into auth.users (email, raw_user_meta_data, raw_app_meta_data) values ($1, $2::jsonb, $3::jsonb) returning id`,
+      [email, JSON.stringify({ full_name: name }), JSON.stringify({ provider: 'email', providers: ['email'], provisioned_by: sa.id, ...meta })]);
+    tokens.set(key, tokenFor(u.id));
+    return u.id as string;
+  };
+  const lead = await mkUser('rhLead', 'api.rh.lead@example.com', 'API RH Lead', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const lead2 = await mkUser('rhLead2', 'api.rh.lead2@example.com', 'API RH Lead Two', { provisioned_role: 'TEAM_HEAD', provisioned_team_id: aiTeam.id });
+  const mem = await mkUser('rhMem', 'api.rh.mem@example.com', 'API RH Member', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: aiTeam.id });
+  const hrv = await mkUser('rhHr', 'api.rh.hr@example.com', 'API RH HR', { provisioned_role: 'TEAM_MEMBER', provisioned_team_id: hrTeam.id });
+  await db.query(`update public.profiles set manager_id = $1 where id = $2`, [lead, mem]);
+  await db.query(`insert into public.ai_studio_hr_viewers (profile_id) values ($1) on conflict do nothing`, [hrv]);
+  const monday = (await db.query(`select (date_trunc('week', (now() at time zone 'Asia/Kolkata')::date)::date - 7)::text as d`)).rows[0].d as string;
+  try {
+    let r = await api('rhLead', 'GET', `/ai-studio/weekly-reports/week?weekStart=${monday}`);
+    check(r.status === 200 && r.json.data.report === null && Array.isArray(r.json.data.liveStats.members) && r.json.data.liveStats.members.some((m: any) => m.id === mem),
+      'AI Studio weekly API: the Team Lead\'s week, with their team\'s figures', r);
+    r = await api('rhLead', 'POST', '/ai-studio/weekly-reports', { weekStart: monday, completedWork: 'short', submit: true });
+    check(r.status === 422, 'AI Studio weekly API: submitting needs the completed work', r);
+    r = await api('rhLead', 'POST', '/ai-studio/weekly-reports', { weekStart: monday, completedWork: 'Shipped the AIQR landing page.', pendingWork: 'Payments', achievements: 'Live on time',
+      challenges: 'API keys late', remarks: 'Good week', submit: true, assignedTo: 'hr' });
+    check(r.status === 422, 'AI Studio weekly API: the browser cannot choose who receives it (unknown field)', r);
+    r = await api('rhLead', 'POST', '/ai-studio/weekly-reports', { weekStart: monday, completedWork: 'Shipped the AIQR landing page.', pendingWork: 'Payments', achievements: 'Live on time',
+      challenges: 'API keys late', remarks: 'Good week', submit: true });
+    check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.achievements === 'Live on time', 'AI Studio weekly API: the Team Lead submits it to the Super Admin', r);
+    const id = r.json.data.id as string;
+    const toSa = (await db.query(`select count(*)::int n from public.notifications where entity_id = $1 and type = 'AI_STUDIO_WEEKLY_REPORT' and recipient_id = $2`, [id, sa.id])).rows[0].n;
+    const toHr = (await db.query(`select count(*)::int n from public.notifications where entity_id = $1 and recipient_id = $2`, [id, hrv])).rows[0].n;
+    check(toSa === 1 && toHr === 0, 'AI Studio weekly API: the Super Admin is notified; HR is not', { toSa, toHr });
+    for (const who of ['rhHr', 'rhMem', 'hr']) {
+      r = await api(who, 'GET', '/ai-studio/weekly-reports');
+      check(r.status === 403, `AI Studio weekly API: ${who} cannot list AI Studio weekly reports (403)`, r);
+    }
+    r = await api('rhLead2', 'GET', `/ai-studio/weekly-reports/${id}`);
+    check(r.status === 404, 'AI Studio weekly API: another Team Lead cannot open it (404)', r);
+    r = await api('rhLead', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'ACKNOWLEDGE' });
+    check(r.status === 403, 'AI Studio weekly API: the Team Lead cannot review their own week', r);
+    r = await api('sa', 'GET', `/ai-studio/weekly-reports?weekStart=${monday}`);
+    check(r.status === 200 && r.json.data.some((w: any) => w.id === id && w.challenges === 'API keys late'), 'AI Studio weekly API: the Super Admin lists it', r);
+    r = await api('sa', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'RETURN' });
+    check(r.status === 422, 'AI Studio weekly API: returning needs a comment', r);
+    r = await api('sa', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'ACKNOWLEDGE', comment: 'Thanks' });
+    check(r.status === 200 && r.json.data.status === 'ACKNOWLEDGED', 'AI Studio weekly API: the Super Admin acknowledges it', r);
+    r = await api('sa', 'POST', `/ai-studio/weekly-reports/${id}/review`, { decision: 'ACKNOWLEDGE' });
+    check(r.status === 409, 'AI Studio weekly API: a second decision is refused (409)', r);
+    // Simran's section: the named HR employee opens Daily Reports - AI Studio; the AI Studio Team Lead does not
+    r = await api('rhHr', 'GET', '/ai-studio/hr-performance');
+    check(r.status === 200, 'Daily Reports - AI Studio: the named HR employee opens it', r);
+    r = await api('rhLead', 'GET', '/ai-studio/hr-performance');
+    check(r.status === 403, 'Daily Reports - AI Studio: an AI Studio Team Lead cannot (403)', r);
+  } finally {
+    await db.query(`delete from public.ai_studio_weekly_reports where lead_id = any($1::uuid[])`, [[lead, lead2]]);
+    await db.query(`delete from public.ai_studio_hr_viewers where profile_id = $1`, [hrv]);
+    await db.query(`delete from public.performance_records where subject_id = any($1::uuid[])`, [[lead, lead2, mem, hrv]]);
+    await db.query(`delete from auth.users where id = any($1::uuid[])`, [[lead, lead2, mem, hrv]]);
   }
 }
 

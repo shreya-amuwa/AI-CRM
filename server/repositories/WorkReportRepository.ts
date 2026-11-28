@@ -62,10 +62,13 @@ export class WorkReportRepository {
   }
   /** The weekly department report (Department Head): the saved package, the live figures and the day-by-day figures. */
   weekly(weekStart: string, fn?: string) { return this.rpc<WeeklyDepartmentReport>('work_reports_weekly', { p_week_start: weekStart, p_division: fn ?? null }); }
-  weeklySave(w: { weekStart: string; title: string; assignedOverview?: string | null; completedOverview?: string | null; remarks?: string | null; submit: boolean; function?: string }) {
+  weeklySave(w: { weekStart: string; title: string; assignedOverview?: string | null; completedOverview?: string | null; remarks?: string | null; submit: boolean; function?: string;
+    pendingOverview?: string | null; achievements?: string | null; challenges?: string | null }) {
     return this.rpc<ReportPackage>('work_report_weekly_save', {
       p_week_start: w.weekStart, p_title: w.title, p_assigned_overview: w.assignedOverview ?? null, p_completed_overview: w.completedOverview ?? null,
-      p_remarks: w.remarks ?? null, p_submit: w.submit, p_division: w.function ?? null
+      p_remarks: w.remarks ?? null, p_submit: w.submit, p_division: w.function ?? null,
+      // (20270306000100)
+      p_pending_overview: w.pendingOverview ?? null, p_achievements: w.achievements ?? null, p_challenges: w.challenges ?? null
     });
   }
   weeklyBoard(weekStart: string) { return this.rpc<WeeklyBoard>('work_reports_weekly_board', { p_week_start: weekStart }); }
