@@ -242,6 +242,8 @@ try {
     await page.evaluate(() => { window.__state.pin.unlocked = false; });
     await page.getByRole('button', { name: 'Refresh the wallet' }).click();
     await page.getByRole('heading', { name: 'Enter your Wallet PIN' }).waitFor();
+    // the notice is set by the same event that reloads the screen: wait for it instead of reading the card the instant the heading shows
+    await page.getByText('Your wallet was locked. Enter your PIN again.').waitFor();
     check(/locked/.test(await text(page, '[data-testid="wallet-pin-card"]')), `${label} PIN: when the database says locked, the PIN screen comes back`);
     if (label === 'phone') check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), 'phone PIN: no sideways scrolling');
     check(errors.length === 0, `${label} PIN: no script errors`, errors);
