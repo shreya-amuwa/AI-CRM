@@ -8,7 +8,7 @@
 \echo '--- 161. Recharge invoices and delivery'
 reset role;
 \i supabase/migrations/20270228000200_support_recharges.sql
-\i supabase/migrations/20270306000100_recharge_accounts_workflow.sql
+\i supabase/migrations/20270308000100_recharge_accounts_workflow.sql
 \i supabase/migrations/20270309000100_recharge_invoices.sql
 \i supabase/migrations/20270309000100_recharge_invoices.sql
 
