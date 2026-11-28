@@ -36,6 +36,8 @@ const KEY = 'crocodialkey-secret-abcd1234';
 const FORBIDDEN = 'You can manage Crocodial only for departments you run.';
 const MD_OFF = 'Switched off by the Managing Director. Ask the Managing Director to switch it back on.';
 const now = new Date().toISOString();
+// the people each department's mapping candidates list (the real server: ACTIVE, mappable there)
+const PEOPLE = { [DTALK]: [{ id: 'eeeeeeee-0000-4000-8000-0000000000d1', fullName: 'Dina DTalk' }], [WABA]: [{ id: 'eeeeeeee-0000-4000-8000-0000000000b1', fullName: 'Wasim Wabastore' }] };
 const conn = (x) => ({ externalAccountLabel: null, credentialRef: null, credentialConfigured: x.keySource === 'DATABASE', enabled: false, health: 'UNKNOWN', lastError: null,
   lastAttemptAt: null, lastSuccessAt: null, timezone: null, createdAt: now, updatedAt: now, mdDisabledAt: null, keySource: 'NONE', keyLast4: null, managedBy: [AARTI], ...x });
 let state;
@@ -74,6 +76,8 @@ function api(req, res, body) {
   if (p === '/crocodial/admin') return ok(res, o);
   if (p === '/crocodial/connections' && req.method === 'POST') {
     if (state.forbid) return fail(res, 403, 'FORBIDDEN', FORBIDDEN);
+    // like the real API: a credential name, when sent, must be a full CROCODIAL_TOKEN_<NAME>
+    if ('credentialRef' in body && body.credentialRef != null && !/^CROCODIAL_TOKEN_[A-Z0-9_]{1,40}$/.test(body.credentialRef)) return fail(res, 422, 'VALIDATION_ERROR', 'Enter the NAME of the server setting that holds the token, like CROCODIAL_TOKEN_MPILLAR (never the token itself).');
     let c = o.connections.find(x => x.id === body.id);
     if (c && body.enabled && c.mdDisabledAt) return fail(res, 409, 'CONFLICT', MD_OFF);
     if (!c) {
@@ -104,7 +108,14 @@ function api(req, res, body) {
     if (l) l.enabled = body.enabled;
     return ok(res, l);
   }
+  // the users list: a CEO sees only their home department there, so the page must not use it for mapping
   if (p === '/users') return ok(res, { items: [], total: 0, page: 1, pageSize: 100 });
+  const mc = p.match(/^\/crocodial\/connections\/([^/]+)\/mapping-candidates$/);
+  if (mc) {
+    const dept = new URL(req.url, 'http://x').searchParams.get('departmentId');
+    if (!o.departmentLinks.some(l => l.connectionId === mc[1] && l.departmentId === dept)) return fail(res, 422, 'VALIDATION_ERROR', "Link this connection to the department's Sales first.");
+    return ok(res, (PEOPLE[dept] ?? []).map(x => ({ email: null, role: 'TEAM_MEMBER', salesSubRole: 'TELECALLER', teamName: 'Sales', ...x })));
+  }
   if (/^\/crocodial\/connections\/[^/]+\/reconcile$/.test(p)) return ok(res, { departments: [], counts: {}, ownershipDiffers: 0, externalLeads: 0, missingAtSource: 0, unknownStatuses: [], mappings: [], unmappedAssignees: [], reconcile: null, resources: [], recentRuns: [] });
   if (p === '/lead-tags') return ok(res, []);
   res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -176,6 +187,15 @@ try {
     await card.waitFor();
     const saved = lastCall('POST', '/crocodial/connections').body;
     check(JSON.stringify(saved.departmentIds) === JSON.stringify([DTALK]) && !('credentialRef' in saved), `${label}: the connection is created with the chosen departments and no credential name`, saved);
+
+    // people: the CRM employees of the linked department come from the connection's mapping candidates (not the users list, which a CEO
+    // sees only for their home department)
+    const who = card.getByLabel(/CRM employee/);
+    await who.locator('option', { hasText: 'Dina DTalk' }).waitFor({ state: 'attached' });
+    const names = await who.locator('option').allInnerTexts();
+    check(names.includes('Dina DTalk') && !names.includes('Wasim Wabastore'), `${label}: the CEO's "CRM employee" list has the linked department's people`, names);
+    check(state.calls.some(c => c.path === `/crocodial/connections/${NEW}/mapping-candidates`) && !state.calls.some(c => c.path === '/users'),
+      `${label}: they come from the connection's mapping candidates, never the users list`, state.calls.map(c => c.path));
 
     // the key: a password field; "Test and save"; cleared after saving; only the last 4 are shown
     const keyField = card.getByLabel('Crocodial key');
@@ -249,6 +269,17 @@ try {
     check(lastCall('POST', '/crocodial/connections').body.enabled === false, 'MD: "Switch off" sends enabled=false');
     check(await dl.getByRole('button', { name: 'Switch on' }).first().isVisible(), 'MD: the MD can switch it back on');
     check(!(await card('Unkeyed').getByText('Switched off by you').count()), 'MD: an item the MD did not switch off does not say so');
+    // the MD renames a connection a CEO created (a stored key, no server setting): no setting name is invented or sent
+    const names = await page.getByTestId('croc-connection').evaluateAll(l => l.map(x => x.innerText));
+    const ul = page.getByTestId('croc-connection').nth(names.findIndex(t => t.includes('Unkeyed')));
+    await card('Unkeyed').getByRole('button', { name: 'Edit' }).click();
+    const ef = ul.getByTestId('croc-connection-form');
+    check(await ef.getByLabel(/Server setting/).inputValue() === '', 'MD: editing a connection without a server setting starts with an empty setting field');
+    await ef.getByLabel('Connection name').fill('Unkeyed renamed');
+    await ef.getByRole('button', { name: 'Save connection' }).click();
+    await page.getByTestId('croc-connection').filter({ hasText: 'Unkeyed renamed' }).getByRole('button', { name: 'Edit' }).waitFor();
+    const ren = lastCall('POST', '/crocodial/connections').body;
+    check(ren.name === 'Unkeyed renamed' && !('credentialRef' in ren), 'MD: the MD renames a key-only connection (no credential name sent)', ren);
     check(errors.length === 0, 'MD: no script errors', errors);
     await ctx.close();
   }

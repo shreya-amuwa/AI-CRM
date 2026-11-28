@@ -1,10 +1,10 @@
 import type {
-  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialReconcileRun, CrocodialTeamLeads
+  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialReconcileRun, CrocodialTeamLeads
 } from '../../shared/contracts.js';
 import {
   crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, crocodialRefreshSchema, uuidSchema,
   crocodialLeadImportSchema, crocodialStatusMappingSchema, crocodialLinksQuerySchema, crocodialLinkResolveSchema, crocodialTeamLeadsQuerySchema,
-  crocodialKeySchema
+  crocodialKeySchema, crocodialMappingCandidatesQuerySchema
 } from '../../shared/validation.js';
 import { crocodialToken, type ClientOptions } from '../crocodial/client.js';
 import { KEY_UNREADABLE_MESSAGE, keyFingerprint, keyLast4, keySecret, normaliseKey, openKey, sealKey } from '../crocodial/keys.js';
@@ -114,6 +114,11 @@ export class CrocodialService {
   departmentLinkSave(body: unknown) {
     const b = parse(crocodialDepartmentLinkSchema, body);
     return this.repo.departmentLinkSave(b.connectionId, b.departmentId, b.division, b.enabled, b.stage);
+  }
+  /** Who can be mapped in a linked department: the manager of the connection only (the database checks it, and the department link). */
+  mappingCandidates(id: string, query: unknown): Promise<CrocodialMappingCandidate[]> {
+    const q = parse(crocodialMappingCandidatesQuerySchema, query ?? {});
+    return this.repo.mappingCandidates(parse(uuidSchema, id), q.departmentId);
   }
   mappingCheck(body: unknown): Promise<CrocodialMappingCheck> {
     const b = parse(crocodialMappingSchema, body);

@@ -3481,6 +3481,8 @@ export const crocodialDepartmentLinkSchema = z
     stage: z.enum(['PILOT', 'PRODUCTION']).default('PILOT')
   })
   .strict();
+// (20270307000100) GET /crocodial/connections/:id/mapping-candidates
+export const crocodialMappingCandidatesQuerySchema = z.object({ departmentId: uuidSchema }).strict();
 export const crocodialMappingSchema = z
   .object({
     connectionId: uuidSchema,

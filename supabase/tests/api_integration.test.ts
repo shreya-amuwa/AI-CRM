@@ -14195,6 +14195,24 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     check(r.status === 403, 'crocodial keys API: not for a department they do not run', r);
     r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key CEO ref', credentialRef: 'CROCODIAL_TOKEN_APIKEYCEO', departmentIds: [wab.id] });
     check(r.status === 403, 'crocodial keys API: a CEO cannot name a server setting', r);
+    // who can be mapped: the CEO gets the people of a linked department they run that is not their home department (Whatsbox)
+    r = await api('crocceo', 'GET', `/crocodial/connections/${created}/mapping-candidates?departmentId=${wbx.id}`);
+    check(r.status === 200 && Array.isArray(r.json.data), 'crocodial keys API: a CEO reads the mapping candidates of a linked department they run', r);
+    r = await api('crocceo', 'GET', `/crocodial/connections/${created}/mapping-candidates?departmentId=${mpDept}`);
+    check(r.status === 422, 'crocodial keys API: not of a department that is not linked', r);
+    r = await api('crocceo', 'GET', `/crocodial/connections/${mdConn}/mapping-candidates?departmentId=${mpDept}`);
+    check(r.status === 403, 'crocodial keys API: nor on a connection they do not manage', r);
+    // the MD's switch-off is a real stop: the CEO cannot Disconnect the connection (freeing its key) nor start another one for its department
+    r = await api('sa', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: false });
+    check(r.status === 200 && r.json.data.mdDisabledAt, 'crocodial keys API: the MD switches the CEO\'s connection off', r);
+    r = await api('crocceo', 'DELETE', `/crocodial/connections/${ownA}/key`);
+    check(r.status === 409 && r.json.error.message === 'Switched off by the Managing Director. Ask the Managing Director to switch it back on.',
+      'crocodial keys API: the CEO cannot Disconnect a connection the MD switched off (409, exact copy)', r);
+    check((await db.query(`select token_ciphertext is not null n from public.crocodial_connections where id = $1`, [ownA])).rows[0].n, 'crocodial keys API: its key stays');
+    r = await api('crocceo', 'POST', '/crocodial/connections', { name: 'API key around', departmentIds: [wab.id] });
+    check(r.status === 409, 'crocodial keys API: nor create a new connection for that department', r);
+    r = await api('sa', 'POST', '/crocodial/connections', { id: ownA, name: 'API key A', enabled: true });
+    check(r.status === 200 && !r.json.data.mdDisabledAt, 'crocodial keys API: the MD switching it on lifts the stop', r);
   } finally {
     globalThis.fetch = realFetch;
     if (savedSecret === undefined) delete process.env.AUTOMATION_SECRET_KEY; else process.env.AUTOMATION_SECRET_KEY = savedSecret;

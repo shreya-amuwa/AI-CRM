@@ -27,6 +27,14 @@
 --    switching it on clears it. A rollout the MD withdrew (crocodial_rollout.allowed = false) is not allowed again by a CEO (same copy).
 --    The MD saving a connection or link OFF records it even when it is already off (so the MD can block one a CEO switched off); saving it
 --    off again keeps the first time.
+--    The MD's switch-off is a stop for every DEPARTMENT the connection or link serves (private.croc_md_blocked), not only for that item:
+--    while it is set, a non-MD cannot create a connection for such a department, add a link for it (to any connection), switch on a
+--    link for it, or switch on a connection with a link switched on for it; and cannot store or clear the key of a connection the MD
+--    switched off (croc_token_store / croc_token_clear: the key cannot be freed and reused on a new connection). Same CONFLICT copy. The
+--    MD switching the connection or link back on lifts it.
+--  * croc_mapping_candidates: who can be chosen when mapping people (the manager of the connection, a department linked to it): the
+--    ACTIVE people of that department that croc_mapping_create would accept. The users list is not used for this: a CEO can read profiles
+--    only of their home department there (private.can_view_profile), not of every department they run.
 --  * The write paths (croc_connection_save on an existing connection, croc_department_link_save, croc_token_store, croc_token_clear) lock
 --    the connection row BEFORE checking the manager, so two CEOs changing its links at the same time cannot both pass the check.
 --  * Stored Crocodial keys ("Token storage", "Encryption key lifetime"): the server encrypts the key (AES-256-GCM with
@@ -43,6 +51,8 @@
 -- croc_connection_save, croc_department_link_save, croc_mapping_check, croc_mapping_create, croc_mapping_approve, croc_mapping_revoke,
 -- croc_admin_connection: 20270115000100; croc_sync_request: 20270115000500; croc_mapping_count_from: 20270116000300; croc_lead_import_set,
 -- croc_lead_links_list, croc_lead_link_resolve: 20270304000100; croc_status_mapping_tag_set, croc_reconcile_overview: 20270306000100), then:
+--   drop function if exists public.croc_mapping_candidates(uuid, uuid);
+--   drop function if exists private.croc_md_blocked(uuid);
 --   drop function if exists private.croc_rollout_auto(uuid, uuid, boolean);
 --   drop function if exists private.croc_managed_by(uuid);
 --   drop function if exists private.croc_may_link(uuid);
@@ -167,6 +177,16 @@ begin
 end $$;
 revoke all on function private.croc_rollout_auto(uuid, uuid, boolean) from public, anon, authenticated;
 
+-- The MD's switch-off stops a department: some connection serving it, or one of its links, was switched off by the MD (and not switched on
+-- again). A non-MD then cannot start Crocodial for that department another way (a new connection, a new or switched-on link, switching on
+-- another connection that serves it).
+create or replace function private.croc_md_blocked(p_department uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.crocodial_department_links l join public.crocodial_connections c on c.id = l.connection_id
+                  where l.department_id = p_department and (l.md_disabled_at is not null or c.md_disabled_at is not null))
+$$;
+revoke all on function private.croc_md_blocked(uuid) from public, anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 3. The overview and the configuration (copied from 20270115000100; the guard and what is listed above change)
 -- ---------------------------------------------------------------------------
@@ -270,6 +290,10 @@ begin
       if array_position(v_depts, null) is not null or exists (select 1 from unnest(v_depts) d where not private.croc_may_link(d)) then
         raise exception 'FORBIDDEN: You can manage Crocodial only for departments you run.' using errcode = '42501';
       end if;
+      -- not for a department the MD stopped (a new connection is no way around the MD's switch-off)
+      if exists (select 1 from unnest(v_depts) d where private.croc_md_blocked(d)) then
+        raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
+      end if;
     end if;
     insert into public.crocodial_connections (name, external_account_label, credential_ref, enabled, created_by)
     values (btrim(p ->> 'name'), nullif(btrim(coalesce(p ->> 'externalAccountLabel', '')), ''), v_ref, coalesce(v_enabled, false), auth.uid())
@@ -290,6 +314,11 @@ begin
     v_before := private.croc_connection_json(v_old);
     -- the MD's kill switch: only the MD switches on what the MD switched off
     if not v_md and v_enabled and v_old.md_disabled_at is not null then
+      raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
+    end if;
+    -- nor switch on a connection that would serve (a link switched on) a department the MD stopped
+    if not v_md and v_enabled and not v_old.enabled
+       and exists (select 1 from public.crocodial_department_links x where x.connection_id = v_id and x.enabled and private.croc_md_blocked(x.department_id)) then
       raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
     end if;
     update public.crocodial_connections set name = btrim(p ->> 'name'),
@@ -348,6 +377,10 @@ begin
     -- the rollout is allowed automatically (never one the MD withdrew)
     perform private.croc_rollout_auto(p_department, p_connection, v_old.id is null or coalesce(p_enabled, false));
     if coalesce(p_enabled, false) and v_old.md_disabled_at is not null then
+      raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
+    end if;
+    -- a department the MD stopped: no new link for it, and no link switched on for it (on any connection)
+    if (v_old.id is null or coalesce(p_enabled, false)) and private.croc_md_blocked(p_department) then
       raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
     end if;
   end if;
@@ -435,6 +468,22 @@ begin
   return private.croc_mapping_json(m);
 exception when unique_violation then
   raise exception 'CONFLICT: This Crocodial user or this CRM employee already has a mapping on this connection. Revoke it first.' using errcode = 'P0001';
+end $$;
+
+-- Who can be chosen when mapping people of a linked department: its ACTIVE people that croc_mapping_create accepts (croc_profile_check
+-- eligible: in that department, its Sales side, not the Super Admin). The manager of the connection only.
+create or replace function public.croc_mapping_candidates(p_connection uuid, p_department uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+begin
+  perform private.croc_require_manager(p_connection);
+  if not exists (select 1 from public.crocodial_department_links l where l.connection_id = p_connection and l.department_id = p_department and l.division = 'SALES') then
+    raise exception 'VALIDATION_ERROR: Link this connection to the department''s Sales first.' using errcode = '22023';
+  end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('id', p.id, 'fullName', p.full_name, 'email', p.email, 'role', p.role,
+                     'salesSubRole', p.sales_sub_role, 'teamName', t.name) order by p.full_name, p.id)
+                     from public.profiles p left join public.teams t on t.id = p.team_id
+                    where p.department_id = p_department and p.status = 'ACTIVE'
+                      and coalesce((private.croc_profile_check(p.id, p_department, 'SALES') ->> 'eligible')::boolean, false)), '[]'::jsonb);
 end $$;
 
 -- croc_mapping_approve (from 20270115000100; the connection through the mapping)
@@ -788,6 +837,10 @@ begin
      or p_fingerprint is null or p_fingerprint !~ '^[0-9a-f]{64}$' or p_last4 is null or length(p_last4) <> 4 then
     raise exception 'VALIDATION_ERROR: The key could not be stored.' using errcode = '22023';
   end if;
+  -- the MD's switch-off: only the MD changes the key of a connection the MD switched off
+  if c.md_disabled_at is not null and not exists (select 1 from public.profiles p where p.id = p_actor and p.status = 'ACTIVE' and p.role = 'SUPER_ADMIN') then
+    raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
+  end if;
   v_replaced := c.token_ciphertext is not null;
   begin
     update public.crocodial_connections set token_ciphertext = p_ciphertext, token_fingerprint = p_fingerprint, token_last4 = p_last4,
@@ -812,6 +865,10 @@ begin
   perform private.croc_actor_require_manager(p_connection, p_actor);
   if v_old.id is null then
     raise exception 'NOT_FOUND: Connection not found.' using errcode = 'P0002';
+  end if;
+  -- the MD's switch-off: a non-MD cannot Disconnect it (which would free the key for a new connection)
+  if v_old.md_disabled_at is not null and not exists (select 1 from public.profiles p where p.id = p_actor and p.status = 'ACTIVE' and p.role = 'SUPER_ADMIN') then
+    raise exception 'CONFLICT: Switched off by the Managing Director. Ask the Managing Director to switch it back on.' using errcode = 'P0001';
   end if;
   update public.crocodial_connections set token_ciphertext = null, token_fingerprint = null, token_last4 = null, token_set_by = null, token_set_at = null,
          enabled = false, updated_at = now()
@@ -875,7 +932,7 @@ declare
 begin
   foreach f in array array['public.croc_admin_overview()', 'public.croc_connection_save(jsonb)',
     'public.croc_department_link_save(uuid, uuid, text, boolean, text)', 'public.croc_mapping_check(uuid, bigint, uuid, uuid)',
-    'public.croc_mapping_create(uuid, bigint, uuid, uuid)', 'public.croc_mapping_approve(uuid)', 'public.croc_mapping_revoke(uuid, text)',
+    'public.croc_mapping_create(uuid, bigint, uuid, uuid)', 'public.croc_mapping_candidates(uuid, uuid)', 'public.croc_mapping_approve(uuid)', 'public.croc_mapping_revoke(uuid, text)',
     'public.croc_mapping_count_from(uuid, date)', 'public.croc_admin_connection(uuid)', 'public.croc_sync_request(uuid)'] loop
     execute format('revoke all on function %s from public, anon', f);
     execute format('grant execute on function %s to authenticated, service_role', f);

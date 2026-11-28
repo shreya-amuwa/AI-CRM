@@ -201,6 +201,7 @@ export const crocodialController = {
   saveKey: (async ctx => ok(await svc(ctx).crocodial.saveKeyFromBody(ctx.params.id, ctx.req.body, ctx.actor.id))) as Handler,
   removeKey: (async ctx => ok(await svc(ctx).crocodial.removeKey(ctx.params.id, ctx.actor.id))) as Handler,
   departmentLinkSave: (async ctx => ok(await svc(ctx).crocodial.departmentLinkSave(ctx.req.body))) as Handler,
+  mappingCandidates: (async ctx => ok(await svc(ctx).crocodial.mappingCandidates(ctx.params.id, ctx.req.query))) as Handler,
   mappingCheck: (async ctx => ok(await svc(ctx).crocodial.mappingCheck(ctx.req.body))) as Handler,
   mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
   mappingApprove: (async ctx => ok(await svc(ctx).crocodial.mappingApprove(ctx.params.id))) as Handler,

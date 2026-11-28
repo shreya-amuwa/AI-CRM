@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialTeamLeads, CrocodialStatusMappingResult } from '../../shared/contracts.js';
+import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialTeamLeads, CrocodialStatusMappingResult } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Crocodial integration's database functions, called with the signed-in user's own login (the database decides who may do what). */
@@ -20,6 +20,9 @@ export class CrocodialRepository {
     return this.rpc<{ id: string }>('croc_department_link_save', {
       p_connection: connectionId, p_department: departmentId, p_division: division, p_enabled: enabled, p_stage: stage
     });
+  }
+  mappingCandidates(connectionId: string, departmentId: string) {
+    return this.rpc<CrocodialMappingCandidate[]>('croc_mapping_candidates', { p_connection: connectionId, p_department: departmentId });
   }
   mappingCheck(connectionId: string, externalEmployeeId: number, profileId: string, departmentId: string) {
     return this.rpc<CrocodialMappingCheck>('croc_mapping_check', {

@@ -3,9 +3,9 @@ import { CrocodialConnectionHealth } from './CrocodialConnectionHealth';
 import { CrocodialLeadPipeline } from './CrocodialLeadPipeline';
 import { CrocodialKeyForm } from './CrocodialKeyForm';
 import { CheckCircle2, PlugZap, RefreshCw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
-import { crocodialApi, usersApi } from '../../lib/api/endpoints';
+import { crocodialApi } from '../../lib/api/endpoints';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
 import { confirmAction, promptInput } from '../feedback/AppFeedback';
 import { Paged } from '../common/Paged';
@@ -46,7 +46,8 @@ const Pill: React.FC<{ tone: string; children: React.ReactNode }> = ({ tone, chi
 const ConnectionForm: React.FC<{ initial?: CrocodialConnection; isMd: boolean; departments?: { id: string; name: string }[]; onSaved: () => void; onCancel?: () => void }> = ({ initial, isMd, departments = [], onSaved, onCancel }) => {
   const [name, setName] = useState(initial?.name ?? '');
   const [label, setLabel] = useState(initial?.externalAccountLabel ?? '');
-  const [ref, setRef] = useState(initial?.credentialRef ?? 'CROCODIAL_TOKEN_');
+  // a connection without a server setting (a CEO's, with a stored key) starts empty: the MD can rename it without inventing a setting
+  const [ref, setRef] = useState(initial ? initial.credentialRef ?? '' : 'CROCODIAL_TOKEN_');
   const [depts, setDepts] = useState<string[]>(() => (departments.length === 1 ? [departments[0].id] : []));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +59,7 @@ const ConnectionForm: React.FC<{ initial?: CrocodialConnection; isMd: boolean; d
     setError('');
     try {
       await crocodialApi.saveConnection(isMd
-        ? { id: initial?.id, name, externalAccountLabel: label || null, credentialRef: ref, enabled: initial?.enabled }
+        ? { id: initial?.id, name, externalAccountLabel: label || null, ...(ref.trim() ? { credentialRef: ref } : {}), enabled: initial?.enabled }
         : { id: initial?.id, name, externalAccountLabel: label || null, enabled: initial?.enabled, ...(choosing ? { departmentIds: depts } : {}) });
       onSaved();
     } catch (err) { setError(errText(err)); } finally { setBusy(false); }
@@ -106,27 +107,21 @@ const ConnectionForm: React.FC<{ initial?: CrocodialConnection; isMd: boolean; d
 };
 
 const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string; departmentId: string; departmentName?: string; onSaved: (text: string) => void }> = ({ data, connectionId, departmentId, departmentName = 'M Pillar', onSaved }) => {
-  const [people, setPeople] = useState<Profile[]>([]);
+  const [people, setPeople] = useState<CrocodialMappingCandidate[]>([]);
   const [ext, setExt] = useState('');
   const [profile, setProfile] = useState('');
   const [check, setCheck] = useState<CrocodialMappingCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    // every active person of the department (heads have no team, so no Sales-team filter here: the check below says who can be mapped),
-    // 100 at a time - the most the API returns per page
+    // the active people of the department who can be mapped there (croc_mapping_candidates: the same check as proposing). Not the users
+    // list: a CEO can read profiles only of their home department, not of every department they run. The check below still applies.
     let alive = true;
-    (async () => {
-      const all: Profile[] = [];
-      for (let page = 1; page <= 10; page++) {
-        const r = await usersApi.list({ departmentId, status: 'ACTIVE', page, pageSize: 100 });
-        all.push(...r.items);
-        if (all.length >= r.total || r.items.length < 100) break;
-      }
-      if (alive) setPeople(all.sort((a, b) => a.fullName.localeCompare(b.fullName)));
-    })().catch(e => alive && setError(errText(e)));
+    crocodialApi.mappingCandidates(connectionId, departmentId)
+      .then(r => { if (alive) setPeople([...r].sort((a, b) => a.fullName.localeCompare(b.fullName))); })
+      .catch(e => alive && setError(errText(e)));
     return () => { alive = false; };
-  }, [departmentId]);
+  }, [connectionId, departmentId]);
   const unmapped = data.externalEmployees.filter(e => e.connectionId === connectionId && !e.mappingStatus && !e.missingSince);
   useEffect(() => {
     setCheck(null);
@@ -146,14 +141,14 @@ const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string
   return (
     <div className="space-y-3" data-testid="croc-mapping-form">
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Crocodial user" htmlFor="croc-ext">
-          <select id="croc-ext" className={selectCls} value={ext} onChange={e => setExt(e.target.value)}>
+        <Field label="Crocodial user" htmlFor={`croc-ext-${connectionId}`}>
+          <select id={`croc-ext-${connectionId}`} className={selectCls} value={ext} onChange={e => setExt(e.target.value)}>
             <option value="">Choose a Crocodial user…</option>
             {unmapped.map(e => <option key={e.externalId} value={e.externalId}>{e.name || 'No name'} · Crocodial id {e.externalId}{e.isActive === false ? ' · inactive' : ''}</option>)}
           </select>
         </Field>
-        <Field label={`CRM employee (${departmentName} Sales)`} htmlFor="croc-profile">
-          <select id="croc-profile" className={selectCls} value={profile} onChange={e => setProfile(e.target.value)}>
+        <Field label={`CRM employee (${departmentName} Sales)`} htmlFor={`croc-profile-${connectionId}`}>
+          <select id={`croc-profile-${connectionId}`} className={selectCls} value={profile} onChange={e => setProfile(e.target.value)}>
             <option value="">Choose the CRM employee…</option>
             {people.map(x => <option key={x.id} value={x.id}>{x.fullName}{x.email ? ` · ${x.email}` : ''}</option>)}
           </select>

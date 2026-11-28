@@ -498,6 +498,7 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/crocodial/connections/:id/key', handler: crocodial.saveKey, options: S },
   { method: 'DELETE', path: '/crocodial/connections/:id/key', handler: crocodial.removeKey, options: S },
   { method: 'POST', path: '/crocodial/department-links', handler: crocodial.departmentLinkSave, options: S },
+  { method: 'GET', path: '/crocodial/connections/:id/mapping-candidates', handler: crocodial.mappingCandidates },
   { method: 'POST', path: '/crocodial/mappings/check', handler: crocodial.mappingCheck },
   { method: 'POST', path: '/crocodial/mappings', handler: crocodial.mappingCreate, options: S },
   { method: 'POST', path: '/crocodial/mappings/:id/approve', handler: crocodial.mappingApprove, options: S },

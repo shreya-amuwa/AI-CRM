@@ -6872,6 +6872,15 @@ export interface CrocodialProfileCheck {
   inFunction: boolean;
   eligible: boolean;
 }
+/** GET /crocodial/connections/:id/mapping-candidates (20270307000100): the ACTIVE people of a linked department who can be mapped there. */
+export interface CrocodialMappingCandidate {
+  id: string;
+  fullName: string;
+  email: string | null;
+  role: string;
+  salesSubRole: string | null;
+  teamName: string | null;
+}
 export interface CrocodialMappingCheck {
   profile: CrocodialProfileCheck | null;
   externalEmployee: { externalId: number; name: string | null; isActive: boolean | null } | null;
