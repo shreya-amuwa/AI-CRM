@@ -7801,26 +7801,42 @@ export interface ImprovementRequestRow {
 }
 
 // ---------------------------------------------------------------------------
-// Support Recharges (migration 20270228000200)
+// Support Recharges (migrations 20270228000200, 20270306000100)
 // ---------------------------------------------------------------------------
 export type RechargeKind = 'PANEL' | 'MESSAGE';
-export type RechargeStatus = 'PENDING' | 'VERIFIED' | 'COMPLETED' | 'REJECTED';
+export type RechargeBillingType = 'GST' | 'NON_GST';
+export type RechargePaymentStatus = 'PENDING_VERIFICATION' | 'PAYMENT_RECEIVED' | 'PAYMENT_NOT_RECEIVED' | 'REJECTED';
+export type RechargeInvoiceStatus = 'NOT_GENERATED' | 'GENERATED' | 'SENT' | 'EMAIL_SENT' | 'WHATSAPP_SENT' | 'PARTIALLY_SENT' | 'FAILED';
+export type RechargeVerifyDecision = 'RECEIVED' | 'NOT_RECEIVED' | 'REJECTED';
+export interface RechargeTimelineEvent { at: string; action: string; from: string | null; to: string | null; note: string | null; actorName: string | null }
 export interface SupportRecharge {
   id: string;
   reference: string;
   kind: RechargeKind;
+  customerId: string | null;
   customerName: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
+  customerGstin: string | null;
+  /** the customer's Relationship Manager when the recharge was made: read from the database, frozen on the recharge */
+  rmId: string | null;
+  rmName: string | null;
   rechargeDate: string;
+  billingType: RechargeBillingType;
+  /** the amount before GST (for Non-GST, the whole amount) */
+  rechargeAmount: number;
   gstAmount: number;
-  gstDetails: string | null;
-  nonGstAmount: number;
-  nonGstDetails: string | null;
   totalAmount: number;
-  status: RechargeStatus;
+  paymentReference: string | null;
   remarks: string | null;
-  statusNote: string | null;
-  statusAt: string | null;
-  statusByName: string | null;
+  supportStatus: 'SUBMITTED';
+  submittedAt: string;
+  paymentStatus: RechargePaymentStatus;
+  paymentNote: string | null;
+  paymentVerifiedAt: string | null;
+  paymentVerifiedByName: string | null;
+  invoiceStatus: RechargeInvoiceStatus;
   createdById: string;
   createdByName: string | null;
   teamName: string | null;
@@ -7829,7 +7845,9 @@ export interface SupportRecharge {
   screenshot: { id: string; name: string; mime: string; size: number } | null;
   /** decided by the database for the signed-in person */
   canEdit: boolean;
-  nextStatuses: RechargeStatus[];
+  canCorrect: boolean;
+  verifyActions: RechargeVerifyDecision[];
+  timeline?: RechargeTimelineEvent[];
 }
 export interface SupportRechargeSummary {
   totalRecharges: number;
@@ -7837,9 +7855,14 @@ export interface SupportRechargeSummary {
   totalGst: number;
   totalNonGst: number;
   pending: number;
-  verified: number;
-  completed: number;
+  pendingAmount: number;
+  received: number;
+  receivedAmount: number;
+  notReceived: number;
   rejected: number;
+  readyForInvoice: number;
+  invoiced: number;
+  deliveryFailed: number;
 }
 export interface SupportRechargeList {
   items: SupportRecharge[];
@@ -7847,8 +7870,14 @@ export interface SupportRechargeList {
   limit: number;
   offset: number;
   summary: SupportRechargeSummary;
-  role: 'SUPER_ADMIN' | 'HEAD' | 'LEAD' | 'MEMBER';
+  role: 'SUPER_ADMIN' | 'ACCOUNTS' | 'HEAD' | 'LEAD' | 'MEMBER';
   canCreate: boolean;
+  isAccounts: boolean;
+}
+export interface RechargeCustomer { id: string; name: string; company: string | null; email: string | null; phone: string | null; address: string | null; gstin: string | null; rmId: string | null; rmName: string | null }
+/** Verified recharges per Relationship Manager (only payments Accounts confirmed are counted; pending is shown apart). */
+export interface RechargeRmPerformance {
+  rmId: string; rmName: string; panelAmount: number; messageAmount: number; totalAmount: number; panelCount: number; messageCount: number; totalCount: number; pendingAmount: number; pendingCount: number;
 }
 export interface RechargeUploadTicket {
   attachment: { id: string; name: string; mime: string; size: number };

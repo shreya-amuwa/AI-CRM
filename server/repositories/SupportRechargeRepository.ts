@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SupportRecharge, SupportRechargeList } from '../../shared/contracts.js';
+import type { RechargeCustomer, RechargeRmPerformance, SupportRecharge, SupportRechargeList } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** A row of support_recharge_files as the upload / download functions return it. */
@@ -27,16 +27,23 @@ export class SupportRechargeRepository {
     return unwrap(await this.db.rpc(fn, args)) as T;
   }
 
-  list(q: { kind: string; search?: string; status?: string; from?: string; to?: string; min?: number; max?: number; limit: number; offset: number }) {
+  list(q: { kind?: string; search?: string; paymentStatus?: string; invoiceStatus?: string; from?: string; to?: string; min?: number; max?: number; rm?: string; limit: number; offset: number }) {
     return this.rpc<SupportRechargeList>('recharge_list', {
-      p_kind: q.kind, p_search: q.search || null, p_status: q.status || null, p_from: q.from || null, p_to: q.to || null,
-      p_min: q.min ?? null, p_max: q.max ?? null, p_limit: q.limit, p_offset: q.offset
+      p_kind: q.kind || null, p_search: q.search || null, p_payment_status: q.paymentStatus || null, p_invoice_status: q.invoiceStatus || null, p_from: q.from || null, p_to: q.to || null,
+      p_min: q.min ?? null, p_max: q.max ?? null, p_rm: q.rm || null, p_limit: q.limit, p_offset: q.offset
     });
   }
   get(id: string) { return this.rpc<SupportRecharge>('recharge_get', { p_id: id }); }
   create(p: Record<string, unknown>) { return this.rpc<SupportRecharge>('recharge_create', { p }); }
   update(id: string, p: Record<string, unknown>) { return this.rpc<SupportRecharge>('recharge_update', { p_id: id, p }); }
-  setStatus(id: string, status: string, note: string | null) { return this.rpc<SupportRecharge>('recharge_set_status', { p_id: id, p_status: status, p_note: note }); }
+  customers(search?: string) { return this.rpc<RechargeCustomer[]>('recharge_customers', { p_search: search || null }); }
+  customerContext(id: string) { return this.rpc<RechargeCustomer>('recharge_customer_context', { p_customer: id }); }
+  performance(q: { from?: string; to?: string; rm?: string }) { return this.rpc<RechargeRmPerformance[]>('recharge_rm_performance', { p_from: q.from || null, p_to: q.to || null, p_rm: q.rm || null }); }
+  // ---- Accounts: the payment is verified (or not) there, the billing details corrected there
+  verify(id: string, decision: string, note: string | null, receivedAmount?: number) {
+    return this.rpc<SupportRecharge & { replayed: boolean }>('recharge_verify_payment', { p_id: id, p_decision: decision, p_note: note, p_received_amount: receivedAmount ?? null });
+  }
+  correct(id: string, p: Record<string, unknown>) { return this.rpc<SupportRecharge>('recharge_accounts_correct', { p_id: id, p }); }
 
   // ---- the payment screenshot
   beginUpload(fileName: string, mime: string, size: number) { return this.rpc<RechargeFileRow>('recharge_begin_upload', { p_file_name: fileName, p_mime: mime, p_size: size }); }
