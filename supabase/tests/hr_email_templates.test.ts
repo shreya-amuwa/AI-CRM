@@ -79,5 +79,31 @@ const missing = fromDatabaseError({ code: 'PGRST202', message: 'Could not find t
 check(missing.code === 'SERVICE_UNAVAILABLE' && /latest migrations/.test(missing.message) && !/hr_email_cards|schema cache/.test(missing.message), 'a missing database function is reported as a set-up step, without internals');
 check(fromDatabaseError({ code: 'XX000', message: 'boom', details: '', hint: '', name: 'PostgrestError' } as any).code === 'INTERNAL', 'other database errors stay generic');
 
+
+// ---- confirmation / internship review reminders (20270312000100): role-specific wording, the review link, statuses
+const rv = { employeeName: 'Asha Verma', employeeCode: 'EMP-1A2B3C4D', department: 'Wabastore', designation: 'Telecaller', employmentType: 'Full-Time',
+  joiningDate: '2026-09-14', periodMonths: 6, probationEndDate: '2027-03-14', daysLeft: 10, dhStatus: 'NOT_STARTED', ceoStatus: 'NOT_STARTED', hrStatus: 'NOT_STARTED',
+  reviewPath: '/?review=11111111-1111-1111-1111-111111111111', cycleType: 'PROBATION' as const };
+m = renderHrEmail('REVIEW_FIRST', { ...rv, recipientRole: 'DH', recipientName: 'Ravi Head', ownStatus: 'NOT_STARTED' }, { appUrl: 'https://crm.example.com/' });
+check(m.subject === 'Employee Confirmation Review Required — Asha Verma | 10 Days Remaining', 'first reminder subject', m.subject);
+check(m.text.includes('Dear Ravi Head,') && m.text.includes('Asha Verma, working as Telecaller in the Wabastore department, is approaching the completion of their probation period.')
+  && m.text.includes('Employee ID: EMP-1A2B3C4D') && m.text.includes('Expected Confirmation Date: 14 March 2027') && m.text.includes('Days Remaining: 10')
+  && m.text.includes('please submit your evaluation'), 'the Department Head is asked to submit their evaluation', m.text);
+check(m.html.includes('href="https://crm.example.com/?review=11111111-1111-1111-1111-111111111111"') && m.html.includes('Review Employee'), 'the button opens the review in the CRM');
+m = renderHrEmail('REVIEW_FIRST', { ...rv, recipientRole: 'HR' }, { appUrl: 'https://crm.example.com' });
+check(m.text.includes('Dear HR Team,') && m.text.includes('review has started') && !m.text.includes('please submit your evaluation'), 'HR gets the monitoring wording, not a submission request', m.text);
+m = renderHrEmail('REVIEW_SECOND', { ...rv, daysLeft: 4, dhStatus: 'SUBMITTED', recipientRole: 'DH', recipientName: 'Ravi Head', ownStatus: 'SUBMITTED' }, {});
+check(m.subject === 'Employee Confirmation Reminder — Asha Verma | 4 Days Remaining' && m.text.includes('Department Head: Submitted') && m.text.includes('CEO: Pending')
+  && m.text.includes('your evaluation report has been submitted') && !m.text.includes('please submit'), 'the second reminder acknowledges a submitted report', m.text);
+m = renderHrEmail('REVIEW_SECOND', { ...rv, daysLeft: 4, dhStatus: 'SUBMITTED', ceoStatus: 'SUBMITTED', recipientRole: 'HR' }, {});
+check(m.text.includes('both management reports are in') && m.text.includes('record the final decision'), 'when both reports are in, HR is reminded to decide', m.text);
+m = renderHrEmail('REVIEW_FIRST', { ...rv, daysLeft: 7, recipientRole: 'HR', configIssue: 'NO_DEPARTMENT_HEAD' }, {});
+check(m.subject.endsWith('| 7 Days Remaining') && m.text.includes('a reviewer is missing (no Department Head)'), 'a late cycle states its real days and a missing reviewer is flagged', m.subject);
+m = renderHrEmail('REVIEW_FIRST', { ...rv, cycleType: 'INTERNSHIP', employmentType: 'Intern', periodMonths: 3, probationEndDate: '2026-12-15', recipientRole: 'CEO', recipientName: 'Kiran CEO' }, {});
+check(m.subject === 'Internship Completion Review Required — Asha Verma | 10 Days Remaining' && m.text.includes('Internship Completion Date: 15 December 2026')
+  && m.text.includes('Internship Duration: 3 months') && m.text.includes('completion of their internship'), 'internship wording', m.text);
+check(renderHrEmail('REVIEW_SECOND', { ...rv, cycleType: 'INTERNSHIP', daysLeft: 4, recipientRole: 'HR' }, {}).subject === 'Internship Evaluation Reminder — Asha Verma | 4 Days Remaining', 'internship second reminder subject');
+check(!renderHrEmail('REVIEW_FIRST', { ...rv, employeeName: '<b>x</b>', recipientRole: 'DH' }, {}).html.includes('<b>x</b>'), 'review reminders escape names too');
+
 console.log(`=== ${passed} HR E-MAIL TEMPLATE CHECKS PASSED ===`);
 process.exit(0);

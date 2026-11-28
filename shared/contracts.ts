@@ -2839,7 +2839,7 @@ export type BusinessOrdersPage = Paginated<BusinessOrder>;
 // ---------------------------------------------------------------------------
 export type HrEmailKind =
   | 'BIRTHDAY' | 'ANNIVERSARY' | 'PROBATION_REMINDER_EMPLOYEE' | 'PROBATION_REMINDER_HR' | 'PROBATION_OVERDUE_HR'
-  | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR';
+  | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR' | 'REVIEW_FIRST' | 'REVIEW_SECOND' | 'PERFORMANCE_REVIEW_MEETING';
 export type HrEmailStatus = 'PENDING' | 'SENDING' | 'RETRY' | 'SENT' | 'FAILED' | 'SKIPPED' | 'DRY_RUN';
 
 export type HrAutomationCode = 'BIRTHDAY' | 'ANNIVERSARY' | 'CONFIRMATION';
@@ -2958,6 +2958,8 @@ export interface WelcomeEmailList { items: WelcomeEmailItem[]; counts: Partial<R
 export interface HrEmailRunSummary {
   schedule: { day: string; birthdays: number; anniversaries: number; cyclesOpened: number; reminders: number; overdueReminders: number } | null;
   send: { mode: 'off' | 'dry_run' | 'live'; claimed: number; sent: number; dryRun: number; skipped: number; retrying: number; failed: number; note?: string };
+  /** Telecaller weekly performance run (20270312000300), when the database has it */
+  telecaller?: Record<string, unknown> | { error: string } | null;
 }
 
 // ---------------------------------------------------------------------------

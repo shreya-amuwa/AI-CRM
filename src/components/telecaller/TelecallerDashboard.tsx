@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ClipboardList, Home, IndianRupee, MapPinned, Target } from 'lucide-react';
+import { ClipboardList, Headphones, Home, IndianRupee, MapPinned, Target } from 'lucide-react';
 import { IncomePage } from '../income/IncomePage';
 import { useAuth } from '../../context/AuthContext';
 import { navigateTo } from '../../utils/router';
@@ -16,8 +16,9 @@ import { HomePage } from './HomePage';
 import { ConvertLead } from './ConvertLead';
 import { LeadDialog, LeadsPage, telecallerLeadsApi } from './LeadsPage';
 import { TasksPage } from './TasksPage';
+import { MyCallPerformance } from '../hr/performance/TelecallerProfile';
 
-export type TelecallerPage = 'home' | 'tasks' | 'leads' | 'income' | 'raise-issue' | 'work-reports' | 'notifications' | FieldVisitPage;
+export type TelecallerPage = 'home' | 'tasks' | 'leads' | 'income' | 'call-performance' | 'raise-issue' | 'work-reports' | 'notifications' | FieldVisitPage;
 export interface TelecallerNavigate {
   (page: TelecallerPage, options?: { status?: string; addLead?: boolean }): void;
 }
@@ -28,6 +29,8 @@ const NAV: { id: string; label: string; icon: React.ElementType; children?: { id
   { id: 'leads', label: 'Leads', icon: Target },
   // sales incentives (20270119000100): what the telecaller has earned
   { id: 'income', label: 'My Income', icon: IndianRupee },
+  // weekly calls against the target (docs/hr-dashboard-upgrade.md, Phase 3): the Telecaller's own figures only
+  { id: 'call-performance', label: 'My Call Performance', icon: Headphones },
   // Field Visit: planning and recording visits to leads, inside this same dashboard
   { id: FIELD_VISIT_GROUP_ID, label: 'Field Visit', icon: MapPinned, children: FIELD_VISIT_NAV },
   { ...REPORTS_NAV },
@@ -40,7 +43,7 @@ export function parseTelecallerPage(path: string): TelecallerPage {
   const seg = path.replace(/\/+$/, '').split('/')[4];
   const visit = fieldVisitPageFromSegment(seg);
   if (visit) return visit;
-  return seg === 'tasks' || seg === 'leads' || seg === 'income' || seg === 'notifications' || seg === 'raise-issue' || seg === 'work-reports' ? seg : 'home';
+  return seg === 'tasks' || seg === 'leads' || seg === 'income' || seg === 'call-performance' || seg === 'notifications' || seg === 'raise-issue' || seg === 'work-reports' ? seg : 'home';
 }
 
 /**
@@ -73,7 +76,7 @@ export const TelecallerDashboard: React.FC = () => {
   // the menu reads in sections, like the Team Member's: Home on top, then Sales, Work and Team
   const groups = groupNavItems(NAV.map(n => (n.id === REPORTS_NAV.id ? { ...n, badge: reportsBadge } : n)), [
     { ids: ['home'] },
-    { label: 'Sales', ids: ['leads', FIELD_VISIT_GROUP_ID, 'income'] },
+    { label: 'Sales', ids: ['leads', FIELD_VISIT_GROUP_ID, 'income', 'call-performance'] },
     { label: 'Work', ids: ['tasks', REPORTS_NAV.id] },
     { label: 'Team', ids: [ISSUES_NAV.id] }
   ]);
@@ -107,6 +110,7 @@ export const TelecallerDashboard: React.FC = () => {
         {page === 'tasks' && <TasksPage key={`tasks-${intent.n}`} initialStatus={intent.status} />}
         {page === 'leads' && <LeadsPage key={`leads-${intent.n}`} scopeFilters openAdd={!!intent.addLead} renderRowAction={(lead, reload) => <ConvertLead lead={lead} onDone={reload} />} />}
         {page === 'income' && <IncomePage />}
+        {page === 'call-performance' && <MyCallPerformance profileId={userId} />}
         {page === 'notifications' && <NotificationsPage />}
         {page === 'raise-issue' && <IssuesRoute />}
         {page === 'work-reports' && <ReportsRoute />}

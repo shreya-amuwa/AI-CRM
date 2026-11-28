@@ -1,4 +1,4 @@
-import { Bell, Briefcase, Building2, CalendarCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, PlugZap, ReceiptIndianRupee, SlidersHorizontal, Tag, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
+import { Bell, Briefcase, Building2, CalendarCheck, ClipboardCheck, ClipboardList, Clock3, FileSpreadsheet, FileUp, Handshake, Headphones, IndianRupee, LayoutDashboard, LineChart, ListChecks, MapPin, Megaphone, MessageCircle, PhoneCall, PlugZap, ReceiptIndianRupee, SlidersHorizontal, Tag, Target, TrendingUp, Trophy, UserPlus, Users } from 'lucide-react';
 import type { ShellNavGroup, ShellNavItem } from '../layout/shell';
 
 /**
@@ -94,8 +94,10 @@ export function salesHeadNavGroups(o: SalesHeadNavOptions): ShellNavGroup[] {
         label: 'Team',
         items: [
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
+          // confirmation / internship reviews assigned to this head or CEO (docs/hr-dashboard-upgrade.md)
+          { id: 'employee-reviews', label: 'Employee Confirmation Reviews', icon: ClipboardCheck },
           // role-wise sections (migration 20270117000300): each role's list and one person's full-page dashboard
-          { id: 'telecaller-group', label: 'Telecaller', icon: Headphones, children: [{ id: 'telecallers', label: 'Telecaller List' }] },
+          { id: 'telecaller-group', label: 'Telecaller', icon: Headphones, children: [{ id: 'telecallers', label: 'Telecaller List' }, { id: 'telecaller-performance', label: 'Telecaller Performance' }] },
           { id: 'business-associate-group', label: 'Business Associate', icon: Handshake, children: [{ id: 'business-associates', label: 'Business Associate List' }] }
         ]
       },

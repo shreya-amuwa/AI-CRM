@@ -3,6 +3,8 @@
  * they never call fetch() or Supabase tables directly.
  */
 import { registerUnifiedDepartments } from '../auth/departmentRoles';
+import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../../shared/hrUpgrade';
+import type { TcPerformanceList, TcPolicy, TcProfile, TcTarget, TcWeekRow } from '../../../shared/hrUpgrade';
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
 import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
@@ -1215,3 +1217,43 @@ export const offerTemplatesApi = {
 export interface OfferTemplateSaveBody {
   designation: string; description?: string | null; content: OfferTemplateContent; letterhead: OfferLetterhead; sampleFileId?: string | null; baseVersion: number; note?: string | null;
 }
+
+// HR dashboard upgrade (docs/hr-dashboard-upgrade.md): confirmation / internship reviews and the holiday calendar. The database decides who may.
+export const hrReviewsApi = {
+  list: (q: Record<string, string | undefined> = {}) => api.get<ReviewList>('/hr/reviews', Object.fromEntries(Object.entries(q).filter(([, v]) => v)) as Record<string, string>),
+  mine: () => api.get<ReviewQueue>('/hr/reviews/mine'),
+  get: (id: string) => api.get<ReviewDetail>(`/hr/reviews/${id}`),
+  save: (id: string, body: { role: string; ratings: Record<string, number | null>; answers: Record<string, string>; recommendation: string | null; submit: boolean }) =>
+    api.post<ReviewDetail>(`/hr/reviews/${id}/evaluation`, body),
+  returnForRevision: (id: string, role: 'DH' | 'CEO', reason: string) => api.post<ReviewDetail>(`/hr/reviews/${id}/return`, { role, reason }),
+  reassign: (id: string, role: string, profileId: string, reason: string) => api.post<ReviewDetail>(`/hr/reviews/${id}/reassign`, { role, profileId, reason }),
+  start: (id: string) => api.post<ReviewDetail>(`/hr/reviews/${id}/start`, {}),
+  decide: (id: string, body: Record<string, unknown>) => api.post<ReviewDetail>(`/hr/reviews/${id}/decide`, body),
+  holidays: (year?: number) => api.get<OfficeHoliday[]>('/hr/holidays', year ? { year: String(year) } : {}),
+  setHoliday: (day: string, name: string | null, remove = false) => api.post<OfficeHoliday[]>('/hr/holidays', { day, name: name ?? undefined, remove })
+};
+
+// Attendance statement (Phase 2): HR / Department HR only (the database checks)
+export const attendanceStatementApi = {
+  options: () => api.get<AttendanceStatementOptions>('/hr/attendance-statement/options'),
+  statement: (filters: Record<string, unknown>) => api.post<AttendanceStatement>('/hr/attendance-statement', filters),
+  exportPage: (body: { filters: Record<string, unknown>; type: string; format: 'XLSX' | 'CSV'; offset: number; limit?: number }) =>
+    api.post<AttendanceExportPage>('/hr/attendance-statement/export', body),
+  history: () => api.get<{ id: number; by: string | null; type: string; format: string; from: string; to: string; rows: number; at: string }[]>('/hr/attendance-statement/exports'),
+  setBiometricId: (profileId: string, biometricId: string) => api.post<unknown>('/hr/biometric-id', { profileId, biometricId })
+};
+
+// Telecaller performance (Phase 3): the database returns only the Telecallers the viewer may see and refuses changes they may not make
+export const telecallerPerformanceApi = {
+  list: (q: Record<string, string | undefined> = {}) =>
+    api.get<TcPerformanceList>('/performance/telecallers', Object.fromEntries(Object.entries(q).filter(([, v]) => v)) as Record<string, string>),
+  profile: (profileId: string, weeks = 12) => api.get<TcProfile>(`/performance/telecallers/${profileId}`, { weeks: String(weeks) }),
+  targets: () => api.get<TcTarget[]>('/performance/telecallers/targets'),
+  setTarget: (body: Record<string, unknown>) => api.post<TcTarget[]>('/performance/telecallers/targets', body),
+  policy: () => api.get<TcPolicy>('/performance/telecallers/policy'),
+  setPolicy: (body: Record<string, unknown>) => api.post<TcPolicy>('/performance/telecallers/policy', body),
+  recalculate: (weekId: string, reason: string) => api.post<TcWeekRow>(`/performance/weeks/${weekId}/recalculate`, { reason }),
+  schedule: (weekId: string, body: { startsAt?: string; cancel?: boolean; note?: string }) => api.post<TcWeekRow>(`/performance/weeks/${weekId}/schedule`, body),
+  report: (weekId: string, body: Record<string, unknown>) => api.post<TcProfile>(`/performance/weeks/${weekId}/report`, body),
+  closePlan: (planId: string, remarks: string) => api.post<TcProfile>(`/performance/plans/${planId}/close`, { remarks })
+};

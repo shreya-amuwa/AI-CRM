@@ -20,6 +20,7 @@ import {
   UserPlus,
   Users,
   Clock3,
+  ClipboardCheck,
   FileText
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -45,6 +46,7 @@ import { useOpenReportsRequest, useReportsBadge } from '../reports/reportEvents'
 import { DashboardShell, type ShellNavGroup } from '../layout/shell';
 import { HEAD_PAGES, HeadOverview, useWaitingForLead, type HeadPage } from './head/HeadOverview';
 import { HeadAssign } from './head/HeadAssign';
+import { MyReviews } from '../hr/reviews/MyReviews';
 import { HeadReports } from './head/HeadReports';
 import { HeadDaily } from './head/HeadDaily';
 import { HeadSearch } from './head/HeadSearch';
@@ -147,6 +149,8 @@ export const DepartmentHeadDashboard: React.FC = () => {
         label: 'Team',
         items: [
           { id: 'team-attendance', label: 'Team Attendance', icon: CalendarCheck },
+          // confirmation / internship reviews assigned to this head or CEO (docs/hr-dashboard-upgrade.md)
+          { id: 'employee-reviews', label: 'Employee Confirmation Reviews', icon: ClipboardCheck },
           { id: 'team', label: 'Team Members & Access', icon: UserPlus },
           { ...ISSUES_NAV },
           { ...CHAT_NAV, badge: chatUnread },
@@ -232,6 +236,7 @@ export const DepartmentHeadDashboard: React.FC = () => {
       {nav === 'invoices' && !isAccounts && <HeadInvoicesPage />}
       {nav === 'recharges' && supportSide && <RechargesPage />}
       {nav === 'team-attendance' && <HeadAttendancePage />}
+      {nav === 'employee-reviews' && <MyReviews showSummary={operationsHead} />}
       {nav === 'notices' && <ClientNotices />}
       {nav === 'import' && <ExistingCustomerImport onDone={() => go('customers')} />}
       {nav === 'payments' && <AccountsConfirmations />}

@@ -10,7 +10,7 @@ import { NotificationBell } from '../notifications/NotificationBell';
 import { NotificationsPage } from '../notifications/NotificationsPage';
 import { Card, ErrorBanner, inputCls, Pill, Spinner } from '../team-member/pipeline/shared';
 import { HrPageHeader } from './hrUi';
-import { ProbationConfirmations } from './ProbationConfirmations';
+import { EmployeeReviews } from './reviews/EmployeeReviews';
 
 /**
  * The dashboard of a department's own HR (designation Department HR, e.g. "HR (Digitree)"). It shows that one department only: every call below is
@@ -20,7 +20,7 @@ import { ProbationConfirmations } from './ProbationConfirmations';
 type Page = 'employees' | 'probation' | 'notifications';
 const PAGES: { id: Page; label: string; icon: React.ElementType; segment: string }[] = [
   { id: 'employees', label: 'Employees', icon: Users, segment: '' },
-  { id: 'probation', label: 'Probation Confirmations', icon: ClipboardCheck, segment: 'probation' },
+  { id: 'probation', label: 'Employee Confirmations', icon: ClipboardCheck, segment: 'probation' },
   { id: 'notifications', label: 'Notifications', icon: Bell, segment: 'notifications' }
 ];
 const BASE = (id: string) => `/hr-department/dashboard/${id}`;
@@ -63,7 +63,7 @@ export const DepartmentHrDashboard: React.FC = () => {
     >
       <div className="mx-auto w-full max-w-[1400px]">
         {page === 'employees' && <DepartmentEmployees departmentName={departmentName} />}
-        {page === 'probation' && <ProbationConfirmations />}
+        {page === 'probation' && <EmployeeReviews type="PROBATION" />}
         {page === 'notifications' && <NotificationsPage />}
       </div>
     </DashboardShell>

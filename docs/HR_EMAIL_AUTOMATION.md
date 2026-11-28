@@ -7,6 +7,12 @@ or counter in the HR dashboard, and nobody has to sign in, open a page or press 
 Migration: `supabase/migrations/20261107000100_hr_email_automation.sql` (additive, safe to rerun; needs the HR migrations
 `20261027000100` and `20261103000100` to be applied first).
 
+
+> **Updated by the HR dashboard upgrade (migration `20270312000100_employee_review_cycles.sql`, see [hr-dashboard-upgrade.md](hr-dashboard-upgrade.md)):**
+> - HR's old 7-day copy (`PROBATION_REMINDER_HR`) is replaced by the confirmation review reminders (`REVIEW_FIRST` 10 days before, `REVIEW_SECOND` 4 days before). They go to HR, the employee's Department Head and the CEO, at 10:00 India time.
+> - The employee's own 7-day reminder and HR's weekly overdue reminder are unchanged.
+> - Once a review has started, Confirm is HR's final decision, taken after the Department Head and CEO reports. **Probation Confirmations** is now **Employee Confirmations**.
+
 ## What is sent, and when
 
 | E-mail | To | When | Once per |

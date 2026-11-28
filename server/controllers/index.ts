@@ -460,6 +460,36 @@ export const organizationController = {
 import { runHrAutomation } from '../automations/hrDispatcher.js';
 
 // HR Awards (20270203000100): Award Management > Awards; the database allows HR staff and the Super Admin
+/** HR dashboard upgrade (docs/hr-dashboard-upgrade.md): reviews, holidays (later phases add attendance statement and Telecaller performance). */
+export const hrUpgradeController = {
+  reviews: (async ctx => ok(await svc(ctx).hrUpgrade.reviews(ctx.req.query))) as Handler,
+  myReviews: (async ctx => ok(await svc(ctx).hrUpgrade.myReviews())) as Handler,
+  review: (async ctx => ok(await svc(ctx).hrUpgrade.review(ctx.params.id))) as Handler,
+  saveEvaluation: (async ctx => ok(await svc(ctx).hrUpgrade.saveEvaluation(ctx.params.id, ctx.req.body))) as Handler,
+  returnEvaluation: (async ctx => ok(await svc(ctx).hrUpgrade.returnEvaluation(ctx.params.id, ctx.req.body))) as Handler,
+  reassign: (async ctx => ok(await svc(ctx).hrUpgrade.reassign(ctx.params.id, ctx.req.body))) as Handler,
+  start: (async ctx => ok(await svc(ctx).hrUpgrade.start(ctx.params.id))) as Handler,
+  decide: (async ctx => ok(await svc(ctx).hrUpgrade.decide(ctx.params.id, ctx.req.body))) as Handler,
+  holidays: (async ctx => ok(await svc(ctx).hrUpgrade.holidays(ctx.req.query))) as Handler,
+  setHoliday: (async ctx => ok(await svc(ctx).hrUpgrade.setHoliday(ctx.req.body))) as Handler,
+  statement: (async ctx => ok(await svc(ctx).hrUpgrade.statement(ctx.req.body))) as Handler,
+  statementOptions: (async ctx => ok(await svc(ctx).hrUpgrade.statementOptions())) as Handler,
+  exportPage: (async ctx => ok(await svc(ctx).hrUpgrade.exportPage(ctx.req.body))) as Handler,
+  exportHistory: (async ctx => ok(await svc(ctx).hrUpgrade.exportHistory())) as Handler,
+  setBiometricId: (async ctx => ok(await svc(ctx).hrUpgrade.setBiometricId(ctx.req.body))) as Handler,
+  // Phase 3: Telecaller performance
+  tcList: (async ctx => ok(await svc(ctx).hrUpgrade.tcList(ctx.req.query))) as Handler,
+  tcProfile: (async ctx => ok(await svc(ctx).hrUpgrade.tcProfile(ctx.params.id, ctx.req.query))) as Handler,
+  tcTargets: (async ctx => ok(await svc(ctx).hrUpgrade.tcTargets())) as Handler,
+  tcSetTarget: (async ctx => ok(await svc(ctx).hrUpgrade.tcSetTarget(ctx.req.body))) as Handler,
+  tcPolicy: (async ctx => ok(await svc(ctx).hrUpgrade.tcPolicy())) as Handler,
+  tcSetPolicy: (async ctx => ok(await svc(ctx).hrUpgrade.tcSetPolicy(ctx.req.body))) as Handler,
+  tcRecalculate: (async ctx => ok(await svc(ctx).hrUpgrade.tcRecalculate(ctx.params.id, ctx.req.body))) as Handler,
+  tcSchedule: (async ctx => ok(await svc(ctx).hrUpgrade.tcSchedule(ctx.params.id, ctx.req.body))) as Handler,
+  tcReport: (async ctx => ok(await svc(ctx).hrUpgrade.tcReport(ctx.params.id, ctx.req.body))) as Handler,
+  tcClosePlan: (async ctx => ok(await svc(ctx).hrUpgrade.tcClosePlan(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const hrAwardsController = {
   overview: (async ctx => ok(await svc(ctx).hrAwards.overview(ctx.req.query))) as Handler,
   options: (async ctx => ok(await svc(ctx).hrAwards.options())) as Handler,
@@ -508,7 +538,7 @@ export const hrController = {
   /** "Run the check now": decides what is due and sends it (HR staff only; the same work the scheduler does). */
   runEmailAutomation: (async ctx => {
     await svc(ctx).hr.emailOverview(); // the database refuses anyone who is not HR staff
-    return ok(await runHrAutomation());
+    return ok(await runHrAutomation({ telecaller: true }));
   }) as Handler
 };
 

@@ -14,6 +14,7 @@ import { Sidebar, ActiveTab } from './components/layout/Sidebar';
 import { ChatRoute } from './components/chat/ChatRoute';
 import { useOpenChatRequest } from './components/chat/chatEvents';
 import { useOpenHrCaseRequest, useOpenIssuesRequest, type OpenHrCaseDetail } from './components/issues/issueEvents';
+import { useOpenHrTabRequest, type HrTab } from './components/hr/hrTabEvents';
 import { useOpenMeetingRequest } from './components/meetings/meetingEvents';
 import { useOpenNoticeRequest } from './components/notices/noticeEvents';
 import { useOpenWalletRequest } from './components/wallet/walletEvents';
@@ -37,7 +38,9 @@ import { isRestorableTab } from './components/layout/restorableTabs';
 const SuperAdminDashboard = lazy(() => import('./components/superadmin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
 const TrainingWorkspace = lazy(() => import('./components/hr/TrainingWorkspace').then(m => ({ default: m.TrainingWorkspace })));
 const RecruitmentManagement = lazy(() => import('./components/hr/RecruitmentManagement').then(m => ({ default: m.RecruitmentManagement })));
-const ProbationConfirmations = lazy(() => import('./components/hr/ProbationConfirmations').then(m => ({ default: m.ProbationConfirmations })));
+const AttendanceStatement = lazy(() => import('./components/hr/AttendanceStatement').then(m => ({ default: m.AttendanceStatement })));
+const EmployeeReviews = lazy(() => import('./components/hr/reviews/EmployeeReviews').then(m => ({ default: m.EmployeeReviews })));
+const TelecallerPerformance = lazy(() => import('./components/hr/performance/TelecallerPerformance').then(m => ({ default: m.TelecallerPerformance })));
 const RechargeReminderCalls = lazy(() => import('./components/hr/RechargeReminderCalls').then(m => ({ default: m.RechargeReminderCalls })));
 const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
 const AiStudioHrPerformance = lazy(() => import('./components/hr/AiStudioHrPerformance').then(m => ({ default: m.AiStudioHrPerformance })));
@@ -111,6 +114,9 @@ const MainAppContent: React.FC = () => {
   // HR's own issues to the Developer Team (a developer's reply or a status change): HR's Raise an Issue page
   const showHrIssues = React.useRef<(() => void) | null>(null);
   useOpenIssuesRequest(React.useCallback(() => showHrIssues.current?.(), []));
+  // an HR overview card or notification opens one of the HR pages (docs/hr-dashboard-upgrade.md)
+  const showHrTab = React.useRef<((tab: HrTab) => void) | null>(null);
+  useOpenHrTabRequest(React.useCallback((tab: HrTab) => showHrTab.current?.(tab), []));
   // a meeting notification opens Meetings in the department panel's side menu
   const showMeetings = React.useRef<(() => void) | null>(null);
   useOpenMeetingRequest(React.useCallback(() => showMeetings.current?.(), []));
@@ -567,6 +573,7 @@ const MainAppContent: React.FC = () => {
   showWallet.current = () => { if (showSidebar && user.role !== 'superadmin') handleTabUpdate('my_wallet'); };
   showHrCase.current = d => handleTabUpdate(d.section === 'issues' ? 'hr_issues' : d.section === 'reviews' ? 'hr_reviews' : d.section === 'ai-studio' ? 'hr_ai_studio_performance' : 'hr_meetings');
   showHrIssues.current = () => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate('hr_raise_issue'); };
+  showHrTab.current = tab => { if (showSidebar && currentDeptId === 'hr') handleTabUpdate(tab); };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -675,7 +682,13 @@ const MainAppContent: React.FC = () => {
             ) : currentActiveTab === 'hr_training' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><TrainingWorkspace /></Suspense>
             ) : currentActiveTab === 'hr_probation' && currentDeptId === 'hr' ? (
-              <Suspense fallback={<ScreenLoader />}><ProbationConfirmations /></Suspense>
+              <Suspense fallback={<ScreenLoader />}><EmployeeReviews type="PROBATION" /></Suspense>
+            ) : currentActiveTab === 'hr_internships' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><EmployeeReviews type="INTERNSHIP" /></Suspense>
+            ) : currentActiveTab === 'hr_attendance_statement' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><AttendanceStatement /></Suspense>
+            ) : currentActiveTab === 'hr_telecaller_performance' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><TelecallerPerformance /></Suspense>
             ) : currentActiveTab === 'hr_paid_leave' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><PaidLeaveManagement /></Suspense>
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (

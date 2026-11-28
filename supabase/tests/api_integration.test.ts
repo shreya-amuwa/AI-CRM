@@ -5606,6 +5606,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const nineAm = (kind: string, body: string) => db.query(`create or replace function private.hr_nine_am(p_date date) returns timestamptz language sql ${kind} set search_path = '' as $$ ${body} $$`);
   await nineAm('stable', `select case when p_date <= private.hr_today() then least((p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata', now())
                                        else (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata' end`);
+  // the review reminders go out at 10:00 India time (private.rv_send_time): the same for this section
+  const tenAm = (body: string) => db.query(`create or replace function private.rv_send_time(p_date date) returns timestamptz language sql stable security definer set search_path = '' as $$ ${body} $$`);
+  await tenAm(`select least((p_date::timestamp + interval '10 hours') at time zone 'Asia/Kolkata', now())`);
   let hr = await hrRun();
   check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
   const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
@@ -5619,10 +5622,11 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const pe = hrMail('hrbd.prob@example.com', 'Employee Confirmation Reminder — Probation Person — Due ');
   check(pe.length === 1 && /scheduled to be completed on /.test(pe[0].body.text) && /approaching in seven days/.test(pe[0].body.text),
     'HR automation: the employee gets the probation reminder exactly seven days before the end');
-  const ph = hrMail('hr.inbox@example.com', 'Action Required: Confirmation Due in 7 Days — Probation Person');
-  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm employment/.test(ph[0].body.text)
-    && /Designation: /.test(ph[0].body.text) && /Reporting Manager: /.test(ph[0].body.text) && /The confirmation date is seven days away/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
-  check(hrMail('hr.api@amuwa.com', 'Action Required: Confirmation Due in 7 Days').length === 1, 'HR automation: every HR department member is also told');
+  // HR's own copy is now the confirmation review reminder (20270312000100): the first one goes out 10 to 5 days before, with the real days left
+  const ph = hrMail('hr.inbox@example.com', 'Employee Confirmation Review Required — Probation Person | 7 Days Remaining');
+  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not confirm, extend or end anyone's employment/.test(ph[0].body.text)
+    && /Designation: /.test(ph[0].body.text) && /Expected Confirmation Date: /.test(ph[0].body.text) && /Days Remaining: 7/.test(ph[0].body.text), 'HR automation: HR gets the review reminder with id, department, joining and completion dates', ph[0]?.body?.text);
+  check(hrMail('hr.api@amuwa.com', 'Employee Confirmation Review Required — Probation Person').length === 1, 'HR automation: every HR department member is also told');
   check(emails().filter(o => /Employment Confirmation – Amuwa Corporation$/.test(o.body.subject)).length === 0, 'HR automation: nothing confirms the employee by itself');
 
   // never twice
@@ -5715,6 +5719,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('hr', 'GET', '/hr/email-automation/probation');
   const cycle = r.json.data.find((c: any) => c.employeeName === 'Probation Person');
   check(r.status === 200 && cycle && cycle.status === 'PENDING' && cycle.daysLeft === 7 && cycle.canDecide === true && cycle.employeeCode === 'HRBD-3', 'HR automation API: the upcoming confirmation is listed with its days left', cycle);
+  // the review started ten days before (20270312000100): the Department Head and CEO reports come first (the review itself is tested further down)
+  await db.query(`insert into public.hr_review_evaluations (cycle_id, round, reviewer_role, status, ratings, recommendation, submitted_at, version)
+                  select $1, 1, r, 'SUBMITTED', '{"overall": 4}', 'CONFIRM', now(), 1 from (values ('DH'), ('CEO')) x(r) on conflict do nothing`, [cycle.id]);
   r = await api('a', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, {});
   check(r.status === 403, 'HR automation API: a sales member cannot approve', r);
   r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, { effectiveDate: 'soon' });
@@ -5758,6 +5765,8 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 
   if (hrBack > 0) await setHrClock(0);
   await nineAm('immutable', `select (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata'`);
+  await tenAm(`select (p_date::timestamp + coalesce((select case when s.value #>> '{}' ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then (s.value #>> '{}')::time end
+                 from public.crm_settings s where s.key = 'hr.review_reminder_time'), time '10:00')) at time zone 'Asia/Kolkata'`);
   mailMock.close();
   for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 }
@@ -14484,6 +14493,213 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.crocodial_connections where id = any($1::uuid[])`, [[ownA, ownB, mdConn, ...extra]]);
     await db.query(`delete from public.crocodial_rollout where division = 'SALES' and department_id = any($1::uuid[])`, [[wab.id, wbx.id]]);
     for (const x of rolloutBefore) await db.query(`insert into public.crocodial_rollout select * from jsonb_populate_record(null::public.crocodial_rollout, $1::jsonb)`, [x.j]);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 1: confirmation reviews and the holiday calendar (20270312000100)
+// ---------------------------------------------------------------------------
+{
+  const due = (await db.query(`select (private.hr_today() + 6)::text d, (private.hr_today() - interval '6 months' + interval '6 days')::date::text j`)).rows[0];
+  await db.query(`delete from public.hr_probation_cycles where employee_key = $1::text`, [memberA]);
+  const cyc = (await db.query(
+    `insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date, probation_end, original_end)
+     select $1::text, p.id, p.full_name, p.email, 'EMP-API', p.department_id, d.name, $2::date, $3::date, $3::date from public.profiles p join public.departments d on d.id = p.department_id where p.id = $1::uuid returning id`,
+    [memberA, due.j, due.d])).rows[0].id as string;
+  try {
+    r = await api('a', 'GET', `/hr/reviews/${cyc}`);
+    check(r.status === 404, 'reviews API: the employee cannot open their own review', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/start`, {});
+    check(r.status === 200 && r.json.data.reviewStarted === true && r.json.data.dh.reviewer !== null, 'reviews API: HR starts the review; the Department Head is assigned', r);
+    r = await api('dh', 'GET', '/hr/reviews/mine');
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === cyc && x.myRole === 'DH'), 'reviews API: the Department Head finds it in their queue', r);
+    r = await api('dh', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'DH', ratings: { work_quality: 9 }, submit: true });
+    check(r.status === 422, 'reviews API: a rating outside 1-5 is refused before the database', r);
+    r = await api('dh', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'DH', ratings: { work_quality: 4 }, answers: { strengths: 'Reliable' }, submit: false });
+    check(r.status === 200 && r.json.data.dh.status === 'DRAFT', 'reviews API: a draft is saved', r);
+    r = await api('dh', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'DH', ratings: { work_quality: 4 }, answers: { recommendationReason: 'Reliable' }, recommendation: 'CONFIRM', submit: true });
+    check(r.status === 200 && r.json.data.dh.status === 'SUBMITTED', 'reviews API: the Department Head submits', r);
+    r = await api('a', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'CEO', ratings: { overall: 4 }, submit: false });
+    check(r.status === 404, 'reviews API: an unrelated employee cannot write a report', r);
+    r = await api('hr', 'GET', '/hr/reviews?window=DUE_10');
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === cyc) && typeof r.json.data.cards.pendingCeo === 'number', 'reviews API: HR lists it under "due within 10 days"', r);
+    r = await api('hr', 'GET', '/hr/reviews?window=NOT_A_WINDOW');
+    check(r.status === 422, 'reviews API: unknown filters are refused', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONFIRM', reason: 'Department Head recommends' });
+    check(r.status === 409, 'reviews API: without the CEO report the decision is refused', r);
+    r = await api('hr', 'POST', `/hr/email-automation/probation/${cyc}/confirm`, {});
+    check(r.status === 409, 'reviews API: the old Confirm button cannot skip the review', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'HOLD', reason: 'Waiting for the CEO to return', nextReviewDate: due.d });
+    check(r.status === 200 && r.json.data.status === 'ON_HOLD', 'reviews API: HR can put the decision on hold', r);
+    r = await api('hr', 'GET', `/hr/reviews/${cyc}`);
+    check(r.status === 200 && r.json.data.evaluations.some((e: any) => e.role === 'DH' && e.ratings.work_quality === 4), 'reviews API: HR reads the Department Head report', r);
+    // holidays
+    r = await api('a', 'POST', '/hr/holidays', { day: '2027-01-26', name: 'Republic Day' });
+    check(r.status === 403, 'reviews API: only HR manages the holiday calendar', r);
+    r = await api('hr', 'POST', '/hr/holidays', { day: '2027-01-26', name: 'Republic Day' });
+    check(r.status === 200 && r.json.data.some((h: any) => h.day === '2027-01-26' && h.name === 'Republic Day'), 'reviews API: HR adds a holiday', r);
+    r = await api('a', 'GET', '/hr/holidays?year=2027');
+    check(r.status === 200 && r.json.data.some((h: any) => h.day === '2027-01-26'), 'reviews API: everyone can read the holiday calendar', r);
+    r = await api('hr', 'POST', '/hr/holidays', { day: '2027-01-26', remove: true });
+    check(r.status === 200 && !r.json.data.some((h: any) => h.day === '2027-01-26'), 'reviews API: and remove it', r);
+  } finally {
+    await db.query(`delete from public.hr_probation_cycles where id = $1`, [cyc]);
+    await db.query(`delete from public.office_holidays where day = '2027-01-26'`);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 2: the attendance statement and export (20270312000200)
+// ---------------------------------------------------------------------------
+{
+  r = await api('a', 'POST', '/hr/attendance-statement', { from: '2026-11-01', to: '2026-11-07' });
+  check(r.status === 403, 'attendance statement API: an employee cannot read it', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement', { from: '2026-11-07', to: '2026-11-01' });
+  check(r.status === 422, 'attendance statement API: From later than To is refused before the database', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement', { from: '2026-11-01', to: '2026-11-07', statuses: ['NOT_A_STATUS'] });
+  check(r.status === 422, 'attendance statement API: unknown statuses are refused', r);
+  r = await api('hr', 'GET', '/hr/attendance-statement/options');
+  check(r.status === 200 && Array.isArray(r.json.data.departments) && r.json.data.employees.length > 0 && r.json.data.timeZone === 'Asia/Kolkata', 'attendance statement API: HR gets the filter choices', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement', { from: '2026-11-01', to: '2026-11-07', profileIds: [memberA], view: 'DAILY', pageSize: 10 });
+  check(r.status === 200 && r.json.data.total === 7 && r.json.data.rows.every((x: any) => x.profileId === memberA) && typeof r.json.data.summary.scheduledDays === 'number',
+    'attendance statement API: one employee, one row per calendar day (both dates included)', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement/export', { filters: { from: '2026-11-01', to: '2026-11-07', profileIds: [memberA] }, type: 'DETAILED', format: 'CSV', offset: 0 });
+  check(r.status === 200 && r.json.data.total === 7 && r.json.data.rows.length === 7 && r.json.data.organization === 'Amuwa Corporation', 'attendance statement API: the export returns every row', r);
+  r = await api('hr', 'GET', '/hr/attendance-statement/exports');
+  check(r.status === 200 && r.json.data.some((x: any) => x.type === 'DETAILED' && x.format === 'CSV' && x.rows === 7), 'attendance statement API: the export is in the history', r);
+  r = await api('a', 'POST', '/hr/attendance-statement/export', { filters: { from: '2026-11-01', to: '2026-11-07' }, type: 'DETAILED', format: 'CSV', offset: 0 });
+  check(r.status === 403, 'attendance statement API: an employee cannot export', r);
+  r = await api('hr', 'POST', '/hr/biometric-id', { profileId: memberA, biometricId: 'API-77' });
+  check(r.status === 200 && r.json.data.biometricId === 'API-77', 'attendance statement API: HR records a biometric id', r);
+  r = await api('hr', 'POST', '/hr/biometric-id', { profileId: memberA, biometricId: '' });
+  check(r.status === 200 && r.json.data.biometricId === null, 'attendance statement API: and clears it', r);
+}
+
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 3: Telecaller performance, targets, review meetings, reports, improvement plans (20270312000300)
+// ---------------------------------------------------------------------------
+{
+  const tcl = (await db.query(`select id from profiles where sales_sub_role = 'TELECALLER' and role = 'TEAM_MEMBER' and status = 'ACTIVE' order by created_at limit 1`)).rows[0].id as string;
+  tokens.set('tcl', tokenFor(tcl));
+  const wk = (await db.query(
+    `insert into public.telecaller_weekly_performance (profile_id, week_start, week_end, department_id, team_id, status, category, scheduled_days, eligible_days,
+                                                      daily_target, adjusted_target, actual_calls, connected_calls, achievement, mapping_ok, data_complete, finalized_at)
+     select p.id, w.s, w.s + 6, private.base_department(p.department_id), p.team_id, 'FINAL', 'LOW_PERFORMANCE', 5, 5, 60, 300, 150, 90, 50, true, true, now()
+       from public.profiles p, (select private.tc_week_of(private.office_today()) - 7 as s) w where p.id = $1
+     -- the weekly run earlier in this suite may already have computed this week (no mapping, so not evaluated): replace it with known figures
+     on conflict (profile_id, week_start) do update set status = 'FINAL', category = 'LOW_PERFORMANCE', review_status = 'NONE', meeting_id = null, eligible_days = 5,
+       daily_target = 60, adjusted_target = 300, actual_calls = 150, connected_calls = 90, achievement = 50, mapping_ok = true, data_complete = true, finalized_at = now()
+     returning id, week_start::text ws`, [tcl])).rows[0] as { id: string; ws: string };
+  const future = new Date(Date.now() + 3 * 86400000);
+  future.setUTCHours(5, 30, 0, 0); // 11:00 India time
+  try {
+    r = await api('a', 'GET', `/performance/telecallers?weekStart=${wk.ws}`);
+    check(r.status === 200 && !r.json.data.rows.some((x: any) => x.profileId === tcl) && r.json.data.sync.length === 0, 'telecaller performance API: an unrelated employee sees no Telecaller and no sync state', r);
+    r = await api('tcl', 'GET', `/performance/telecallers?weekStart=${wk.ws}`);
+    check(r.status === 200 && r.json.data.rows.length === 1 && r.json.data.rows[0].profileId === tcl && r.json.data.isHr === false, 'telecaller performance API: a Telecaller sees only their own week', r);
+    r = await api('tcl', 'GET', `/performance/telecallers/${memberA}`);
+    check(r.status === 404, 'telecaller performance API: a Telecaller cannot open someone else', r);
+    r = await api('hr', 'GET', '/performance/telecallers?category=NOT_A_CATEGORY');
+    check(r.status === 422, 'telecaller performance API: unknown filters are refused before the database', r);
+    r = await api('hr', 'GET', `/performance/telecallers?weekStart=${wk.ws}&category=LOW_PERFORMANCE`);
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === wk.id && x.achievement === 50) && r.json.data.cards.low >= 1 && r.json.data.isHr === true
+      && Array.isArray(r.json.data.options.telecallers) && r.json.data.options.telecallers.some((x: any) => x.id === tcl), 'telecaller performance API: HR filters by category; the cards count it', r);
+
+    // targets
+    r = await api('a', 'POST', '/performance/telecallers/targets', { scopeType: 'EMPLOYEE', profileId: tcl, dailyCalls: 60, effectiveFrom: wk.ws });
+    check(r.status === 403, 'telecaller performance API: an employee cannot set a target', r);
+    r = await api('sa', 'POST', '/performance/telecallers/targets', { scopeType: 'EMPLOYEE', profileId: tcl, dailyCalls: 0, effectiveFrom: wk.ws });
+    check(r.status === 422, 'telecaller performance API: a zero target is refused', r);
+    r = await api('sa', 'POST', '/performance/telecallers/targets', { scopeType: 'TEAM', dailyCalls: 50, effectiveFrom: wk.ws });
+    check(r.status === 422, 'telecaller performance API: a team target needs the team', r);
+    r = await api('sa', 'POST', '/performance/telecallers/targets', { scopeType: 'EMPLOYEE', profileId: tcl, dailyCalls: 60, effectiveFrom: wk.ws, note: 'API check' });
+    check(r.status === 200 && r.json.data.some((t: any) => t.scopeType === 'EMPLOYEE' && t.dailyCalls === 60 && t.effectiveTo === null), 'telecaller performance API: the Super Admin sets a Telecaller target', r);
+    r = await api('tcl', 'GET', '/performance/telecallers/targets');
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot list the targets', r);
+
+    // policy (off until management approves)
+    r = await api('hr', 'GET', '/performance/telecallers/policy');
+    check(r.status === 200 && r.json.data.enabled === false, 'telecaller performance API: automatic review meetings are off by default', r);
+    r = await api('a', 'POST', '/performance/telecallers/policy', { enabled: true });
+    check(r.status === 403, 'telecaller performance API: an employee cannot approve the policy', r);
+    r = await api('sa', 'POST', '/performance/telecallers/policy', { enabled: false, achievedPct: 70, onTrackPct: 80 });
+    check(r.status === 422, 'telecaller performance API: thresholds out of order are refused', r);
+
+    // the review meeting, the report and the improvement plan
+    r = await api('a', 'POST', `/performance/weeks/${wk.id}/schedule`, { startsAt: future.toISOString() });
+    check(r.status === 403, 'telecaller performance API: only HR schedules a review meeting', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/schedule`, {});
+    check(r.status === 422, 'telecaller performance API: a meeting needs its time', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/schedule`, { startsAt: future.toISOString(), note: 'Weekly call target review' });
+    check(r.status === 200 && r.json.data.reviewStatus === 'SCHEDULED' && r.json.data.meeting?.id, 'telecaller performance API: HR schedules the review meeting', r);
+    r = await api('tcl', 'GET', `/performance/telecallers/${tcl}`);
+    check(r.status === 200 && r.json.data.meetings.length >= 1 && r.json.data.isSelf === true, 'telecaller performance API: the Telecaller sees their meeting', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/report`, { outcome: 'IMPROVEMENT_PLAN', fields: { performanceGap: 'Calls at half the target', hrObservations: 'Needs a better script' } });
+    check(r.status === 422, 'telecaller performance API: an improvement plan needs its targets and deadline', r);
+    r = await api('tcl', 'POST', `/performance/weeks/${wk.id}/report`, { outcome: 'CONCERN_RESOLVED', fields: { performanceGap: 'Calls at half the target', hrObservations: 'Fine now' } });
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot write the report', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/report`, {
+      outcome: 'IMPROVEMENT_PLAN', fields: { performanceGap: 'Calls at half the target', hrObservations: 'Needs a better script', supportNeeded: 'Script training' },
+      actionItems: [{ action: 'Script training', owner: 'Team Lead' }], plan: { targets: '80% of the adjusted target for three weeks', deadline: '2099-01-31' } });
+    check(r.status === 200 && r.json.data.plans.some((x: any) => x.status === 'OPEN') && r.json.data.reports.length >= 1, 'telecaller performance API: HR saves the report and starts the plan', r);
+    const plan = r.json.data.plans.find((x: any) => x.status === 'OPEN').id as string;
+    r = await api('tcl', 'GET', `/performance/telecallers/${tcl}`);
+    check(r.status === 200 && r.json.data.reports.length === 0 && r.json.data.plans.length >= 1, 'telecaller performance API: the Telecaller sees the plan, not HR\'s report notes', r);
+    r = await api('tcl', 'POST', `/performance/plans/${plan}/close`, { remarks: 'I improved' });
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot close the plan', r);
+    r = await api('hr', 'POST', `/performance/plans/${plan}/close`, { remarks: 'Back on target' });
+    check(r.status === 200 && r.json.data.plans.find((x: any) => x.id === plan).status === 'CLOSED', 'telecaller performance API: HR closes the plan', r);
+
+    // recalculation
+    r = await api('tcl', 'POST', `/performance/weeks/${wk.id}/recalculate`, { reason: 'My calls were missing' });
+    check(r.status === 403, 'telecaller performance API: a Telecaller cannot recalculate their week', r);
+    r = await api('hr', 'POST', `/performance/weeks/${wk.id}/recalculate`, { reason: 'no' });
+    check(r.status === 422, 'telecaller performance API: a recalculation needs a reason', r);
+  } finally {
+    await db.query(`delete from public.meetings where source_type = 'performance_review' and source_id = $1`, [wk.id]);
+    await db.query(`delete from public.performance_improvement_plans where profile_id = $1`, [tcl]);
+    await db.query(`delete from public.performance_review_reports where profile_id = $1`, [tcl]);
+    await db.query(`delete from public.telecaller_weekly_performance where id = $1`, [wk.id]);
+    await db.query(`delete from public.telecaller_targets where profile_id = $1`, [tcl]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 4: internship reviews (20270312000500)
+// ---------------------------------------------------------------------------
+{
+  const due = (await db.query(`select (private.hr_today() + 5)::text d, (private.hr_today() - interval '3 months' + interval '5 days')::date::text j`)).rows[0];
+  await db.query(`delete from public.hr_probation_cycles where employee_key = $1::text`, [memberA]);
+  const cyc = (await db.query(
+    `insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date,
+                                             probation_end, original_end, period_months, cycle_type, employment_type)
+     select $1::text, p.id, p.full_name, p.email, 'INT-API', p.department_id, d.name, $2::date, $3::date, $3::date, 3, 'INTERNSHIP', 'Intern'
+       from public.profiles p join public.departments d on d.id = p.department_id where p.id = $1::uuid returning id`, [memberA, due.j, due.d])).rows[0].id as string;
+  try {
+    r = await api('hr', 'GET', '/hr/reviews?type=INTERNSHIP');
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === cyc && x.cycleType === 'INTERNSHIP'), 'internship API: HR lists the internship review', r);
+    r = await api('hr', 'GET', '/hr/reviews?type=PROBATION');
+    check(r.status === 200 && !r.json.data.rows.some((x: any) => x.id === cyc), 'internship API: not among the confirmations', r);
+    r = await api('a', 'GET', `/hr/reviews/${cyc}`);
+    check(r.status === 404, 'internship API: the intern cannot open their own review', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONVERT', reason: 'Both reports recommend conversion' });
+    check(r.status === 409, 'internship API: the decision waits for the Department Head and CEO reports', r);
+    await db.query(`insert into public.hr_review_evaluations (cycle_id, round, reviewer_role, status, ratings, recommendation, submitted_at, version)
+                    select $1, 1, x.r, 'SUBMITTED', '{"overall": 4}', 'CONVERT', now(), 1 from (values ('DH'), ('CEO')) x(r) on conflict do nothing`, [cyc]);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONFIRM', reason: 'Both reports recommend conversion' });
+    check(r.status === 422, 'internship API: an internship is never "confirmed"', r);
+    r = await api('a', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONVERT', reason: 'Both reports recommend conversion' });
+    check(r.status === 404 || r.status === 403, 'internship API: the intern cannot decide', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONVERT', reason: 'Both reports recommend conversion', probationMonths: 6 });
+    check(r.status === 200 && r.json.data.status === 'CONVERTED', 'internship API: HR converts the intern to full-time', r);
+    const pc = (await db.query(`select joining_date::text j, probation_end::text e, period_months m, status from public.hr_probation_cycles where converted_from = $1`, [cyc])).rows[0];
+    check(pc && pc.status === 'PENDING' && pc.m === 6, 'internship API: a full-time probation review is opened', pc);
+  } finally {
+    await db.query(`delete from public.hr_probation_cycles where converted_from = $1`, [cyc]);
+    await db.query(`delete from public.hr_probation_cycles where id = $1`, [cyc]);
   }
 }
 

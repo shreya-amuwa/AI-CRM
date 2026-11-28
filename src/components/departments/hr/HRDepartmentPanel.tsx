@@ -30,6 +30,7 @@ import { OfferLetterWorkspace } from '../../hr/offers/OfferLetterWorkspace';
 import { HrEmptyState, HrPageHeader, HrSectionTitle, HrToast, hrBtn, hrCard } from '../../hr/hrUi';
 import { useMonthlyLeave } from '../../../hooks/useMonthlyLeave';
 import { LeaveReviewList, useLeaveData } from '../../leave/LeaveCenter';
+import { HrUpgradeOverview } from '../../hr/HrUpgradeOverview';
 
 interface HRDepartmentPanelProps {
   activeTab?: ActiveTab;
@@ -40,7 +41,7 @@ const PunchAttendanceForHr = React.lazy(() => import('../../attendance/Attendanc
 export const INITIAL_ATTENDANCE: AttendanceRecord[] = attendanceStore.getAttendanceRecords();
 
 export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab = 'dashboard' }) => {
-  const { activeDepartment } = useAuth();
+  const { activeDepartment, user } = useAuth();
   const { getLeadsForDepartment } = useLeadStore();
 
   // State Management
@@ -634,6 +635,8 @@ export const HRDepartmentPanel: React.FC<HRDepartmentPanelProps> = ({ activeTab 
               </div>
             </div>
           </div>
+          {/* confirmation / internship reviews and Telecaller performance (docs/hr-dashboard-upgrade.md, Phase 5); each card opens its page */}
+          {user?.profile?.hrSubRole !== 'HR_RECRUITER' && <HrUpgradeOverview />}
           </>)}
 
           {/* CONDITIONAL: EITHER SPECIFIC MODULE WORKSPACE OR THE 3X3 MINIMAL OPERATIONAL BOXES GRID */}

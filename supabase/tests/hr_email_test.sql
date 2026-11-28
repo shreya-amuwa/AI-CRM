@@ -56,26 +56,28 @@ select hr_schedule_emails(date '2027-03-06');
 select test.check((select probation_end = date '2027-03-14' and status = 'PENDING' from hr_probation_cycles where employee_name = 'Hrx Prob'),
   'probation ends six months after the joining date (14 Sep -> 14 Mar)');
 select test.check(test.ev('PROBATION_REMINDER_EMPLOYEE', 'Hrx Prob') = 0, 'no reminder eight days before the end');
-select test.check((select count(*) = 0 from hr_probation_cycles where employee_name in ('Hrx Old', 'Hrx Intern')), 'long-standing employees and interns have no probation cycle');
+-- (20270312000500: an active intern now has an INTERNSHIP cycle; an intern still never has a PROBATION cycle)
+select test.check((select count(*) = 0 from hr_probation_cycles where employee_name = 'Hrx Old' or (employee_name = 'Hrx Intern' and cycle_type = 'PROBATION')), 'long-standing employees and interns have no probation cycle');
 select test.check((select count(*) = 1 from hr_probation_cycles where employee_name = 'Hrx Prob2' and status = 'PENDING'), 'an employee marked "Training / Probation" gets a cycle');
 select hr_schedule_emails(date '2027-03-07');
 select test.check(test.ev('PROBATION_REMINDER_EMPLOYEE', 'Hrx Prob') = 1, 'exactly seven days before the end the employee gets the reminder');
-select test.check(test.ev('PROBATION_REMINDER_HR', 'Hrx Prob') = test.hrcount(), 'and every HR recipient gets the HR reminder');
+-- HR's own 7-day copy was replaced by the review reminders (20270312000100): the first one went out at T-10..T-5 (here T-8)
+select test.check((select count(*) = test.hrcount() from hr_email_events where kind = 'REVIEW_FIRST' and payload ->> 'employeeName' = 'Hrx Prob' and payload ->> 'recipientRole' = 'HR'), 'and every HR recipient got the review reminder');
 select test.check((select recipient_email = 'hrx.prob@amuwa.com' and send_after = timestamptz '2027-03-07 09:00:00+05:30' from hr_email_events
                     where kind = 'PROBATION_REMINDER_EMPLOYEE' and payload ->> 'employeeName' = 'Hrx Prob'), 'the employee reminder goes to the employee at 09:00');
-select test.check((select (payload ->> 'daysLeft')::int = 7 and payload ->> 'employeeCode' = 'EMP-' || upper(left(test.id('hrx_prob')::text, 8)) and payload ->> 'department' = 'Wabastore'
+select test.check((select (payload ->> 'daysLeft')::int = 8 and payload ->> 'employeeCode' = 'EMP-' || upper(left(test.id('hrx_prob')::text, 8)) and payload ->> 'department' = 'Wabastore'
                       and payload ->> 'joiningDate' = '2026-09-14' and payload ->> 'probationEndDate' = '2027-03-14'
-                     from hr_email_events where kind = 'PROBATION_REMINDER_HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1),
+                     from hr_email_events where kind = 'REVIEW_FIRST' and payload ->> 'recipientRole' = 'HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1),
   'the HR reminder carries name, id, department, joining date and completion date');
 select test.check((select payload ->> 'designation' = 'Team Member' and payload ->> 'reportingManager' not in ('', 'Not assigned') and payload ->> 'reportingManager' = (select full_name from profiles where id = test.id('th_wab'))
-                     from hr_email_events where kind = 'PROBATION_REMINDER_HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1),
+                     from hr_email_events where kind = 'REVIEW_FIRST' and payload ->> 'recipientRole' = 'HR' and payload ->> 'employeeName' = 'Hrx Prob' limit 1),
   'the HR reminder also carries the designation and the reporting manager (the Team Lead of the team)');
 select test.check((select (payload ->> 'daysLeft')::int = 7 from hr_email_events where kind = 'PROBATION_REMINDER_EMPLOYEE' and payload ->> 'employeeName' = 'Hrx Prob'),
   'the employee reminder knows it is seven days before');
 select hr_schedule_emails(date '2027-03-07');
 select hr_schedule_emails(date '2027-03-10');
 select hr_schedule_emails(date '2027-03-14');
-select test.check(test.ev('PROBATION_REMINDER_EMPLOYEE', 'Hrx Prob') = 1 and test.ev('PROBATION_REMINDER_HR', 'Hrx Prob') = test.hrcount(), 'the reminder is sent once per confirmation cycle');
+select test.check(test.ev('PROBATION_REMINDER_EMPLOYEE', 'Hrx Prob') = 1 and (select count(*) = test.hrcount() from hr_email_events where kind = 'REVIEW_FIRST' and payload ->> 'recipientRole' = 'HR' and payload ->> 'employeeName' = 'Hrx Prob'), 'the reminder is sent once per confirmation cycle');
 select test.check((select status = 'PENDING' from hr_probation_cycles where employee_name = 'Hrx Prob'), 'nothing confirms the employee automatically');
 select test.check(test.ev('PROBATION_OVERDUE_HR', 'Hrx Over') >= test.hrcount(), 'a confirmation that is overdue reminds HR');
 select test.check(test.ev('CONFIRMATION_EMPLOYEE', 'Hrx Over') = 0 and (select status = 'PENDING' from hr_probation_cycles where employee_name = 'Hrx Over'),
@@ -137,6 +139,10 @@ select test.check(test.ev('BIRTHDAY', 'Hrx Late') = 1, 'a run three days late do
 \echo '   approval'
 create temp table cyc as select id from hr_probation_cycles where employee_name = 'Hrx Prob';
 grant all on cyc to authenticated;
+-- the reviews started at T-10 (20270312000100): the Department Head and CEO reports are recorded first (the review workflow is tested in hr_review_cycles_test.sql)
+insert into hr_review_evaluations (cycle_id, round, reviewer_role, reviewer_id, status, ratings, recommendation, submitted_at, version)
+select c.id, 1, r, null, 'SUBMITTED', '{"work_quality": 4}', 'CONFIRM', now(), 1
+  from hr_probation_cycles c cross join (values ('DH'), ('CEO')) x(r) where c.employee_name in ('Hrx Prob', 'Hrx Prob2');
 set role authenticated;
 select test.login('tm_a');
 select test.must_fail($$select hr_confirm_probation((select id from cyc))$$, 'a sales member cannot approve a confirmation', 'FORBIDDEN');
@@ -183,7 +189,10 @@ select test.login('dh_wab');
 select test.must_fail($$select hr_dismiss_probation((select id from cyc_over), 'x')$$, 'closing needs a reason', 'Say why');
 select test.check(hr_dismiss_probation((select id from cyc_over), 'Confirmed on paper last year') ->> 'status' = 'DISMISSED',
   'the employee''s Department Head can close a cycle with a reason');
-select test.check(hr_confirm_probation((select id from cyc_prob2), date '2027-03-20') ->> 'status' = 'CONFIRMING', 'and confirm one');
+-- the final decision is HR's once the review has started (20270312000100): the Department Head writes the evaluation, HR confirms
+select test.must_fail($$select hr_confirm_probation((select id from cyc_prob2), date '2027-03-20')$$, 'but the final decision of a started review is HR''s', 'HR records the final decision');
+select test.login('hr_head');
+select test.check(hr_confirm_probation((select id from cyc_prob2), date '2027-03-20') ->> 'status' = 'CONFIRMING', 'and HR confirms one');
 select test.must_fail($$select hr_confirm_probation((select id from cyc_prob2), date '2000-01-01')$$, 'a confirmation in progress cannot be decided again', 'already in progress');
 reset role;
 select test.check((select status = 'Training / Probation' from hr_employees where id = 'HRX-HRX_PROB2'), 'the HR record does not change before the confirmation e-mail is sent');
