@@ -74,6 +74,18 @@ const apiScript = (admin) => {
       return json(access());
     }
     if (p === '/ai-studio/hr-performance') return json(perf);
+    // the AI Studio weekly report (20270308000100)
+    const stats = { weekStart: day, weekEnd: day, team: "Asha Lead's team", members: [{ id: 'l1', name: 'Asha Lead', isLead: true, reportsSubmitted: 3, reportsApproved: 0, tasksCompleted: 1, tasksPending: 0, tasksOverdue: 0 },
+      { id: 'm1', name: 'Ravi Member', isLead: false, reportsSubmitted: 5, reportsApproved: 4, tasksCompleted: 3, tasksPending: 1, tasksOverdue: 0 }],
+      projects: [{ id: 'p1', name: 'AI CRM', tasksCompleted: 4, tasksPending: 1, people: 2 }], totals: { members: 1, reportsSubmitted: 8, reportsApproved: 4, tasksCompleted: 4, tasksPending: 1, projects: 1 } };
+    window.__weekly = window.__weekly ?? null;
+    const weeklyRow = () => ({ id: 'w1', leadId: 'l1', leadName: 'Asha Lead', team: "Asha Lead's team", weekStart: day, weekEnd: day, status: 'SUBMITTED', completedWork: 'Shipped the CRM login', pendingWork: 'Reports page',
+      achievements: 'Live on time', challenges: 'API keys late', remarks: 'Good week', stats, revision: 1, submittedAt: new Date().toISOString(), reviewedBy: null, reviewedAt: null, reviewComment: null, updatedAt: new Date().toISOString(), events: [], ...(window.__weekly ?? {}) });
+    if (p === '/ai-studio/weekly-reports/week') return json({ weekStart: u.searchParams.get('weekStart'), weekEnd: day, report: window.__weekly ? weeklyRow() : null, liveStats: stats });
+    if (p === '/ai-studio/weekly-reports' && method === 'POST') { const b = JSON.parse(init.body); window.__posts.push(b); window.__weekly = { ...b, status: b.submit ? 'SUBMITTED' : 'DRAFT' }; return json(weeklyRow()); }
+    if (p === '/ai-studio/weekly-reports' && method === 'GET') return json([weeklyRow()]);
+    if (p === '/ai-studio/weekly-reports/w1/review' && method === 'POST') { const b = JSON.parse(init.body); window.__posts.push(b); window.__weekly = { status: 'ACKNOWLEDGED', reviewedBy: 'Super Admin', reviewComment: b.comment ?? null }; return json(weeklyRow()); }
+    if (p === '/ai-studio/weekly-reports/w1') return json(weeklyRow());
     // the daily report form
     if (p === '/ai-studio/reports/context') return json({ role: 'MEMBER', today: day, hasReviewer: true, reviewer: 'Asha Lead', route: 'LEAD', projects: [], tasks: [] });
     if (p === '/ai-studio/daily-reports/options') return json({ date: day, existingReportId: null, tasks: [] });
@@ -120,6 +132,47 @@ try {
   const proj = await page.innerText('[data-testid="hr-project-summary"]');
   check(/Vikram Lead/.test(proj) && /Neha Member/.test(proj) && /Kiran Member/.test(proj), 'Project-wise: the Team Lead and the assigned members', proj);
   check(/QR studio/.test(await page.innerText('[data-testid="hr-project-history"]')) || (await page.locator('[data-testid="hr-project-history"] [data-testid="hr-member-report"]').count()) === 1, 'Project-wise: the project\'s history');
+  await page.close();
+
+  // ---- (20270308000100) Simran's side-panel section is "Daily Reports – AI Studio"
+  page = await open('mountHr');
+  await page.waitForSelector('[data-testid="ai-studio-hr-performance"]');
+  check(await page.getByRole('heading', { name: 'Daily Reports – AI Studio' }).isVisible() && /Team Member → Team Lead → HR/.test(await page.innerText('[data-testid="ai-studio-hr-performance"]')),
+    'the section is "Daily Reports – AI Studio" and says the reports come Team Member → Team Lead → HR');
+  await page.close();
+
+  // ---- the AI Studio weekly report: the Team Lead writes it for the Super Admin
+  page = await open('mountWeeklyLead');
+  await page.waitForSelector('[data-testid="ai-weekly-lead"] [data-testid="weekly-figures"]');
+  const fig = await page.innerText('[data-testid="weekly-figures"]');
+  check(/Ravi Member/.test(fig) && /AI CRM/.test(fig) && /Approved daily reports/i.test(fig), 'the Team Lead sees the week team-wise and project-wise', fig);
+  await page.click('[data-testid="weekly-submit"]');
+  await page.waitForSelector('text=Describe the work your team completed this week');
+  check(await page.evaluate(() => window.__posts.length) === 0, 'nothing is sent without the completed work');
+  await page.fill('#weekly-completedWork', 'Shipped the CRM login and the dashboard.');
+  await page.fill('#weekly-achievements', 'Live on time');
+  await page.fill('#weekly-challenges', 'API keys late');
+  await page.click('[data-testid="weekly-submit"]');
+  await page.waitForFunction(() => window.__posts.length === 1);
+  const wk = await page.evaluate(() => window.__posts[0]);
+  check(wk.submit === true && wk.completedWork.startsWith('Shipped') && wk.achievements === 'Live on time' && !('leadId' in wk) && !('receiver' in wk),
+    'it is submitted with the week and the text only (the database decides who receives it)', wk);
+  await page.waitForSelector('text=Submitted · with the Super Admin');
+  check(true, 'the status says it is with the Super Admin');
+  await page.close();
+  // the Super Admin acknowledges it
+  page = await open('mountWeeklyAdmin', { width: 1280, height: 1000 }, true);
+  await page.waitForSelector('[data-testid="weekly-row"]');
+  await page.click('[data-testid="weekly-row"]');
+  await page.waitForSelector('[data-testid="weekly-dialog"]');
+  const dlg = await page.innerText('[data-testid="weekly-dialog"]');
+  check(/Shipped the CRM login/.test(dlg) && /Live on time/.test(dlg) && /API keys late/.test(dlg) && /AI CRM/.test(dlg), 'the Super Admin reads completed work, achievements, challenges and the figures', dlg);
+  await page.click('[data-testid="weekly-return"]');
+  await page.waitForSelector('text=Write what the Team Lead should change.');
+  check(await page.evaluate(() => window.__posts.length) === 0, 'returning without a comment sends nothing');
+  await page.click('[data-testid="weekly-acknowledge"]');
+  await page.waitForFunction(() => window.__posts.length === 1);
+  check((await page.evaluate(() => window.__posts[0])).decision === 'ACKNOWLEDGE', 'Acknowledge is sent');
   await page.close();
 
   // the Super Admin names who may open it

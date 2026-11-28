@@ -3,7 +3,7 @@ import type {
   AiStudioDailyReportOptions,
   AiStudioHrAccess,
   AiStudioHrPerformance, AiStudioDailyReportPreview, AiStudioDeadlines, AiStudioOverview, AiStudioPerson, AiStudioProject, AiStudioReportContext, AiStudioReportDetail,
-  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry
+  AiStudioReportPage, AiStudioTask, AiStudioTaskDetail, AiStudioTaskPage, AiStudioTaskReportEntry, AiStudioWeeklyReport, AiStudioWeeklyStatus, AiStudioWeeklyWeek
 } from '../../../shared/contracts';
 import { api } from './client';
 
@@ -67,6 +67,13 @@ export const aiStudioApi = {
   hrAccess: () => api.get<AiStudioHrAccess>('/ai-studio/hr-performance/access'),
   setHrViewer: (profileId: string, allowed: boolean) => api.post<AiStudioHrAccess>('/ai-studio/hr-performance/viewers', { profileId, allowed }),
   hrPerformance: (from?: string, to?: string) => api.get<AiStudioHrPerformance>('/ai-studio/hr-performance', { from, to }),
+  // the AI Studio weekly report: Team Lead -> the Super Admin (20270308000100)
+  weeklyWeek: (weekStart: string) => api.get<AiStudioWeeklyWeek>('/ai-studio/weekly-reports/week', { weekStart }),
+  weeklySave: (w: { weekStart: string; completedWork?: string; pendingWork?: string; achievements?: string; challenges?: string; remarks?: string; submit: boolean }) =>
+    api.post<AiStudioWeeklyReport>('/ai-studio/weekly-reports', w),
+  weeklyList: (f: { weekStart?: string; status?: AiStudioWeeklyStatus } = {}) => api.get<AiStudioWeeklyReport[]>('/ai-studio/weekly-reports', { ...f }),
+  weeklyOpen: (id: string) => api.get<AiStudioWeeklyReport>(`/ai-studio/weekly-reports/${id}`),
+  weeklyReview: (id: string, decision: 'ACKNOWLEDGE' | 'RETURN', comment?: string) => api.post<AiStudioWeeklyReport>(`/ai-studio/weekly-reports/${id}/review`, { decision, comment }),
   dailyReportOptions: (date: string) => api.get<AiStudioDailyReportOptions>('/ai-studio/daily-reports/options', { date }),
   dailyReportPreview: (reportDate: string, taskIds: string[]) => api.post<AiStudioDailyReportPreview>('/ai-studio/daily-reports/preview', { reportDate, taskIds }),
   createDailyReport: (r: AiStudioDailyReportForm) => api.post<AiStudioReportDetail>('/ai-studio/daily-reports', r),

@@ -2532,6 +2532,10 @@ export const reportWeeklySaveSchema = z
     assignedOverview: optionalText(2000),
     completedOverview: optionalText(2000),
     remarks: optionalText(2000),
+    // (20270308000100) the weekly report also says what is pending, what was achieved and what got in the way
+    pendingOverview: optionalText(2000),
+    achievements: optionalText(2000),
+    challenges: optionalText(2000),
     submit: z.boolean().default(false),
     function: reportWeeklyFunctionSchema.optional()
   })
@@ -3447,6 +3451,33 @@ export const aiStudioHrPerformanceQuerySchema = z
   .strict()
   .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The start date is after the end date.', path: ['from'] });
 export const aiStudioHrViewerSchema = z.object({ profileId: uuidSchema, allowed: z.boolean() }).strict();
+
+// ---- AI Studio weekly report: Team Lead -> the Super Admin, AI Studio's Department Head (migration 20270308000100) ----------------------------------------
+const aiStudioMonday = isoDate.refine(d => new Date(`${d}T00:00:00Z`).getUTCDay() === 1, { message: 'Choose a week that starts on a Monday.' });
+const weeklyPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Keep each part under 4000 characters.').nullable().optional());
+export const aiStudioWeeklyQuerySchema = z.object({ weekStart: aiStudioMonday }).strict();
+export const aiStudioWeeklyListQuerySchema = z.object({ weekStart: aiStudioMonday.optional(), status: z.enum(['DRAFT', 'SUBMITTED', 'RETURNED', 'ACKNOWLEDGED']).optional() }).strict();
+export const aiStudioWeeklySaveSchema = z
+  .object({
+    weekStart: aiStudioMonday,
+    completedWork: weeklyPart,
+    pendingWork: weeklyPart,
+    achievements: weeklyPart,
+    challenges: weeklyPart,
+    remarks: weeklyPart,
+    submit: z.boolean().default(false)
+  })
+  .strict()
+  .refine(v => !v.submit || (v.completedWork ?? '').trim().length >= 10, {
+    message: 'Describe the work your team completed this week (at least 10 characters) before submitting.', path: ['completedWork']
+  });
+export const aiStudioWeeklyReviewSchema = z
+  .object({
+    decision: z.enum(['ACKNOWLEDGE', 'RETURN']),
+    comment: z.preprocess(v => (v === '' ? null : v), z.string().trim().max(2000, 'Keep the comment under 2000 characters.').nullable().optional())
+  })
+  .strict()
+  .refine(v => v.decision !== 'RETURN' || (v.comment ?? '').length >= 3, { message: 'Write what the Team Lead should change.', path: ['comment'] });
 
 // ---- Crocodial integration (migration 20270115000100) -----------------------------------------------------------------------------
 /** The NAME of the server setting that holds a connection's Crocodial token (never the token itself). */
