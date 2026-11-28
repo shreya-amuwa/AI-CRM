@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BadgeCheck, BarChart3, Bell, Building2, Crown, MailCheck, FileText, KeyRound, Layers, LayoutDashboard, ReceiptIndianRupee, Sparkles, PiggyBank, TrendingUp, Wallet, WalletCards } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { addonsApi, pipelineApi } from '../../lib/api/endpoints';
+import { addonsApi, pipelineApi, rechargesApi } from '../../lib/api/endpoints';
 import type { AccountsPaymentCounts } from '../../../shared/contracts';
 import { PartPaymentsView } from '../payments/PartPaymentsView';
 import { useNotifications } from '../../context/NotificationContext';
@@ -18,6 +18,7 @@ import { ClientLogins } from './ClientLogins';
 import { BusinessVerification } from './BusinessVerification';
 import { AccountsInvoices } from './AccountsInvoices';
 import { AccountsPlans } from './AccountsPlans';
+import { RechargeVerification } from '../recharges/RechargeVerification';
 import { AccountsOverview } from './finance/AccountsOverview';
 import { AccountsIncome } from './finance/AccountsIncome';
 import { AccountsDepartmentIncome } from './finance/AccountsDepartmentIncome';
@@ -35,7 +36,7 @@ import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { LeaveCenter } from '../leave/LeaveCenter';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
 
-const ACCOUNTS_PAGES = ['overview', 'wallet-admin', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'payouts', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
+const ACCOUNTS_PAGES = ['overview', 'wallet-admin', 'income', 'confirmations', 'client-logins', 'business-verification', 'invoices', 'recharges', 'plans', 'part-payments', 'department-income', 'income-attribution', 'customer-revenue', 'finance-mails', 'business-reports', 'expenses', 'payouts', 'chat', 'raise-issue', 'work-reports', 'notifications'] as const;
 type Page = (typeof ACCOUNTS_PAGES)[number];
 
 /**
@@ -55,6 +56,8 @@ export const AccountsDashboard: React.FC = () => {
   const [addonsWaiting, setAddonsWaiting] = useState(0);
   // incentive withdrawals waiting for Accounts (20270123000100)
   const [payoutsWaiting, setPayoutsWaiting] = useState(0);
+  // Panel / Message recharges waiting for the payment to be verified
+  const [rechargesWaiting, setRechargesWaiting] = useState(0);
   const refreshCounts = () => {
     pipelineApi.accountsCounts().then(setCounts, () => setCounts(null));
     addonsApi.list({ pageSize: 1 }).then(
@@ -62,8 +65,11 @@ export const AccountsDashboard: React.FC = () => {
       () => setAddonsWaiting(0)
     );
     payoutsApi.counts().then(c => setPayoutsWaiting(c.requested), () => setPayoutsWaiting(0));
+    rechargesApi.list({ limit: 1, paymentStatus: 'PENDING_VERIFICATION' }).then(r => setRechargesWaiting(r.summary.pending), () => setRechargesWaiting(0));
   };
   useEffect(refreshCounts, []);
+  // the recharge queue changes while Accounts work in it: its badge is read again whenever the page changes
+  useEffect(() => { rechargesApi.list({ limit: 1, paymentStatus: 'PENDING_VERIFICATION' }).then(r => setRechargesWaiting(r.summary.pending), () => undefined); }, [page, pageKey]);
   useOpenChatRequest(React.useCallback(() => setPage('chat'), []));
   useOpenIssuesRequest(React.useCallback(() => setPage('raise-issue'), []));
   useOpenWalletAdminRequest(React.useCallback(() => setPage('wallet-admin'), []));
@@ -82,6 +88,7 @@ export const AccountsDashboard: React.FC = () => {
         { id: 'business-verification', label: 'Business Verification', icon: BadgeCheck, badge: addonsWaiting },
         { id: 'part-payments', label: 'Part Payment', icon: Wallet, badge: counts?.followUpsDue ?? 0 },
         { id: 'invoices', label: 'Invoices', icon: FileText },
+        { id: 'recharges', label: 'Recharge verification', icon: BadgeCheck, badge: rechargesWaiting },
         { id: 'plans', label: 'Monthly Plans', icon: Sparkles }
       ]
     },
@@ -140,6 +147,7 @@ export const AccountsDashboard: React.FC = () => {
       {page === 'client-logins' && <ClientLogins />}
       {page === 'business-verification' && <BusinessVerification onCountsChanged={refreshCounts} />}
       {page === 'invoices' && <AccountsInvoices />}
+      {page === 'recharges' && <RechargeVerification key={pageKey} />}
       {page === 'plans' && <AccountsPlans />}
       {page === 'part-payments' && <PartPaymentsView mode="accounts" onCountsChanged={refreshCounts} />}
       {page === 'department-income' && <AccountsDepartmentIncome key={pageKey} />}

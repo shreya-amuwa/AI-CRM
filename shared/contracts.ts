@@ -7850,26 +7850,42 @@ export interface ImprovementRequestRow {
 }
 
 // ---------------------------------------------------------------------------
-// Support Recharges (migration 20270228000200)
+// Support Recharges (migrations 20270228000200, 20270310000100)
 // ---------------------------------------------------------------------------
 export type RechargeKind = 'PANEL' | 'MESSAGE';
-export type RechargeStatus = 'PENDING' | 'VERIFIED' | 'COMPLETED' | 'REJECTED';
+export type RechargeBillingType = 'GST' | 'NON_GST';
+export type RechargePaymentStatus = 'PENDING_VERIFICATION' | 'PAYMENT_RECEIVED' | 'PAYMENT_NOT_RECEIVED' | 'REJECTED';
+export type RechargeInvoiceStatus = 'NOT_GENERATED' | 'GENERATED' | 'SENT' | 'EMAIL_SENT' | 'WHATSAPP_SENT' | 'PARTIALLY_SENT' | 'FAILED';
+export type RechargeVerifyDecision = 'RECEIVED' | 'NOT_RECEIVED' | 'REJECTED';
+export interface RechargeTimelineEvent { at: string; action: string; from: string | null; to: string | null; note: string | null; actorName: string | null }
 export interface SupportRecharge {
   id: string;
   reference: string;
   kind: RechargeKind;
+  customerId: string | null;
   customerName: string;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
+  customerGstin: string | null;
+  /** the customer's Relationship Manager when the recharge was made: read from the database, frozen on the recharge */
+  rmId: string | null;
+  rmName: string | null;
   rechargeDate: string;
+  billingType: RechargeBillingType;
+  /** the amount before GST (for Non-GST, the whole amount) */
+  rechargeAmount: number;
   gstAmount: number;
-  gstDetails: string | null;
-  nonGstAmount: number;
-  nonGstDetails: string | null;
   totalAmount: number;
-  status: RechargeStatus;
+  paymentReference: string | null;
   remarks: string | null;
-  statusNote: string | null;
-  statusAt: string | null;
-  statusByName: string | null;
+  supportStatus: 'SUBMITTED';
+  submittedAt: string;
+  paymentStatus: RechargePaymentStatus;
+  paymentNote: string | null;
+  paymentVerifiedAt: string | null;
+  paymentVerifiedByName: string | null;
+  invoiceStatus: RechargeInvoiceStatus;
   createdById: string;
   createdByName: string | null;
   teamName: string | null;
@@ -7878,7 +7894,13 @@ export interface SupportRecharge {
   screenshot: { id: string; name: string; mime: string; size: number } | null;
   /** decided by the database for the signed-in person */
   canEdit: boolean;
-  nextStatuses: RechargeStatus[];
+  canCorrect: boolean;
+  verifyActions: RechargeVerifyDecision[];
+  timeline?: RechargeTimelineEvent[];
+  /** the invoice, once Accounts generated it */
+  invoice?: RechargeInvoice | null;
+  /** the signed-in person is Accounts (or the Super Admin): the invoice controls are theirs */
+  isAccounts?: boolean;
 }
 export interface SupportRechargeSummary {
   totalRecharges: number;
@@ -7886,9 +7908,15 @@ export interface SupportRechargeSummary {
   totalGst: number;
   totalNonGst: number;
   pending: number;
-  verified: number;
-  completed: number;
+  pendingAmount: number;
+  received: number;
+  receivedAmount: number;
+  notReceived: number;
   rejected: number;
+  readyForInvoice: number;
+  invoiced: number;
+  delivered: number;
+  deliveryFailed: number;
 }
 export interface SupportRechargeList {
   items: SupportRecharge[];
@@ -7896,8 +7924,14 @@ export interface SupportRechargeList {
   limit: number;
   offset: number;
   summary: SupportRechargeSummary;
-  role: 'SUPER_ADMIN' | 'HEAD' | 'LEAD' | 'MEMBER';
+  role: 'SUPER_ADMIN' | 'ACCOUNTS' | 'HEAD' | 'LEAD' | 'MEMBER';
   canCreate: boolean;
+  isAccounts: boolean;
+}
+export interface RechargeCustomer { id: string; name: string; company: string | null; email: string | null; phone: string | null; address: string | null; gstin: string | null; rmId: string | null; rmName: string | null }
+/** Verified recharges per Relationship Manager (only payments Accounts confirmed are counted; pending is shown apart). */
+export interface RechargeRmPerformance {
+  rmId: string; rmName: string; panelAmount: number; messageAmount: number; totalAmount: number; panelCount: number; messageCount: number; totalCount: number; pendingAmount: number; pendingCount: number;
 }
 export interface RechargeUploadTicket {
   attachment: { id: string; name: string; mime: string; size: number };
@@ -7907,3 +7941,26 @@ export interface RechargeUploadTicket {
   token: string;
   upload?: { url: string; headers: Record<string, string> };
 }
+export type RechargeDeliveryChannel = 'EMAIL' | 'WHATSAPP';
+export type RechargeDeliveryStatus = 'SENDING' | 'SENT' | 'NOT_SENT' | 'FAILED';
+export interface RechargeDelivery {
+  id: string; channel: RechargeDeliveryChannel; status: RechargeDeliveryStatus; isResend: boolean; requestedAt: string; finishedAt: string | null; requestedByName: string | null;
+  /** Accounts only */
+  recipient?: string; detail?: string | null;
+}
+/** The invoice of a recharge. Support see the number, date, total and each channel's state; Accounts see all of it. */
+export interface RechargeInvoice {
+  id: string; rechargeId: string; number: string; invoiceType: 'GST' | 'NON_GST'; invoiceDate: string; taxableAmount: number; totalGst: number; totalAmount: number;
+  pdfStatus: 'PENDING' | 'READY' | 'FAILED'; generatedAt: string; deliveries: RechargeDelivery[];
+  // Accounts only
+  taxTreatment?: 'INTRA_STATE' | 'INTER_STATE' | 'NONE'; hsnSac?: string; particulars?: string; gstRate?: number; cgstAmount?: number; sgstAmount?: number; igstAmount?: number;
+  customerName?: string; customerEmail?: string | null; customerPhone?: string | null; customerAddress?: string; customerGstin?: string | null; customerState?: string | null;
+  pdfError?: string | null; paymentReference?: string | null; paidOn?: string; generatedByName?: string | null; replayed?: boolean;
+}
+/** What the invoice would hold, and what is still missing (Accounts, before generating). */
+export interface RechargeInvoicePlan {
+  invoiceType: 'GST' | 'NON_GST'; taxTreatment: 'INTRA_STATE' | 'INTER_STATE' | 'NONE'; hsnSac: string; customerStateCode: string | null; customerState: string | null; supplierStateCode: string;
+  taxableAmount: number; gstRate: number; cgstAmount: number; sgstAmount: number; igstAmount: number; totalGst: number; totalAmount: number; missing: string[]; particulars: string;
+  paymentStatus: RechargePaymentStatus; invoiceStatus: RechargeInvoiceStatus; customerName: string; customerEmail: string | null; customerPhone: string | null; customerAddress: string | null; customerGstin: string | null;
+}
+export interface RechargeSendResult { channel: RechargeDeliveryChannel; status: RechargeDeliveryStatus | 'REFUSED'; message: string; deliveryId?: string; invoiceStatus?: RechargeInvoiceStatus }
