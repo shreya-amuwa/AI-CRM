@@ -451,11 +451,11 @@ returns jsonb language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.package_json(public.work_report_packages) from public, anon, authenticated;
 
--- the save (copy of 20270217000100; adds the three parts and refuses AI Studio, marked 20270306000100). The earlier seven-argument version is replaced.
-drop function if exists public.work_report_weekly_save(date, text, text, text, text, boolean, text);
+-- the save (copy of 20270217000100; adds the three parts and refuses AI Studio, marked 20270306000100) as a ten-argument function WITHOUT defaults, so no
+-- call can be ambiguous; the seven-argument version stays as a wrapper below (the earlier six-argument wrapper keeps calling it).
 create or replace function public.work_report_weekly_save(
   p_week_start date, p_title text, p_assigned_overview text, p_completed_overview text, p_remarks text, p_submit boolean,
-  p_division text, p_pending_overview text default null, p_achievements text default null, p_challenges text default null)
+  p_division text, p_pending_overview text, p_achievements text, p_challenges text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   me public.profiles;
@@ -563,5 +563,15 @@ end $$;
 
 revoke all on function public.work_report_weekly_save(date, text, text, text, text, boolean, text, text, text, text) from public, anon;
 grant execute on function public.work_report_weekly_save(date, text, text, text, text, boolean, text, text, text, text) to authenticated;
+
+-- the earlier seven-argument call: the same save without the three new parts (a re-save from an older screen keeps nothing it did not send)
+create or replace function public.work_report_weekly_save(
+  p_week_start date, p_title text, p_assigned_overview text, p_completed_overview text, p_remarks text, p_submit boolean, p_division text)
+returns jsonb language sql security definer set search_path = '' as $$
+  select public.work_report_weekly_save(p_week_start, p_title, p_assigned_overview, p_completed_overview, p_remarks, p_submit, p_division,
+                                        null::text, null::text, null::text)
+$$;
+revoke all on function public.work_report_weekly_save(date, text, text, text, text, boolean, text) from public, anon;
+grant execute on function public.work_report_weekly_save(date, text, text, text, text, boolean, text) to authenticated;
 
 notify pgrst, 'reload schema';
