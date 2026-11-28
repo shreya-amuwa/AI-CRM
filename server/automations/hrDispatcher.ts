@@ -139,10 +139,28 @@ async function finishEvent(db: SupabaseClient, s: AutomationSettings, ev: Claime
   return o.outcome;
 }
 
+/**
+ * Telecaller weekly performance (20270312000300): last week's figures (finalised once the call logs are in) and, when management approved the
+ * policy, the review meetings. Idempotent; it is not an e-mail, so it runs whatever AUTOMATION_MODE says. Never throws.
+ */
+export async function runTelecallerWeekly(db?: SupabaseClient, today?: string): Promise<Record<string, unknown> | { error: string } | null> {
+  if (!db && !hasServiceClient()) return null;
+  const { data, error } = await (db ?? getServiceClient()).rpc('tc_weekly_run', { p_today: today ?? null });
+  if (error) {
+    // a database without the migration yet: nothing to do
+    if (/tc_weekly_run/.test(error.message) && /(not find|does not exist)/i.test(error.message)) return null;
+    console.error(JSON.stringify({ level: 'error', msg: 'telecaller weekly run failed', error: error.message }));
+    return { error: error.message };
+  }
+  return data as Record<string, unknown>;
+}
+
 /** The scheduler tick: decide what is due, then send. Never throws (it runs inside other requests too). */
-export async function runHrAutomation(opts: { db?: SupabaseClient; today?: string } = {}): Promise<HrEmailRunSummary & { error?: string }> {
+export async function runHrAutomation(opts: { db?: SupabaseClient; today?: string; telecaller?: boolean } = {}): Promise<HrEmailRunSummary & { error?: string }> {
   const s = automationSettings();
   const out: HrEmailRunSummary & { error?: string } = { schedule: null, send: { mode: s.mode, claimed: 0, sent: 0, dryRun: 0, skipped: 0, retrying: 0, failed: 0 } };
+  // only on the scheduler tick (not after every HR click); before the e-mails, so a review meeting's invitation goes out in the same run
+  if (opts.telecaller) out.telecaller = await runTelecallerWeekly(opts.db, opts.today).catch(e => ({ error: String((e as Error)?.message ?? e) }));
   if (s.mode === 'off') return { ...out, send: { ...out.send, note: 'E-mail automation is switched off (AUTOMATION_MODE=off).' } };
   try {
     out.schedule = await scheduleHrEmails(opts.db, opts.today);

@@ -30,6 +30,13 @@ export interface HrMailPayload {
   ownStatus?: string;
   configIssue?: string | null;
   reviewPath?: string;
+  // the performance review meeting invitation (20270312000300)
+  meetingAt?: string;
+  meetingStatus?: string;
+  hrName?: string;
+  weekStart?: string;
+  weekEnd?: string;
+  minutes?: number;
 }
 
 export interface HrRenderOptions { appUrl?: string | null }
@@ -131,6 +138,19 @@ ${details([['Date of Joining', longDate(p.joiningDate)], ['Probation Completion 
 <p>Please ensure the employee's HR records are updated accordingly.</p>
 ${automationSignature}`;
       break;
+    case 'PERFORMANCE_REVIEW_MEETING': {
+      // private and neutral: no performance label, no figures (they are discussed in the meeting)
+      const at = p.meetingAt ? new Date(p.meetingAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const cancelled = p.meetingStatus === 'CANCELLED';
+      subject = cancelled ? `Meeting cancelled — Performance Review Meeting — ${name}` : `Performance Review Meeting — ${name}`;
+      html = `<p>Dear ${esc(name)},</p>
+${cancelled ? `<p>Your performance review meeting with ${esc(p.hrName ?? 'HR')} planned for ${esc(at)} has been cancelled. HR will contact you if a new time is needed.</p>`
+  : `<p>A performance review meeting has been scheduled with ${esc(p.hrName ?? 'HR')} to discuss your work for the week of ${esc(longDate(p.weekStart))} to ${esc(longDate(p.weekEnd))}, any challenges you faced and the support you may need.</p>
+${details([['Date and time', at], ['Duration', `${p.minutes ?? 30} minutes`], ['With', p.hrName ?? 'HR']])}
+<p>You can see the meeting under Meetings in the CRM. If this time does not suit you, please reply to this e-mail or contact HR to reschedule.</p>`}
+${hrSignatureRegards}`;
+      break;
+    }
     case 'REVIEW_FIRST':
     case 'REVIEW_SECOND':
       ({ subject, html } = renderReviewReminder(kind, name, p, opts));

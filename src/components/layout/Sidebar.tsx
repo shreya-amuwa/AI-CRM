@@ -80,6 +80,9 @@ export type ActiveTab =
   | 'hr_requests'
   | 'client_notices'
   | 'hr_probation'
+  | 'hr_attendance_statement'
+  | 'hr_internships'
+  | 'hr_telecaller_performance'
   | 'hr_paid_leave'
   | 'hr_recruitment_portal'
   | 'hr_recruitment'
@@ -351,6 +354,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     // the HR e-mails (birthday, anniversary, confirmation reminders) run on the server by themselves; only the approval is a person's job
     // Employee Confirmations (docs/hr-dashboard-upgrade.md): the review cycles, the Department Head / CEO reports and HR's final decision
     { id: 'hr_probation' as ActiveTab, label: 'Employee Confirmations', icon: ClipboardCheck },
+    // Attendance Statement (Phase 2): any period, filters, Excel / CSV export for the biometric reconciliation (HR only; the database decides)
+    ...(user?.profile?.hrSubRole !== 'HR_RECRUITER' ? [{ id: 'hr_attendance_statement' as ActiveTab, label: 'Attendance Statement & Export', icon: CalendarClock }] : []),
     // paid leave of confirmed employees (balances, the ledger, corrections; the policy for the HR Department Head)
     { id: 'hr_paid_leave' as ActiveTab, label: 'Paid Leave', icon: CalendarClock },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },

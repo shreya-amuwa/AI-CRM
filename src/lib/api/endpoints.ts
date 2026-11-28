@@ -3,7 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import { registerUnifiedDepartments } from '../auth/departmentRoles';
-import type { OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../../shared/hrUpgrade';
+import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../../shared/hrUpgrade';
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
 import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
@@ -1230,4 +1230,14 @@ export const hrReviewsApi = {
   decide: (id: string, body: Record<string, unknown>) => api.post<ReviewDetail>(`/hr/reviews/${id}/decide`, body),
   holidays: (year?: number) => api.get<OfficeHoliday[]>('/hr/holidays', year ? { year: String(year) } : {}),
   setHoliday: (day: string, name: string | null, remove = false) => api.post<OfficeHoliday[]>('/hr/holidays', { day, name: name ?? undefined, remove })
+};
+
+// Attendance statement (Phase 2): HR / Department HR only (the database checks)
+export const attendanceStatementApi = {
+  options: () => api.get<AttendanceStatementOptions>('/hr/attendance-statement/options'),
+  statement: (filters: Record<string, unknown>) => api.post<AttendanceStatement>('/hr/attendance-statement', filters),
+  exportPage: (body: { filters: Record<string, unknown>; type: string; format: 'XLSX' | 'CSV'; offset: number; limit?: number }) =>
+    api.post<AttendanceExportPage>('/hr/attendance-statement/export', body),
+  history: () => api.get<{ id: number; by: string | null; type: string; format: string; from: string; to: string; rows: number; at: string }[]>('/hr/attendance-statement/exports'),
+  setBiometricId: (profileId: string, biometricId: string) => api.post<unknown>('/hr/biometric-id', { profileId, biometricId })
 };

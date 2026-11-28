@@ -14440,10 +14440,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 // ---------------------------------------------------------------------------
 {
   const due = (await db.query(`select (private.hr_today() + 6)::text d, (private.hr_today() - interval '6 months' + interval '6 days')::date::text j`)).rows[0];
-  await db.query(`delete from public.hr_probation_cycles where employee_key = $1`, [memberA]);
+  await db.query(`delete from public.hr_probation_cycles where employee_key = $1::text`, [memberA]);
   const cyc = (await db.query(
     `insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date, probation_end, original_end)
-     select $1, p.id, p.full_name, p.email, 'EMP-API', p.department_id, d.name, $2::date, $3::date, $3::date from public.profiles p join public.departments d on d.id = p.department_id where p.id = $1 returning id`,
+     select $1::text, p.id, p.full_name, p.email, 'EMP-API', p.department_id, d.name, $2::date, $3::date, $3::date from public.profiles p join public.departments d on d.id = p.department_id where p.id = $1::uuid returning id`,
     [memberA, due.j, due.d])).rows[0].id as string;
   try {
     r = await api('a', 'GET', `/hr/reviews/${cyc}`);
@@ -14485,6 +14485,34 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.hr_probation_cycles where id = $1`, [cyc]);
     await db.query(`delete from public.office_holidays where day = '2027-01-26'`);
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 2: the attendance statement and export (20270312000200)
+// ---------------------------------------------------------------------------
+{
+  r = await api('a', 'POST', '/hr/attendance-statement', { from: '2026-11-01', to: '2026-11-07' });
+  check(r.status === 403, 'attendance statement API: an employee cannot read it', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement', { from: '2026-11-07', to: '2026-11-01' });
+  check(r.status === 422, 'attendance statement API: From later than To is refused before the database', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement', { from: '2026-11-01', to: '2026-11-07', statuses: ['NOT_A_STATUS'] });
+  check(r.status === 422, 'attendance statement API: unknown statuses are refused', r);
+  r = await api('hr', 'GET', '/hr/attendance-statement/options');
+  check(r.status === 200 && Array.isArray(r.json.data.departments) && r.json.data.employees.length > 0 && r.json.data.timeZone === 'Asia/Kolkata', 'attendance statement API: HR gets the filter choices', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement', { from: '2026-11-01', to: '2026-11-07', profileIds: [memberA], view: 'DAILY', pageSize: 10 });
+  check(r.status === 200 && r.json.data.total === 7 && r.json.data.rows.every((x: any) => x.profileId === memberA) && typeof r.json.data.summary.scheduledDays === 'number',
+    'attendance statement API: one employee, one row per calendar day (both dates included)', r);
+  r = await api('hr', 'POST', '/hr/attendance-statement/export', { filters: { from: '2026-11-01', to: '2026-11-07', profileIds: [memberA] }, type: 'DETAILED', format: 'CSV', offset: 0 });
+  check(r.status === 200 && r.json.data.total === 7 && r.json.data.rows.length === 7 && r.json.data.organization === 'Amuwa Corporation', 'attendance statement API: the export returns every row', r);
+  r = await api('hr', 'GET', '/hr/attendance-statement/exports');
+  check(r.status === 200 && r.json.data.some((x: any) => x.type === 'DETAILED' && x.format === 'CSV' && x.rows === 7), 'attendance statement API: the export is in the history', r);
+  r = await api('a', 'POST', '/hr/attendance-statement/export', { filters: { from: '2026-11-01', to: '2026-11-07' }, type: 'DETAILED', format: 'CSV', offset: 0 });
+  check(r.status === 403, 'attendance statement API: an employee cannot export', r);
+  r = await api('hr', 'POST', '/hr/biometric-id', { profileId: memberA, biometricId: 'API-77' });
+  check(r.status === 200 && r.json.data.biometricId === 'API-77', 'attendance statement API: HR records a biometric id', r);
+  r = await api('hr', 'POST', '/hr/biometric-id', { profileId: memberA, biometricId: '' });
+  check(r.status === 200 && r.json.data.biometricId === null, 'attendance statement API: and clears it', r);
 }
 
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);

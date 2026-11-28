@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../shared/hrUpgrade.js';
+import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../shared/hrUpgrade.js';
 import { unwrap } from './base.js';
 
 /**
@@ -24,4 +24,12 @@ export class HrUpgradeRepository {
   decide(id: string, p: Record<string, unknown>) { return this.rpc<ReviewDetail>('hr_review_decide', { p_cycle: id, p }); }
   holidays(year: number | null) { return this.rpc<OfficeHoliday[]>('office_holidays_list', { p_year: year }); }
   setHoliday(day: string, name: string | null, remove: boolean) { return this.rpc<OfficeHoliday[]>('office_holiday_set', { p_day: day, p_name: name, p_remove: remove }); }
+  // Phase 2: attendance statement
+  statement(f: Record<string, unknown>) { return this.rpc<AttendanceStatement>('attendance_statement', { f }); }
+  statementOptions() { return this.rpc<AttendanceStatementOptions>('attendance_statement_options'); }
+  exportPage(f: Record<string, unknown>, type: string, format: string, offset: number, limit: number) {
+    return this.rpc<AttendanceExportPage>('attendance_export', { f, p_type: type, p_format: format, p_offset: offset, p_limit: limit });
+  }
+  exportHistory() { return this.rpc<unknown[]>('attendance_export_history', { p_limit: 50 }); }
+  setBiometricId(profileId: string, biometricId: string | null) { return this.rpc<unknown>('hr_set_biometric_id', { p_profile: profileId, p_biometric: biometricId }); }
 }

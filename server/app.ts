@@ -305,7 +305,7 @@ app.on(['GET', 'POST'], '/internal/automations/dispatch', async c => {
     else tcFollowups = data;
   }
   // HR e-mails (birthdays, anniversaries, probation reminders, confirmations): decide what is due today, then send. Idempotent.
-  const hr = await runHrAutomation();
+  const hr = await runHrAutomation({ telecaller: true });
   // Welcome e-mails of new employees: the retries (and anything left waiting).
   const welcomeEmails = await runWelcomeEmailDispatch().catch(err => ({ error: err instanceof Error ? err.message : 'failed' }));
   // Candidate selection / rejection e-mails (queued by the database with each recruiter decision): the retries and anything left waiting. Backend only.

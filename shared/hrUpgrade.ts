@@ -158,6 +158,29 @@ export const reviewDecisionSchema = z.object({
   hrEvaluation: z.object({ ratings: ratings.default({}), answers: answers.default({}) }).strict().optional()
 }).strict();
 
+// Attendance statement (Phase 2)
+const uuidList = z.array(z.string().uuid()).max(500).default([]);
+export const ATTENDANCE_STATUS_FILTERS = ['PRESENT_ANY', 'PRESENT', 'LATE', 'LATE_ARRIVAL', 'HALF_DAY', 'ABSENT', 'APPROVED_LEAVE', 'WEEKLY_OFF', 'HOLIDAY',
+  'MISSING_PUNCH_OUT', 'EARLY_DEPARTURE', 'DISCREPANCY', 'IN_PROGRESS', 'NOT_STARTED'] as const;
+export const attendanceStatementSchema = z.object({
+  from: isoDate, to: isoDate,
+  departmentIds: uuidList, teamIds: uuidList, profileIds: uuidList,
+  designation: text(80).optional(), employmentType: z.enum(['Full-Time', 'Training / Probation', 'Intern', 'Left']).optional(),
+  employeeStatus: z.enum(['ACTIVE', 'INACTIVE', 'ALL']).default('ACTIVE'), shift: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  statuses: z.array(z.enum(ATTENDANCE_STATUS_FILTERS)).max(14).default([]),
+  view: z.enum(['DAILY', 'SUMMARY', 'REGISTER']).default('DAILY'),
+  sort: z.enum(['date', 'name', 'department', 'punch_in', 'hours', 'status']).default('date'), dir: z.enum(['asc', 'desc']).optional(),
+  page: z.number().int().min(1).max(10000).default(1), pageSize: z.number().int().min(10).max(200).default(50)
+}).strict().refine(f => f.from <= f.to, { message: 'From Date must not be later than To Date.', path: ['from'] });
+export const attendanceExportSchema = z.object({
+  filters: z.record(z.string(), z.unknown()),
+  type: z.enum(['DETAILED', 'SUMMARY', 'REGISTER', 'RAW_PUNCHES', 'RECONCILIATION']),
+  format: z.enum(['XLSX', 'CSV']),
+  offset: z.number().int().min(0).max(1_000_000).default(0),
+  limit: z.number().int().min(100).max(10000).default(5000)
+}).strict();
+export const biometricIdSchema = z.object({ profileId: z.string().uuid(), biometricId: z.string().trim().regex(/^[A-Za-z0-9._-]{0,40}$/, 'Use letters, digits, dot, dash or underscore.') }).strict();
+
 export const holidaySchema = z.object({ day: isoDate, name: text(120).optional(), remove: z.boolean().default(false) }).strict();
 export const holidayQuerySchema = z.object({ year: z.coerce.number().int().min(2020).max(2100).optional() }).strict();
 
@@ -206,3 +229,18 @@ export interface ReviewCards {
 export interface ReviewList { today: string; cards: ReviewCards; rows: ReviewRow[]; canManage: boolean; departments: { id: string; name: string }[] }
 export interface ReviewQueue { today: string; rows: ReviewRow[] }
 export interface OfficeHoliday { day: string; name: string }
+
+export interface AttendanceStatementSummary {
+  employees: number; employeeDays: number; scheduledDays: number; presentDays: number; absentDays: number; approvedLeaveDays: number; halfDays: number;
+  lateArrivals: number; earlyDepartures: number; missingPunches: number; netMinutes: number; breakMinutes: number; averageNetMinutes: number;
+}
+export interface AttendanceStatement {
+  from: string; to: string; view: 'DAILY' | 'SUMMARY' | 'REGISTER'; timeZone: string; today: string; summary: AttendanceStatementSummary;
+  total: number; page: number; pageSize: number; rows: Record<string, unknown>[];
+}
+export interface AttendanceStatementOptions {
+  departments: { id: string; name: string }[]; teams: { id: string; name: string; departmentId: string }[];
+  employees: { id: string; name: string; departmentId: string; teamId: string | null; active: boolean; designation: string | null }[];
+  designations: string[]; shifts: string[]; organization: string; timeZone: string; canExport: boolean;
+}
+export interface AttendanceExportPage { type: string; total: number; offset: number; rows: Record<string, unknown>[]; generatedAt: string; generatedBy: string; organization: string; timeZone: string }

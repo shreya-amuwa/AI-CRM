@@ -781,6 +781,12 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/hr/reviews/:id/decide', handler: hrUpgrade.decide, options: S },
   { method: 'GET', path: '/hr/holidays', handler: hrUpgrade.holidays },
   { method: 'POST', path: '/hr/holidays', handler: hrUpgrade.setHoliday, options: S },
+  // attendance statement (Phase 2): read with POST (the filters are lists); each export is recorded by the database
+  { method: 'GET', path: '/hr/attendance-statement/options', handler: hrUpgrade.statementOptions },
+  { method: 'POST', path: '/hr/attendance-statement', handler: hrUpgrade.statement },
+  { method: 'POST', path: '/hr/attendance-statement/export', handler: hrUpgrade.exportPage, options: S },
+  { method: 'GET', path: '/hr/attendance-statement/exports', handler: hrUpgrade.exportHistory },
+  { method: 'POST', path: '/hr/biometric-id', handler: hrUpgrade.setBiometricId, options: S },
   { method: 'GET', path: '/hr/awards', handler: hrAwards.overview },
   { method: 'GET', path: '/hr/awards/options', handler: hrAwards.options },
   { method: 'POST', path: '/hr/awards/winners', handler: hrAwards.declareWinners, options: S },

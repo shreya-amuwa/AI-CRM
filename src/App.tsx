@@ -37,6 +37,7 @@ import { isRestorableTab } from './components/layout/restorableTabs';
 const SuperAdminDashboard = lazy(() => import('./components/superadmin/SuperAdminDashboard').then(m => ({ default: m.SuperAdminDashboard })));
 const TrainingWorkspace = lazy(() => import('./components/hr/TrainingWorkspace').then(m => ({ default: m.TrainingWorkspace })));
 const RecruitmentManagement = lazy(() => import('./components/hr/RecruitmentManagement').then(m => ({ default: m.RecruitmentManagement })));
+const AttendanceStatement = lazy(() => import('./components/hr/AttendanceStatement').then(m => ({ default: m.AttendanceStatement })));
 const EmployeeReviews = lazy(() => import('./components/hr/reviews/EmployeeReviews').then(m => ({ default: m.EmployeeReviews })));
 const RechargeReminderCalls = lazy(() => import('./components/hr/RechargeReminderCalls').then(m => ({ default: m.RechargeReminderCalls })));
 const PaidLeaveManagement = lazy(() => import('./components/hr/PaidLeaveManagement').then(m => ({ default: m.PaidLeaveManagement })));
@@ -676,6 +677,8 @@ const MainAppContent: React.FC = () => {
               <Suspense fallback={<ScreenLoader />}><TrainingWorkspace /></Suspense>
             ) : currentActiveTab === 'hr_probation' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><EmployeeReviews type="PROBATION" /></Suspense>
+            ) : currentActiveTab === 'hr_attendance_statement' && currentDeptId === 'hr' ? (
+              <Suspense fallback={<ScreenLoader />}><AttendanceStatement /></Suspense>
             ) : currentActiveTab === 'hr_paid_leave' && currentDeptId === 'hr' ? (
               <Suspense fallback={<ScreenLoader />}><PaidLeaveManagement /></Suspense>
             ) : currentActiveTab === 'hr_issues' && currentDeptId === 'hr' ? (

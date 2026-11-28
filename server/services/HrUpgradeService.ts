@@ -1,5 +1,5 @@
-import type { OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../shared/hrUpgrade.js';
-import { holidayQuerySchema, holidaySchema, reviewDecisionSchema, reviewEvaluationSchema, reviewListQuerySchema, reviewReassignSchema,
+import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../shared/hrUpgrade.js';
+import { attendanceExportSchema, attendanceStatementSchema, biometricIdSchema, holidayQuerySchema, holidaySchema, reviewDecisionSchema, reviewEvaluationSchema, reviewListQuerySchema, reviewReassignSchema,
   reviewReturnSchema } from '../../shared/hrUpgrade.js';
 import { uuidSchema } from '../../shared/validation.js';
 import { sendHrCycleEmails } from '../automations/hrDispatcher.js';
@@ -49,5 +49,18 @@ export class HrUpgradeService {
   setHoliday(body: unknown): Promise<OfficeHoliday[]> {
     const i = parse(holidaySchema, body);
     return this.repo.setHoliday(i.day, i.name?.trim() || null, i.remove);
+  }
+  // Phase 2: attendance statement (the database checks HR / Department HR and the range rules again)
+  statement(body: unknown): Promise<AttendanceStatement> { return this.repo.statement(parse(attendanceStatementSchema, body) as Record<string, unknown>); }
+  statementOptions(): Promise<AttendanceStatementOptions> { return this.repo.statementOptions(); }
+  exportPage(body: unknown): Promise<AttendanceExportPage> {
+    const i = parse(attendanceExportSchema, body);
+    const f = parse(attendanceStatementSchema, { ...i.filters, view: 'DAILY', page: 1, pageSize: 50 }) as Record<string, unknown>;
+    return this.repo.exportPage(f, i.type, i.format, i.offset, i.limit);
+  }
+  exportHistory() { return this.repo.exportHistory(); }
+  setBiometricId(body: unknown) {
+    const i = parse(biometricIdSchema, body);
+    return this.repo.setBiometricId(i.profileId, i.biometricId || null);
   }
 }

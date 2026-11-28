@@ -470,7 +470,12 @@ export const hrUpgradeController = {
   start: (async ctx => ok(await svc(ctx).hrUpgrade.start(ctx.params.id))) as Handler,
   decide: (async ctx => ok(await svc(ctx).hrUpgrade.decide(ctx.params.id, ctx.req.body))) as Handler,
   holidays: (async ctx => ok(await svc(ctx).hrUpgrade.holidays(ctx.req.query))) as Handler,
-  setHoliday: (async ctx => ok(await svc(ctx).hrUpgrade.setHoliday(ctx.req.body))) as Handler
+  setHoliday: (async ctx => ok(await svc(ctx).hrUpgrade.setHoliday(ctx.req.body))) as Handler,
+  statement: (async ctx => ok(await svc(ctx).hrUpgrade.statement(ctx.req.body))) as Handler,
+  statementOptions: (async ctx => ok(await svc(ctx).hrUpgrade.statementOptions())) as Handler,
+  exportPage: (async ctx => ok(await svc(ctx).hrUpgrade.exportPage(ctx.req.body))) as Handler,
+  exportHistory: (async ctx => ok(await svc(ctx).hrUpgrade.exportHistory())) as Handler,
+  setBiometricId: (async ctx => ok(await svc(ctx).hrUpgrade.setBiometricId(ctx.req.body))) as Handler
 };
 
 export const hrAwardsController = {
@@ -521,7 +526,7 @@ export const hrController = {
   /** "Run the check now": decides what is due and sends it (HR staff only; the same work the scheduler does). */
   runEmailAutomation: (async ctx => {
     await svc(ctx).hr.emailOverview(); // the database refuses anyone who is not HR staff
-    return ok(await runHrAutomation());
+    return ok(await runHrAutomation({ telecaller: true }));
   }) as Handler
 };
 
