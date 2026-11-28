@@ -1,5 +1,5 @@
 -- =============================================================================
--- Support Recharges (20270228000200 + 20270308000100): Panel and Message recharges for a customer, credited to the customer's own Relationship Manager (RM),
+-- Support Recharges (20270228000200 + 20270310000100): Panel and Message recharges for a customer, credited to the customer's own Relationship Manager (RM),
 -- GST / Non-GST, a private payment screenshot, and Accounts verifying that the money really arrived.
 -- Uses rls_test.sql's Wabastore Department Head (dh_wab), Support Team Lead (sup_th), Support members (sup_plain, sup_b), a Sales member (tm_a), a Sales
 -- Team Lead (th_wab), the Accounts head and member (dh_acc, acc_m), the Super Admin (sa) and another department's head (dh_wbx). Synthetic data only; safe to run again.
@@ -9,8 +9,8 @@
 \echo '--- 160. Support Recharges'
 reset role;
 \i supabase/migrations/20270228000200_support_recharges.sql
-\i supabase/migrations/20270308000100_recharge_accounts_workflow.sql
-\i supabase/migrations/20270308000100_recharge_accounts_workflow.sql
+\i supabase/migrations/20270310000100_recharge_accounts_workflow.sql
+\i supabase/migrations/20270310000100_recharge_accounts_workflow.sql
 
 -- a re-run starts clean (the history table is append-only, so its guard is lifted for this clean-up only)
 alter table public.support_recharge_events disable trigger support_recharge_events_append_only;
