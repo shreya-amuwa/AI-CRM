@@ -31,9 +31,11 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
   const [date, setDate] = useState(existing?.reportDate ?? todayIso());
   const [selected, setSelected] = useState<string[]>(() => existing?.work?.map(w => w.taskId) ?? []);
   const [text, setText] = useState<Extra>(() => extraOf(existing));
-  // (20270308000100) the form asks three fields only: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). The Daily Work
-  // Description, the challenges and tomorrow's plan of an older report are kept as they are (sent back unchanged), never asked for.
+  // (20270308000100, 20270312000100) the form asks the three fields of every department: Work Completed (required, 10 to 150 words), Work Pending (100),
+  // Additional Note (50, stored as remarks). The Daily Work Description, the challenges and tomorrow's plan of an older report are kept as they are (sent back
+  // unchanged), never asked for.
   const withinLimits = reportWordsWithinLimits(text);
+  const [attempted, setAttempted] = useState(false);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
   const [error, setError] = useState('');
@@ -96,15 +98,12 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
       reportDate: date, taskIds: selected, ...text, workDescription: editing?.workDescription ?? undefined, submit,
       expectedUpdateIds: submit ? (preview?.updateIds ?? []) : undefined
     };
+    if (submit) setAttempted(true);
     const parsed = aiStudioDailyReportSchema.safeParse(body);
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Please check the form.'); return; }
     if (submit) {
       if (selected.length > 0 && (previewLoading || !preview)) { setError('The report is still being prepared. Try again in a moment.'); return; }
       const s = preview?.summary;
-      if (!text.workCompleted.trim() && (!s || s.updates === 0)) {
-        setError('Select a task with work recorded on this date, or describe the work you completed.');
-        return;
-      }
       const ok = await confirmAction({
         title: 'Submit Daily Report?',
         description: `It will be shared with ${ctx.data?.reviewer ?? 'your reviewer'} for review.`,
@@ -145,13 +144,17 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
 
       {/* 1. Report information */}
       <Card className="p-5 space-y-3">
+        <div>
+          <h2 className="text-base font-extrabold text-slate-900">{editing && editing.status !== 'DRAFT' ? 'Correct your Daily Report' : 'Daily Report'}</h2>
+          <p className="text-xs text-slate-500">Pick the tasks you worked on and say what you completed today. Your Team Lead reviews it.</p>
+        </div>
         <div className="grid sm:grid-cols-3 gap-3 items-end">
           <Field label="Report date" htmlFor="ai-dr-date" required>
             <input id="ai-dr-date" type="date" className={fieldCls} value={date} min={new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10)} max={ctx.data?.today ?? todayIso()}
               disabled={!!editing && editing.status !== 'DRAFT'} onChange={e => { setError(''); setDate(e.target.value); }} />
           </Field>
           <p className="sm:col-span-2 text-xs text-slate-500">
-            {ctx.data?.role === 'LEAD' ? 'Team Lead' : 'Team Member'} · {!ctx.data?.hasReviewer ? 'there is nobody to review this report yet; you can save a draft.' : `reviewed by ${ctx.data.reviewer}${ctx.data.route === 'TEAM_LEAD' ? ', then the Department Head' : ''}.`}
+            {ctx.data?.role === 'LEAD' ? 'Team Lead' : 'Team Member'} · {!ctx.data?.hasReviewer ? 'there is nobody to review this report yet; you can save a draft.' : `reviewed by ${ctx.data.reviewer}${ctx.data.route === 'TEAM_LEAD' ? '; once approved, it is sent to HR' : ''}.`}
           </p>
         </div>
         {existingId && (
@@ -220,24 +223,19 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
         </Card>
       )}
 
-      {/* 4. The report: three optional fields with word limits (20270308000100) */}
-      <Card className="p-5 space-y-3">
-        <div>
-          <h3 className="text-sm font-extrabold text-slate-900">Your report</h3>
-          <p className="text-xs text-slate-500">{selected.length === 0 ? 'Without a task, write the work you completed.' : 'The work recorded on your tasks is shown above; to correct it, open the task.'}</p>
-        </div>
-        <ReportWordFields idPrefix="ai-dr" values={text} inputClassName={textareaCls} onChange={(k, v) => { setText(t => ({ ...t, [k]: v })); setError(''); }} />
-      </Card>
-
-      {/* 5. Summary and 6. actions */}
-      <Card className="p-5 space-y-3">
+      {/* 4. The report: the three fields of every department (20270308000100, 20270312000100), then the summary and the actions */}
+      <Card className="p-5 space-y-4">
+        <ReportWordFields idPrefix="ai-dr" values={text} inputClassName={textareaCls} showMinimum={attempted} heading="Your report"
+          description={selected.length === 0 ? 'Write what you completed today. Work Pending and the Additional Note are optional.'
+            : 'The work recorded on your tasks is shown above (open a task to correct it). Summarise what you completed today.'}
+          onChange={(k, v) => { setText(t => ({ ...t, [k]: v })); setError(''); }} />
         {preview && selected.length > 0 && <WorkSummary s={preview.summary} />}
         {error && <ErrorBanner message={error} />}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+          {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
+          <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
           <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || !withinLimits}
             data-testid="daily-submit">{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
-          <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
-          {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
         </div>
       </Card>
       {openTask && <TaskDialog id={openTask} onClose={() => setOpenTask(null)} onChanged={() => setPreviewVersion(v => v + 1)} />}

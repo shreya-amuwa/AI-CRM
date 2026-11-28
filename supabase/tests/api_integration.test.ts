@@ -8491,9 +8491,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // the Monday and the Sunday of the current week (the weekly department report is a whole week)
   const thisMonday = (() => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); })();
   const thisSunday = new Date(new Date(`${thisMonday}T00:00:00Z`).getTime() + 6 * 86400000).toISOString().slice(0, 10);
-  const body = (o: Record<string, unknown> = {}) => ({ title: 'Daily report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { remarks: 'Closed three tickets' }, ...o });
-  // a Team Member report: title, date, assigned tasks, completed tasks
-  const mbody = (o: Record<string, unknown> = {}) => body({ content: { assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone] }, ...o });
+  // (20270312000100) every daily report has Work Completed (10 to 150 words)
+  const WC = 'Called the clients on the list and updated the sheet with their answers';
+  const body = (o: Record<string, unknown> = {}) => ({ title: 'Daily report', reportDate: today, periodType: 'DAILY', periodStart: today, periodEnd: today, content: { workCompleted: WC, remarks: 'Closed three tickets' }, ...o });
+  // a Team Member report: title, date, assigned tasks, completed tasks, Work Completed
+  const mbody = (o: Record<string, unknown> = {}) => body({ content: { assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone], workCompleted: WC }, ...o });
 
   // ---- sign-in and validation
   r = await api(null, 'GET', '/work-reports/context');
@@ -8522,9 +8524,10 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'work reports: a request cannot name a status, an author or a department', r);
 
   // ---- Team Member: draft, submit
-  r = await api('wr_m1', 'POST', '/work-reports', mbody({ content: { workCompleted: 'dropped', challenges: 'dropped', assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone] } }));
+  r = await api('wr_m1', 'POST', '/work-reports', mbody({ content: { workCompleted: WC, challenges: 'dropped', assignedTasks: [taskDone, taskOpen], completedTasks: [taskDone] } }));
   check(r.status === 201 && r.json.data.status === 'DRAFT' && r.json.data.kind === 'MEMBER'
-    && r.json.data.content.assignedTasks.length === 2 && r.json.data.content.completedTasks.length === 1 && !r.json.data.content.workCompleted && !r.json.data.content.challenges, 'work reports: saved as a draft with only the two task lists', r);
+    && r.json.data.content.assignedTasks.length === 2 && r.json.data.content.completedTasks.length === 1 && r.json.data.content.workCompleted === WC && !r.json.data.content.challenges,
+    'work reports: saved as a draft with the two task lists and Work Completed (20270312000100); other sections are dropped', r);
   const rid = r.json.data.id as string;
   r = await api('wr_m1', 'POST', `/work-reports/${rid}/submit`, {});
   check(r.status === 200 && r.json.data.status === 'SUBMITTED' && r.json.data.tlStatus === 'PENDING' && r.json.data.teamLead === 'WR tl1', 'work reports: submitted to the Team Lead (Pending Team Lead Approval)', r);
@@ -8614,7 +8617,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // ---- the boxes
   r = await api('wr_tl1', 'GET', `/work-reports/team-box?from=${today}&to=${today}`);
   check(r.status === 200 && r.json.data.totalMembers === 1 && r.json.data.counts.approved === 1 && r.json.data.counts.pendingDh === 0 && r.json.data.members[0].reports.length === 1, 'work reports: the Team Lead\'s box counts the member\'s fully approved report', r);
-  r = await api('wr_tl1', 'POST', '/work-reports', body({ title: 'Lead report', content: { remarks: 'Reviewed the pipeline' } }));
+  r = await api('wr_tl1', 'POST', '/work-reports', body({ title: 'Lead report', content: { workCompleted: WC, remarks: 'Reviewed the pipeline' } }));
   check(r.status === 201 && r.json.data.kind === 'TEAM_LEAD', 'work reports: the Team Lead writes an individual report', r);
   const leadReport = r.json.data.id as string;
   r = await api('wr_tl1', 'POST', `/work-reports/${leadReport}/submit`, {});
@@ -8630,7 +8633,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'APPROVED', 'work reports: the Department Head approves the Team Lead\'s report', r);
 
   // ---- Department Head: own report and the package
-  r = await api('wr_dha', 'POST', '/work-reports', body({ title: 'Department overview', content: { remarks: 'Hiring done' } }));
+  r = await api('wr_dha', 'POST', '/work-reports', body({ title: 'Department overview', content: { workCompleted: WC, remarks: 'Hiring done' } }));
   check(r.status === 201 && r.json.data.kind === 'DEPARTMENT_HEAD', 'work reports: the Department Head writes an individual report', r);
   const headReport = r.json.data.id as string;
   r = await api('wr_dha', 'POST', `/work-reports/${headReport}/submit`, {});
@@ -8655,7 +8658,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 404, 'work reports: a department they do not manage is closed', r);
   r = await api('wr_oh', 'POST', `/work-reports/${headReport}/review`, { decision: 'REVISION_REQUIRED', comment: 'Add the targets' });
   check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED', 'work reports: the Operations Head sends the Department Head\'s report back', r);
-  r = await api('wr_dha', 'PATCH', `/work-reports/${headReport}`, body({ title: 'Department overview', content: { remarks: 'Hiring done, hit 90%' } }));
+  r = await api('wr_dha', 'PATCH', `/work-reports/${headReport}`, body({ title: 'Department overview', content: { workCompleted: WC, remarks: 'Hiring done, hit 90%' } }));
   check(r.status === 200 && r.json.data.status === 'REVISION_REQUIRED', 'work reports: the author edits the report that was sent back', r);
   r = await api('wr_dha', 'POST', `/work-reports/${headReport}/submit`, {});
   check(r.status === 200 && r.json.data.revision === 2, 'work reports: resubmitted as revision 2', r);
@@ -8667,7 +8670,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.length === 1 && r.json.data[0].id === rid, 'work reports: My Reports holds only my own', r);
   r = await api('wr_mb', 'GET', '/work-reports/mine');
   check(r.status === 200 && r.json.data.length === 0, 'work reports: another member has none', r);
-  r = await api('wr_mb', 'POST', '/work-reports', mbody({ content: { assignedTasks: [taskOther], completedTasks: [taskOther] } }));
+  r = await api('wr_mb', 'POST', '/work-reports', mbody({ content: { assignedTasks: [taskOther], completedTasks: [taskOther], workCompleted: WC } }));
   const draftId = r.json.data.id as string;
   await db.query(`update public.work_tasks set status = 'IN_PROGRESS', completed_at = null where id = $1`, [taskOther]);
   r = await api('wr_mb', 'POST', `/work-reports/${draftId}/submit`, {});
@@ -8675,7 +8678,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('wr_tl1', 'POST', '/work-reports', body({ content: {}, reportDate: yesterday, periodStart: yesterday, periodEnd: yesterday }));
   const emptyLead = r.json.data.id as string;
   r = await api('wr_tl1', 'POST', `/work-reports/${emptyLead}/submit`, {});
-  check(r.status === 422, 'work reports: a report needs assigned tasks or a short remark to be submitted', r);
+  check(r.status === 422 && /at least 10 words in Work Completed/.test(r.json.error?.message ?? ''), 'work reports: a report needs Work Completed (10 words) to be submitted (20270312000100)', r);
   r = await api('wr_tl1', 'DELETE', `/work-reports/${emptyLead}`);
   check(r.status === 200, 'work reports: that draft can be deleted', r);
   r = await api('wr_mb', 'DELETE', `/work-reports/${draftId}`);
@@ -9343,7 +9346,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const std = (date: string, content: Record<string, unknown>) => ({ title: 'Daily report', reportDate: date, periodType: 'DAILY', periodStart: date, periodEnd: date, content });
   r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1], completedTasks: [t1], remarks: 'x'.repeat(501) }));
   check(r.status === 422, 'company reporting: the remarks are short (500 characters)', r);
-  r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1], completedTasks: [t1], remarks: 'Calls done.' }));
+  r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1], completedTasks: [t1], workCompleted: 'Called the twelve clients on the list and wrote down their answers', remarks: 'Calls done.' }));
   check(r.status === 201 && r.json.data.content.remarks === 'Calls done.' && r.json.data.assignedCount === 1 && r.json.data.completedCount === 1, 'company reporting: a Team Member report holds the tasks and the short remark', r);
   const m1Report = r.json.data.id as string;
   r = await api('rcx_m1', 'POST', '/work-reports', std(lastMonday, {}));
@@ -9352,7 +9355,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'SUBMITTED', 'company reporting: submitted to the Team Lead', r);
   r = await api('rcx_tl', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t1] }));
   check(r.status === 422, 'company reporting: a Team Lead cannot report a Team Member\'s task', r);
-  r = await api('rcx_tl', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t2], completedTasks: [t2], remarks: 'Team stand-up held.' }));
+  r = await api('rcx_tl', 'POST', '/work-reports', std(lastMonday, { assignedTasks: [t2], completedTasks: [t2], workCompleted: 'Held the team stand-up and reviewed the pipeline with every member', remarks: 'Team stand-up held.' }));
   check(r.status === 201 && r.json.data.kind === 'TEAM_LEAD' && r.json.data.periodType === 'DAILY', 'company reporting: a Team Lead report is the same daily form', r);
   const tlReport = r.json.data.id as string;
   r = await api('rcx_tl', 'POST', `/work-reports/${tlReport}/submit`, {});
@@ -11030,19 +11033,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 200 && r.json.data.status === 'COMPLETED', 'AI Design Studio: the Team Lead completes the member\'s part', r);
 
   // ---- daily reports
-  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, status: 'APPROVED' });
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted in the brand colours and sent to the client for review', clientId, status: 'APPROVED' });
   check(r.status === 422, 'AI Design Studio: a report cannot set its own status', r);
-  // (20270308000100) Work Completed / Work Pending / Additional Note: optional, at least one, with word limits
+  // (20270308000100, 20270312000100) Work Completed (required, 10 to 150 words) / Work Pending / Additional Note, with word limits
   r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { clientId, clientRequestId: 'ads-empty' });
-  check(r.status === 422 && /Write the work completed/.test(r.json.error?.message ?? ''), 'AI Design Studio: an empty report is refused', r);
-  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { pendingWork: Array.from({ length: 101 }, (_, i) => `w${i}`).join(' '), clientId, clientRequestId: 'ads-long' });
+  check(r.status === 422 && /at least 10 words in Work Completed/.test(r.json.error?.message ?? ''), 'AI Design Studio: a report without Work Completed is refused', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted in the brand colours and sent to the client for review', pendingWork: Array.from({ length: 101 }, (_, i) => `w${i}`).join(' '), clientId, clientRequestId: 'ads-long' });
   check(r.status === 422 && /at most 100 words/.test(r.json.error?.message ?? ''), 'AI Design Studio: Work Pending over 100 words is refused', r);
-  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted in the brand colours and sent to the client for review', clientId, clientRequestId: 'ads-r1' });
   check(r.status === 201 && r.json.data.status === 'PENDING_TL', 'AI Design Studio: a member\'s report waits for their Team Lead', r);
   const repId = r.json.data.id as string;
-  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted in the brand colours and sent to the client for review', clientId, clientRequestId: 'ads-r1' });
   check(r.status === 201 && r.json.data.id === repId, 'AI Design Studio: a double click returns the first report', r);
-  r = await api('ads_m0', 'POST', '/ai-design-studio/reports', { workCompleted: 'Poster draft' });
+  r = await api('ads_m0', 'POST', '/ai-design-studio/reports', { workCompleted: 'Poster draft finished with the new photos and the final text from the client' });
   check(r.status === 201 && r.json.data.status === 'PENDING_DH', 'AI Design Studio: an unassigned member\'s report goes straight to the Department Head', r);
   r = await api('ads_tl2', 'POST', `/ai-design-studio/reports/${repId}/review`, { decision: 'APPROVE' });
   check(r.status === 403 || r.status === 404, 'AI Design Studio: another Team Lead cannot approve it', r);
@@ -11190,7 +11193,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // daily reports: member -> lead -> head
   q = await api('aim1', 'GET', '/ai-studio/reports/context');
   check(q.status === 200 && q.json.data.reviewer === 'AI Lead One' && q.json.data.projects.length === 1, 'AI Studio: the report form knows the reviewer and the projects', q);
-  const rep = { projectId: crm.id, taskId: task1, reportDate: new Date().toISOString().slice(0, 10), workCompleted: 'Login screen', workInProgress: 'API tests', pendingWork: 'Docs', blockers: 'None', remarks: 'ok', submit: true };
+  const rep = { projectId: crm.id, taskId: task1, reportDate: new Date().toISOString().slice(0, 10), workCompleted: 'Built the login screen and connected it to the new sign-in API', workInProgress: 'API tests', pendingWork: 'Docs', blockers: 'None', remarks: 'ok', submit: true };
   q = await api('aim1', 'POST', '/ai-studio/reports', { ...rep, status: 'APPROVED' });
   check(q.status === 422, 'AI Studio: a status cannot be sent with a report', q);
   q = await api('aim1', 'POST', '/ai-studio/reports', rep);
@@ -11214,7 +11217,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 422, 'AI Studio: returning needs remarks', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'RETURN', comment: 'Add the test results' });
   check(q.status === 200 && q.json.data.status === 'RETURNED_BY_TL', 'AI Studio: the Team Lead returns it', q);
-  q = await api('aim1', 'PATCH', `/ai-studio/reports/${report1}`, { ...rep, workCompleted: 'Login screen and tests' });
+  q = await api('aim1', 'PATCH', `/ai-studio/reports/${report1}`, { ...rep, workCompleted: 'Built the login screen, connected it to the sign-in API and wrote the tests' });
   check(q.status === 200 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.revision === 2, 'AI Studio: the member edits and resubmits', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${report1}/review`, { decision: 'APPROVE', comment: 'Good' });
   // (20270308000100) AI Studio daily: Team Member -> Team Lead -> HR; the Team Lead's approval is final
@@ -11242,7 +11245,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 403, 'AI Studio: a Sales member cannot open it', q);
 
   // a Team Lead's own report goes to the Super Admin
-  q = await api('ail1', 'POST', '/ai-studio/reports', { projectId: crm.id, reportDate: new Date().toISOString().slice(0, 10), workCompleted: 'Sprint planned', submit: true });
+  q = await api('ail1', 'POST', '/ai-studio/reports', { projectId: crm.id, reportDate: new Date().toISOString().slice(0, 10), workCompleted: 'Planned the next sprint with the team and split the stories into tasks', submit: true });
   check(q.status === 201 && q.json.data.status === 'PENDING_DH_APPROVAL', 'AI Studio: a Team Lead\'s own report goes straight to the Super Admin (the Department Head of AI Studio)', q);
   q = await api('ail2', 'GET', `/ai-studio/reports/${q.json.data.id}`);
   check(q.status === 404, 'AI Studio: another Team Lead cannot read it', q);
@@ -11264,17 +11267,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 422, 'AI Studio daily report: no task text can be sent with the report', q);
   // (20270308000100) the three fields' word limits (Work Completed 150, Work Pending 100, Additional Note 50); the description is optional
   const aiDesc = 'Finished the onboarding task, merged the pull request and updated the project documentation today.';
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, pendingWork: Array.from({ length: 101 }, (_, i) => `w${i}`).join(' ') });
+  // (20270312000100) Work Completed is required (10 to 150 words), with or without picked tasks
+  const aiWork = 'Finished the onboarding task and merged the pull request after the review';
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workCompleted: aiWork, pendingWork: Array.from({ length: 101 }, (_, i) => `w${i}`).join(' ') });
   check(q.status === 422 && /at most 100 words/.test(q.json.error.message), 'AI Studio daily report: Work Pending over 100 words is refused', q);
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, remarks: Array.from({ length: 51 }, (_, i) => `w${i}`).join(' ') });
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workCompleted: aiWork, remarks: Array.from({ length: 51 }, (_, i) => `w${i}`).join(' ') });
   check(q.status === 422 && /at most 50 words/.test(q.json.error.message), 'AI Studio daily report: an Additional Note over 50 words is refused', q);
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: [dailyUpdates[0]], workDescription: aiDesc });
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: [dailyUpdates[0]], workCompleted: aiWork, workDescription: aiDesc });
   check(q.status === 409, 'AI Studio daily report: a report the author did not see in full is not submitted', q);
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: aiDesc });
-  check(q.status === 201 && q.json.data.kind === 'DAILY' && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.work.length === 1 && q.json.data.workCompleted === null && q.json.data.tomorrowPlan === 'Docs',
-    'AI Studio daily report: submitted with no "work completed" text (the task carries the work)', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workCompleted: aiWork, workDescription: aiDesc });
+  check(q.status === 201 && q.json.data.kind === 'DAILY' && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.work.length === 1 && q.json.data.workCompleted === aiWork && q.json.data.tomorrowPlan === 'Docs',
+    'AI Studio daily report: submitted with the picked task and Work Completed (20270312000100)', q);
   const daily1 = q.json.data.id;
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], submit: true, workDescription: aiDesc });
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], submit: true, workCompleted: aiWork, workDescription: aiDesc });
   check(q.status === 409, 'AI Studio daily report: one report per day (a second click makes none)', q);
   q = await api('ail1', 'GET', `/ai-studio/reports/${daily1}`);
   check(q.status === 200 && q.json.data.frozen === true && q.json.data.summary.tasks === 1 && q.json.data.work[0].entries.length === 2 && q.json.data.canReview === true,
@@ -11306,7 +11311,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   q = await api('aim5', 'GET', '/ai-studio/reports/context');
   check(q.json.data.route === 'DIRECT' && q.json.data.hasReviewer === true, 'AI Studio: their report form says it goes straight to the Super Admin', q);
   const today = new Date().toISOString().slice(0, 10);
-  q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: crm.id, reportDate: today, workCompleted: 'Set up the repo', submit: true });
+  q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: crm.id, reportDate: today, workCompleted: 'Set up the repository, the build pipeline and the first test for the project', submit: true });
   check(q.status === 201 && q.json.data.status === 'PENDING_DH_APPROVAL' && q.json.data.leadId === null, 'AI Studio: without a Team Lead the report goes directly to the Super Admin', q);
   const directReport = q.json.data.id;
   q = await api('sa', 'GET', '/ai-studio/reports?view=department&status=PENDING_DH_APPROVAL');
@@ -11337,7 +11342,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.json.data.status === 'PENDING_DH_APPROVAL' && q.json.data.canReview === true, 'AI Studio: and it still waits for the Super Admin', q);
   q = await api('aim5', 'GET', '/ai-studio/reports/context');
   check(q.json.data.route === 'TEAM_LEAD' && q.json.data.reviewer === 'AI Lead One', 'AI Studio: the form now says reports go to the Team Lead first', q);
-  q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: aiqr.id, reportDate: today, workCompleted: 'AIQR review', submit: true });
+  q = await api('aim5', 'POST', '/ai-studio/reports', { projectId: aiqr.id, reportDate: today, workCompleted: 'Reviewed the AIQR screens with the designer and listed the fixes to make', submit: true });
   check(q.status === 201 && q.json.data.status === 'PENDING_TL_APPROVAL' && q.json.data.leadId === lead1, 'AI Studio: a new report follows Team Member -> Team Lead', q);
   q = await api('ail1', 'POST', `/ai-studio/reports/${q.json.data.id}/review`, { decision: 'APPROVE' });
   check(q.status === 200 && q.json.data.status === 'APPROVED', 'AI Studio: the Team Lead approves it: final, sent to HR (20270308000100)', q);
@@ -13040,7 +13045,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   try {
     let r = await api('uphMem', 'GET', `/performance-approval/overview${q}`);
     check(r.status === 403 && /for Team Leads and Department Heads/.test(r.json.error?.message ?? ''), 'International: a Team Member has no performance view (403)', r);
-    r = await api('uphMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared half of the follow-up list', progress: 40, pendingWork: 'The other half' });
+    r = await api('uphMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared half of the follow-up list and called the first three customers', progress: 40, pendingWork: 'The other half' });
     check(r.status === 201 && r.json.data.status === 'PENDING', 'International: the member still submits a daily report on the assigned task', r);
     const reportId = r.json.data.id;
     r = await api('uphLead', 'GET', `/performance-approval/overview${q}`);
@@ -13107,12 +13112,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   try {
     let r = await api('plpMem', 'GET', `/performance-approval/overview${q}`);
     check(r.status === 403, 'every department: a Team Member has no performance view (403)', r);
-    // (20270308000100) three optional fields with word limits: an empty report and a field over its limit are refused (the API and the database)
+    // (20270308000100, 20270312000100) three fields with word limits, Work Completed required: an empty report and a field over its limit are refused (the API and the database)
     r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today });
-    check(r.status === 422 && /Write the work completed/.test(r.json.error?.message ?? ''), 'every department: an empty daily report is refused (422)', r);
+    check(r.status === 422 && /at least 10 words in Work Completed/.test(r.json.error?.message ?? ''), 'every department: a daily report without Work Completed is refused (422)', r);
     r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' ') });
     check(r.status === 422 && /at most 150 words/.test(r.json.error?.message ?? ''), 'every department: Work Completed over 150 words is refused (422)', r);
-    r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared the first draft of the renewal list', progress: 40, pendingWork: 'The rest of the list' });
+    r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared the first draft of the renewal list for the sales team', progress: 40, pendingWork: 'The rest of the list' });
     check(r.status === 201 && r.json.data.status === 'PENDING', 'every department: the member submits a daily report (an older client may still send progress)', r);
     const reportId = r.json.data.id;
     const edit = { workCompleted: 'Prepared and checked the first draft of the renewal list', progress: 50, pendingWork: 'The rest of the list', reason: 'Progress checked against the sheet' };
@@ -13193,12 +13198,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     let r = await api('apiAiLead', 'GET', `/performance-approval/overview?${span}`);
     check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.members.some((m: any) => m.id === mem && m.metrics.tasks.total === 1 && m.metrics.reports.pending === 1),
       'AI Studio: the Team Lead\'s Performance Management reads AI Studio\'s tasks and reports', r.json.data);
-    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: '' });
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu, and connected both to the API', reason: '' });
     check(r.status === 422, 'AI Studio: a Team Lead\'s correction needs a reason (422)', r);
     r = await api('apiAiMem', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Changed by me', reason: 'I want to' });
     check(r.status === 403, 'AI Studio: the member cannot use the Team Lead\'s correction (403)', r);
-    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu', reason: 'Added the menu you also built' });
-    check(r.status === 200 && r.json.data.workCompleted === 'Built the first screen and the menu' && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.workCompleted),
+    r = await api('apiAiLead', 'POST', `/ai-studio/reports/${rep.id}/lead-edit`, { workCompleted: 'Built the first screen and the menu, and connected both to the API', reason: 'Added the menu you also built' });
+    check(r.status === 200 && r.json.data.workCompleted === 'Built the first screen and the menu, and connected both to the API' && r.json.data.history.some((h: any) => h.action === 'EDITED' && h.changes?.workCompleted),
       'AI Studio: the Team Lead corrects the waiting report; the history keeps the change', r);
     r = await api('apiAiLead', 'GET', `/performance-approval/people/${mem}/work?${span}`);
     check(r.status === 200 && r.json.data.source === 'AI_STUDIO' && r.json.data.tasks.some((t: any) => t.id === task.id && t.project === 'AI CRM'), 'AI Studio: the member\'s AI Studio task in the drill-down', r.json.data);
@@ -14063,7 +14068,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const desc = 'Prepared the client onboarding screens, fixed the mobile layout and reviewed the open tasks with the team.';
   r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' '), submit: true });
   check(r.status === 422, 'AI Studio HR API: Work Completed over 150 words is refused (20270308000100)', r);
-  r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: 'Onboarding screens', remarks: 'Good day', workDescription: desc, submit: true });
+  r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: 'Built the onboarding screens and connected them to the sign-up API today', remarks: 'Good day', workDescription: desc, submit: true });
   check(r.status === 201 && r.json.data.status === 'PENDING_TL_APPROVAL' && r.json.data.workDescription === desc && !r.json.data.sentToHrAt, 'AI Studio HR API: a valid report waits for the Team Lead', r);
   const reportId = r.json.data.id as string;
   r = await api('hpxl2', 'POST', `/ai-studio/reports/${reportId}/review`, { decision: 'APPROVE' });

@@ -7,6 +7,8 @@ import { SuperAdminPerformance } from '../../../src/components/superadmin/perfor
 import { DepartmentContext } from '../../../src/context/DepartmentContext';
 import { ReportForm as AdsReportForm } from '../../../src/components/ai-design-studio/AdsReports';
 import { AdsSessionProvider } from '../../../src/components/ai-design-studio/adsUi';
+import { DailyReportForm as WorkReportForm } from '../../../src/components/reports/DailyReportForm';
+import { ReportContentView } from '../../../src/components/reports/ReportContentView';
 import './withAppFeedback';
 
 /**
@@ -22,6 +24,7 @@ const tasks = [
   { id: '22222222-2222-4222-8222-222222222222', title: 'Overdue paperwork', status: 'ASSIGNED', priority: 'MEDIUM', dueDate: '2020-01-01', progress: 0, description: null, assignedAt: '2019-12-01', lastReportDate: null, reportedToday: false }
 ];
 let reports: any[] = [];
+let workReports: any[] = [];
 const history: Record<string, any[]> = {};
 let role: 'MEMBER' | 'TEAM_HEAD' | 'DEPARTMENT_HEAD' | 'SUPER_ADMIN' = 'MEMBER';
 // the Super Admin's departments (the department picker of their Performance Management)
@@ -72,6 +75,10 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const ok = (data: unknown) => new Response(JSON.stringify({ success: true, data }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   const fail = (status: number, code: string, message: string) => new Response(JSON.stringify({ success: false, error: { code, message } }), { status, headers: { 'Content-Type': 'application/json' } });
   if (p === '/task-reports/my-tasks') return ok(tasks);
+  // (20270312000100) the work report of the Reports menu: the same three fields (a fake that keeps what it is sent)
+  if (p === '/work-reports/my-tasks') return ok(tasks.map(t => ({ ...t, completedAt: null })));
+  if (p === '/work-reports' && method === 'POST') { workReports.push({ ...body, id: `wr${workReports.length + 1}` }); return ok({ id: `wr${workReports.length}`, status: 'DRAFT', kind: 'MEMBER', ...body }); }
+  if (/^\/work-reports\/wr\d+\/submit$/.test(p)) return ok({ id: p.split('/')[2], status: 'SUBMITTED', kind: 'MEMBER' });
   if (p === '/task-reports' && method === 'POST') {
     const t = tasks.find(x => x.id === body.taskId)!;
     const date = body.reportDate || TODAY;
@@ -165,7 +172,7 @@ const OLD_AI_REPORT = { id: 'ai0', reportDate: TODAY, projectId: 'aaaaaaaa-0000-
   blockers: null, remarks: null, status: 'RETURNED_BY_TL', tlComment: 'Add detail', dhComment: null } as any;
 const OLD_ADS_REPORT = { id: 'aaaaaaaa-0000-4000-8000-0000000000a5', reportDate: TODAY, clientId: null, assignmentId: null, workCompleted: 'Old poster', workInProgress: null, pendingWork: 'Old pending',
   challenges: null, remarks: 'Old remark kept', attachments: [], status: 'RETURNED' } as any;
-w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-member' | 'perf-lead' | 'perf-head' | 'perf-sa' | 'ai-report' | 'ai-report-old' | 'ads-report' | 'ads-report-old') => {
+w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-member' | 'perf-lead' | 'perf-head' | 'perf-sa' | 'ai-report' | 'ai-report-old' | 'ads-report' | 'ads-report-old' | 'work-report' | 'work-report-view') => {
   role = what === 'perf-sa' ? 'SUPER_ADMIN' : what.endsWith('member') ? 'MEMBER' : what.endsWith('lead') ? 'TEAM_HEAD' : 'DEPARTMENT_HEAD';
   root?.unmount();
   document.body.innerHTML = '<div id="root"></div>';
@@ -174,6 +181,12 @@ w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-memb
     root.render(<AdsSessionProvider value={{ ctx: { role: 'TEAM_MEMBER', unassigned: false, leadName: 'Pari Gupta' } as any, people: [], reloadPeople: () => undefined }}>
       <AdsReportForm initial={what === 'ads-report-old' ? OLD_ADS_REPORT : undefined} onSaved={() => { w.__adsDone = true; }} />
     </AdsSessionProvider>);
+    return;
+  }
+  if (what === 'work-report') { root.render(<WorkReportForm kind="MEMBER" reportsTo={['Leena Lead']} onDone={(_r, submitted) => { if (submitted) w.__workDone = true; }} />); return; }
+  if (what === 'work-report-view') {
+    root.render(<ReportContentView kind="MEMBER" content={{ assignedTasks: [{ id: 't1', title: 'Update the account list', status: 'IN_PROGRESS' }], completedTasks: [],
+      workCompleted: 'Called the twelve clients on the list', pendingWork: 'Six more calls', remarks: 'Busy day' } as any} />);
     return;
   }
   if (what === 'ai-report' || what === 'ai-report-old') { root.render(<ReportForm existing={what === 'ai-report-old' ? OLD_AI_REPORT : undefined} onDone={() => { w.__aiDone = true; }} />); return; }
@@ -187,12 +200,13 @@ w.mount = (what: 'reports-member' | 'reports-lead' | 'reports-head' | 'perf-memb
     : <PerformanceApprovals title="Performance Management" />);
 };
 w.aiReports = () => aiReports;
-w.reset = () => { aiReports = []; try { localStorage.clear(); } catch { /* ignore */ } reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = true; waiting = 0; };
+w.workReports = () => workReports;
+w.reset = () => { aiReports = []; workReports = []; w.__workDone = false; try { localStorage.clear(); } catch { /* ignore */ } reports = []; memberRec = rec('PENDING', { canDecide: true }); leadRec = rec('PENDING', { id: 'rec2' }); w.__calls = []; strict = true; waiting = 0; };
 /** A waiting report of the member on the first task (for the Team Lead's drill-down). */
 w.seedReport = () => {
   const t = tasks[0];
   const r = { id: 'r1', taskId: t.id, taskTitle: t.title, taskStatus: t.status, taskPriority: t.priority, taskDueDate: t.dueDate, authorId: 'm1', author: 'Mohan Member', designation: null, departmentId: 'd1', teamId: 'tm',
-    reviewerId: 'l1', reportDate: TODAY, workCompleted: 'Updated half of the account list', progress: 40, pendingWork: 'The other half', delayReason: null, remarks: null,
+    reviewerId: 'l1', reportDate: TODAY, workCompleted: 'Updated half of the account list and called the first five customers', progress: 40, pendingWork: 'The other half', delayReason: null, remarks: null,
     status: 'PENDING', revision: 1, submittedAt: new Date().toISOString(), reviewedBy: null, reviewedAt: null, reviewRemarks: null, editedBy: null, editedAt: null };
   reports = [r]; history.r1 = [{ action: 'SUBMITTED', by: 'Mohan Member', at: r.submittedAt, from: null, to: 'PENDING', remarks: null, revision: 1 }];
 };

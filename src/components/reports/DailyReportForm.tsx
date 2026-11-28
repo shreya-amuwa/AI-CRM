@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Save, Send } from 'lucide-react';
-import { REPORT_REMARKS_MAX, type ReportKind } from '../../../shared/reportFields';
+import { type ReportKind } from '../../../shared/reportFields';
 import type { ReportTaskOption, WorkReportDetail } from '../../../shared/contracts';
-import { reportSaveSchema } from '../../../shared/validation';
+import { reportSaveSchema, reportSubmitProblems } from '../../../shared/validation';
+import { ReportWordFields, reportWordsWithinLimits, type ReportWordValues } from '../common/ReportWordFields';
 import { ApiError } from '../../lib/api/client';
 import { workReportsApi, type WorkReportForm } from '../../lib/api/workReports';
 import { btn, Card, ErrorBanner, Field, inputCls, Spinner } from '../team-member/pipeline/shared';
@@ -21,7 +22,8 @@ const WHO: Record<ReportKind, (names: string) => React.ReactNode> = {
 
 /**
  * THE standard daily report form, the same for every level (Team Member, Team Lead, Department Head): a title, the report date, the tasks
- * assigned to the author, the ones they completed and one short optional remark. The tasks are the author's own records
+ * assigned to the author, the ones they completed and (20270312000100) the three fields of every department's Daily Report (Work Completed,
+ * required, 10 to 150 words; Work Pending, 100; Additional Note, 50 — ReportWordFields). The tasks are the author's own records
  * (work_reports_my_tasks), the completed ones are only those the task records really show as completed, and the database checks both lists
  * again on save and on submit. "Save as draft" keeps the report private; "Submit report" sends it to the next reviewer.
  */
@@ -34,7 +36,10 @@ export const DailyReportForm: React.FC<{
 }> = ({ kind, reportsTo, initial, onDone, onCancel }) => {
   const uid = useId();
   const [title, setTitle] = useState(initial?.title ?? `Daily report - ${dateLabel(todayIso())}`);
-  const [remarks, setRemarks] = useState(initial?.content?.remarks ?? '');
+  const [text, setText] = useState<ReportWordValues>({
+    workCompleted: initial?.content?.workCompleted ?? '', pendingWork: initial?.content?.pendingWork ?? '', remarks: initial?.content?.remarks ?? ''
+  });
+  const [attempted, setAttempted] = useState(false);
   const [reportDate, setReportDate] = useState(initial?.reportDate ?? todayIso());
   const [tasks, setTasks] = useState<ReportTaskOption[] | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -97,13 +102,20 @@ export const DailyReportForm: React.FC<{
     periodType: 'DAILY',
     periodStart: reportDate,
     periodEnd: reportDate,
-    content: { assignedTasks: [...assigned], completedTasks: [...completed], ...(remarks.trim() ? { remarks: remarks.trim() } : {}) } as unknown as WorkReportForm['content']
-  }), [title, reportDate, assigned, completed, remarks]);
+    content: {
+      assignedTasks: [...assigned], completedTasks: [...completed],
+      ...(text.workCompleted.trim() ? { workCompleted: text.workCompleted.trim() } : {}),
+      ...(text.pendingWork.trim() ? { pendingWork: text.pendingWork.trim() } : {}),
+      ...(text.remarks.trim() ? { remarks: text.remarks.trim() } : {})
+    } as unknown as WorkReportForm['content']
+  }), [title, reportDate, assigned, completed, text]);
 
-  const validate = (): boolean => {
+  const validate = (submit: boolean): boolean => {
     const e: Record<string, string> = {};
     const parsed = reportSaveSchema.safeParse(body);
     if (!parsed.success) for (const i of parsed.error.issues) e[String(i.path[i.path[0] === 'content' ? 1 : 0])] ??= i.message;
+    // Work Completed's minimum is for submission only: a draft may be short
+    if (submit) for (const [k, m] of Object.entries(reportSubmitProblems(body.content as { workCompleted?: string; pendingWork?: string; remarks?: string }))) e[k] ??= m;
     if (reportDate > todayIso()) e.reportDate = 'The report date cannot be in the future.';
     if (reportDate < daysAgo(60)) e.reportDate = 'Choose a date within the last 60 days.';
     setErrors(e);
@@ -113,7 +125,8 @@ export const DailyReportForm: React.FC<{
   const run = async (submit: boolean) => {
     setProblem('');
     setNote('');
-    if (!validate()) return;
+    if (submit) setAttempted(true);
+    if (!validate(submit)) return;
     setBusy(submit ? 'submit' : 'draft');
     try {
       let saved = savedId ? await workReportsApi.update(savedId, body) : await workReportsApi.create(body);
@@ -135,7 +148,7 @@ export const DailyReportForm: React.FC<{
     <Card className="p-5">
       <form onSubmit={e => { e.preventDefault(); void run(true); }} noValidate className="space-y-4" aria-label="Submit report">
         <div>
-          <h2 className="text-base font-bold text-slate-900">{initial ? (sentBack ? 'Revise your daily report' : 'Edit your draft') : kind === 'MEMBER' ? 'Submit daily report' : 'My daily report'}</h2>
+          <h2 className="text-base font-bold text-slate-900">{initial ? (sentBack ? 'Revise your Daily Report' : 'Edit your draft') : kind === 'MEMBER' ? 'Daily Report' : 'My Daily Report'}</h2>
           <p className="text-xs text-slate-500 mt-0.5">{WHO[kind](reportsTo.join(', '))}</p>
         </div>
 
@@ -202,17 +215,15 @@ export const DailyReportForm: React.FC<{
           </div>
         )}
 
-        <Field label="Remarks / Work Summary" htmlFor={`${uid}-remarks`} error={errors.remarks}>
-          <span className="block text-[11px] text-slate-500 mb-1">Optional. A short note about your work or anything the tasks do not show.</span>
-          <textarea id={`${uid}-remarks`} className={`${inputCls} min-h-16`} rows={2} value={remarks} maxLength={REPORT_REMARKS_MAX} onChange={e => { setRemarks(e.target.value); setErrors(x => ({ ...x, remarks: '' })); }} aria-invalid={!!errors.remarks} />
-          <span className="block text-right text-[11px] text-slate-400 tabular-nums" aria-live="polite">{remarks.length}/{REPORT_REMARKS_MAX}</span>
-        </Field>
+        <ReportWordFields idPrefix={`${uid}-w`} values={text} errors={errors} disabled={!!busy} inputClassName={inputCls} showMinimum={attempted}
+          heading="Your report" description="Summarise what you completed. Work Pending and the Additional Note are optional."
+          onChange={(k, v) => { setText(x => ({ ...x, [k]: v })); setErrors(x => ({ ...x, [k]: '' })); }} />
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button type="button" className={btn.secondary} onClick={() => void run(false)} disabled={!!busy}><Save className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'draft' ? 'Saving...' : 'Save as draft'}</button>
-          <button type="submit" className={btn.primary} disabled={!!busy}><Send className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'submit' ? 'Submitting...' : sentBack ? 'Resubmit report' : 'Submit report'}</button>
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
+          {note ? <span role="status" className="text-xs text-emerald-700 sm:mr-auto">{note}</span> : null}
           {onCancel ? <button type="button" className={btn.secondary} onClick={onCancel} disabled={!!busy}>Cancel</button> : null}
-          {note ? <span role="status" className="text-xs text-emerald-700">{note}</span> : null}
+          <button type="button" className={btn.secondary} onClick={() => void run(false)} disabled={!!busy}><Save className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'draft' ? 'Saving...' : 'Save as draft'}</button>
+          <button type="submit" className={btn.primary} disabled={!!busy || !reportWordsWithinLimits(text)}><Send className="w-3.5 h-3.5" aria-hidden="true" /> {busy === 'submit' ? 'Submitting...' : sentBack ? 'Resubmit Daily Report' : 'Submit Daily Report'}</button>
         </div>
       </form>
     </Card>

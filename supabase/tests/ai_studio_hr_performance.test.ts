@@ -23,7 +23,7 @@ check(dailyDescriptionProblem(words(9))?.includes('at least 10') && dailyDescrip
 check(dailyDescriptionProblem(words(10)) === null && dailyDescriptionProblem(words(150)) === null, '10 and 150 words are accepted');
 
 // (20270308000100) the description is no longer asked for: the three fields' word limits apply instead
-const base = { reportDate: '2026-11-20', taskIds: [], workCompleted: 'Work' };
+const base = { reportDate: '2026-11-20', taskIds: [], workCompleted: words(10) };  // (20270312000100) Work Completed needs 10 words
 check(aiStudioDailyReportSchema.safeParse({ ...base, submit: true }).success, 'a submission without a description is accepted');
 check(!aiStudioDailyReportSchema.safeParse({ ...base, submit: true, workCompleted: words(151) }).success, 'Work Completed over 150 words is refused');
 check(aiStudioDailyReportSchema.safeParse({ ...base, submit: false, workCompleted: words(151) }).success, 'a draft may hold more (checked on submission)');

@@ -140,17 +140,17 @@ try {
     check(await page.locator('fieldset label').count() === 1, `${label}: the search narrows the list`);
     await page.getByPlaceholder('Search tasks or projects').fill('');
 
-    // nothing picked and nothing typed: the in-app message, no request
+    // nothing picked and nothing typed: the in-app message, no request (20270312000100: Work Completed is required, 10 to 150 words)
     await page.getByRole('button', { name: 'Submit Daily Report' }).click();
-    await page.getByText('Select a task with work recorded on this date, or describe the work you completed.').waitFor();
-    check(!calls.some(c => c.method === 'POST' && c.path.endsWith('/daily-reports')), `${label}: an empty report is not sent`);
+    await page.getByText('Write at least 10 words (10 more needed).').waitFor();
+    check(!calls.some(c => c.method === 'POST' && c.path.endsWith('/daily-reports')) && await page.getByText('Write at least 10 words in Work Completed (now 0).').count() === 1,
+      `${label}: an empty report is not sent, and Work Completed says what it needs`);
 
     // 3. pick tasks of two projects: the recorded work appears, read-only
     await page.getByRole('checkbox', { name: /Blockers to be found/ }).check();
     await page.getByRole('checkbox', { name: /Website Development/ }).check();
     await page.getByRole('checkbox', { name: /Not started yet/ }).check();
     await page.getByText('Automatically fetched from task records').waitFor();
-    check(await page.getByText('Select a task with work recorded on this date, or describe the work you completed.').count() === 0, `${label}: the earlier message goes once tasks are picked`);
     await page.getByTestId('completion-details').waitFor();
     check(await page.getByTestId('completion-details').innerText() === DONE_NOTE, `${label}: the completion details appear exactly as written, without typing them again`);
     const dev = page.getByTestId('report-task').filter({ hasText: 'Website Development' });
@@ -176,6 +176,7 @@ try {
     // 4. only the three fields are typed (20270308000100): Work Completed, Work Pending, Additional Note
     check(await page.getByLabel(/^Work Completed/).count() === 1 && await page.getByLabel(/^Work Pending/).count() === 1 && await page.getByLabel(/^Additional Note/).count() === 1
       && await page.getByLabel("Tomorrow's work plan").count() === 0 && await page.getByText('Additional information').count() === 0, `${label}: the report has the three fields only (no additional-work section)`);
+    await page.getByLabel(/^Work Completed/).fill('Finished the website development and the leads report for the client');
     await page.getByLabel(/^Work Pending/).fill('Write the tests');
     await page.getByLabel(/^Additional Note/).fill('Final testing');
 
@@ -206,7 +207,7 @@ try {
     await page.waitForFunction(() => !!window.done);
     const post = calls.filter(c => c.method === 'POST' && c.path.endsWith('/daily-reports')).pop();
     check(JSON.stringify(post.body.taskIds) === JSON.stringify([id(1), id(2), id(3)]) && JSON.stringify([...post.body.expectedUpdateIds].sort()) === JSON.stringify([id(201), id(202), id(203), id(204)])
-      && post.body.pendingWork === 'Write the tests' && post.body.remarks === 'Final testing' && !post.body.tomorrowPlan && post.body.submit === true,
+      && post.body.workCompleted === 'Finished the website development and the leads report for the client' && post.body.pendingWork === 'Write the tests' && post.body.remarks === 'Final testing' && !post.body.tomorrowPlan && post.body.submit === true,
       `${label}: the request carries the task ids and the exact entries shown, plus the new remarks`, post.body);
     check(!/Leads responding|Mobile responsiveness|github\.com|vercel\.app/.test(JSON.stringify(post.body)) && !('attachments' in post.body) && !('files' in post.body),
       `${label}: no task text, link or file is sent with the report (references only)`);

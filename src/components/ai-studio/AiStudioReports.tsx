@@ -58,7 +58,9 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
   const tasks = useMemo(() => (ctx.data?.tasks ?? []).filter(t => t.projectId === projectId), [ctx.data, projectId]);
   useEffect(() => { if (taskId && !tasks.some(t => t.id === taskId)) setTaskId(''); }, [tasks, taskId]);
 
+  const [attempted, setAttempted] = useState(false);
   const save = async (submit: boolean) => {
+    if (submit) setAttempted(true);
     const parsed = aiStudioReportSchema.safeParse({ projectId, taskId: taskId || null, reportDate: date, ...text, submit });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? 'Please check the form.'); return; }
     setSaving(submit ? 'submit' : 'draft');
@@ -99,7 +101,7 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
             </select>
           </Field>
         </div>
-        <ReportWordFields idPrefix="ai-rp" values={text} inputClassName={textareaCls} onChange={(k, v) => setText(t => ({ ...t, [k]: v }))} />
+        <ReportWordFields idPrefix="ai-rp" values={text} inputClassName={textareaCls} showMinimum={attempted} onChange={(k, v) => setText(t => ({ ...t, [k]: v }))} />
         {shownParts(existing ?? {}).filter(p => p.legacy).map(p => (
           <Field key={p.key} label={p.label} htmlFor={`ai-rp-${p.key}`}>
             <textarea id={`ai-rp-${p.key}`} className={textareaCls} rows={3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
@@ -115,10 +117,10 @@ export const ReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone: (r:
             : `When you submit, this report goes to ${ctx.data.reviewer} for approval, then for the final approval.`}
         </p>
         {error && <ErrorBanner message={error} />}
-        <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || !reportWordsWithinLimits(text)}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
-          <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
           {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}
+          <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
+          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || !reportWordsWithinLimits(text)}>{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
         </div>
       </Card>
     </form>

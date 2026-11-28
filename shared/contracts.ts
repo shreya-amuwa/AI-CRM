@@ -4821,7 +4821,9 @@ import type { ReportFieldKey, ReportKind as WorkReportKind, ReportPeriodType as 
 export interface ReportAttachment { name?: string; url: string }
 /** A task of the member as it was when the report was saved (the real record lives in work_tasks). */
 export interface WorkReportTask { id: string; title: string; status: string; priority?: string; dueDate?: string | null; completedAt?: string | null }
-export type WorkReportContent = Partial<Record<ReportFieldKey, string>> & { attachments?: ReportAttachment[]; assignedTasks?: WorkReportTask[]; completedTasks?: WorkReportTask[] };
+export type WorkReportContent = Partial<Record<ReportFieldKey, string>> & { attachments?: ReportAttachment[]; assignedTasks?: WorkReportTask[]; completedTasks?: WorkReportTask[];
+  /** (20270312000100) the daily report's Work Pending (Work Completed is `workCompleted`, the Additional Note is `remarks`). */
+  pendingWork?: string };
 /** One task the member can pick for a report (work_reports_my_tasks). */
 export interface ReportTaskOption { id: string; title: string; status: string; priority: string; dueDate: string | null; progress: number; completedAt: string | null; assignedAt: string }
 export type ReportApprovalStage = 'TEAM_LEAD' | 'DEPARTMENT_HEAD';

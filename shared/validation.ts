@@ -2410,12 +2410,19 @@ export const reportSaveSchema = z
         attachments: z.array(reportAttachmentSchema).max(5, 'Add at most 5 attachment links.').optional(),
         // Team Member report: ids of the member's own tasks (the database checks they were assigned to the author and are really completed)
         assignedTasks: z.array(uuidSchema).max(100, 'Choose at most 100 tasks.').optional(),
-        completedTasks: z.array(uuidSchema).max(100, 'Choose at most 100 tasks.').optional()
+        completedTasks: z.array(uuidSchema).max(100, 'Choose at most 100 tasks.').optional(),
+        // (20270312000100) the daily report's Work Pending (Work Completed and the Additional Note (remarks) are keys above)
+        pendingWork: z.string().trim().max(4000).optional()
       })
       .default({})
   })
   .strict()
-  .refine(reportPeriodRefine, { message: 'The reporting period must end on or after its start.', path: ['periodEnd'] });
+  .refine(reportPeriodRefine, { message: 'The reporting period must end on or after its start.', path: ['periodEnd'] })
+  // (20270312000100) the three fields' maximums on every save; Work Completed's minimum (10 words) is checked on submission (reportSubmitReady, and the database)
+  .superRefine((d, ctx) => addReportWordMaxIssues(ctx, { workCompleted: d.content.workCompleted, pendingWork: d.content.pendingWork, remarks: d.content.remarks }, ['content']));
+/** (20270312000100) A work report can be submitted when its three fields are within their limits (Work Completed: 10 to 150 words). */
+export const reportSubmitProblems = (content: { workCompleted?: string; pendingWork?: string; remarks?: string } | null | undefined) =>
+  dailyReportProblems({ workCompleted: content?.workCompleted, pendingWork: content?.pendingWork, remarks: content?.remarks });
 
 export const reportReviewSchema = z
   .object({ decision: z.enum(['APPROVED', 'REJECTED', 'REVISION_REQUIRED']), comment: optionalText(2000) })
@@ -3262,7 +3269,7 @@ export const adsReportSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    // (20270312000100) Work Completed is required (10 to 150 words); the minimum replaces the "at least one field" rule
     addReportWordIssues(ctx, { workCompleted: v.workCompleted ?? undefined, pendingWork: v.pendingWork ?? undefined, remarks: v.remarks ?? undefined });
   });
 export type AdsReportInput = z.infer<typeof adsReportSchema>;
@@ -3440,23 +3447,43 @@ export const aiStudioDailyReportSchema = z
   });
 export type AiStudioDailyReportInput = z.infer<typeof aiStudioDailyReportSchema>;
 
-// ---- Daily report fields, every department (20270308000100): Work Completed / Work Pending / Additional Note, all optional, each with a word limit ----
+// ---- Daily report fields, every department (20270308000100): Work Completed / Work Pending / Additional Note, each with a word limit ----
+// (20270312000100) Work Completed is required, with at least 10 words; Work Pending and the Additional Note stay optional.
 export const DAILY_REPORT_FIELDS = [
-  { key: 'workCompleted', label: 'Work Completed', maxWords: 150 },
-  { key: 'pendingWork', label: 'Work Pending', maxWords: 100 },
-  { key: 'remarks', label: 'Additional Note', maxWords: 50 }
+  { key: 'workCompleted', label: 'Work Completed', minWords: 10, maxWords: 150 },
+  { key: 'pendingWork', label: 'Work Pending', minWords: 0, maxWords: 100 },
+  { key: 'remarks', label: 'Additional Note', minWords: 0, maxWords: 50 }
 ] as const;
 export type DailyReportFieldKey = (typeof DAILY_REPORT_FIELDS)[number]['key'];
-/** The message for a field over its word limit, or null (the database's private.report_word_limits says the same). */
+/** The message for a field over its word limit, or null (the database's private.report_word_max says the same). */
 export function dailyReportWordProblem(key: DailyReportFieldKey, text: string | null | undefined): string | null {
   const f = DAILY_REPORT_FIELDS.find(x => x.key === key)!;
   const n = countWords(text);
   return n > f.maxWords ? `${f.label} can have at most ${f.maxWords} words (now ${n}).` : null;
 }
-function addReportWordIssues(ctx: z.RefinementCtx, v: Partial<Record<DailyReportFieldKey, string | null | undefined>>) {
+/** (20270312000100) The message for a field below its minimum on submission, or null (the database's private.report_word_limits says the same). */
+export function dailyReportMinProblem(key: DailyReportFieldKey, text: string | null | undefined): string | null {
+  const f = DAILY_REPORT_FIELDS.find(x => x.key === key)!;
+  const n = countWords(text);
+  return n < f.minWords ? `Write at least ${f.minWords} words in ${f.label} (now ${n}).` : null;
+}
+/** Every problem of a submitted daily report, by field: the minimum (Work Completed) and the maximums. */
+export function dailyReportProblems(v: Partial<Record<DailyReportFieldKey, string | null | undefined>>): Partial<Record<DailyReportFieldKey, string>> {
+  const out: Partial<Record<DailyReportFieldKey, string>> = {};
+  for (const f of DAILY_REPORT_FIELDS) {
+    const problem = dailyReportWordProblem(f.key, v[f.key]) ?? dailyReportMinProblem(f.key, v[f.key]);
+    if (problem) out[f.key] = problem;
+  }
+  return out;
+}
+function addReportWordIssues(ctx: z.RefinementCtx, v: Partial<Record<DailyReportFieldKey, string | null | undefined>>, path: (string | number)[] = []) {
+  for (const [key, message] of Object.entries(dailyReportProblems(v))) ctx.addIssue({ code: 'custom', message, path: [...path, key] });
+}
+/** The maximums only (a draft may still be short). */
+function addReportWordMaxIssues(ctx: z.RefinementCtx, v: Partial<Record<DailyReportFieldKey, string | null | undefined>>, path: (string | number)[] = []) {
   for (const f of DAILY_REPORT_FIELDS) {
     const problem = dailyReportWordProblem(f.key, v[f.key]);
-    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: [f.key] });
+    if (problem) ctx.addIssue({ code: 'custom', message: problem, path: [...path, f.key] });
   }
 }
 
@@ -4087,7 +4114,7 @@ export const taskReportSubmitSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    // (20270312000100) Work Completed is required (10 to 150 words); the minimum replaces the "at least one field" rule
     addReportWordIssues(ctx, v);
   });
 export const taskReportReviewSchema = z
@@ -4107,7 +4134,7 @@ export const taskReportReviewerEditSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
-    if (!v.workCompleted && !v.pendingWork && !v.remarks) ctx.addIssue({ code: 'custom', message: 'Write the work completed, the work pending or an additional note.', path: ['workCompleted'] });
+    // (20270312000100) Work Completed is required (10 to 150 words); the minimum replaces the "at least one field" rule
     addReportWordIssues(ctx, v);
   });
 /** The reviewer updates the rating and remarks of an approved evaluation. */
