@@ -65,8 +65,9 @@ select test.check((select bool_and(relrowsecurity) from pg_class where oid in ('
 select test.check(not has_function_privilege('anon', 'public.recharge_create(jsonb)', 'execute') and not has_function_privilege('anon', 'public.recharge_verify_payment(uuid, text, text, numeric)', 'execute')
                   and not has_function_privilege('anon', 'public.recharge_rm_performance(date, date, uuid)', 'execute') and not has_function_privilege('anon', 'public.recharge_attachment_download(uuid)', 'execute'), 'an anonymous caller cannot run the recharge functions');
 select test.check(not has_function_privilege('authenticated', 'private.recharge_visible(public.support_recharges)', 'execute') and not has_function_privilege('authenticated', 'private.recharge_event(uuid, text, text, text, text, jsonb)', 'execute'), 'the private helpers are not callable');
-select test.check((select count(*) = 15 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-                    where n.nspname = 'public' and p.proname like 'recharge\_%' and p.prosecdef and p.proconfig @> array['search_path=""']), 'every public recharge function is SECURITY DEFINER with an empty search_path');
+-- no count of "all of them" here: the invoice migration (the next PR) adds more public recharge functions, and each must follow the same rule
+select test.check((select count(*) >= 15 and count(*) filter (where not (p.prosecdef and p.proconfig @> array['search_path=""'])) = 0 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'public' and p.proname like 'recharge\_%'), 'every public recharge function is SECURITY DEFINER with an empty search_path');
 
 \echo '   only Support staff may record; only Accounts (and the Super Admin) verify'
 set role authenticated;
