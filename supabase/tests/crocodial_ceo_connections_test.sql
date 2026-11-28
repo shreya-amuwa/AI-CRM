@@ -134,6 +134,32 @@ select test.must_fail($$select croc_mapping_check((select id from cc where k = '
   'the check does not show a Digitree employee either', 'VALIDATION_ERROR');
 select test.check((croc_mapping_check((select id from cc where k = 'a'), 501, test.id('lt_wab_tm'), test.dept('wabastore')) -> 'profile' ->> 'eligible')::boolean,
   'a Wabastore Sales member is eligible');
+-- who can be chosen: croc_mapping_candidates (the CEO cannot read other departments' profiles through the users list)
+create temp table cc_cand as select croc_mapping_candidates((select id from cc where k = 'a'), test.dept('wabastore')) as j;
+select test.check((select jsonb_array_length(croc_mapping_candidates((select id from cc where k = 'a'), test.dept('whatsbox'))) > 0
+                      and croc_mapping_candidates((select id from cc where k = 'a'), test.dept('whatsbox')) @> jsonb_build_array(jsonb_build_object('id', test.id('lt_wbx_tm')))),
+  'and of its other linked department (Whatsbox, the CEO''s home department)');
+reset role;
+select test.check((select j @> jsonb_build_array(jsonb_build_object('id', test.id('lt_wab_tm'))) from cc_cand),
+  'a CEO gets the candidates of a linked department they run outside their home department (the Wabastore Sales member)');
+select test.check((select bool_and(p.department_id = test.dept('wabastore') and p.status = 'ACTIVE')
+                     and bool_and((private.croc_profile_check(p.id, test.dept('wabastore'), 'SALES') ->> 'eligible')::boolean)
+                   from cc_cand, jsonb_array_elements(j) x join profiles p on p.id = (x ->> 'id')::uuid),
+  'only ACTIVE people of that department who can be mapped there (the same check as croc_mapping_create)');
+select test.check((select not (j @> jsonb_build_array(jsonb_build_object('id', test.id('lt_wbx_tm')))) and not (j @> jsonb_build_array(jsonb_build_object('id', test.id('lt_dg_tm'))))
+                   from cc_cand), 'never another department''s people');
+drop table cc_cand;
+set role authenticated;
+select test.cc_fails($$select croc_mapping_candidates((select id from cc where k = 'a'), test.dept('digitree'))$$,
+  'a department that is not linked (one the CEO does not run) is refused', 'VALIDATION_ERROR: Link this connection to the department''s Sales first.');
+select test.login('lt_ceo_b');
+select test.cc_fails($$select croc_mapping_candidates((select id from cc where k = 'a'), test.dept('whatsbox'))$$,
+  'a CEO who does not manage the connection gets no candidates (exact copy)', :'forbidden');
+select test.login('sh_head');
+select test.cc_fails($$select croc_mapping_candidates((select id from cc where k = 'a'), test.dept('wabastore'))$$, 'nor a plain Department Head', :'forbidden');
+select test.login('sa');
+select test.check(jsonb_typeof(croc_mapping_candidates((select id from cc where k = 'a'), test.dept('wabastore'))) = 'array', 'the MD gets the candidates on any connection');
+select test.login('lt_ceo_a');
 insert into cc select 'm1', (croc_mapping_create((select id from cc where k = 'a'), 501, test.id('lt_wab_tm'), test.dept('wabastore')) ->> 'id')::uuid;
 select test.check(croc_mapping_approve((select id from cc where k = 'm1')) ->> 'status' = 'APPROVED', 'the CEO approves the mapping');
 select test.login('lt_ceo_b');
@@ -423,5 +449,76 @@ set role service_role;
 select test.check((croc_token_store((select id from cc where k = 'b'), 'v1:x:y:z', :fp_a, '1a2b', test.id('lt_ceo_a')) ->> 'keySource') = 'DATABASE', 'once removed, the account can be connected elsewhere');
 reset role;
 drop table cc_store;
+reset role;
+select set_config('request.jwt.claims', '', false);
+
+\echo '   the MD''s switch-off is a real stop for every connection serving that department (no way around it)'
+\set fp_c '''cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'''
+set role authenticated;
+-- a spare connection of the CEO for Whatsbox only (before the MD's stop)
+select test.login('lt_ceo_a');
+insert into cc select 'spare', (croc_connection_save(jsonb_build_object('name', 'CC Spare', 'departmentIds', jsonb_build_array(test.dept('whatsbox')))) ->> 'id')::uuid;
+-- the MD switches off the Whatsbox + Wabastore connection (it has the CEO's stored key)
+select test.login('sa');
+select test.check((croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'b'), 'name', 'CC B', 'enabled', false)) ->> 'mdDisabledAt') is not null,
+  'the MD switches off the connection that holds the key');
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select test.cc_fails(format($$select croc_token_clear(%L, %L)$$, (select id from cc where k = 'b'), test.id('lt_ceo_a')),
+  'the CEO cannot Disconnect it (which would free the key for a new connection)', :'md_off');
+select test.cc_fails(format($$select croc_token_store(%L, 'v1:x:y:z', %L, 'cccc', %L)$$, (select id from cc where k = 'b'), :fp_c, test.id('lt_ceo_a')),
+  'nor change its key', :'md_off');
+reset role;
+select test.check((select token_fingerprint = :fp_a and token_last4 = '1a2b' from crocodial_connections where id = (select id from cc where k = 'b')), 'its key is untouched');
+set role authenticated;
+select test.login('lt_ceo_a');
+select test.cc_fails($$select croc_connection_save(jsonb_build_object('name', 'CC Around', 'departmentIds', jsonb_build_array(test.dept('wabastore'))))$$,
+  'the CEO cannot create a new connection for a department it serves', :'md_off');
+reset role;
+select test.check(not exists (select 1 from crocodial_connections where name = 'CC Around'), 'nothing was created');
+set role authenticated;
+select test.login('lt_ceo_a');
+select test.cc_fails($$select croc_department_link_save((select id from cc where k = 'spare'), test.dept('wabastore'), 'SALES', false)$$,
+  'nor add a link for that department to another connection', :'md_off');
+select test.cc_fails($$select croc_department_link_save((select id from cc where k = 'spare'), test.dept('whatsbox'), 'SALES', true)$$,
+  'nor switch on another connection''s link for that department', :'md_off');
+select test.cc_fails($$select croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', true))$$,
+  'nor switch on another connection that serves it', :'md_off');
+select test.check(not (croc_department_link_save((select id from cc where k = 'spare'), test.dept('whatsbox'), 'SALES', false, 'PRODUCTION') ->> 'enabled')::boolean,
+  'changing a link that stays off is still fine');
+reset role;
+select set_config('request.jwt.claims', '', false);
+set role service_role;
+select test.check((croc_token_store((select id from cc where k = 'spare'), 'v1:x:y:z', :fp_c, 'cccc', test.id('lt_ceo_a')) ->> 'keyLast4') = 'cccc',
+  'a key on a connection the MD did not switch off can still be saved (it stays off)');
+select test.check((croc_token_clear((select id from cc where k = 'b'), test.id('sa')) ->> 'keySource') = 'NONE', 'the MD may still Disconnect the switched-off connection');
+reset role;
+select test.check((select md_disabled_at is not null from crocodial_connections where id = (select id from cc where k = 'b')), 'which stays switched off by the MD');
+set role authenticated;
+select test.login('sa');
+select test.check((croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'b'), 'name', 'CC B', 'enabled', true)) ->> 'mdDisabledAt') is null,
+  'the MD switches it back on');
+select test.login('lt_ceo_a');
+select test.check((croc_department_link_save((select id from cc where k = 'spare'), test.dept('wabastore'), 'SALES', false) ->> 'departmentId')::uuid = test.dept('wabastore'),
+  'which lifts the stop: the CEO may add the link again');
+select test.check((croc_connection_save(jsonb_build_object('id', (select id from cc where k = 'a'), 'name', 'CC A', 'enabled', true)) ->> 'enabled')::boolean,
+  'and switch on another connection serving those departments');
+\echo '   the same for a link the MD switched off'
+select test.login('sa');
+select croc_department_link_save((select id from cc where k = 'b'), test.dept('whatsbox'), 'SALES', false);
+select test.login('lt_ceo_a');
+select test.cc_fails($$select croc_connection_save(jsonb_build_object('name', 'CC Around 2', 'departmentIds', jsonb_build_array(test.dept('whatsbox'))))$$,
+  'a link the MD switched off: no new connection for that department', :'md_off');
+select test.cc_fails($$select croc_department_link_save((select id from cc where k = 'spare'), test.dept('whatsbox'), 'SALES', true)$$,
+  'nor switching on another connection''s link for it', :'md_off');
+select test.check((croc_connection_save(jsonb_build_object('name', 'CC Wab only', 'departmentIds', jsonb_build_array(test.dept('wabastore')))) ->> 'id') is not null,
+  'a department the MD did not stop is not affected');
+select test.login('sa');
+select test.check((croc_department_link_save((select id from cc where k = 'b'), test.dept('whatsbox'), 'SALES', true) ->> 'mdDisabledAt') is null,
+  'the MD switches the link back on');
+select test.login('lt_ceo_a');
+select test.check((croc_department_link_save((select id from cc where k = 'spare'), test.dept('whatsbox'), 'SALES', true) ->> 'enabled')::boolean,
+  'which lifts the stop: the CEO may switch the other link on');
 reset role;
 select set_config('request.jwt.claims', '', false);

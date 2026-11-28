@@ -177,5 +177,19 @@ function syncDb(cipher: string) {
   check(s.statuses.length === 1 && s.statuses[0].p_connection === 'c1' && s.statuses[0].p_health === 'KEY_UNREADABLE' && s.statuses[0].p_error === null,
     'and the connection is marked KEY_UNREADABLE', s.statuses);
 }
+{
+  // a second server without AUTOMATION_SECRET_KEY (an old deployment that still receives the scheduled call): it cannot judge the key,
+  // so it reports what it sees and skips, never marking the key as needing re-entry
+  const s = syncDb(sealKey(KEY, 's1'));
+  const reports: any[] = [];
+  const rpc = s.db.rpc;
+  s.db.rpc = async (fn: string, a: any) => { if (fn === 'croc_runtime_report') reports.push(a); return rpc(fn, a); };
+  let calls = 0;
+  const fetch = async () => { calls++; return json(200, {}); };
+  const r = await runCrocodialSync({ db: s.db, env: {} as any, fetch, sleep: async () => undefined, minGapMs: 0 });
+  check(calls === 0 && s.statuses.length === 0, 'no AUTOMATION_SECRET_KEY on this server: nothing is sent to Crocodial and no health is written', { r, statuses: s.statuses });
+  check(reports.length === 1 && reports[0].p_connection === 'c1' && reports[0].p_detected === false && /Skipped/.test(r.connections[0]?.error ?? ''),
+    'it reports this server (key not readable here) and skips the connection', { reports, r });
+}
 
 console.log(`=== ${passed} CROCODIAL KEY CHECKS PASSED ===`);

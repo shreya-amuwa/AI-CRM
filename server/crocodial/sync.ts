@@ -199,7 +199,16 @@ export async function runCrocodialSync(
     out.connections.push(summary);
     // a key stored by the CRM comes first; one this server can no longer decrypt (AUTOMATION_SECRET_KEY changed) is never guessed around:
     // the connection is marked "Key needs to be entered again" and skipped
-    const stored = c.tokenCiphertext ? openKey(c.tokenCiphertext, keySecret(opts.env)) : null;
+    const secret = keySecret(opts.env);
+    if (c.tokenCiphertext && !secret) {
+      // This server has no AUTOMATION_SECRET_KEY at all (for example an old deployment that still receives the scheduled call): it
+      // cannot tell whether the key is good, so it only reports itself and leaves the read (and the health) to a server that has it.
+      await reportRuntime(db, c.id, runtimeInfo(opts.env), { nameValid: false, detected: false, formatValid: false }, opts.context ?? 'SYNC');
+      summary.health = 'KEY_UNREADABLE';
+      summary.error = 'Skipped: this server has no AUTOMATION_SECRET_KEY, so it cannot open the stored key; a server that has it reads this connection.';
+      continue;
+    }
+    const stored = c.tokenCiphertext ? openKey(c.tokenCiphertext, secret) : null;
     if (c.tokenCiphertext && !stored) {
       summary.health = 'KEY_UNREADABLE';
       summary.error = 'Key needs to be entered again.';
