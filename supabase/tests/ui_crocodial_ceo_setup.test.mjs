@@ -68,6 +68,8 @@ function api(req, res, body) {
   state.calls.push({ method: req.method, path: p, body });
   const o = state.o;
   // the MD-only reads: a CEO's page must not depend on them (the real server refuses a CEO)
+  if (state.md && p === '/crocodial/sync') return ok(res, []);
+  if (state.md && p === '/crocodial/connection-health') return ok(res, { connections: [], departments: [], items: [] });
   if (p === '/crocodial/sync' || p === '/crocodial/connection-health' || p === '/crocodial/rollout') return fail(res, 403, 'FORBIDDEN', 'Only the Super Admin can do this.');
   if (p === '/crocodial/admin') return ok(res, o);
   if (p === '/crocodial/connections' && req.method === 'POST') {
@@ -79,6 +81,8 @@ function api(req, res, body) {
       o.connections.push(c);
       for (const d of body.departmentIds ?? []) o.departmentLinks.push({ id: `link-${d}`, connectionId: NEW, departmentId: d, departmentName: o.departments.find(x => x.id === d)?.name, division: 'SALES', enabled: false, stage: 'PILOT', updatedAt: now, mdDisabledAt: null });
     }
+    if (body.enabled === false && !c.mdDisabledAt && state.md) c.mdDisabledAt = now;
+    if (body.enabled === true) c.mdDisabledAt = null;
     Object.assign(c, { name: body.name, externalAccountLabel: body.externalAccountLabel ?? null, enabled: body.enabled ?? c.enabled });
     return ok(res, c);
   }
@@ -211,6 +215,41 @@ try {
     const wide = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(wide <= 1, `${label}: no sideways scroll`, wide);
     check(errors.length === 0, `${label}: no script errors, no browser dialogs`, errors);
+    await ctx.close();
+  }
+
+  // ---- the Managing Director's view of the same connections ----
+  {
+    reset();
+    state.md = true;
+    state.o.rollout = [{ departmentId: DTALK, departmentName: 'D Talk', allowed: true, stage: 'PILOT' }];
+    state.o.connections.push(conn({ id: 'cccccccc-0000-4000-8000-0000000000a1', name: 'M Pillar Sales', credentialRef: 'CROCODIAL_MPILLAR', credentialConfigured: true, keySource: 'SERVER_SETTING', managedBy: [] }),
+      conn({ id: 'cccccccc-0000-4000-8000-0000000000a2', name: 'D Talk live', keySource: 'DATABASE', keyLast4: '1a2b', health: 'OK', enabled: true, managedBy: [AARTI, { id: 'x2', name: 'Bela CEO' }] }),
+      conn({ id: 'cccccccc-0000-4000-8000-0000000000a3', name: 'Unkeyed', keySource: 'NONE', managedBy: [AARTI] }));
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', e => errors.push(String(e)));
+    await answerAppDialogs(page);
+    await page.goto(base);
+    await page.evaluate(() => window.mount('MD'));
+    await page.getByRole('heading', { name: 'Crocodial Integration' }).waitFor();
+    await page.getByTestId('croc-connection').first().waitFor();
+    await page.waitForTimeout(200);
+    const card = n => page.getByTestId('croc-connection').filter({ hasText: n });
+    check(await card('D Talk live').getByTestId('croc-managed-by').innerText().then(t => /Managed by/.test(t) && /Aarti CEO, Bela CEO/.test(t)), 'MD: "Managed by" lists the CEO names');
+    check(/Managing Director only/.test(await card('M Pillar Sales').getByTestId('croc-managed-by').innerText()), 'MD: a connection no CEO manages says "Managing Director only"');
+    check(await card('D Talk live').getByTestId('croc-key-source').innerText() === 'Key: Stored (•••• 1a2b)', 'MD: a stored key shows "Stored (•••• 1a2b)"');
+    check(await card('M Pillar Sales').getByTestId('croc-key-source').innerText() === 'Key: Server setting', 'MD: a server-setting key shows "Server setting"');
+    check(await card('Unkeyed').getByTestId('croc-key-source').innerText() === 'Key: No key', 'MD: no key shows "No key"');
+    // the MD switches a connection off: the server marks it, the MD sees "Switched off by you"
+    const dl = card('D Talk live');
+    await dl.getByRole('button', { name: 'Switch off' }).first().click();
+    await dl.getByText('Switched off by you', { exact: false }).first().waitFor();
+    check(lastCall('POST', '/crocodial/connections').body.enabled === false, 'MD: "Switch off" sends enabled=false');
+    check(await dl.getByRole('button', { name: 'Switch on' }).first().isVisible(), 'MD: the MD can switch it back on');
+    check(!(await card('Unkeyed').getByText('Switched off by you').count()), 'MD: an item the MD did not switch off does not say so');
+    check(errors.length === 0, 'MD: no script errors', errors);
     await ctx.close();
   }
   console.log(`=== ${passed} CROCODIAL CEO SETUP BROWSER CHECKS PASSED ===`);
