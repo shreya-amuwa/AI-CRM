@@ -6,6 +6,7 @@ import {
 import { fmtDate, fmtDateTime, StatusPill } from './TaskParts';
 import { WorkUpdateForm } from './WorkUpdateForm';
 import { takePendingWorkUpdate, useOpenWorkUpdateTask } from './workUpdateEvents';
+import { Paged } from '../common/Paged';
 
 /**
  * Work updates inside the existing Task module (migration 20270116000100):
@@ -179,8 +180,9 @@ export const TaskWorkUpdates: React.FC<{ taskId: string; assigneeName?: string; 
                   {r.canFollowUp || (r.status === 'PENDING' && data.canManage) ? <div className="mt-2"><FollowUpButton r={r} onDone={reload} /></div> : null}
                 </div>
               ))}
+              <Paged items={data.timeline} noun="entries">{rows => (
               <ol className="space-y-1 border-l-2 border-slate-100 pl-3" aria-label="Task history">
-                {data.timeline.map((t, i) => (
+                {rows.map((t, i) => (
                   <li key={i} className="text-[11px] text-slate-600">
                     <span className="font-semibold text-slate-800">{TIMELINE_LABEL[t.kind]}</span>
                     {t.actorName ? ` · ${t.actorName}` : ''} · {fmtDateTime(t.at)}
@@ -190,6 +192,7 @@ export const TaskWorkUpdates: React.FC<{ taskId: string; assigneeName?: string; 
                   </li>
                 ))}
               </ol>
+              )}</Paged>
             </>
           )}
         </div>

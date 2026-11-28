@@ -8,6 +8,7 @@ import { getSupabase } from '../../services/supabaseClient';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, Pill, Spinner, type Tone } from '../team-member/pipeline/shared';
 import { APPROVER_LABEL, ROLE_LABEL } from './EmployeeRequestForm';
 import type { EmployeeRequestRole } from '../../../shared/validation';
+import { Paged } from '../common/Paged';
 
 const STATUS_TONE: Record<EmployeeRequest['status'], Tone> = { PENDING: 'orange', APPROVED: 'green', REJECTED: 'red' };
 const MAIL_TONE: Record<WelcomeEmailStatus, Tone> = { SENT: 'green', PENDING: 'indigo', PROCESSING: 'indigo', RETRYING: 'orange', FAILED: 'red', SKIPPED: 'red', DRY_RUN: 'slate' };
@@ -168,7 +169,9 @@ const RequestDetails: React.FC<{ id: string; fallback: EmployeeRequest; onClose:
       {r.history && r.history.length > 1 && (
         <div>
           <p className="text-xs font-bold text-slate-700 mb-1">Earlier attempts</p>
-          <ul className="space-y-1">{r.history.map(h => <li key={h.id} className="text-xs text-slate-600">Attempt {h.attempt}: {h.status.toLowerCase()}{h.decidedBy ? ` by ${h.decidedBy}` : ''}{h.decisionNote ? ` - ${h.decisionNote}` : ''}</li>)}</ul>
+          <Paged items={r.history} noun="attempts">{rows => (
+          <ul className="space-y-1">{rows.map(h => <li key={h.id} className="text-xs text-slate-600">Attempt {h.attempt}: {h.status.toLowerCase()}{h.decidedBy ? ` by ${h.decidedBy}` : ''}{h.decisionNote ? ` - ${h.decisionNote}` : ''}</li>)}</ul>
+          )}</Paged>
         </div>
       )}
       <div className="flex justify-end"><button type="button" className={btn.secondary} onClick={onClose}>Close</button></div>

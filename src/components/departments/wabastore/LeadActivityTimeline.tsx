@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Phone, MessageCircle, Send, CheckCircle2, ArrowRight, Calendar } from 'lucide-react';
+import { Paged } from '../../common/Paged';
 
 interface Lead {
   id: string;
@@ -96,8 +97,9 @@ export const LeadActivityTimeline: React.FC<LeadActivityTimelineProps> = ({ lead
                 <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gradient-to-b from-slate-200 via-slate-300 to-slate-200" />
 
                 {/* Timeline items */}
+                <Paged items={lead.activities} noun="updates">{rows => (
                 <div className="space-y-4">
-                  {lead.activities.map((activity, index) => (
+                  {rows.map((activity, index) => (
                     <div key={index} className="relative pl-16">
                       {/* Timeline dot */}
                       <div className={`absolute left-0 top-1.5 w-14 h-14 rounded-full flex items-center justify-center ${getActivityColor(activity.action)} border-4 border-white shadow-sm`}>
@@ -119,6 +121,7 @@ export const LeadActivityTimeline: React.FC<LeadActivityTimelineProps> = ({ lead
                     </div>
                   ))}
                 </div>
+                )}</Paged>
               </div>
             ) : (
               <div className="bg-slate-50 rounded-xl border border-slate-200 p-6 text-center">

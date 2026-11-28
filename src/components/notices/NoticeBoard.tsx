@@ -9,6 +9,7 @@ import { StagedFiles, TicketFileButton, useTicketFiles } from '../tickets/Ticket
 import { issueFileTransport } from '../issues/issueFiles';
 import { BugFiles } from '../bugs/bugUi';
 import { noticesChanged, takePendingNotice, useOpenNoticeRequest } from './noticeEvents';
+import { Paged } from '../common/Paged';
 
 /**
  * Notice Board (migration 20270131000200), in the side panel of every dashboard.
@@ -175,7 +176,9 @@ const NoticeDialog: React.FC<{ id: string; onClose: () => void; onChanged: () =>
             ) : null}
             {n.canManage && n.history && n.history.length > 1 ? (
               <details className="text-xs"><summary className="cursor-pointer font-semibold text-slate-600">History ({n.history.length})</summary>
-                <ol className="mt-1 space-y-1">{n.history.map(h => <li key={h.version + h.action}>v{h.version} · {h.action.toLowerCase()} by {h.by ?? '–'} · {when(h.at)}{h.before && typeof h.before.title === 'string' && h.before.title !== (h.after?.title as string) ? ` · was "${h.before.title}"` : ''}</li>)}</ol>
+                <Paged items={n.history} noun="versions">{rows => (
+                <ol className="mt-1 space-y-1">{rows.map(h => <li key={h.version + h.action}>v{h.version} · {h.action.toLowerCase()} by {h.by ?? '–'} · {when(h.at)}{h.before && typeof h.before.title === 'string' && h.before.title !== (h.after?.title as string) ? ` · was "${h.before.title}"` : ''}</li>)}</ol>
+                )}</Paged>
               </details>
             ) : null}
             <div className="flex flex-wrap justify-end gap-2">

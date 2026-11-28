@@ -10,6 +10,7 @@ import { meetingsApi, type MeetingReportFilters, type SummaryInput } from '../..
 import { SideDrawer } from '../common/SideDrawer';
 import { relabelRoles } from '../../../shared/roleNames';
 import { promptInput } from '../feedback/AppFeedback';
+import { Paged } from '../common/Paged';
 
 /**
  * Post-meeting summaries (Minutes of Meeting) of internal team meetings, and the CEO's Meeting Decisions (migration 20270124000200).
@@ -209,14 +210,16 @@ export const SummaryPanel: React.FC<{ meetingId: string; source?: 'meeting' | 'r
       {s?.comments && s.comments.length > 0 && (
         <div>
           <h4 className={sectionTitle}>Clarifications</h4>
+          <Paged items={s.comments} noun="comments">{rows => (
           <ul className="space-y-1.5">
-            {s.comments.map(c => (
+            {rows.map(c => (
               <li key={c.id} className={`rounded-lg p-2 text-sm ${c.kind === 'RESPONSE' ? 'bg-slate-50' : 'bg-violet-50'}`}>
                 <p className="text-xs text-slate-500">{c.kind === 'CLARIFICATION' ? 'Question' : c.kind === 'FOLLOW_UP' ? 'Follow-up' : 'Answer'} · {c.author ?? '—'} · {stamp(c.createdAt)}</p>
                 <p className="whitespace-pre-wrap">{c.body}</p>
               </li>
             ))}
           </ul>
+          )}</Paged>
         </div>
       )}
       {(view.can.clarify || view.can.reply) && (

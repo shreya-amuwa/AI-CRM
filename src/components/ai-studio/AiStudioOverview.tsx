@@ -8,6 +8,7 @@ import { Card, CardHead, StatCard } from '../tasks/head/headParts';
 import { ProjectDeadlines } from './DeadlineClock';
 import { useAiStudioChanged } from './aiStudioEvents';
 import { PriorityBadge, ProgressBar, ProjectStatusBadge, TaskStatusBadge, dateText, dateTimeText, useLoad } from './ui';
+import { Paged } from '../common/Paged';
 
 const greeting = () => {
   const h = new Date().getHours();
@@ -108,11 +109,13 @@ const MyWork: React.FC<{ data: Overview; go: Go }> = ({ data, go }) => {
           {(data.recent ?? []).length === 0
             ? <p className="px-5 pb-6 text-sm text-slate-500">Nothing yet.</p>
             : (
+              <Paged items={data.recent!} pageSize={5} noun="updates">{rows => (
               <ul className="divide-y divide-slate-100">
-                {data.recent!.map((r, i) => (
+                {rows.map((r, i) => (
                   <li key={`${r.entityId}-${i}`} className="px-5 py-3"><div className="text-sm text-slate-800">{r.text}</div><div className="text-xs text-slate-500">{dateTimeText(r.at)}</div></li>
                 ))}
               </ul>
+              )}</Paged>
             )}
         </Card>
       </div>

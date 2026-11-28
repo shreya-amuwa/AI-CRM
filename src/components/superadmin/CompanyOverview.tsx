@@ -9,6 +9,7 @@ import { PageTitle } from '../layout/shell';
 import { Card, CardHead, ghostBtn, LoadingLine } from '../tasks/head/headParts';
 import { money } from '../accounts/finance/FinanceBits';
 import { OverviewDepartments } from './OverviewDepartments';
+import { Paged } from '../common/Paged';
 
 /**
  * Super Admin: the company in one page. Everything shown is a figure the database worked out from the real records
@@ -427,8 +428,9 @@ const Recent: React.FC<{ d: CompanyOverviewData }> = ({ d }) => (
     {d.recentActivity.length === 0 ? (
       <p className="px-5 pb-7 text-sm text-slate-500" role="status">No customer activity has been logged yet.</p>
     ) : (
+      <Paged items={d.recentActivity} pageSize={5} noun="updates">{rows => (
       <ul className="px-3 pb-3 divide-y divide-slate-100">
-        {d.recentActivity.map((a, i) => (
+        {rows.map((a, i) => (
           <li key={`${a.at}-${i}`} className="px-2.5 py-3">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-sm font-bold text-slate-900 truncate">{a.customer}</span>
@@ -443,6 +445,7 @@ const Recent: React.FC<{ d: CompanyOverviewData }> = ({ d }) => (
           </li>
         ))}
       </ul>
+      )}</Paged>
     )}
   </Card>
 );

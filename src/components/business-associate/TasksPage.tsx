@@ -9,6 +9,7 @@ import { Card, CardHead, Tabs } from '../tasks/head/headParts';
 import { CallStatusBadge, EmptyState, StatCard, TemperatureBadge, dateText, dateTimeText, tcBtn, tcInput, tcSelect } from '../telecaller/ui';
 import type { BaNavigate } from './BusinessAssociateDashboard';
 import { DocBadge, StageBadge, inr, notifyBaChanged, openFile } from './ui';
+import { Paged } from '../common/Paged';
 
 const FILTERS: { value: '' | BaStage; label: string }[] = [
   { value: '', label: 'All Contacts' },
@@ -225,11 +226,13 @@ const ContactDetail: React.FC<{ id: string; go: BaNavigate; onBack: () => void }
               <button type="submit" className={tcBtn.primary} disabled={saving || !note.trim()}>Add note</button>
             </form>
             {c.events.length === 0 ? <p className="text-sm text-slate-500">No history yet.</p> : (
+              <Paged items={c.events} noun="entries">{rows => (
               <ul className="space-y-2.5">
-                {c.events.map(e => (
+                {rows.map(e => (
                   <li key={e.id} className="text-sm"><span className="text-slate-800">{e.note}</span><div className="text-xs text-slate-400">{e.by || 'System'} · {dateTimeText(e.at)} · {e.kind.toLowerCase()}</div></li>
                 ))}
               </ul>
+              )}</Paged>
             )}
           </Section>
         </div>

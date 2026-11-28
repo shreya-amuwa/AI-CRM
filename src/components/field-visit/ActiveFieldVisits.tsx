@@ -10,6 +10,7 @@ import { Card, ErrorBanner, Spinner, btn, inputCls } from '../team-member/pipeli
 import { EmptyState } from '../telecaller/ui';
 import { VisitStatusPill } from './FieldVisitDialogs';
 import { FreshnessPill, FRESHNESS_LABEL, MapPreview, agoText, clockText, coordText, useNow } from './TrackingBits';
+import { Paged } from '../common/Paged';
 
 const istToday = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const EVENT_LABEL: Record<string, string> = {
@@ -193,11 +194,13 @@ export const ActiveFieldVisits: React.FC<{ audience: 'manager' | 'hr' }> = ({ au
                 {trail && (
                   <>
                     {trail.events.length > 0 && (
+                      <Paged items={trail.events} noun="points">{rows => (
                       <ol className="text-[11px] space-y-0.5" aria-label="Tracking events">
-                        {trail.events.map((e, i) => (
+                        {rows.map((e, i) => (
                           <li key={`${e.at}-${i}`} className="text-slate-600">{clockText(e.at)} · {EVENT_LABEL[e.event] ?? e.event}</li>
                         ))}
                       </ol>
+                      )}</Paged>
                     )}
                     {trail.locations.length > 0 && (
                       <ol className="max-h-64 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200 text-[11px]" aria-label="Location history">

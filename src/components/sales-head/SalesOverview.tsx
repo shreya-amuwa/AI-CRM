@@ -9,6 +9,7 @@ import { ErrorBanner, Spinner, money } from '../team-member/pipeline/shared';
 import { Avatar } from '../tasks/head/headParts';
 import { EmptyState, StatCard, TemperatureBadge, dateText, dateTimeText, tcBtn, TEMPERATURE_DOT, TEMPERATURE_LABELS } from '../telecaller/ui';
 import type { SalesHeadNavigate } from './SalesHeadDashboard';
+import { Paged } from '../common/Paged';
 
 const ACTIVITY_LABEL: Record<string, string> = { LEAD_CREATED: 'Lead added', LEAD_UPDATED: 'Lead updated', CUSTOMER_CREATED: 'Customer added', NOTE: 'Note' };
 const activityLabel = (t: string) => ACTIVITY_LABEL[t] ?? t.charAt(0) + t.slice(1).toLowerCase().replace(/_/g, ' ');
@@ -131,11 +132,13 @@ export const SalesOverview: React.FC<{ go: SalesHeadNavigate }> = ({ go }) => {
         <Card>
           <CardHead title="Recent Sales activities" />
           {data.recentActivities.length === 0 ? <EmptyState title="No activity yet" /> : (
+            <Paged items={data.recentActivities} pageSize={5} noun="updates">{rows => (
             <ul className="divide-y divide-slate-100">
-              {data.recentActivities.map((a, i) => (
+              {rows.map((a, i) => (
                 <li key={i} className="px-5 py-3 text-sm"><div className="flex justify-between gap-3"><span className="font-semibold text-slate-900">{activityLabel(a.type)} · {a.customer}</span><span className="text-xs text-slate-500 shrink-0">{dateTimeText(a.at)}</span></div>{a.note && <div className="text-xs text-slate-500 truncate">{a.note}</div>}</li>
               ))}
             </ul>
+            )}</Paged>
           )}
         </Card>
         <Card>

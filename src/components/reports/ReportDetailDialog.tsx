@@ -8,6 +8,7 @@ import { ReportContentView, reportAsText } from './ReportContentView';
 import { notifyReportsChanged } from './reportEvents';
 import { ReviewActions } from './ReviewActions';
 import { ApprovalSteps, dateLabel, periodLabel, StatusPill, timeLabel } from './reportUi';
+import { Paged } from '../common/Paged';
 
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 const STAGE_LABEL = { TEAM_LEAD: 'Team Lead', DEPARTMENT_HEAD: 'Department Head' } as const;
@@ -101,8 +102,9 @@ export const ReportDetailDialog: React.FC<{
           {!simple && report.events && report.events.length > 0 ? (
             <section aria-label="History">
               <h3 className="text-xs font-bold uppercase tracking-wide text-slate-500 mb-2">History</h3>
+              <Paged items={report.events} noun="entries">{rows => (
               <ol className="space-y-1.5 border-l border-slate-200 pl-4">
-                {report.events.map((e, i) => (
+                {rows.map((e, i) => (
                   <li key={`${e.at}-${i}`} className="text-xs text-slate-700 relative">
                     <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-indigo-300" aria-hidden="true" />
                     <b>{ACTION_LABEL[e.action] ?? e.action}</b>{e.stage ? ` (${STAGE_LABEL[e.stage]})` : ''} by {e.actor} <span className="text-slate-400">- {timeLabel(e.at)}</span>
@@ -111,6 +113,7 @@ export const ReportDetailDialog: React.FC<{
                   </li>
                 ))}
               </ol>
+              )}</Paged>
             </section>
           ) : null}
 
