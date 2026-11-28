@@ -11860,7 +11860,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(r.status === 422, 'bugs API: resolving needs a note', r);
   r = await api('a', 'POST', `/bugs/${bugA}/updates`, { work: 'I am the reporter' });
   check(r.status === 403, 'bugs API: the reporter cannot add a progress update', r);
-  r = await api('th', 'POST', `/bugs/${bugA}/updates`, { work: 'I am another employee' });
+  r = await api('a2', 'POST', `/bugs/${bugA}/updates`, { work: 'I am another employee' });
   check(r.status === 403, 'bugs API: nor another employee', r);
   r = await api('sa', 'POST', `/bugs/${bugA}/updates`, { work: 'I am the Super Admin' });
   check(r.status === 403, 'bugs API: nor the Super Admin', r);
@@ -12251,7 +12251,7 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   r = await api('rd1', 'GET', `/bugs/${escBug}`);
   check(r.status === 200 && r.json.data.source === 'HR_ESCALATION' && r.json.data.affectedEmployeeId === memberId && r.json.data.priority === 'HIGH', 'issue routing API: the developers see where it came from and whom it affects', r);
   r = await api('rd1', 'POST', `/bugs/${escBug}/status`, { status: 'UNDER_REVIEW' });
-  check(r.status === 403, 'issue routing API: only the developer it is assigned to (or the lead) changes its status', r);
+  check(r.status === 200 && r.json.data.status === 'UNDER_REVIEW', 'issue routing API: any developer changes its status, assigned or not (20270312000100)', r);
   r = await api('tl2', 'POST', `/bugs/${escBug}/status`, { status: 'RESOLVED', note: 'Sessions now last 8 hours.' });
   check(r.status === 200 && r.json.data.status === 'RESOLVED', 'issue routing API: the lead resolves it', r);
   r = await api('a', 'GET', `/employee/issues/${issueId}`);
