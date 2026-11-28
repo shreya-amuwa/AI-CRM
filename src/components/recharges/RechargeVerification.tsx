@@ -14,7 +14,8 @@ const SECTIONS = [
   { id: 'not-received', label: 'Payment not received', payment: 'PAYMENT_NOT_RECEIVED', invoice: '' },
   { id: 'rejected', label: 'Rejected', payment: 'REJECTED', invoice: '' },
   { id: 'ready', label: 'Ready for invoice', payment: 'PAYMENT_RECEIVED', invoice: 'NOT_GENERATED' },
-  { id: 'invoiced', label: 'Invoices generated', payment: '', invoice: 'GENERATED_ANY' }
+  { id: 'invoiced', label: 'Invoices generated', payment: '', invoice: 'GENERATED_ANY' },
+  { id: 'delivery', label: 'Invoice delivery', payment: '', invoice: 'DELIVERY_ANY' }
 ] as const;
 type SectionId = (typeof SECTIONS)[number]['id'];
 
@@ -36,7 +37,7 @@ export const RechargeVerification: React.FC = () => {
   });
   const sum = data?.summary;
   const counts: Record<SectionId, number | undefined> = {
-    pending: sum?.pending, received: sum?.received, 'not-received': sum?.notReceived, rejected: sum?.rejected, ready: sum?.readyForInvoice, invoiced: sum?.invoiced
+    pending: sum?.pending, received: sum?.received, 'not-received': sum?.notReceived, rejected: sum?.rejected, ready: sum?.readyForInvoice, invoiced: sum?.invoiced, delivery: sum?.delivered === undefined ? undefined : sum.delivered + sum.deliveryFailed
   };
   const dirty = kind || search || from || to || min || max;
   const reset = (fn: () => void) => { fn(); setPage(1); };
