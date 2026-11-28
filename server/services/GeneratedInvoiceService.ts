@@ -1,6 +1,6 @@
-import type { AgreementReviewItem, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, PaymentInvoiceBilling, PaymentInvoiceOutcome, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
+import type { AgreementReviewItem, InvoiceSeriesRow, InvoiceSeriesSetResult, ClientDocumentUrl, GeneratedInvoice, Invoice, InvoicePrefill, InvoiceRunResult, PaymentInvoiceBilling, PaymentInvoiceOutcome, InvoiceStage, InvoiceStep, InvoiceWhatsAppDispatch, InvoiceWhatsAppResult, InvoiceWhatsAppSettings, OrderSummary } from '../../shared/contracts.js';
 import { invoiceDate, rs, toPaise } from '../../shared/invoiceCalc.js';
-import { agreementBasisSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceCancelSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, paymentInvoiceInputSchema, invoiceWhatsAppRequestSchema, invoiceWhatsAppSettingsSchema, uuidSchema } from '../../shared/validation.js';
+import { agreementBasisSchema, invoiceSeriesSetSchema, generatedInvoiceIssueSchema, invoiceConfirmPaymentSchema, invoiceCancelSchema, invoiceDeliverSchema, invoiceFileQuerySchema, invoicePrefillQuerySchema, paymentInvoiceInputSchema, invoiceWhatsAppRequestSchema, invoiceWhatsAppSettingsSchema, uuidSchema } from '../../shared/validation.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
 import { sendInvoiceEmail } from '../invoices/mailer.js';
@@ -83,6 +83,16 @@ export class GeneratedInvoiceService {
 
   agreementReview(): Promise<AgreementReviewItem[]> {
     return this.repo.agreementReview();
+  }
+
+  /** The invoice number counters (Super Admin only; the database checks). The numbers themselves are only ever made by the database. */
+  seriesList(): Promise<InvoiceSeriesRow[]> {
+    return this.repo.seriesList();
+  }
+
+  /** Continue a series from the real last number. Never lowers a counter or reuses a number (the database refuses it). */
+  seriesSetNext(body: unknown): Promise<InvoiceSeriesSetResult> {
+    return this.repo.seriesSetNext(parse(invoiceSeriesSetSchema, body));
   }
 
   /**

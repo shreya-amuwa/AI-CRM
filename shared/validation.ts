@@ -4317,3 +4317,15 @@ export const rechargeContactSchema = z
     note: z.string({ required_error: 'Say what was corrected and why.' }).trim().min(3, 'Say what was corrected and why.').max(500)
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// Invoice numbering: the Super Admin sets the next number of a series (migration 20270313000100)
+// ---------------------------------------------------------------------------
+export const invoiceSeriesSetSchema = z.object({
+  type: z.enum(['GST', 'NON_GST'], { errorMap: () => ({ message: 'Choose GST or Non-GST.' }) }),
+  fy: z.string().trim().regex(/^[0-9]{2}-[0-9]{2}$/, 'Write the financial year like 26-27.')
+    .refine(v => Number(v.slice(3, 5)) === (Number(v.slice(0, 2)) + 1) % 100, 'The financial year is two consecutive years, for example 26-27.'),
+  next: z.coerce.number().int('The next number is a whole number.').min(1, 'The next number starts at 1.').max(99999, 'The next number has at most 5 digits.')
+}).strict();
+export type InvoiceSeriesSetInput = z.infer<typeof invoiceSeriesSetSchema>;
+

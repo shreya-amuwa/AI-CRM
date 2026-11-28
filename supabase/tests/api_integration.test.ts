@@ -14482,6 +14482,68 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   }
 }
 
+// ---------------------------------------------------------------------------
+// Invoice numbering (20270313000100): the Super Admin continues a series from the real last number; numbers made at the same moment by many
+// connections never repeat and leave no gap. (Parallel invoices through the API are checked in the generated-invoices block above.)
+// ---------------------------------------------------------------------------
+{
+  let r = await api('accm', 'GET', '/accounts/invoice-series');
+  check(r.status === 403, 'invoice series API: Accounts cannot list the counters (Super Admin only)', r);
+  r = await api('accm', 'POST', '/accounts/invoice-series', { type: 'GST', fy: '60-61', next: 616 });
+  check(r.status === 403, 'invoice series API: nor set one', r);
+  r = await api(null, 'POST', '/accounts/invoice-series', { type: 'GST', fy: '60-61', next: 616 });
+  check(r.status === 401, 'invoice series API: a visitor cannot', r);
+  r = await api('sa', 'POST', '/accounts/invoice-series', { type: 'GST', fy: '60-61', next: 616 });
+  check(r.status === 200 && r.json.data.nextNumber === 'GST/60-61/616' && r.json.data.lastIssued === 615, 'invoice series API: the Super Admin continues the GST series at 616', r);
+  r = await api('sa', 'POST', '/accounts/invoice-series', { type: 'NON_GST', fy: '60-61', next: 251 });
+  check(r.status === 200 && r.json.data.nextNumber === 'Amuwa/60-61/251', 'invoice series API: and the Non-GST series at 251', r);
+  r = await api('sa', 'GET', '/accounts/invoice-series');
+  check(r.status === 200 && r.json.data.some((x: any) => x.type === 'GST' && x.fy === '60-61' && x.nextNumber === 'GST/60-61/616') && r.json.data.some((x: any) => x.type === 'NON_GST' && x.fy === '60-61' && x.nextNumber === 'Amuwa/60-61/251'),
+    'invoice series API: the counters are listed with the next number of each', r);
+  r = await api('sa', 'POST', '/accounts/invoice-series', { type: 'GST', fy: '60-61', next: 600 });
+  check(r.status === 409, 'invoice series API: a counter cannot be lowered (conflict: those numbers are used)', r);
+  check((await db.query(`select last_value from public.invoice_number_series where invoice_type = 'GST' and fy = '60-61'`)).rows[0].last_value === 615, 'invoice series API: and it was not changed');
+  for (const [body, name] of [[{ type: 'VAT', fy: '60-61', next: 5 }, 'an unknown type'], [{ type: 'GST', fy: '60-62', next: 5 }, 'years that are not consecutive'], [{ type: 'GST', fy: '2060-61', next: 5 }, 'a year not written like 26-27'],
+    [{ type: 'GST', fy: '60-61', next: 0 }, 'a number below 1'], [{ type: 'GST', fy: '60-61', next: 100000 }, 'a number above 99999'], [{ type: 'GST', fy: '60-61', next: 5, userId: 'x' }, 'extra fields']] as [object, string][]) {
+    r = await api('sa', 'POST', '/accounts/invoice-series', body);
+    check(r.status === 422, `invoice series API: ${name} is refused`, r);
+  }
+  // 25 connections take a GST number at the same moment, each inside its own transaction
+  const taken = await Promise.all(Array.from({ length: 25 }, async () => {
+    const c = await db.connect();
+    try {
+      await c.query('begin');
+      const n = (await c.query(`select private.take_invoice_number('GST', date '2062-08-01') as n`)).rows[0].n as string;
+      await c.query('commit');
+      return n;
+    } finally { c.release(); }
+  }));
+  const seqs = taken.map(n => Number(n.split('/')[2])).sort((a, b) => a - b);
+  check(new Set(taken).size === 25 && seqs[0] === 1 && seqs[24] === 25 && taken.every(n => /^GST\/62-63\/\d{3}$/.test(n)), 'invoice numbering: 25 simultaneous invoices get 25 different numbers, 001 to 025, no gap', taken);
+  // a transaction that is rolled back gives its number back to nobody and leaves no hole
+  const c = await db.connect();
+  try {
+    await c.query('begin');
+    await c.query(`select private.take_invoice_number('GST', date '2062-08-02')`);
+    await c.query('rollback');
+  } finally { c.release(); }
+  const next = (await db.query(`select private.take_invoice_number('GST', date '2062-08-02') as n`)).rows[0].n;
+  check(next === 'GST/62-63/026', 'invoice numbering: an invoice that was not saved leaves no gap (the next is 026)', next);
+  // GST and Non-GST count separately while both are busy
+  const mixed = await Promise.all(Array.from({ length: 20 }, async (_, i) => {
+    const c2 = await db.connect();
+    try {
+      await c2.query('begin');
+      const n = (await c2.query(`select private.take_invoice_number($1, date '2063-05-01') as n`, [i % 2 ? 'GST' : 'NON_GST'])).rows[0].n as string;
+      await c2.query('commit');
+      return n;
+    } finally { c2.release(); }
+  }));
+  const g = mixed.filter(n => n.startsWith('GST/')).map(n => Number(n.split('/')[2])).sort((a, b) => a - b), a = mixed.filter(n => n.startsWith('Amuwa/')).map(n => Number(n.split('/')[2])).sort((x, y) => x - y);
+  check(g.length === 10 && a.length === 10 && g.join() === '1,2,3,4,5,6,7,8,9,10' && a.join() === '1,2,3,4,5,6,7,8,9,10', 'invoice numbering: busy GST and Non-GST series each count 1 to 10 on their own', mixed);
+  await db.query(`delete from public.invoice_number_series where fy in ('60-61', '62-63', '63-64')`);
+}
+
 console.log(`=== ${passed} API INTEGRATION CHECKS PASSED ===`);
 server.close();
 await db.end();

@@ -257,3 +257,4 @@ $PSQL -d "$DB" -o /dev/null -f supabase/tests/crocodial_ceo_connections_test.sql
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/support_recharge_invoices_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/report_hierarchy_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
 $PSQL -d "$DB" -o /dev/null -f supabase/tests/bug_shared_tracking_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"
+$PSQL -d "$DB" -o /dev/null -f supabase/tests/invoice_numbering_requirements_test.sql 2>&1 | sed -E "s/^psql:[^ ]+ NOTICE:  //"

@@ -7973,3 +7973,11 @@ export interface RechargeInvoicePlan {
   paymentStatus: RechargePaymentStatus; invoiceStatus: RechargeInvoiceStatus; customerName: string; customerEmail: string | null; customerPhone: string | null; customerAddress: string | null; customerGstin: string | null;
 }
 export interface RechargeSendResult { channel: RechargeDeliveryChannel; status: RechargeDeliveryStatus | 'REFUSED'; message: string; deliveryId?: string; invoiceStatus?: RechargeInvoiceStatus }
+
+// ---------------------------------------------------------------------------
+// Invoice numbering: the counters of each series (migration 20270313000100)
+// ---------------------------------------------------------------------------
+/** One series: GST (GST/26-27/616) or Non-GST (Amuwa/26-27/251) of a financial year. lastIssued is the highest number taken; nextNumber is a preview. */
+export interface InvoiceSeriesRow { type: 'GST' | 'NON_GST'; fy: string; lastIssued: number; nextNumber: string; updatedAt: string }
+export interface InvoiceSeriesSetResult { type: 'GST' | 'NON_GST'; fy: string; lastIssued: number; nextNumber: string }
+
