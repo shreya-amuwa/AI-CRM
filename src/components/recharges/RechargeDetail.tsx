@@ -4,6 +4,7 @@ import type { RechargeBillingType, RechargeVerifyDecision, SupportRecharge } fro
 import { errorMessage } from '../../lib/api/client';
 import { rechargesApi } from '../../lib/api/endpoints';
 import { Dialog, ErrorBanner, Field, Spinner, btn, inputCls, selectCls } from '../team-member/pipeline/shared';
+import { RechargeInvoicePanel } from './RechargeInvoicePanel';
 import { BILLING_LABEL, EVENT_LABEL, InvoicePill, KIND_LABEL, PaymentPill, amountNumber, cleanAmount, rechargeDateTime, rechargeDay, rechargeMoney } from './rechargeParts';
 
 /** The payment screenshot, fetched through a short-lived link only when somebody asks for it (never stored in the page). */
@@ -129,7 +130,7 @@ export const RechargeDetail: React.FC<{ id: string; onClose: () => void; onEdit:
   const [notice, setNotice] = useState('');
   const load = () => rechargesApi.get(id).then(setR).catch(e => setError(errorMessage(e)));
   useEffect(() => { void load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const changed = (message: string) => { setNotice(message); onChanged(); void load(); };
+  const changed = (message: string) => { if (message) setNotice(message); onChanged(); void load(); };
   return (
     <Dialog title={r ? `${KIND_LABEL[r.kind]} · ${r.reference}` : 'Recharge'} description={r ? `${r.customerName} · ${rechargeDay(r.rechargeDate)}` : undefined} onClose={onClose} size="xl">
       {error && <ErrorBanner message={error} />}
@@ -159,6 +160,7 @@ export const RechargeDetail: React.FC<{ id: string; onClose: () => void; onEdit:
           </div>
           {r.verifyActions.length > 0 && <VerifyPanel r={r} onDone={n => changed(`Saved: ${n.paymentStatus === 'PAYMENT_RECEIVED' ? 'payment received' : n.paymentStatus === 'PAYMENT_NOT_RECEIVED' ? 'payment not received' : 'rejected'}.`)} />}
           {r.canCorrect && <CorrectPanel key={`${r.updatedAt}`} r={r} onDone={() => changed('The billing details were corrected.')} />}
+          <RechargeInvoicePanel r={r} onChanged={m => changed(m)} />
           <div>
             <h3 className="text-xs font-bold text-slate-700 mb-2">Status timeline</h3>
             <ol className="space-y-2" data-testid="recharge-timeline">

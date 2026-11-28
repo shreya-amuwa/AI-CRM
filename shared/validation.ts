@@ -4177,7 +4177,7 @@ export const rechargeListQuerySchema = z
     kind: rechargeKindSchema.optional().or(z.literal('').transform(() => undefined)),
     search: z.string().trim().max(100).optional(),
     paymentStatus: z.union([z.literal(''), rechargePaymentStatusSchema]).optional(),
-    invoiceStatus: z.union([z.literal(''), z.enum([...RECHARGE_INVOICE_STATUSES, 'GENERATED_ANY'])]).optional(),
+    invoiceStatus: z.union([z.literal(''), z.enum([...RECHARGE_INVOICE_STATUSES, 'GENERATED_ANY', 'DELIVERY_ANY'])]).optional(),
     from: isoDate.optional().or(z.literal('')),
     to: isoDate.optional().or(z.literal('')),
     min: z.coerce.number().min(0).max(200000000).optional().or(z.literal('').transform(() => undefined)),
@@ -4216,3 +4216,26 @@ export const leadTagSaveSchema = z
   .strict();
 export const leadTagRetireSchema = z.object({ retired: z.boolean() }).strict();
 export const leadTagSetSchema = z.object({ tagId: uuidSchema }).strict();
+/** Accounts: make the invoice of a verified recharge. Nothing here is a number or an amount: the database builds the invoice from the recharge. */
+export const rechargeInvoiceGenerateSchema = z
+  .object({
+    hsnSac: z.string().trim().regex(/^[0-9]{4,8}$/, 'The HSN/SAC code is 4 to 8 digits.').optional().or(z.literal('').transform(() => undefined)),
+    taxTreatment: z.enum(['INTRA_STATE', 'INTER_STATE'], { errorMap: () => ({ message: 'Choose intra-state (CGST + SGST) or inter-state (IGST).' }) }).optional()
+  })
+  .strict();
+export const RECHARGE_DELIVERY_CHANNELS = ['EMAIL', 'WHATSAPP'] as const;
+/** Accounts: send the invoice. "resend" is the deliberate second send of a channel that already went. */
+export const rechargeInvoiceSendSchema = z
+  .object({
+    channels: z.array(z.enum(RECHARGE_DELIVERY_CHANNELS, { errorMap: () => ({ message: 'Choose e-mail or WhatsApp.' }) })).min(1, 'Choose e-mail, WhatsApp or both.').max(2).refine(v => new Set(v).size === v.length, 'Each channel once.'),
+    resend: z.boolean().default(false)
+  })
+  .strict();
+/** Accounts: the customer's contact for sending, with the reason. */
+export const rechargeContactSchema = z
+  .object({
+    customerEmail: z.string().trim().toLowerCase().email('Enter a valid e-mail address.').max(254).optional().nullable().or(z.literal('')),
+    customerPhone: z.string().trim().max(40).optional().nullable(),
+    note: z.string({ required_error: 'Say what was corrected and why.' }).trim().min(3, 'Say what was corrected and why.').max(500)
+  })
+  .strict();

@@ -56,6 +56,7 @@ import { SheetSyncService } from './SheetSyncService.js';
 import { ChatService } from './ChatService.js';
 import { TicketAttachmentService } from './TicketAttachmentService.js';
 import { SupportRechargeService } from './SupportRechargeService.js';
+import { RechargeInvoiceService } from './RechargeInvoiceService.js';
 import { EmployeeCaseService } from './EmployeeCaseService.js';
 import { BugService } from './BugService.js';
 import { BugRepository } from '../repositories/BugRepository.js';
@@ -169,6 +170,7 @@ export function createServices(db: SupabaseClient) {
     reminderCalls: new ReminderCallService(new ReminderCallRepository(db)),
     ticketFiles: new TicketAttachmentService(new TicketAttachmentRepository(db), new StorageRepository()),
     supportRecharges: new SupportRechargeService(new SupportRechargeRepository(db), new StorageRepository()),
+    rechargeInvoices: new RechargeInvoiceService(new SupportRechargeRepository(db), new StorageRepository()),
     hrEmployeeFiles: new HrEmployeeFileService(new HrEmployeeFileRepository(db), new StorageRepository()),
     client: new ClientService(new ClientRepository(db), new StorageRepository())
   };

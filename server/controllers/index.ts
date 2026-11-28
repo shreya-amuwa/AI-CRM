@@ -394,6 +394,17 @@ export const supportRechargesController = {
   screenshotUrl: (async ctx => ok(await svc(ctx).supportRecharges.screenshotUrl(ctx.params.id, ctx.req.query))) as Handler
 };
 
+/** The invoice of a verified recharge and its delivery (Accounts only: the database checks every call). */
+export const rechargeInvoicesController = {
+  prefill: (async ctx => ok(await svc(ctx).rechargeInvoices.prefill(ctx.params.id, ctx.req.query))) as Handler,
+  get: (async ctx => ok(await svc(ctx).rechargeInvoices.get(ctx.params.id))) as Handler,
+  generate: (async ctx => ok(await svc(ctx).rechargeInvoices.generate(ctx.params.id, ctx.req.body), 201)) as Handler,
+  retryPdf: (async ctx => ok(await svc(ctx).rechargeInvoices.retryPdf(ctx.params.id))) as Handler,
+  fileUrl: (async ctx => ok(await svc(ctx).rechargeInvoices.fileUrl(ctx.params.id, ctx.req.query))) as Handler,
+  send: (async ctx => ok(await svc(ctx).rechargeInvoices.send(ctx.params.id, ctx.req.body))) as Handler,
+  setContact: (async ctx => ok(await svc(ctx).rechargeInvoices.setContact(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const notificationsController = {
   list: (async ctx => ok(await svc(ctx).notifications.list(ctx.req.query))) as Handler,
   unreadCount: (async ctx => ok(await svc(ctx).notifications.unreadCount())) as Handler,

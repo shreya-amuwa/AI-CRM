@@ -199,7 +199,7 @@ import type { BusinessOrdersQuery, BusinessReportQuery, BusinessTransactionsQuer
 import type { HrAwardDetail, HrAwardOptions, HrAwardsOverview } from '../../../shared/contracts';
 import type { AwardNominateInput } from '../../../shared/validation';
 import type { OfferLetterhead, OfferLetterheadOption, OfferTemplate, OfferTemplateContent, OfferTemplateFile, OfferTemplateHistory, OfferTemplateList, OfferTemplateVersion } from '../../../shared/contracts';
-import type { RechargeCustomer, RechargeRmPerformance, RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../../shared/contracts';
+import type { RechargeCustomer, RechargeInvoice, RechargeInvoicePlan, RechargeRmPerformance, RechargeSendResult, RechargeUploadTicket, SupportRecharge, SupportRechargeList } from '../../../shared/contracts';
 import { requireSupabase } from '../../services/supabaseClient';
 import { api } from './client';
 
@@ -1011,6 +1011,14 @@ export const rechargesApi = {
     api.post<SupportRecharge & { replayed: boolean }>(`/support/recharges/${id}/verify`, { decision, note: note || null, ...(receivedAmount !== undefined ? { receivedAmount } : {}) }),
   correct: (id: string, body: { note: string; billingType?: 'GST' | 'NON_GST'; rechargeAmount?: number; gstAmount?: number; gstNumber?: string | null; paymentReference?: string | null; customerEmail?: string | null; customerPhone?: string | null; customerAddress?: string | null }) =>
     api.post<SupportRecharge>(`/support/recharges/${id}/correct`, body),
+  // ---- Accounts: the invoice of a verified recharge, reviewed and then sent (nothing is sent without Send)
+  invoicePlan: (id: string, q: { hsnSac?: string; taxTreatment?: string } = {}) => api.get<RechargeInvoicePlan>(`/support/recharges/${id}/invoice/plan`, { ...q }),
+  generateInvoice: (id: string, body: { hsnSac?: string; taxTreatment?: 'INTRA_STATE' | 'INTER_STATE' } = {}) =>
+    api.post<{ invoice: RechargeInvoice; pdf: { status: 'READY' | 'FAILED'; message: string | null } }>(`/support/recharges/${id}/invoice`, body),
+  retryInvoicePdf: (id: string) => api.post<{ invoice: RechargeInvoice; pdf: { status: 'READY' | 'FAILED'; message: string | null } }>(`/support/recharges/${id}/invoice/pdf`, {}),
+  invoiceFileUrl: (id: string, action: 'view' | 'download' = 'view') => api.get<ClientDocumentUrl>(`/support/recharges/${id}/invoice/file`, { action }),
+  sendInvoice: (id: string, channels: ('EMAIL' | 'WHATSAPP')[], resend = false) => api.post<{ results: RechargeSendResult[]; invoiceStatus: string | null }>(`/support/recharges/${id}/invoice/send`, { channels, resend }),
+  setContact: (id: string, body: { note: string; customerEmail?: string | null; customerPhone?: string | null }) => api.post<SupportRecharge>(`/support/recharges/${id}/contact`, body),
   beginUpload: (body: { fileName: string; mimeType: string; sizeBytes: number }) => api.post<RechargeUploadTicket>('/support/recharge-uploads', body),
   completeUpload: (id: string) => api.post<{ id: string; name: string; mime: string; size: number }>(`/support/recharge-uploads/${id}/complete`, {}),
   abortUpload: (id: string) => api.post<null>(`/support/recharge-uploads/${id}/abort`, {}),
