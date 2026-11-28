@@ -4,28 +4,26 @@ import type { DevBug, DevBugList, DevBugStatus } from '../../../shared/contracts
 import { errorMessage } from '../../lib/api/client';
 import { bugsApi } from '../../lib/api/bugs';
 import { SideDrawer } from '../common/SideDrawer';
-import { BUG_STATUS_LABEL, BugFiles, BugHistory, BugStatusPill, BugTags, bugWhen, useBugAccess } from './bugUi';
+import { BUG_STATUS_LABEL, BugFiles, BugHistory, BugProgress, BugStatusPill, BugTags, bugWhen, useBugAccess } from './bugUi';
 
 /**
- * Bugs (migrations 20270122000300, 20270122000400): the Developers team's section. Every technical issue an employee reports lands here,
- * first UNASSIGNED and seen by the whole team. Only the developers on the list get the section (the menu follows the database, which
- * checks every call again):
- *  - the Team Lead (Shreya Mande) sees every bug, assigns each one to a developer (Ashish Sinha or Siddhesh Shinde), re-assigns or
- *    un-assigns it, follows each developer's workload, and changes any bug's status;
- *  - a developer sees the unassigned bugs and the ones assigned to them, never one assigned to the other developer; they change the status
- *    of their own bugs.
- * Everyone in the team leaves internal comments the reporter never sees; the reporter follows the status and resolution on their own page.
+ * Bugs (migrations 20270122000300, 20270122000400, 20270312000400): the Developers team's section. Every technical issue an employee reports lands here
+ * and is seen by the whole team. Only the developers on the list get the section (the menu follows the database, which checks every call again).
+ * A bug has no mandatory assignee: all three developers (the Team Lead and the two developers) see every bug and work on it together. Each one
+ * adds progress updates (what they did, the new status and progress, notes): every update is kept with who made it and when, none overwrites
+ * another, and the bug shows its contributors, its overall progress and the latest update. The Team Lead may still name an optional primary
+ * contact; nothing depends on it. Everyone leaves internal comments the reporter never sees; the reporter follows the status and resolution.
  * Issue routing (20270128000200): each issue carries its category, priority and source (an employee, an HR report, or an employee issue HR
  * escalated, with its files); the team replies to the reporter or asks for information (Pending Information), and the reporter answers.
  */
 interface Filter { id: string; label: string; q: { status?: string; assignee?: string }; count?: (c: DevBugList['counts']) => number }
 const FILTERS: Filter[] = [
   { id: 'open', label: 'Open', q: { status: 'OPEN' }, count: c => c.OPEN ?? c.PENDING + c.IN_PROGRESS },
-  { id: 'unassigned', label: 'New (unassigned)', q: { status: 'OPEN', assignee: 'UNASSIGNED' }, count: c => c.UNASSIGNED },
-  { id: 'mine', label: 'Assigned to me', q: { status: 'OPEN', assignee: 'ME' }, count: c => c.MINE },
+  { id: 'contributed', label: 'I worked on', q: { assignee: 'CONTRIBUTED' } },
   { id: 'PENDING', label: 'Pending', q: { status: 'PENDING' }, count: c => c.PENDING },
   { id: 'UNDER_REVIEW', label: 'Under Review', q: { status: 'UNDER_REVIEW' }, count: c => c.UNDER_REVIEW ?? 0 },
   { id: 'IN_PROGRESS', label: 'In Progress', q: { status: 'IN_PROGRESS' }, count: c => c.IN_PROGRESS },
+  { id: 'TESTING', label: 'Testing', q: { status: 'TESTING' }, count: c => c.TESTING ?? 0 },
   { id: 'NEEDS_INFO', label: 'Pending Information', q: { status: 'NEEDS_INFO' }, count: c => c.NEEDS_INFO ?? 0 },
   { id: 'RESOLVED', label: 'Resolved', q: { status: 'RESOLVED' }, count: c => c.RESOLVED },
   { id: 'REJECTED', label: 'Rejected', q: { status: 'REJECTED' }, count: c => c.REJECTED },
@@ -50,10 +48,7 @@ export const BugsPage: React.FC = () => {
   useEffect(() => { const t = setTimeout(() => { setTerm(search.trim()); setPage(1); }, 300); return () => clearTimeout(t); }, [search]);
   const latest = useRef(0);
   const lead = !!access?.isLead;
-  // the lead's filters: the whole team (no "assigned to me"), and each developer's bugs
-  const filters: Filter[] = lead
-    ? [...FILTERS.filter(f => f.id !== 'mine'), ...(access?.developers ?? []).map(d => ({ id: `dev:${d.id}`, label: d.name, q: { assignee: d.id } }))]
-    : FILTERS;
+  const filters: Filter[] = FILTERS;
   const load = useCallback(() => {
     const mine = ++latest.current;
     const f = filters.find(x => x.id === filter) ?? FILTERS[0];
@@ -72,9 +67,7 @@ export const BugsPage: React.FC = () => {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold text-slate-900 flex items-center gap-2"><Bug className="w-5 h-5 text-rose-600" aria-hidden /> Bugs</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{lead
-            ? 'Team Lead view: every bug reported across the CRM. Assign each one to a developer and follow the team’s progress.'
-            : 'New bugs reported across the CRM, and the bugs the Team Lead assigned to you.'}</p>
+          <p className="text-sm text-slate-500 mt-0.5">Every bug reported across the CRM. The whole team works on them together: add a progress update whenever you work on one.</p>
         </div>
         <button type="button" className={btnGhost} onClick={load}><RefreshCw className="w-4 h-4" aria-hidden /> Refresh</button>
       </div>
@@ -90,16 +83,14 @@ export const BugsPage: React.FC = () => {
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
         <input className={`${inputCls} pl-9`} aria-label="Search bugs" placeholder="Search by title, reference or reporter" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-      {lead && list && list.byDeveloper.length > 0 && (
-        <section aria-label="Team workload" className="flex flex-wrap gap-2" data-testid="team-workload">
+      {list && list.byDeveloper.length > 0 && (
+        <section aria-label="Team contributions" className="flex flex-wrap gap-2" data-testid="team-workload">
           {list.byDeveloper.map(d => (
-            <button key={d.id} type="button" onClick={() => { setFilter(`dev:${d.id}`); setPage(1); }}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-indigo-300">
+            <div key={d.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs">
               <span className="block font-bold text-slate-800">{d.name}</span>
-              <span className="text-slate-600">{d.open} open · {d.closed} closed</span>
-            </button>
+              <span className="text-slate-600">{d.updates ?? 0} progress updates</span>
+            </div>
           ))}
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs"><span className="block font-bold text-amber-900">Unassigned</span><span className="text-amber-800">{list.counts.UNASSIGNED} waiting</span></div>
         </section>
       )}
       {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error} <button type="button" className="underline" onClick={load}>Try again</button></p>}
@@ -109,7 +100,7 @@ export const BugsPage: React.FC = () => {
         <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
           <table className="w-full text-sm" data-testid="bugs-table">
             <thead className="bg-slate-50 text-xs text-slate-600"><tr>
-              {['Reference', 'Issue', 'Priority', 'Reported by', 'Department · Designation', 'Submitted', 'Files', 'Assigned to', 'Status'].map(h => <th key={h} scope="col" className="px-3 py-2.5 text-left font-bold whitespace-nowrap">{h}</th>)}
+              {['Reference', 'Issue', 'Priority', 'Reported by', 'Department · Designation', 'Submitted', 'Files', 'Progress', 'Worked on by', 'Status'].map(h => <th key={h} scope="col" className="px-3 py-2.5 text-left font-bold whitespace-nowrap">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
               {list.items.map(b => (
@@ -127,7 +118,8 @@ export const BugsPage: React.FC = () => {
                   <td className="px-3 py-2.5 text-xs text-slate-600">{b.department ?? '–'}{b.designation ? ` · ${b.designation}` : ''}</td>
                   <td className="px-3 py-2.5 text-xs whitespace-nowrap">{bugWhen(b.createdAt)}</td>
                   <td className="px-3 py-2.5 text-xs">{b.attachmentCount || '–'}</td>
-                  <td className="px-3 py-2.5 text-xs whitespace-nowrap">{b.assigneeName ?? <span className="text-amber-700 font-semibold">Unassigned</span>}</td>
+                  <td className="px-3 py-2.5"><BugProgress value={b.progress} compact /></td>
+                  <td className="px-3 py-2.5 text-xs" data-testid="bug-contributors">{b.contributors?.length ? b.contributors.join(', ') : <span className="text-slate-400">No update yet</span>}</td>
                   <td className="px-3 py-2.5"><BugStatusPill status={b.status} /></td>
                 </tr>
               ))}
@@ -142,51 +134,68 @@ export const BugsPage: React.FC = () => {
           )}
         </div>
       )}
-      {openId && <BugDrawer id={openId} lead={lead} meId={access?.meId ?? null} developers={access?.developers ?? []} onClose={() => setOpenId(null)} onChanged={load} />}
+      {openId && <BugDrawer id={openId} lead={lead} developers={access?.developers ?? []} onClose={() => setOpenId(null)} onChanged={load} />}
     </div>
   );
 };
 
-const BugDrawer: React.FC<{ id: string; lead: boolean; meId: string | null; developers: { id: string; name: string }[]; onClose: () => void; onChanged: () => void }> = ({
-  id, lead, meId, developers, onClose, onChanged
+const newRequestId = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+
+const BugDrawer: React.FC<{ id: string; lead: boolean; developers: { id: string; name: string }[]; onClose: () => void; onChanged: () => void }> = ({
+  id, lead, developers, onClose, onChanged
 }) => {
   const [b, setB] = useState<DevBug | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
+  // the Add Progress Update form
+  const [work, setWork] = useState('');
   const [status, setStatus] = useState<DevBugStatus | ''>('');
-  const [note, setNote] = useState('');
+  const [progress, setProgress] = useState(0);
+  const [notes, setNotes] = useState('');
+  const requestId = useRef(newRequestId());
   const [comment, setComment] = useState('');
   const [reply, setReply] = useState('');
   const [flash, setFlash] = useState('');
-  useEffect(() => { bugsApi.detail(id).then(x => { setB(x); setStatus(x.status); }, e => setError(errorMessage(e))); }, [id]);
+  const adopt = (x: DevBug) => { setB(x); setStatus(x.status); setProgress(x.progress ?? 0); };
+  useEffect(() => { bugsApi.detail(id).then(adopt, e => setError(errorMessage(e))); }, [id]);
   /** true when the change was saved (a failed one keeps what was typed) */
   const run = async (fn: () => Promise<DevBug>, done: string): Promise<boolean> => {
     setBusy(true);
     setError(null);
+    setConflict(false);
     setFlash('');
     try {
       const x = await fn();
-      setB(x); setStatus(x.status); setFlash(done); onChanged();
+      adopt(x); setFlash(done); onChanged();
       return true;
     } catch (e) {
-      setError(errorMessage(e));
+      const m = errorMessage(e);
+      setError(m);
+      setConflict(/updated this bug while you were writing/i.test(m));
       return false;
     } finally {
       setBusy(false);
     }
   };
+  // somebody else saved first: load their version; what was typed stays
+  const reload = () => { setError(null); setConflict(false); bugsApi.detail(id).then(adopt, e => setError(errorMessage(e))); };
   const needsNote = status === 'RESOLVED' || status === 'REJECTED';
-  // the lead on any bug; a developer on the bugs assigned to them (the database checks it again)
-  const canChangeStatus = !!b && (lead || (b.assigneeId !== null && b.assigneeId === meId));
+  const changed = !!b && (status !== b.status || progress !== (b.progress ?? 0));
+  const resolutionText = (notes.trim() || work.trim());
+  const canSave = !!b && !busy && work.trim().length >= 3 && !!status && !(needsNote && status !== b.status && resolutionText.length < 5);
   return (
     <SideDrawer title={b?.title ?? 'Bug'} subtitle={b ? `${b.reference} · reported ${bugWhen(b.createdAt)}` : undefined} onClose={onClose}>
       <div className="p-5 space-y-5 text-sm" data-testid="bug-drawer">
-        {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">{error}</p>}
+        {error && <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">{error}{conflict && <> <button type="button" className="underline font-semibold" onClick={reload} data-testid="bug-reload">Load the latest version</button></>}</p>}
         {flash && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-900">{flash}</p>}
         {!b && !error && <p className="text-slate-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</p>}
         {b && (
           <>
-            <div className="flex flex-wrap items-center gap-2"><BugStatusPill status={b.status} />{b.assigneeName && <span className="text-xs text-slate-600">Assigned to <b>{b.assigneeName}</b></span>}</div>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2"><BugStatusPill status={b.status} />{b.assigneeName && <span className="text-xs text-slate-600">Primary contact <b>{b.assigneeName}</b></span>}</div>
+              <BugProgress value={b.progress} />
+            </div>
             <BugTags b={b} />
             <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1.5">
               <dt className="text-slate-500">Reported by</dt><dd>{b.reporterName}</dd>
@@ -194,51 +203,56 @@ const BugDrawer: React.FC<{ id: string; lead: boolean; meId: string | null; deve
               {b.affectedEmployee ? <><dt className="text-slate-500">Affects</dt><dd>{b.affectedEmployee}</dd></> : null}
               <dt className="text-slate-500">Department</dt><dd>{b.department ?? '–'}</dd>
               <dt className="text-slate-500">Designation</dt><dd>{b.designation ?? '–'}</dd>
-              <dt className="text-slate-500">Submitted</dt><dd>{bugWhen(b.createdAt)}</dd>
+              <dt className="text-slate-500">Created</dt><dd>{bugWhen(b.createdAt)}</dd>
+              <dt className="text-slate-500">Latest update</dt>
+              <dd data-testid="bug-latest-update">{b.latestUpdate ? <>{b.latestUpdate.by ?? '–'} · {bugWhen(b.latestUpdate.at)}{b.latestUpdate.work ? <span className="block text-slate-600">{b.latestUpdate.work}</span> : null}</> : <span className="text-slate-400">No progress update yet</span>}</dd>
+              <dt className="text-slate-500">Contributors</dt>
+              <dd data-testid="bug-contributor-list">{b.contributors?.length ? (
+                <ul className="flex flex-wrap gap-1.5">{b.contributors.map(c => <li key={c.id} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">{c.name} · {c.updates} {c.updates === 1 ? 'update' : 'updates'}</li>)}</ul>
+              ) : <span className="text-slate-400">Nobody yet</span>}</dd>
             </dl>
             <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1">Description</h3><p className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-slate-800">{b.description}</p></section>
             {b.steps && <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1">Steps to reproduce</h3><p className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-slate-800">{b.steps}</p></section>}
             <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1">Screenshots and files</h3><BugFiles files={b.attachments} /></section>
-            {b.resolutionNote && <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1">{b.status === 'REJECTED' ? 'Reason' : 'Resolution'}</h3><p className="whitespace-pre-wrap rounded-lg bg-emerald-50/60 p-3">{b.resolutionNote}</p></section>}
+            {b.resolutionNote && <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1">{b.status === 'REJECTED' ? 'Reason' : 'Resolution'}</h3><p className="whitespace-pre-wrap rounded-lg bg-emerald-50 p-3 text-slate-800">{b.resolutionNote}</p></section>}
 
-            <section className="space-y-2 rounded-xl border border-slate-200 p-3" data-testid="bug-assignment">
-              {lead ? (
-                <>
-                  <label className="block text-xs font-bold text-slate-600" htmlFor="bug-assignee">Assign to</label>
-                  <select id="bug-assignee" className={inputCls} value={b.assigneeId ?? ''} disabled={busy}
-                    onChange={e => void run(() => bugsApi.assign(b.id, e.target.value || null),
-                      e.target.value ? `Assigned to ${developers.find(d => d.id === e.target.value)?.name ?? 'the developer'}: only you and them see it now.` : 'Unassigned: every developer sees it again.')}>
-                    <option value="">Unassigned (every developer sees it)</option>
-                    {developers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            <section className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3" data-testid="bug-progress-form">
+              <h3 className="text-xs font-bold uppercase text-indigo-800">Add Progress Update</h3>
+              <label className="block text-xs font-semibold text-slate-600" htmlFor="bug-work">What did you work on?</label>
+              <textarea id="bug-work" rows={3} maxLength={3000} className={inputCls} value={work} onChange={e => setWork(e.target.value)} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600" htmlFor="bug-status">Status</label>
+                  <select id="bug-status" className={inputCls} value={status} disabled={busy} onChange={e => setStatus(e.target.value as DevBugStatus)}>
+                    {(Object.keys(BUG_STATUS_LABEL) as DevBugStatus[]).map(s => <option key={s} value={s}>{BUG_STATUS_LABEL[s]}</option>)}
                   </select>
-                </>
-              ) : (
-                <p className="text-xs text-slate-600"><b className="text-slate-800">Assigned to:</b> {b.assigneeName ?? 'nobody yet — the Team Lead assigns new bugs'}</p>
-              )}
-              {b.assignedAt && <p className="text-[11px] text-slate-500">{b.assigneeName ? 'Assigned' : 'Un-assigned'} by {b.assignedByName ?? '–'} · {bugWhen(b.assignedAt)}</p>}
-              {b.assignments.length > 0 && (
-                <details className="text-[11px] text-slate-600"><summary className="cursor-pointer font-semibold">Assignment history ({b.assignments.length})</summary>
-                  <ul className="mt-1 space-y-0.5">{b.assignments.map((a, i) => <li key={i}>{bugWhen(a.at)}: {a.to ? `assigned to ${a.to}` : 'un-assigned'} by {a.by ?? '–'}</li>)}</ul>
-                </details>
-              )}
-            </section>
-            {canChangeStatus ? (
-            <section className="space-y-2 rounded-xl border border-slate-200 p-3">
-              <label className="block text-xs font-bold text-slate-600" htmlFor="bug-status">Status</label>
-              <select id="bug-status" className={inputCls} value={status} disabled={busy} onChange={e => setStatus(e.target.value as DevBugStatus)}>
-                {(Object.keys(BUG_STATUS_LABEL) as DevBugStatus[]).map(s => <option key={s} value={s}>{BUG_STATUS_LABEL[s]}</option>)}
-              </select>
-              <label className="block text-xs font-semibold text-slate-600" htmlFor="bug-note">{needsNote ? (status === 'RESOLVED' ? 'Resolution note (the employee reads it)' : 'Reason for rejecting (the employee reads it)') : 'Note to the employee (optional)'}</label>
-              <textarea id="bug-note" rows={3} maxLength={3000} className={inputCls} value={note} onChange={e => setNote(e.target.value)} />
-              <button type="button" className={btnPrimary} disabled={busy || !status || (status === b.status && !note.trim()) || (needsNote && note.trim().length < 5)}
-                onClick={() => void run(() => bugsApi.setStatus(b.id, status as DevBugStatus, note.trim() || null), `Status: ${BUG_STATUS_LABEL[status as DevBugStatus]}. The employee is told.`).then(ok => ok && setNote(''))}>
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Update status
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600" htmlFor="bug-progress">Progress (%)</label>
+                  <input id="bug-progress" type="number" inputMode="numeric" min={0} max={100} step={5} className={inputCls} value={progress} disabled={busy}
+                    onChange={e => setProgress(Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))))} />
+                </div>
+              </div>
+              <label className="block text-xs font-semibold text-slate-600" htmlFor="bug-notes">{needsNote ? (status === 'RESOLVED' ? 'Resolution note (the employee reads it)' : 'Reason for rejecting (the employee reads it)') : 'Notes (optional)'}</label>
+              <textarea id="bug-notes" rows={2} maxLength={3000} className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} />
+              <p className="text-[11px] text-slate-500">Saved with your name and the time. It is added to the history: nobody’s earlier update is replaced.{changed ? '' : ' (The status and progress stay as they are.)'}</p>
+              <button type="button" className={btnPrimary} disabled={!canSave} data-testid="bug-save-update"
+                onClick={() => void run(() => bugsApi.addUpdate(b.id, { work: work.trim(), status: status as DevBugStatus, progress, notes: notes.trim() || null, expectedVersion: b.version, clientRequestId: requestId.current }),
+                  'Progress update saved.').then(ok => { if (ok) { setWork(''); setNotes(''); requestId.current = newRequestId(); } })}>
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save progress update
               </button>
             </section>
-            ) : (
-              <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600" data-testid="status-locked">
-                {b.assigneeId ? 'Only the developer it is assigned to, or the Team Lead, changes its status.' : 'The Team Lead assigns this bug; once it is assigned to you, you can update its status.'}
-              </p>
+            {lead && (
+              <section className="space-y-2 rounded-xl border border-slate-200 p-3" data-testid="bug-assignment">
+                <label className="block text-xs font-bold text-slate-600" htmlFor="bug-assignee">Primary contact (optional)</label>
+                <select id="bug-assignee" className={inputCls} value={b.assigneeId ?? ''} disabled={busy}
+                  onChange={e => void run(() => bugsApi.assign(b.id, e.target.value || null),
+                    e.target.value ? `${developers.find(d => d.id === e.target.value)?.name ?? 'The developer'} is the primary contact. Everyone on the team can still work on it.` : 'No primary contact.')}>
+                  <option value="">None: the whole team works on it</option>
+                  {developers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                {b.assignedAt && <p className="text-[11px] text-slate-500">{b.assigneeName ? 'Named' : 'Cleared'} by {b.assignedByName ?? '–'} · {bugWhen(b.assignedAt)}</p>}
+              </section>
             )}
             {b.status !== 'CLOSED' && (
               <section className="space-y-2 rounded-xl border border-indigo-200 bg-indigo-50/40 p-3" data-testid="bug-reply">
@@ -249,12 +263,10 @@ const BugDrawer: React.FC<{ id: string; lead: boolean; meId: string | null; deve
                     onClick={() => void run(() => bugsApi.reply(b.id, reply.trim(), false), `Reply sent to ${b.reporterName}.`).then(ok => ok && setReply(''))}>
                     <Reply className="w-4 h-4" aria-hidden /> Send reply
                   </button>
-                  {canChangeStatus && (
-                    <button type="button" className={btnGhost} disabled={busy || reply.trim().length < 2} data-testid="ask-info"
-                      onClick={() => void run(() => bugsApi.reply(b.id, reply.trim(), true), `Asked ${b.reporterName} for information: Pending Information.`).then(ok => ok && setReply(''))}>
-                      Ask for information
-                    </button>
-                  )}
+                  <button type="button" className={btnGhost} disabled={busy || reply.trim().length < 2} data-testid="ask-info"
+                    onClick={() => void run(() => bugsApi.reply(b.id, reply.trim(), true), `Asked ${b.reporterName} for information: Pending Information.`).then(ok => ok && setReply(''))}>
+                    Ask for information
+                  </button>
                 </div>
               </section>
             )}
@@ -265,7 +277,7 @@ const BugDrawer: React.FC<{ id: string; lead: boolean; meId: string | null; deve
                 <MessageSquarePlus className="w-4 h-4" aria-hidden /> Add comment
               </button>
             </section>
-            <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1.5">History</h3><BugHistory history={b.history} /></section>
+            <section><h3 className="text-xs font-bold uppercase text-slate-500 mb-1.5">Progress and activity history</h3><BugHistory history={b.history} /></section>
           </>
         )}
       </div>

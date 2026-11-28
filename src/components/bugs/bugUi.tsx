@@ -8,15 +8,15 @@ import { Paged } from '../common/Paged';
 
 /** Shared pieces of the bug screens (the employee's report and the developers' Bugs section). */
 export const BUG_STATUS_LABEL: Record<DevBugStatus, string> = {
-  PENDING: 'Pending', UNDER_REVIEW: 'Under Review', IN_PROGRESS: 'In Progress', NEEDS_INFO: 'Pending Information', RESOLVED: 'Resolved', REJECTED: 'Rejected', CLOSED: 'Closed'
+  PENDING: 'Pending', UNDER_REVIEW: 'Under Review', IN_PROGRESS: 'In Progress', TESTING: 'Testing', NEEDS_INFO: 'Pending Information', RESOLVED: 'Resolved', REJECTED: 'Rejected', CLOSED: 'Closed'
 };
 const BUG_STATUS_STYLE: Record<DevBugStatus, string> = {
-  PENDING: 'bg-amber-50 text-amber-800 border-amber-200', UNDER_REVIEW: 'bg-sky-50 text-sky-800 border-sky-200', IN_PROGRESS: 'bg-blue-50 text-blue-800 border-blue-200',
+  PENDING: 'bg-amber-50 text-amber-800 border-amber-200', UNDER_REVIEW: 'bg-sky-50 text-sky-800 border-sky-200', IN_PROGRESS: 'bg-blue-50 text-blue-800 border-blue-200', TESTING: 'bg-violet-50 text-violet-800 border-violet-200',
   NEEDS_INFO: 'bg-orange-50 text-orange-800 border-orange-200', RESOLVED: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   REJECTED: 'bg-slate-100 text-slate-600 border-slate-200', CLOSED: 'bg-slate-100 text-slate-700 border-slate-300'
 };
 /** still being worked on (the rest are done: resolved, rejected or closed) */
-export const bugOpen = (s: DevBugStatus) => s === 'PENDING' || s === 'UNDER_REVIEW' || s === 'IN_PROGRESS' || s === 'NEEDS_INFO';
+export const bugOpen = (s: DevBugStatus) => s === 'PENDING' || s === 'UNDER_REVIEW' || s === 'IN_PROGRESS' || s === 'TESTING' || s === 'NEEDS_INFO';
 const SOURCE_LABEL = { EMPLOYEE: null, HR_REPORT: 'Reported by HR', HR_ESCALATION: 'Escalated by HR' } as const;
 const PRIORITY_STYLE: Record<string, string> = {
   LOW: 'bg-slate-50 text-slate-600 border-slate-200', MEDIUM: 'bg-indigo-50 text-indigo-700 border-indigo-200',
@@ -37,6 +37,18 @@ export const BugTags: React.FC<{ b: DevBugRouting }> = ({ b }) => (
 export const BugStatusPill: React.FC<{ status: DevBugStatus }> = ({ status }) => (
   <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-bold ${BUG_STATUS_STYLE[status]}`} data-testid="bug-status" data-status={status}>{BUG_STATUS_LABEL[status]}</span>
 );
+/** the overall progress of a bug (shared tracking, 20270312000400) */
+export const BugProgress: React.FC<{ value: number | undefined; compact?: boolean }> = ({ value, compact }) => {
+  const v = Math.max(0, Math.min(100, value ?? 0));
+  return (
+    <span className={`inline-flex items-center gap-2 ${compact ? 'min-w-[88px]' : 'w-full'}`} data-testid="bug-progress" data-progress={v}>
+      <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={v} aria-label={`Progress ${v}%`}>
+        <span className="block h-full rounded-full bg-indigo-600" style={{ width: `${v}%` }} />
+      </span>
+      <span className="text-[11px] font-bold tabular-nums text-slate-700">{v}%</span>
+    </span>
+  );
+};
 export const bugWhen = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '–');
 
 /** The files of a bug: each opens through a short signed link the server issues after the database allowed it. */
@@ -70,6 +82,13 @@ const KIND_TEXT = (h: DevBug['history'][number]) => {
   const d = h.data as Record<string, string | null>;
   if (h.kind === 'SUBMITTED') return 'Reported';
   if (h.kind === 'ASSIGNED') return d.toName ? `Assigned to ${d.toName}` : 'Unassigned';
+  if (h.kind === 'PROGRESS') {
+    const x = h.data as { statusFrom?: string; statusTo?: string; progressFrom?: number; progressTo?: number };
+    const bits = [`Progress update`];
+    if (x.statusTo && x.statusTo !== x.statusFrom) bits.push(`${BUG_STATUS_LABEL[x.statusFrom as DevBugStatus] ?? x.statusFrom} → ${BUG_STATUS_LABEL[x.statusTo as DevBugStatus] ?? x.statusTo}`);
+    if (x.progressTo !== undefined && x.progressTo !== x.progressFrom) bits.push(`${x.progressFrom ?? 0}% → ${x.progressTo}%`);
+    return bits.join(' · ');
+  }
   if (h.kind === 'STATUS') return `Status: ${BUG_STATUS_LABEL[(d.to as DevBugStatus) ?? 'PENDING'] ?? d.to}`;
   if (h.kind === 'MESSAGE') return d.from === 'REPORTER' ? 'Message from the reporter' : (h.data as { requestInfo?: boolean }).requestInfo ? 'The developers asked for information' : 'Reply from the developers';
   return 'Internal comment';
@@ -81,6 +100,7 @@ export const BugHistory: React.FC<{ history: DevBug['history'] }> = ({ history }
       <li key={h.id} data-kind={h.kind} className={`rounded-lg border px-3 py-2 text-xs ${h.internal ? 'border-violet-200 bg-violet-50/60' : h.kind === 'MESSAGE' ? 'border-indigo-200 bg-indigo-50/50' : 'border-slate-200 bg-white'}`}>
         <div className="flex flex-wrap justify-between gap-2"><b className="text-slate-800">{KIND_TEXT(h)}{h.internal ? ' (developers only)' : ''}</b><span className="text-slate-500">{h.by ?? 'System'} · {bugWhen(h.at)}</span></div>
         {h.note && <p className="mt-1 whitespace-pre-wrap text-slate-700">{h.note}</p>}
+        {h.kind === 'PROGRESS' && (h.data as { notes?: string | null }).notes ? <p className="mt-1 whitespace-pre-wrap text-slate-600"><b>Notes:</b> {(h.data as { notes?: string }).notes}</p> : null}
       </li>
     ))}
   </ol>
@@ -97,7 +117,7 @@ export function useBugAccess(): DevBugAccess | null {
     const ask = (retriesLeft: number) => bugsApi.access().then(a => { if (alive) setAccess(a); }, () => {
       if (!alive) return;
       if (retriesLeft > 0) timer = setTimeout(() => ask(retriesLeft - 1), 2500);
-      else setAccess({ isDeveloper: false, isLead: false, developers: [] });
+      else setAccess({ isDeveloper: false, isLead: false, developers: [], team: [] });
     });
     ask(2);
     return () => { alive = false; if (timer) clearTimeout(timer); };
