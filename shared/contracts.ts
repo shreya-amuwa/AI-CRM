@@ -609,7 +609,7 @@ export interface PipelineCustomer {
   id: string;
   lifecycleStage: LifecycleStage;
   leadStatus: LeadStatus;
-  /** The lead's tag (migration 20270305000100; it counts as `leadStatus`). Absent from servers before tags. */
+  /** The lead's tag (migration 20270308000100; it counts as `leadStatus`). Absent from servers before tags. */
   leadTagId?: string | null;
   name: string;
   company: string | null;
@@ -6301,7 +6301,8 @@ export interface AdsReport {
   clientName: string | null;
   assignmentId: string | null;
   assignmentTitle: string | null;
-  workCompleted: string;
+  /** Empty when only Work Pending or the Additional Note was written (20270308000100). */
+  workCompleted: string | null;
   workInProgress: string | null;
   pendingWork: string | null;
   challenges: string | null;
@@ -7617,7 +7618,8 @@ export interface TaskDailyReport {
   teamId: string | null;
   reviewerId: string | null;
   reportDate: string;
-  workCompleted: string;
+  /** Empty when only Work Pending or the Additional Note was written (20270308000100). */
+  workCompleted: string | null;
   progress: number;
   pendingWork: string | null;
   delayReason: string | null;

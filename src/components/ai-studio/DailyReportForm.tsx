@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { AiStudioDailyReportOptions, AiStudioDailyReportPreview, AiStudioReportContext, AiStudioReportDetail } from '../../../shared/contracts';
-import { DAILY_DESCRIPTION_MAX_WORDS, DAILY_DESCRIPTION_MIN_WORDS, aiStudioDailyReportSchema, countWords } from '../../../shared/validation';
+import { aiStudioDailyReportSchema } from '../../../shared/validation';
+import { ReportWordFields, reportWordsWithinLimits } from '../common/ReportWordFields';
 import { aiStudioApi } from '../../lib/api/aiStudio';
 import { ApiError, errorMessage } from '../../lib/api/client';
 import { confirmAction, toast } from '../../lib/feedback/feedbackStore';
@@ -18,14 +19,7 @@ import { TaskStatusBadge, dateText, todayIso, useLoad } from './ui';
  * shown read-only. They only type what is not in the tasks (additional work, pending work, blockers, tomorrow's plan, remarks). Nothing of the tasks
  * is copied into the report: it keeps references, and on submit exactly the entries shown here.
  */
-const EXTRA: { key: 'workCompleted' | 'pendingWork' | 'blockers' | 'tomorrowPlan' | 'remarks'; label: string }[] = [
-  { key: 'workCompleted', label: 'Additional work completed today' },
-  { key: 'pendingWork', label: 'Additional pending work' },
-  { key: 'blockers', label: 'Additional challenges / blockers' },
-  { key: 'tomorrowPlan', label: "Tomorrow's work plan" },
-  { key: 'remarks', label: 'General remarks' }
-];
-type Extra = Record<(typeof EXTRA)[number]['key'], string>;
+type Extra = Record<'workCompleted' | 'pendingWork' | 'blockers' | 'tomorrowPlan' | 'remarks', string>;
 const NO_EXTRA: Extra = { workCompleted: '', pendingWork: '', blockers: '', tomorrowPlan: '', remarks: '' };
 const extraOf = (r?: AiStudioReportDetail): Extra => ({
   workCompleted: r?.workCompleted ?? '', pendingWork: r?.pendingWork ?? '', blockers: r?.blockers ?? '', tomorrowPlan: r?.tomorrowPlan ?? '', remarks: r?.remarks ?? ''
@@ -37,9 +31,9 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
   const [date, setDate] = useState(existing?.reportDate ?? todayIso());
   const [selected, setSelected] = useState<string[]>(() => existing?.work?.map(w => w.taskId) ?? []);
   const [text, setText] = useState<Extra>(() => extraOf(existing));
-  // 20270302000100: the Daily Work Description, 10-150 words (counted as words, live; the server and the database check the same rule)
-  const [description, setDescription] = useState(existing?.workDescription ?? '');
-  const words = countWords(description);
+  // (20270308000100) the form asks three fields only: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). The Daily Work
+  // Description, the challenges and tomorrow's plan of an older report are kept as they are (sent back unchanged), never asked for.
+  const withinLimits = reportWordsWithinLimits(text);
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState<'draft' | 'submit' | null>(null);
   const [error, setError] = useState('');
@@ -93,14 +87,13 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
       setEditing(r);
       setSelected(r.work?.map(w => w.taskId) ?? []);
       setText(extraOf(r));
-      setDescription(r.workDescription ?? '');
       setError('');
     } catch (err) { setError(errorMessage(err)); }
   };
 
   const save = async (submit: boolean) => {
     const body = {
-      reportDate: date, taskIds: selected, ...text, workDescription: description, submit,
+      reportDate: date, taskIds: selected, ...text, workDescription: editing?.workDescription ?? undefined, submit,
       expectedUpdateIds: submit ? (preview?.updateIds ?? []) : undefined
     };
     const parsed = aiStudioDailyReportSchema.safeParse(body);
@@ -227,36 +220,13 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
         </Card>
       )}
 
-      {/* 3b. The Daily Work Description (required, 10-150 words) */}
-      <Card className="p-5 space-y-2">
-        <Field label="Daily work description" htmlFor="ai-dr-description" required>
-          <textarea id="ai-dr-description" className={textareaCls} rows={4} maxLength={2000} value={description} data-testid="daily-description"
-            aria-describedby="ai-dr-description-count" aria-invalid={words > DAILY_DESCRIPTION_MAX_WORDS}
-            placeholder="What you worked on today, in your own words (10 to 150 words)."
-            onChange={e => { setDescription(e.target.value); setError(''); }} />
-        </Field>
-        <p id="ai-dr-description-count" data-testid="daily-description-count" aria-live="polite"
-          className={`text-xs font-semibold ${words > DAILY_DESCRIPTION_MAX_WORDS ? 'text-rose-700' : words < DAILY_DESCRIPTION_MIN_WORDS ? 'text-amber-700' : 'text-emerald-700'}`}>
-          {words} / {DAILY_DESCRIPTION_MAX_WORDS} words ·{' '}
-          {words > DAILY_DESCRIPTION_MAX_WORDS ? `${words - DAILY_DESCRIPTION_MAX_WORDS} over the limit: shorten it to ${DAILY_DESCRIPTION_MAX_WORDS} words.`
-            : words < DAILY_DESCRIPTION_MIN_WORDS ? `${DAILY_DESCRIPTION_MIN_WORDS - words} more needed (at least ${DAILY_DESCRIPTION_MIN_WORDS}).`
-            : `${DAILY_DESCRIPTION_MAX_WORDS - words} words remaining.`}
-        </p>
-      </Card>
-
-      {/* 4. Additional information */}
+      {/* 4. The report: three optional fields with word limits (20270308000100) */}
       <Card className="p-5 space-y-3">
         <div>
-          <h3 className="text-sm font-extrabold text-slate-900">Additional information</h3>
-          <p className="text-xs text-slate-500">Only what is not already in your tasks. {selected.length === 0 ? 'Without a task, describe the work you completed.' : 'Everything above comes from your tasks; to correct it, open the task.'}</p>
+          <h3 className="text-sm font-extrabold text-slate-900">Your report</h3>
+          <p className="text-xs text-slate-500">{selected.length === 0 ? 'Without a task, write the work you completed.' : 'The work recorded on your tasks is shown above; to correct it, open the task.'}</p>
         </div>
-        <div className="grid md:grid-cols-2 gap-3">
-          {EXTRA.map(p => (
-            <Field key={p.key} label={p.label} htmlFor={`ai-dr-${p.key}`} required={p.key === 'workCompleted' && selected.length === 0}>
-              <textarea id={`ai-dr-${p.key}`} className={textareaCls} rows={3} maxLength={4000} value={text[p.key]} onChange={e => setText(t => ({ ...t, [p.key]: e.target.value }))} />
-            </Field>
-          ))}
-        </div>
+        <ReportWordFields idPrefix="ai-dr" values={text} inputClassName={textareaCls} onChange={(k, v) => { setText(t => ({ ...t, [k]: v })); setError(''); }} />
       </Card>
 
       {/* 5. Summary and 6. actions */}
@@ -264,7 +234,7 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
         {preview && selected.length > 0 && <WorkSummary s={preview.summary} />}
         {error && <ErrorBanner message={error} />}
         <div className="flex flex-wrap gap-2">
-          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || words < DAILY_DESCRIPTION_MIN_WORDS || words > DAILY_DESCRIPTION_MAX_WORDS}
+          <button type="submit" className={primaryBtn} disabled={!!saving || !ctx.data?.hasReviewer || !withinLimits}
             data-testid="daily-submit">{saving === 'submit' ? 'Submitting…' : 'Submit Daily Report'}</button>
           <button type="button" className={ghostBtn} disabled={!!saving} onClick={() => void save(false)}>{saving === 'draft' ? 'Saving…' : 'Save draft'}</button>
           {onCancel && <button type="button" className={ghostBtn} disabled={!!saving} onClick={onCancel}>Cancel</button>}

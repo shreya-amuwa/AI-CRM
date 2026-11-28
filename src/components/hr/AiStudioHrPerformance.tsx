@@ -79,7 +79,8 @@ const projectsOf = (tasks: AiStudioHrTask[]) => [...new Set(tasks.map(t => t.pro
 /** One report's text and tasks, opened on demand. */
 const ReportBody: React.FC<{ r: AiStudioHrMemberReport | AiStudioHrLeadReport; projectId?: string }> = ({ r, projectId }) => {
   const tasks = projectId ? r.tasks.filter(t => t.projectId === projectId) : r.tasks;
-  const parts: [string, string | null][] = [['Daily work description', r.description], ['Work completed', r.workCompleted], ['Pending work', r.pendingWork], ['Challenges', r.blockers], ['Remarks', r.remarks]];
+  // the report's three fields (20270308000100); a description or challenges are shown only on an older report that has them
+  const parts: [string, string | null][] = [['Work Completed', r.workCompleted], ['Work Pending', r.pendingWork], ['Additional Note', r.remarks], ['Daily work description', r.description], ['Challenges', r.blockers]];
   return (
     <div className="space-y-3 text-sm">
       {tasks.length > 0 && (
