@@ -5606,6 +5606,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const nineAm = (kind: string, body: string) => db.query(`create or replace function private.hr_nine_am(p_date date) returns timestamptz language sql ${kind} set search_path = '' as $$ ${body} $$`);
   await nineAm('stable', `select case when p_date <= private.hr_today() then least((p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata', now())
                                        else (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata' end`);
+  // the review reminders go out at 10:00 India time (private.rv_send_time): the same for this section
+  const tenAm = (body: string) => db.query(`create or replace function private.rv_send_time(p_date date) returns timestamptz language sql stable security definer set search_path = '' as $$ ${body} $$`);
+  await tenAm(`select least((p_date::timestamp + interval '10 hours') at time zone 'Asia/Kolkata', now())`);
   let hr = await hrRun();
   check(hr.schedule.birthdays >= 1 && hr.schedule.anniversaries >= 1 && hr.send.sent >= 3, 'HR automation: the scheduler endpoint queues and sends what is due today', hr);
   const bd = hrMail('hrbd.one@example.com', 'Happy Birthday, Birthday Person! 🎂');
@@ -5619,10 +5622,11 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   const pe = hrMail('hrbd.prob@example.com', 'Employee Confirmation Reminder — Probation Person — Due ');
   check(pe.length === 1 && /scheduled to be completed on /.test(pe[0].body.text) && /approaching in seven days/.test(pe[0].body.text),
     'HR automation: the employee gets the probation reminder exactly seven days before the end');
-  const ph = hrMail('hr.inbox@example.com', 'Action Required: Confirmation Due in 7 Days — Probation Person');
-  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not automatically confirm employment/.test(ph[0].body.text)
-    && /Designation: /.test(ph[0].body.text) && /Reporting Manager: /.test(ph[0].body.text) && /The confirmation date is seven days away/.test(ph[0].body.text), 'HR automation: HR gets the action-required reminder with id, department, joining and completion dates', ph[0]?.body?.text);
-  check(hrMail('hr.api@amuwa.com', 'Action Required: Confirmation Due in 7 Days').length === 1, 'HR automation: every HR department member is also told');
+  // HR's own copy is now the confirmation review reminder (20270312000100): the first one goes out 10 to 5 days before, with the real days left
+  const ph = hrMail('hr.inbox@example.com', 'Employee Confirmation Review Required — Probation Person | 7 Days Remaining');
+  check(ph.length === 1 && /Employee ID: HRBD-3/.test(ph[0].body.text) && /Department: HR Department/.test(ph[0].body.text) && /does not confirm, extend or end anyone's employment/.test(ph[0].body.text)
+    && /Designation: /.test(ph[0].body.text) && /Expected Confirmation Date: /.test(ph[0].body.text) && /Days Remaining: 7/.test(ph[0].body.text), 'HR automation: HR gets the review reminder with id, department, joining and completion dates', ph[0]?.body?.text);
+  check(hrMail('hr.api@amuwa.com', 'Employee Confirmation Review Required — Probation Person').length === 1, 'HR automation: every HR department member is also told');
   check(emails().filter(o => /Employment Confirmation – Amuwa Corporation$/.test(o.body.subject)).length === 0, 'HR automation: nothing confirms the employee by itself');
 
   // never twice
@@ -5715,6 +5719,9 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
   r = await api('hr', 'GET', '/hr/email-automation/probation');
   const cycle = r.json.data.find((c: any) => c.employeeName === 'Probation Person');
   check(r.status === 200 && cycle && cycle.status === 'PENDING' && cycle.daysLeft === 7 && cycle.canDecide === true && cycle.employeeCode === 'HRBD-3', 'HR automation API: the upcoming confirmation is listed with its days left', cycle);
+  // the review started ten days before (20270312000100): the Department Head and CEO reports come first (the review itself is tested further down)
+  await db.query(`insert into public.hr_review_evaluations (cycle_id, round, reviewer_role, status, ratings, recommendation, submitted_at, version)
+                  select $1, 1, r, 'SUBMITTED', '{"overall": 4}', 'CONFIRM', now(), 1 from (values ('DH'), ('CEO')) x(r) on conflict do nothing`, [cycle.id]);
   r = await api('a', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, {});
   check(r.status === 403, 'HR automation API: a sales member cannot approve', r);
   r = await api('hr', 'POST', `/hr/email-automation/probation/${cycle.id}/confirm`, { effectiveDate: 'soon' });
@@ -5758,6 +5765,8 @@ await db.query(`alter table public.generated_invoices alter column paid_only set
 
   if (hrBack > 0) await setHrClock(0);
   await nineAm('immutable', `select (p_date::timestamp + interval '9 hours') at time zone 'Asia/Kolkata'`);
+  await tenAm(`select (p_date::timestamp + coalesce((select case when s.value #>> '{}' ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then (s.value #>> '{}')::time end
+                 from public.crm_settings s where s.key = 'hr.review_reminder_time'), time '10:00')) at time zone 'Asia/Kolkata'`);
   mailMock.close();
   for (const k of ['AUTOMATION_MODE', 'EMAIL_PROVIDER', 'EMAIL_API_KEY', 'EMAIL_API_BASE_URL', 'EMAIL_FROM', 'EMAIL_CC', 'EMAIL_BCC', 'AUTOMATION_DISPATCH_SECRET', 'AUTOMATION_TEST_RECIPIENTS']) delete process.env[k];
 }
@@ -14422,6 +14431,59 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
     await db.query(`delete from public.crocodial_connections where id = any($1::uuid[])`, [[ownA, ownB, mdConn, ...extra]]);
     await db.query(`delete from public.crocodial_rollout where division = 'SALES' and department_id = any($1::uuid[])`, [[wab.id, wbx.id]]);
     for (const x of rolloutBefore) await db.query(`insert into public.crocodial_rollout select * from jsonb_populate_record(null::public.crocodial_rollout, $1::jsonb)`, [x.j]);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// HR dashboard upgrade, Phase 1: confirmation reviews and the holiday calendar (20270312000100)
+// ---------------------------------------------------------------------------
+{
+  const due = (await db.query(`select (private.hr_today() + 6)::text d, (private.hr_today() - interval '6 months' + interval '6 days')::date::text j`)).rows[0];
+  await db.query(`delete from public.hr_probation_cycles where employee_key = $1`, [memberA]);
+  const cyc = (await db.query(
+    `insert into public.hr_probation_cycles (employee_key, profile_id, employee_name, employee_email, employee_code, department_id, department_name, joining_date, probation_end, original_end)
+     select $1, p.id, p.full_name, p.email, 'EMP-API', p.department_id, d.name, $2::date, $3::date, $3::date from public.profiles p join public.departments d on d.id = p.department_id where p.id = $1 returning id`,
+    [memberA, due.j, due.d])).rows[0].id as string;
+  try {
+    r = await api('a', 'GET', `/hr/reviews/${cyc}`);
+    check(r.status === 404, 'reviews API: the employee cannot open their own review', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/start`, {});
+    check(r.status === 200 && r.json.data.reviewStarted === true && r.json.data.dh.reviewer !== null, 'reviews API: HR starts the review; the Department Head is assigned', r);
+    r = await api('dh', 'GET', '/hr/reviews/mine');
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === cyc && x.myRole === 'DH'), 'reviews API: the Department Head finds it in their queue', r);
+    r = await api('dh', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'DH', ratings: { work_quality: 9 }, submit: true });
+    check(r.status === 422, 'reviews API: a rating outside 1-5 is refused before the database', r);
+    r = await api('dh', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'DH', ratings: { work_quality: 4 }, answers: { strengths: 'Reliable' }, submit: false });
+    check(r.status === 200 && r.json.data.dh.status === 'DRAFT', 'reviews API: a draft is saved', r);
+    r = await api('dh', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'DH', ratings: { work_quality: 4 }, answers: { recommendationReason: 'Reliable' }, recommendation: 'CONFIRM', submit: true });
+    check(r.status === 200 && r.json.data.dh.status === 'SUBMITTED', 'reviews API: the Department Head submits', r);
+    r = await api('a', 'POST', `/hr/reviews/${cyc}/evaluation`, { role: 'CEO', ratings: { overall: 4 }, submit: false });
+    check(r.status === 404, 'reviews API: an unrelated employee cannot write a report', r);
+    r = await api('hr', 'GET', '/hr/reviews?window=DUE_10');
+    check(r.status === 200 && r.json.data.rows.some((x: any) => x.id === cyc) && typeof r.json.data.cards.pendingCeo === 'number', 'reviews API: HR lists it under "due within 10 days"', r);
+    r = await api('hr', 'GET', '/hr/reviews?window=NOT_A_WINDOW');
+    check(r.status === 422, 'reviews API: unknown filters are refused', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'CONFIRM', reason: 'Department Head recommends' });
+    check(r.status === 409, 'reviews API: without the CEO report the decision is refused', r);
+    r = await api('hr', 'POST', `/hr/email-automation/probation/${cyc}/confirm`, {});
+    check(r.status === 409, 'reviews API: the old Confirm button cannot skip the review', r);
+    r = await api('hr', 'POST', `/hr/reviews/${cyc}/decide`, { decision: 'HOLD', reason: 'Waiting for the CEO to return', nextReviewDate: due.d });
+    check(r.status === 200 && r.json.data.status === 'ON_HOLD', 'reviews API: HR can put the decision on hold', r);
+    r = await api('hr', 'GET', `/hr/reviews/${cyc}`);
+    check(r.status === 200 && r.json.data.evaluations.some((e: any) => e.role === 'DH' && e.ratings.work_quality === 4), 'reviews API: HR reads the Department Head report', r);
+    // holidays
+    r = await api('a', 'POST', '/hr/holidays', { day: '2027-01-26', name: 'Republic Day' });
+    check(r.status === 403, 'reviews API: only HR manages the holiday calendar', r);
+    r = await api('hr', 'POST', '/hr/holidays', { day: '2027-01-26', name: 'Republic Day' });
+    check(r.status === 200 && r.json.data.some((h: any) => h.day === '2027-01-26' && h.name === 'Republic Day'), 'reviews API: HR adds a holiday', r);
+    r = await api('a', 'GET', '/hr/holidays?year=2027');
+    check(r.status === 200 && r.json.data.some((h: any) => h.day === '2027-01-26'), 'reviews API: everyone can read the holiday calendar', r);
+    r = await api('hr', 'POST', '/hr/holidays', { day: '2027-01-26', remove: true });
+    check(r.status === 200 && !r.json.data.some((h: any) => h.day === '2027-01-26'), 'reviews API: and remove it', r);
+  } finally {
+    await db.query(`delete from public.hr_probation_cycles where id = $1`, [cyc]);
+    await db.query(`delete from public.office_holidays where day = '2027-01-26'`);
   }
 }
 

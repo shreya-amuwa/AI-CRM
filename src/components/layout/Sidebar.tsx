@@ -349,7 +349,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ...(user?.profile?.hrSubRole === 'HR_ASSISTANT' ? [{ id: 'hr_recruitment_portal' as ActiveTab, label: 'Recruitment Portal', icon: Users }] : []),
     { id: 'hr_training' as ActiveTab, label: 'Training', icon: GraduationCap },
     // the HR e-mails (birthday, anniversary, confirmation reminders) run on the server by themselves; only the approval is a person's job
-    { id: 'hr_probation' as ActiveTab, label: 'Probation Confirmations', icon: ClipboardCheck },
+    // Employee Confirmations (docs/hr-dashboard-upgrade.md): the review cycles, the Department Head / CEO reports and HR's final decision
+    { id: 'hr_probation' as ActiveTab, label: 'Employee Confirmations', icon: ClipboardCheck },
     // paid leave of confirmed employees (balances, the ledger, corrections; the policy for the HR Department Head)
     { id: 'hr_paid_leave' as ActiveTab, label: 'Paid Leave', icon: CalendarClock },
     { id: 'hr_issues' as ActiveTab, label: 'Employee Issues', icon: MessageSquareWarning },

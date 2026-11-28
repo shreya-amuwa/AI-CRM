@@ -10,7 +10,7 @@ import { dayLabelsOfWeek } from './weekChart';
 import { ScopeOverviewPanel } from '../../common/ScopeOverviewPanel';
 import { HeadDeptStats } from '../../department-head/HeadDeptStats';
 
-export const HEAD_PAGES = ['overview', 'raise-issue', 'assign', 'reports', 'work-reports', 'daily', 'activity', 'clients', 'customers', 'import', 'support', 'notices', 'team', 'notifications', 'payments', 'plans', 'chat', 'income', 'performance', 'top-performers', 'telecaller-sheets', 'service-prices', 'operations', 'work-updates', 'leads', 'invoices', 'team-attendance', 'recharges'] as const;
+export const HEAD_PAGES = ['overview', 'raise-issue', 'assign', 'reports', 'work-reports', 'daily', 'activity', 'clients', 'customers', 'import', 'support', 'notices', 'team', 'notifications', 'payments', 'plans', 'chat', 'income', 'performance', 'top-performers', 'telecaller-sheets', 'service-prices', 'operations', 'work-updates', 'leads', 'invoices', 'team-attendance', 'recharges', 'employee-reviews'] as const;
 export type HeadPage = (typeof HEAD_PAGES)[number];
 
 const greeting = () => {

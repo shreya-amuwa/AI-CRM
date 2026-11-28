@@ -1,7 +1,7 @@
 /** The pages of the Sales Department Head dashboard and their addresses (kept apart from the component so they can be tested without a browser). */
 export type SalesHeadPage =
   | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'sheet-upload' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'tasks' | 'assign-task' | 'performance' | 'top-performers' | 'income' | 'reports' | 'work-reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications' | 'field-visit-leads' | 'field-tracking' | 'lead-whatsapp' | 'crocodial' | 'crocodial-me' | 'crocodial-leads' | 'work-updates'
-  | 'telecallers' | 'business-associates' | 'my-income' | 'incentive-setup' | 'lead-tags' | 'crocodial-setup';
+  | 'telecallers' | 'business-associates' | 'my-income' | 'incentive-setup' | 'lead-tags' | 'crocodial-setup' | 'employee-reviews';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -29,6 +29,7 @@ export const PATHS: Record<SalesHeadPage, string> = {
   'service-prices': 'service-prices',
   notices: 'notices',
   team: 'team',
+  'employee-reviews': 'employee-reviews',
   chat: 'chat',
   'raise-issue': 'raise-issue',
   notifications: 'notifications',

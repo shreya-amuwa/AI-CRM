@@ -106,4 +106,53 @@ These are the phase requirements of the task. Each is ticked in **Progress** onl
 
 ## Progress
 
-(updated at the end of each phase below)
+### Phase 1: Employee confirmation reviews (migration `20270312000100_employee_review_cycles.sql`)
+
+**Implemented and tested:**
+
+- **Review cycles** on the existing `hr_probation_cycles`:
+  - one per employee and period;
+  - an extension is the next round of the same cycle, with `original_end` kept and the history in `hr_review_extensions`;
+  - obsolete queued reminders are SKIPPED.
+- **Reminders:**
+  - **T-10 (first) and T-4 (second)** go to HR, the Department Head and the CEO, as e-mail (`REVIEW_FIRST` / `REVIEW_SECOND` in `hr_email_events`) and in-app (`hr_review_notice_log`).
+  - The wording is role-specific. The second reminder shows each report's status and acknowledges one already submitted.
+  - A cycle found late gets its current stage with the real days left. After downtime only the current stage goes out.
+  - A person who is both HR and a reviewer gets a single copy.
+  - Reminders go out at 10:00 IST (`crm_settings.hr.review_reminder_time`).
+- **Reviewers:**
+  - the Department Head is taken from the hierarchy (`head_covers`), the CEO from `operations_owner_for`, else the CEO whose scope covers the department and function;
+  - HR reviewer: the HR Department Head;
+  - a missing or inactive reviewer is a **configuration issue** shown to HR (once per issue);
+  - HR reassigns, and the history is kept in `hr_review_assignments`.
+- **Evaluations:**
+  - one per cycle, round and role (`hr_review_evaluations`): DRAFT → SUBMITTED; HR can return a report for revision; every submitted version is kept;
+  - criteria come from `shared/hrUpgrade.ts` (role-family extras for Telecaller, design, support and accounts); 1–5 or Not applicable;
+  - an extension or a "not recommended" needs its reasons and fields;
+  - a reviewer sees only their own report; HR and the decision-makers see all.
+- **Final decision** (`hr_review_decide`), taken by the HR Department Head / Team Head, Department HR or the Super Admin:
+  - Confirm runs the existing CONFIRMING → e-mail → APPROVED path, so paid leave is not granted twice;
+  - Extend, Not confirmed (no account change) and On hold (next review date and owner; it comes back to HR on that date);
+  - both management reports are required, unless the HR Department Head / Super Admin records an exceptional decision with a documented reason;
+  - the old Confirm button refuses a started review unless both reports are in and a decision-maker presses it (it then records the decision).
+- **Shared foundation:** the attendance day engine `private.att_day_rows` and the holiday calendar `office_holidays` (HR managed; `office_working_day` honours it).
+- **Screens:**
+  - HR > **Employee Confirmations** (cards that filter, filters, list, the review page);
+  - Department HR's page;
+  - Department Head / CEO dashboards > **Employee Confirmation Reviews** (Department Head and Sales Department Head dashboards, CEO included).
+  - Reviews open from notifications and from the e-mail link (`/?review=<id>`) over any dashboard.
+- **API:** `GET /hr/reviews`, `/hr/reviews/mine`, `/hr/reviews/:id`; `POST /hr/reviews/:id/evaluation|return|reassign|start|decide`; `GET|POST /hr/holidays`.
+
+**Tests:**
+
+- `hr_review_cycles_test.sql`;
+- `hr_email_test.sql` and the API "HR automation" checks, updated: HR's 7-day copy became the review reminder, and Confirm comes after the reports;
+- the API "reviews API" checks;
+- `hr_email_templates.test.ts` (36 checks);
+- `ui_hr_reviews` (32 browser checks, desktop and phone).
+
+**Limits:**
+
+- There is no employee-specific probation length beyond extensions, because the CRM has no such field. The policy stays at 6 calendar months.
+- Other dashboards (unified, AI Studio, HR heads) reach their reviews through the notifications and e-mail links rather than a menu entry.
+

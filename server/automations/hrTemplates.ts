@@ -18,7 +18,27 @@ export interface HrMailPayload {
   daysOverdue?: number;
   designation?: string;
   reportingManager?: string;
+  // confirmation / internship reviews (REVIEW_FIRST / REVIEW_SECOND, 20270312000100)
+  cycleType?: 'PROBATION' | 'INTERNSHIP';
+  recipientRole?: 'HR' | 'DH' | 'CEO';
+  recipientName?: string;
+  employmentType?: string;
+  periodMonths?: number;
+  dhStatus?: string;
+  ceoStatus?: string;
+  hrStatus?: string;
+  ownStatus?: string;
+  configIssue?: string | null;
+  reviewPath?: string;
 }
+
+export interface HrRenderOptions { appUrl?: string | null }
+
+const STATUS_LABEL: Record<string, string> = {
+  NOT_STARTED: 'Pending', DRAFT: 'In progress (draft)', SUBMITTED: 'Submitted', RETURNED: 'Returned for revision', OVERDUE: 'Overdue',
+  NOT_SUBMITTED: 'Not submitted', CANCELLED: 'Cancelled'
+};
+export const reviewStatusLabel = (s: string | undefined) => STATUS_LABEL[s ?? ''] ?? (s ? s.replace(/_/g, ' ').toLowerCase() : 'Pending');
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const wrap = (inner: string) => '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">' + inner + '</div>';
@@ -40,7 +60,7 @@ function days(n: number | undefined): string {
   return v === 0 ? 'today' : `in ${v} day${v === 1 ? '' : 's'}`;
 }
 
-export function renderHrEmail(kind: HrEmailKind, p: HrMailPayload): RenderedEmail {
+export function renderHrEmail(kind: HrEmailKind, p: HrMailPayload, opts: HrRenderOptions = {}): RenderedEmail {
   const name = p.employeeName?.trim() || 'Employee';
   let subject: string;
   let html: string;
@@ -111,9 +131,64 @@ ${details([['Date of Joining', longDate(p.joiningDate)], ['Probation Completion 
 <p>Please ensure the employee's HR records are updated accordingly.</p>
 ${automationSignature}`;
       break;
+    case 'REVIEW_FIRST':
+    case 'REVIEW_SECOND':
+      ({ subject, html } = renderReviewReminder(kind, name, p, opts));
+      break;
     default:
       throw new Error(`Unknown HR e-mail kind ${String(kind)}`);
   }
   const wrapped = wrap(html);
   return { subject, html: wrapped, text: toText(wrapped.replace(/<li>/g, '- ').replace(/<\/li>/g, '<br>')) };
+}
+
+/** The confirmation / internship review reminders (T-10 and T-4): role-specific wording; the link opens the review in the CRM. */
+function renderReviewReminder(kind: 'REVIEW_FIRST' | 'REVIEW_SECOND', name: string, p: HrMailPayload, opts: HrRenderOptions): { subject: string; html: string } {
+  const intern = p.cycleType === 'INTERNSHIP';
+  const left = Math.max(0, Number(p.daysLeft ?? 0));
+  const leftText = left === 0 ? 'Due Today' : `${left} Day${left === 1 ? '' : 's'} Remaining`;
+  const role = p.recipientRole ?? 'HR';
+  const dear = role === 'HR' ? 'HR Team' : (p.recipientName?.trim() || 'Sir / Madam');
+  const due = longDate(p.probationEndDate);
+  const subject = kind === 'REVIEW_FIRST'
+    ? `${intern ? 'Internship Completion Review Required' : 'Employee Confirmation Review Required'} — ${name} | ${leftText}`
+    : `${intern ? 'Internship Evaluation Reminder' : 'Employee Confirmation Reminder'} — ${name} | ${leftText}`;
+  const link = opts.appUrl && p.reviewPath ? `${opts.appUrl.replace(/\/+$/, '')}${p.reviewPath}` : null;
+  const button = link
+    ? `<p><a href="${esc(link)}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:bold">${kind === 'REVIEW_FIRST' ? (intern ? 'Review Intern' : 'Review Employee') : 'Open Confirmation Review'}</a></p>`
+    : '<p>Open the CRM: Employee Confirmations.</p>';
+  const facts = details([
+    [intern ? 'Intern Name' : 'Employee Name', name], ['Employee ID', p.employeeCode ?? ''], ['Department', p.department ?? ''],
+    ['Designation', p.designation ?? 'Not recorded'], ['Employment Type', p.employmentType ?? (intern ? 'Intern' : 'Full-Time')],
+    ['Date of Joining', longDate(p.joiningDate)], [intern ? 'Internship Duration' : 'Probation Duration', `${p.periodMonths ?? (intern ? 3 : 6)} months`],
+    [intern ? 'Internship Completion Date' : 'Expected Confirmation Date', due], ['Days Remaining', String(left)]
+  ]);
+  const status = details([['Department Head', reviewStatusLabel(p.dhStatus)], ['CEO', reviewStatusLabel(p.ceoStatus)], ['HR Final Evaluation', reviewStatusLabel(p.hrStatus)]]);
+  const period = intern ? 'internship' : 'probation period';
+  let action: string;
+  if (role === 'HR') {
+    if (p.configIssue) action = `<p><b>Action required:</b> a reviewer is missing (${esc(p.configIssue.replace('NO_DEPARTMENT_HEAD', 'no Department Head').replace('NO_CEO', 'no CEO').replace(',', ', '))}). Please assign one in the review.</p>`;
+    else if (p.dhStatus === 'SUBMITTED' && p.ceoStatus === 'SUBMITTED') action = '<p><b>Action required:</b> both management reports are in. Please complete the HR evaluation and record the final decision.</p>';
+    else action = kind === 'REVIEW_FIRST'
+      ? `<p>The ${intern ? 'internship' : 'confirmation'} review has started. The Department Head and the CEO have been asked for their evaluations; please coordinate and follow up on pending reports.</p>`
+      : '<p>Please follow up on the pending management reports so the final decision can be made on time.</p>';
+  } else if (p.ownStatus === 'SUBMITTED') {
+    action = '<p>Thank you: your evaluation report has been submitted. No further action is needed from you.</p>';
+  } else {
+    action = `<p><b>Action required:</b> please ${p.ownStatus === 'RETURNED' ? 'revise and resubmit' : 'submit'} your evaluation and recommendation in the CRM before ${esc(due)}.</p>`;
+  }
+  const intro = kind === 'REVIEW_FIRST'
+    ? `<p>${esc(name)}, working as ${esc(p.designation ?? 'an employee')} in the ${esc(p.department ?? '')} department, is approaching the completion of their ${period}.</p>`
+    : `<p>This is a reminder that ${esc(name)} is scheduled to complete their ${period} on ${esc(due)}. The ${intern ? 'internship evaluation' : 'confirmation review'} is due ${left === 0 ? 'today' : `in ${left} day${left === 1 ? '' : 's'}`}.</p>`;
+  const ask = role === 'HR' ? '' : `<p>Please review the ${intern ? "intern's learning, work quality" : "employee's performance"}, attendance, conduct, work responsibilities and overall suitability${intern ? ' for continuation' : ' for confirmation'}.</p>`;
+  const html = `<p>Dear ${esc(dear)},</p>
+${intro}
+${facts}
+${kind === 'REVIEW_SECOND' || role === 'HR' ? `<p>Current review status:</p>${status}` : ''}
+${ask}
+${action}
+${button}
+<p>This e-mail does not confirm, extend or end anyone's employment: HR records the final decision in the CRM.</p>
+<p>Regards,<br>HR Management System<br>Team Amuwa</p>`;
+  return { subject, html };
 }

@@ -45,7 +45,7 @@ function hrSettings(base: AutomationSettings): AutomationSettings {
 async function processEvent(s: AutomationSettings, ev: ClaimedEvent): Promise<Outcome> {
   const to = (ev.to || '').trim().toLowerCase();
   if (!EMAIL_RE.test(to)) return { outcome: 'SKIPPED', detail: 'No valid e-mail address for the recipient.' };
-  const mail = renderHrEmail(ev.kind, ev.payload);
+  const mail = renderHrEmail(ev.kind, ev.payload, { appUrl: s.appUrl });
   if (s.mode !== 'live') return { outcome: 'DRY_RUN', detail: `Dry run – not sent: "${mail.subject}" to ${maskEmail(to)}` };
   if (s.testRecipients && !s.testRecipients.emails.has(to)) {
     return { outcome: 'DRY_RUN', detail: `Test mode – ${maskEmail(to)} is not a test recipient; not sent.` };

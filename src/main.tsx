@@ -4,6 +4,8 @@ import ReactDOM from 'react-dom/client';
 const StaffApp = React.lazy(() => import('./App'));
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { AppFeedbackProvider } from './components/feedback/AppFeedback';
+// confirmation / internship reviews open over any dashboard (notifications, e-mail links: /?review=<id>)
+const ReviewOverlay = React.lazy(() => import('./components/hr/reviews/ReviewOverlay'));
 import { installChunkReload } from './lib/chunkReload';
 import { watchOverlays } from './lib/overlayScrollLock';
 import './index.css';
@@ -51,6 +53,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       ) : isClientRoute ? (
         <React.Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}><ClientApp /></React.Suspense>
       ) : <React.Suspense fallback={<div style={{ padding: 24 }}>Loading workspace…</div>}><StaffApp /></React.Suspense>}
+      {!isPublicBooking && !isStaffSetPassword && !isClientRoute && <React.Suspense fallback={null}><ReviewOverlay /></React.Suspense>}
       </AppFeedbackProvider>
     </ErrorBoundary>
   </React.StrictMode>

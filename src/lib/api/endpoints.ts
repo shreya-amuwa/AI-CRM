@@ -3,6 +3,7 @@
  * they never call fetch() or Supabase tables directly.
  */
 import { registerUnifiedDepartments } from '../auth/departmentRoles';
+import type { OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../../shared/hrUpgrade';
 import type { NotificationHealthDetail, NotificationHealthReport, NotificationTestResult } from '../../../shared/contracts';
 import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProviderCheck, EmailRule, EmailRulePreview, EmailSettings, EmailSuppression } from '../../../shared/contracts';
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
@@ -1215,3 +1216,18 @@ export const offerTemplatesApi = {
 export interface OfferTemplateSaveBody {
   designation: string; description?: string | null; content: OfferTemplateContent; letterhead: OfferLetterhead; sampleFileId?: string | null; baseVersion: number; note?: string | null;
 }
+
+// HR dashboard upgrade (docs/hr-dashboard-upgrade.md): confirmation / internship reviews and the holiday calendar. The database decides who may.
+export const hrReviewsApi = {
+  list: (q: Record<string, string | undefined> = {}) => api.get<ReviewList>('/hr/reviews', Object.fromEntries(Object.entries(q).filter(([, v]) => v)) as Record<string, string>),
+  mine: () => api.get<ReviewQueue>('/hr/reviews/mine'),
+  get: (id: string) => api.get<ReviewDetail>(`/hr/reviews/${id}`),
+  save: (id: string, body: { role: string; ratings: Record<string, number | null>; answers: Record<string, string>; recommendation: string | null; submit: boolean }) =>
+    api.post<ReviewDetail>(`/hr/reviews/${id}/evaluation`, body),
+  returnForRevision: (id: string, role: 'DH' | 'CEO', reason: string) => api.post<ReviewDetail>(`/hr/reviews/${id}/return`, { role, reason }),
+  reassign: (id: string, role: string, profileId: string, reason: string) => api.post<ReviewDetail>(`/hr/reviews/${id}/reassign`, { role, profileId, reason }),
+  start: (id: string) => api.post<ReviewDetail>(`/hr/reviews/${id}/start`, {}),
+  decide: (id: string, body: Record<string, unknown>) => api.post<ReviewDetail>(`/hr/reviews/${id}/decide`, body),
+  holidays: (year?: number) => api.get<OfficeHoliday[]>('/hr/holidays', year ? { year: String(year) } : {}),
+  setHoliday: (day: string, name: string | null, remove = false) => api.post<OfficeHoliday[]>('/hr/holidays', { day, name: name ?? undefined, remove })
+};

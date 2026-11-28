@@ -67,6 +67,8 @@ import { LeadTagService } from './LeadTagService.js';
 import { LeadTagRepository } from '../repositories/LeadTagRepository.js';
 import { NoticeRepository } from '../repositories/NoticeRepository.js';
 import { HrAwardService } from './HrAwardService.js';
+import { HrUpgradeService } from './HrUpgradeService.js';
+import { HrUpgradeRepository } from '../repositories/HrUpgradeRepository.js';
 import { HrAwardRepository } from '../repositories/HrAwardRepository.js';
 import { EmployeeCaseRepository } from '../repositories/EmployeeCaseRepository.js';
 import { WorkReportRepository } from '../repositories/WorkReportRepository.js';
@@ -158,6 +160,7 @@ export function createServices(db: SupabaseClient) {
     // Lead tags (20270305000100)
     leadTags: new LeadTagService(new LeadTagRepository(db)),
     hrAwards: new HrAwardService(new HrAwardRepository(db)),
+    hrUpgrade: new HrUpgradeService(new HrUpgradeRepository(db)),
     leadWhatsApp: new LeadWhatsAppService(new LeadWhatsAppRepository(db)),
     crocodial: new CrocodialService(new CrocodialRepository(db)),
     workReports: new WorkReportService(new WorkReportRepository(db)),

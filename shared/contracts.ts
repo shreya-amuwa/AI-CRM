@@ -2839,7 +2839,7 @@ export type BusinessOrdersPage = Paginated<BusinessOrder>;
 // ---------------------------------------------------------------------------
 export type HrEmailKind =
   | 'BIRTHDAY' | 'ANNIVERSARY' | 'PROBATION_REMINDER_EMPLOYEE' | 'PROBATION_REMINDER_HR' | 'PROBATION_OVERDUE_HR'
-  | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR';
+  | 'CONFIRMATION_EMPLOYEE' | 'CONFIRMATION_HR' | 'REVIEW_FIRST' | 'REVIEW_SECOND';
 export type HrEmailStatus = 'PENDING' | 'SENDING' | 'RETRY' | 'SENT' | 'FAILED' | 'SKIPPED' | 'DRY_RUN';
 
 export type HrAutomationCode = 'BIRTHDAY' | 'ANNIVERSARY' | 'CONFIRMATION';

@@ -1,3 +1,4 @@
+import { openReview } from '../hr/reviews/reviewUi';
 import { useEffect } from 'react';
 import { openReports } from '../reports/reportEvents';
 import { openAiStudio } from '../ai-studio/aiStudioEvents';
@@ -87,6 +88,8 @@ export function openFromNotification(n: { type: string; entityType: string | nul
   if (n.entityType === 'work_task') { openWorkUpdate({ taskId: n.entityId ?? undefined }); return true; }
   // a meeting (a request, an approval, a move, a cancellation, a reminder) opens Meetings on it
   if (n.entityType === 'meeting') { openMeeting(n.entityId ?? undefined); return true; }
+  // confirmation / internship reviews (20270312000100): the review opens over the current dashboard
+  if (n.entityType === 'hr_review' && n.entityId) { openReview(n.entityId); return true; }
   // a meeting summary report (submitted, revised, an action item given, an answer) opens it in Meetings
   if (n.entityType === 'meeting_summary') { openMeetingReport(n.entityId ?? undefined); return true; }
   // a bug (20270122000300): the reporter's status change opens their bug reports; a developer's opens the Bugs section
