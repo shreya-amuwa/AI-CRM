@@ -13767,12 +13767,75 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // Accounts correct the billing details
   r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { gstAmount: 100 });
   check(r.status === 422, 'recharges API: a correction needs a reason', r);
-  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'GST is 100 on the invoice we hold', gstAmount: 100, customerEmail: 'billing@rcx.example.com' });
+  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'GST is 100 on the invoice we hold', gstAmount: 100, customerEmail: 'billing@rcx.example.com', customerAddress: '12 MG Road, Pune 411001' });
   check(r.status === 200 && r.json.data.totalAmount === 600 && r.json.data.customerEmail === 'billing@rcx.example.com' && r.json.data.rmId === rcmId, 'recharges API: Accounts correct the GST and the e-mail; the RM stays', r);
   r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'try', rmId: rcm2Id });
   check(r.status === 422, 'recharges API: a correction cannot name a Relationship Manager', r);
   r = await api('rcl', 'POST', `/support/recharges/${p1}/correct`, { note: 'lead tries', gstAmount: 1 });
   check(r.status === 403, 'recharges API: only Accounts correct billing details', r);
+
+  // the invoice of a verified recharge: Accounts only, once, with a number from the series; nothing is sent by itself
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice/plan`);
+  check(r.status === 403, 'recharges API: Support cannot see the invoice plan', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/invoice`, {});
+  check(r.status === 403, 'recharges API: ... nor generate the invoice', r);
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice`);
+  check(r.status === 200 && r.json.data === null, 'recharges API: there is no invoice yet', r);
+  r = await api('accm', 'POST', `/support/recharges/${m1}/invoice`, {});
+  check(r.status === 409, 'recharges API: a recharge whose payment is not confirmed has no invoice', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, { amount: 1 });
+  check(r.status === 422, 'recharges API: an amount sent by the browser is not accepted', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, { hsnSac: '12' });
+  check(r.status === 422, 'recharges API: a bad HSN/SAC code is refused', r);
+  r = await api('accm', 'GET', `/support/recharges/${p1}/invoice/plan`);
+  check(r.status === 200 && r.json.data.missing.length === 0 && r.json.data.taxTreatment === 'INTRA_STATE' && r.json.data.totalAmount === 600 && r.json.data.cgstAmount === 50 && r.json.data.sgstAmount === 50, 'recharges API: the plan: nothing missing, same state, CGST + SGST', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, {});
+  check(r.status === 201 && /^GST\/\d{2}-\d{2}\/\d+$/.test(r.json.data.invoice.number) && r.json.data.invoice.totalAmount === 600 && r.json.data.invoice.invoiceType === 'GST' && ['READY', 'FAILED'].includes(r.json.data.pdf.status),
+    'recharges API: Accounts generate the invoice: a number from the existing series, total = amount + GST', r);
+  const invNo = r.json.data.invoice.number as string;
+  const invId = r.json.data.invoice.id as string;
+  check(r.json.data.pdf.status === 'READY', 'recharges API: and its PDF is drawn and stored privately', r.json.data.pdf);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice`, {});
+  check(r.status === 201 && r.json.data.invoice.number === invNo, 'recharges API: generating again returns the same invoice (no second number)', r);
+  check((await db.query(`select count(*)::int n from public.support_recharge_invoices where recharge_id = $1`, [p1])).rows[0].n === 1, 'recharges API: one invoice per recharge');
+  r = await api('accm', 'GET', `/support/recharges/${p1}/invoice/file?action=download`);
+  check(r.status === 200 && r.json.data.url.startsWith(GW) && r.json.data.expiresInSeconds <= 120, 'recharges API: Accounts review the PDF through a short-lived link', r);
+  const pdfRes = await fetch(r.json.data.url);
+  check(pdfRes.status === 200 && Buffer.from(await pdfRes.arrayBuffer()).subarray(0, 5).toString() === '%PDF-', 'recharges API: and it is a real PDF');
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice/file`);
+  check(r.status === 403, 'recharges API: Support cannot open the invoice PDF', r);
+  r = await api('rcm', 'GET', `/support/recharges/${p1}/invoice`);
+  check(r.status === 200 && r.json.data.number === invNo && r.json.data.customerEmail === undefined && r.json.data.customerPhone === undefined, 'recharges API: Support see the number and the status, not the customer\'s contact', r);
+  r = await api('rcm', 'GET', `/support/recharges/${p1}`);
+  check(r.status === 200 && r.json.data.invoiceStatus === 'GENERATED' && r.json.data.invoice.number === invNo && r.json.data.isAccounts === false, 'recharges API: the recharge carries its invoice status', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/correct`, { note: 'too late', gstAmount: 1 });
+  check(r.status === 409, 'recharges API: the billing details are locked once the invoice exists', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/verify`, { decision: 'NOT_RECEIVED', note: 'second thoughts' });
+  check(r.status === 409, 'recharges API: and so is the payment status', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/invoice/send`, { channels: ['EMAIL'] });
+  check(r.status === 403, 'recharges API: Support cannot send the invoice', r);
+  for (const bad of [{}, { channels: [] }, { channels: ['SMS'] }, { channels: ['EMAIL', 'EMAIL'] }, { channels: ['EMAIL'], to: 'x@y.z' }, { channels: ['EMAIL'], resend: 'yes' }]) {
+    r = await api('accm', 'POST', `/support/recharges/${p1}/invoice/send`, bad);
+    check(r.status === 422, `recharges API: a send request ${JSON.stringify(bad)} is refused`, r);
+  }
+  // nothing real is sent in this test: the server is in test mode, so a send is recorded as NOT_SENT, never as sent
+  r = await api('accm', 'POST', `/support/recharges/${p1}/invoice/send`, { channels: ['EMAIL', 'WHATSAPP'] });
+  check(r.status === 200 && r.json.data.results.length === 2 && r.json.data.results.every((x: any) => x.status === 'NOT_SENT' || x.status === 'REFUSED' || x.status === 'FAILED') && r.json.data.results.every((x: any) => x.status !== 'SENT'),
+    'recharges API: in test mode a send is never reported as sent', r);
+  r = await api('accm', 'GET', `/support/recharges/${p1}`);
+  check(r.status === 200 && r.json.data.invoiceStatus === 'GENERATED' && r.json.data.invoice.deliveries.length >= 1 && r.json.data.isAccounts === true, 'recharges API: the attempts are recorded, the invoice status is not "sent"', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/contact`, { note: 'confirmed by phone', customerEmail: 'new@rcx.example.com', customerPhone: '+91 98765 43210' });
+  check(r.status === 200 && r.json.data.customerEmail === 'new@rcx.example.com', 'recharges API: Accounts can correct the contact after the invoice exists', r);
+  r = await api('accm', 'POST', `/support/recharges/${p1}/contact`, { customerEmail: 'new@rcx.example.com' });
+  check(r.status === 422, 'recharges API: a contact correction needs a reason', r);
+  r = await api('rcm', 'POST', `/support/recharges/${p1}/contact`, { note: 'support tries', customerEmail: 'x@y.co' });
+  check(r.status === 403, 'recharges API: Support cannot correct the contact', r);
+  r = await api('accm', 'GET', '/support/recharges?invoiceStatus=GENERATED_ANY');
+  check(r.status === 200 && r.json.data.total >= 1 && r.json.data.summary.invoiced >= 1, 'recharges API: Accounts\' "Invoices generated" queue', r);
+  r = await api('accm', 'GET', '/support/recharges?invoiceStatus=DELIVERY_ANY');
+  check(r.status === 200, 'recharges API: the "Invoice delivery" queue is accepted', r);
+  check((await db.query(`select count(*)::int n from public.audit_logs where action in ('SUPPORT_RECHARGE_INVOICE_GENERATED', 'SUPPORT_RECHARGE_INVOICE_VIEWED', 'SUPPORT_RECHARGE_INVOICE_NOT_SENT', 'SUPPORT_RECHARGE_CONTACT_CORRECTED')`)).rows[0].n >= 4, 'recharges API: generating, viewing, sending and the contact correction are audited');
+  check((await db.query(`select count(*)::int n from public.support_recharge_invoices where id = $1 and total_amount = taxable_amount + total_gst and cgst_amount + sgst_amount + igst_amount = total_gst`, [invId])).rows[0].n === 1, 'recharges API: the invoice adds up');
 
   // performance: verified only, per RM, once
   r = await api('rcm', 'GET', '/support/recharge-performance');
@@ -13792,6 +13855,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   await db.query(`alter table public.support_recharge_events disable trigger support_recharge_events_append_only`);
   await db.query(`delete from public.support_recharge_events where recharge_id in (select id from public.support_recharges where customer_name like 'RCX %')`);
   await db.query(`alter table public.support_recharge_events enable trigger support_recharge_events_append_only`);
+  await db.query(`delete from public.support_recharge_deliveries where invoice_id in (select i.id from public.support_recharge_invoices i join public.support_recharges r on r.id = i.recharge_id where r.customer_name like 'RCX %')`);
+  await db.query(`delete from public.support_recharge_invoices where recharge_id in (select id from public.support_recharges where customer_name like 'RCX %')`);
   await db.query(`update public.support_recharge_files set recharge_id = null where file_name in ('proof.png', 'msg.png', 'fake.png', 'colleague.png')`);
   await db.query(`delete from public.support_recharges where customer_name like 'RCX %'`);
   await db.query(`delete from public.customers where name like 'RCX %'`);

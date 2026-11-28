@@ -7848,6 +7848,10 @@ export interface SupportRecharge {
   canCorrect: boolean;
   verifyActions: RechargeVerifyDecision[];
   timeline?: RechargeTimelineEvent[];
+  /** the invoice, once Accounts generated it */
+  invoice?: RechargeInvoice | null;
+  /** the signed-in person is Accounts (or the Super Admin): the invoice controls are theirs */
+  isAccounts?: boolean;
 }
 export interface SupportRechargeSummary {
   totalRecharges: number;
@@ -7862,6 +7866,7 @@ export interface SupportRechargeSummary {
   rejected: number;
   readyForInvoice: number;
   invoiced: number;
+  delivered: number;
   deliveryFailed: number;
 }
 export interface SupportRechargeList {
@@ -7887,3 +7892,26 @@ export interface RechargeUploadTicket {
   token: string;
   upload?: { url: string; headers: Record<string, string> };
 }
+export type RechargeDeliveryChannel = 'EMAIL' | 'WHATSAPP';
+export type RechargeDeliveryStatus = 'SENDING' | 'SENT' | 'NOT_SENT' | 'FAILED';
+export interface RechargeDelivery {
+  id: string; channel: RechargeDeliveryChannel; status: RechargeDeliveryStatus; isResend: boolean; requestedAt: string; finishedAt: string | null; requestedByName: string | null;
+  /** Accounts only */
+  recipient?: string; detail?: string | null;
+}
+/** The invoice of a recharge. Support see the number, date, total and each channel's state; Accounts see all of it. */
+export interface RechargeInvoice {
+  id: string; rechargeId: string; number: string; invoiceType: 'GST' | 'NON_GST'; invoiceDate: string; taxableAmount: number; totalGst: number; totalAmount: number;
+  pdfStatus: 'PENDING' | 'READY' | 'FAILED'; generatedAt: string; deliveries: RechargeDelivery[];
+  // Accounts only
+  taxTreatment?: 'INTRA_STATE' | 'INTER_STATE' | 'NONE'; hsnSac?: string; particulars?: string; gstRate?: number; cgstAmount?: number; sgstAmount?: number; igstAmount?: number;
+  customerName?: string; customerEmail?: string | null; customerPhone?: string | null; customerAddress?: string; customerGstin?: string | null; customerState?: string | null;
+  pdfError?: string | null; paymentReference?: string | null; paidOn?: string; generatedByName?: string | null; replayed?: boolean;
+}
+/** What the invoice would hold, and what is still missing (Accounts, before generating). */
+export interface RechargeInvoicePlan {
+  invoiceType: 'GST' | 'NON_GST'; taxTreatment: 'INTRA_STATE' | 'INTER_STATE' | 'NONE'; hsnSac: string; customerStateCode: string | null; customerState: string | null; supplierStateCode: string;
+  taxableAmount: number; gstRate: number; cgstAmount: number; sgstAmount: number; igstAmount: number; totalGst: number; totalAmount: number; missing: string[]; particulars: string;
+  paymentStatus: RechargePaymentStatus; invoiceStatus: RechargeInvoiceStatus; customerName: string; customerEmail: string | null; customerPhone: string | null; customerAddress: string | null; customerGstin: string | null;
+}
+export interface RechargeSendResult { channel: RechargeDeliveryChannel; status: RechargeDeliveryStatus | 'REFUSED'; message: string; deliveryId?: string; invoiceStatus?: RechargeInvoiceStatus }

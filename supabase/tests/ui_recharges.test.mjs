@@ -51,14 +51,29 @@ const seed = () => {
   rows[1].invoiceStatus = 'GENERATED';
   return rows;
 };
-const S = { role: 'MEMBER', rows: seed(), fail: false, calls: [], uploads: {}, names: {}, nextRef: 900 };
+const S = { role: 'MEMBER', rows: seed(), fail: false, calls: [], uploads: {}, names: {}, nextRef: 900, invoices: {}, pdfFails: 0, nextInvoice: 14 };
 const events = r => [{ at: r.submittedAt, action: 'CREATED', from: null, to: 'PENDING_VERIFICATION', note: null, actorName: r.createdByName },
   ...(r.paymentStatus !== 'PENDING_VERIFICATION' ? [{ at: new Date().toISOString(), action: r.paymentStatus, from: 'PENDING_VERIFICATION', to: r.paymentStatus, note: r.paymentNote, actorName: 'Anil Accounts' }] : [])];
 const accountsRole = () => S.role === 'ACCOUNTS' || S.role === 'SUPER_ADMIN';
 const visible = r => accountsRole() || S.role === 'HEAD' ? true : S.role === 'LEAD' ? true : r.createdById === 'me' || r.rmId === 'rm-me';
 const verifyActions = r => !accountsRole() ? [] : ({ PENDING_VERIFICATION: ['RECEIVED', 'NOT_RECEIVED', 'REJECTED'], PAYMENT_NOT_RECEIVED: ['RECEIVED', 'REJECTED'], PAYMENT_RECEIVED: r.invoiceStatus === 'NOT_GENERATED' ? ['NOT_RECEIVED', 'REJECTED'] : [], REJECTED: [] })[r.paymentStatus];
 const canEdit = r => !accountsRole() && r.invoiceStatus === 'NOT_GENERATED' && r.paymentStatus !== 'PAYMENT_RECEIVED' && (r.createdById === 'me' || (S.role === 'LEAD' && r.paymentStatus === 'PENDING_VERIFICATION'));
-const view = (r, withTimeline = false) => ({ ...r, canEdit: canEdit(r), canCorrect: accountsRole() && r.invoiceStatus === 'NOT_GENERATED' && r.paymentStatus !== 'REJECTED', verifyActions: verifyActions(r), ...(withTimeline ? { timeline: events(r) } : {}) });
+const invoiceView = r => {
+  const i = S.invoices[r.id];
+  if (!i) return null;
+  const base = { id: i.id, rechargeId: r.id, number: i.number, invoiceType: r.billingType, invoiceDate: i.invoiceDate, taxableAmount: r.rechargeAmount, totalGst: r.gstAmount, totalAmount: r.totalAmount, pdfStatus: i.pdfStatus, generatedAt: i.invoiceDate,
+    deliveries: i.deliveries.map(d => ({ id: d.id, channel: d.channel, status: d.status, isResend: d.isResend, requestedAt: d.requestedAt, finishedAt: d.requestedAt, requestedByName: 'Anil Accounts', ...(accountsRole() ? { recipient: d.recipient, detail: d.detail } : {}) })) };
+  return accountsRole() ? { ...base, taxTreatment: r.billingType === 'GST' ? 'INTRA_STATE' : 'NONE', hsnSac: '998313', particulars: 'Panel recharge', gstRate: 18, cgstAmount: r.gstAmount / 2, sgstAmount: r.gstAmount / 2, igstAmount: 0, customerName: r.customerName,
+    customerEmail: r.customerEmail, customerPhone: r.customerPhone, customerAddress: r.customerAddress, customerGstin: r.customerGstin, pdfError: i.pdfError ?? null } : base;
+};
+const view = (r, withTimeline = false) => ({ ...r, canEdit: canEdit(r), canCorrect: accountsRole() && r.invoiceStatus === 'NOT_GENERATED' && r.paymentStatus !== 'REJECTED', verifyActions: verifyActions(r),
+  ...(withTimeline ? { timeline: events(r), invoice: invoiceView(r), isAccounts: accountsRole() } : {}) });
+const refreshInvoiceStatus = r => {
+  const i = S.invoices[r.id];
+  const sent = c => i.deliveries.some(d => d.channel === c && d.status === 'SENT');
+  const failed = c => i.deliveries.some(d => d.channel === c && d.status === 'FAILED');
+  r.invoiceStatus = sent('EMAIL') && sent('WHATSAPP') ? 'SENT' : (sent('EMAIL') && failed('WHATSAPP')) || (sent('WHATSAPP') && failed('EMAIL')) ? 'PARTIALLY_SENT' : sent('EMAIL') ? 'EMAIL_SENT' : sent('WHATSAPP') ? 'WHATSAPP_SENT' : failed('EMAIL') || failed('WHATSAPP') ? 'FAILED' : 'GENERATED';
+};
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 const ok = (res, data, status = 200) => json(res, status, { success: true, data });
 const bad = (res, message, status = 400, code = 'VALIDATION_ERROR') => json(res, status, { success: false, error: { code, message } });
@@ -81,7 +96,7 @@ const srv = createServer(async (req, res) => {
     const inScope = S.rows.filter(r => (!q.kind || r.kind === q.kind) && visible(r));
     const base = inScope.filter(r => (!q.search || r.customerName.toLowerCase().includes(q.search.toLowerCase())) && (!q.from || r.rechargeDate >= q.from) && (!q.to || r.rechargeDate <= q.to)
       && (q.min === undefined || r.totalAmount >= Number(q.min)) && (q.max === undefined || r.totalAmount <= Number(q.max)));
-    const rows = base.filter(r => (!q.paymentStatus || r.paymentStatus === q.paymentStatus) && (!q.invoiceStatus || (q.invoiceStatus === 'GENERATED_ANY' ? r.invoiceStatus !== 'NOT_GENERATED' : r.invoiceStatus === q.invoiceStatus)))
+    const rows = base.filter(r => (!q.paymentStatus || r.paymentStatus === q.paymentStatus) && (!q.invoiceStatus || (q.invoiceStatus === 'GENERATED_ANY' ? r.invoiceStatus !== 'NOT_GENERATED' : q.invoiceStatus === 'DELIVERY_ANY' ? ['SENT', 'EMAIL_SENT', 'WHATSAPP_SENT', 'PARTIALLY_SENT', 'FAILED'].includes(r.invoiceStatus) : r.invoiceStatus === q.invoiceStatus)))
       .sort((a, c) => c.submittedAt.localeCompare(a.submittedAt));
     const limit = Number(q.limit ?? 20), offset = Number(q.offset ?? 0);
     const sum = (f, k) => Math.round(base.filter(f).reduce((s, r) => s + r[k], 0) * 100) / 100;
@@ -90,7 +105,7 @@ const srv = createServer(async (req, res) => {
       summary: { totalRecharges: base.length, totalAmount: sum(() => true, 'totalAmount'), totalGst: sum(() => true, 'gstAmount'), totalNonGst: sum(r => r.billingType === 'NON_GST', 'rechargeAmount'),
         pending: cnt(r => r.paymentStatus === 'PENDING_VERIFICATION'), pendingAmount: sum(r => r.paymentStatus === 'PENDING_VERIFICATION', 'totalAmount'), received: cnt(r => r.paymentStatus === 'PAYMENT_RECEIVED'),
         receivedAmount: sum(r => r.paymentStatus === 'PAYMENT_RECEIVED', 'totalAmount'), notReceived: cnt(r => r.paymentStatus === 'PAYMENT_NOT_RECEIVED'), rejected: cnt(r => r.paymentStatus === 'REJECTED'),
-        readyForInvoice: cnt(r => r.paymentStatus === 'PAYMENT_RECEIVED' && r.invoiceStatus === 'NOT_GENERATED'), invoiced: cnt(r => r.invoiceStatus !== 'NOT_GENERATED'), deliveryFailed: 0 } });
+        readyForInvoice: cnt(r => r.paymentStatus === 'PAYMENT_RECEIVED' && r.invoiceStatus === 'NOT_GENERATED'), invoiced: cnt(r => r.invoiceStatus !== 'NOT_GENERATED'), delivered: cnt(r => ['SENT', 'EMAIL_SENT', 'WHATSAPP_SENT', 'PARTIALLY_SENT'].includes(r.invoiceStatus)), deliveryFailed: cnt(r => r.invoiceStatus === 'FAILED') } });
   }
   if (route === '/support/recharge-customers' && req.method === 'GET') {
     const q = (url.searchParams.get('search') ?? '').toLowerCase();
@@ -125,6 +140,52 @@ const srv = createServer(async (req, res) => {
     Object.assign(r, { billingType: b.billingType, customerGstin: b.billingType === 'GST' ? b.gstNumber : null, paymentReference: b.paymentReference, remarks: b.remarks, rechargeDate: b.rechargeDate, screenshot: { id: b.screenshotId, name: 'x.png', mime: 'image/png', size: 2048 } });
     S.rows.push(r);
     return ok(res, view(r), 201);
+  }
+  if ((m = route.match(/^\/support\/recharges\/([^/]+)\/invoice\/plan$/))) {
+    const r = S.rows.find(x => x.id === m[1]);
+    if (!accountsRole()) return bad(res, 'FORBIDDEN', 403, 'FORBIDDEN');
+    return ok(res, { invoiceType: r.billingType, taxTreatment: r.billingType === 'GST' ? 'INTRA_STATE' : 'NONE', hsnSac: '998313', customerStateCode: '27', customerState: 'Maharashtra', supplierStateCode: '27', taxableAmount: r.rechargeAmount, gstRate: 18,
+      cgstAmount: r.gstAmount / 2, sgstAmount: r.gstAmount / 2, igstAmount: 0, totalGst: r.gstAmount, totalAmount: r.totalAmount, missing: r.customerAddress ? [] : ['the customer\'s billing address'], particulars: `Panel recharge (${r.reference})`,
+      paymentStatus: r.paymentStatus, invoiceStatus: r.invoiceStatus, customerName: r.customerName, customerEmail: r.customerEmail, customerPhone: r.customerPhone, customerAddress: r.customerAddress, customerGstin: r.customerGstin });
+  }
+  if ((m = route.match(/^\/support\/recharges\/([^/]+)\/invoice$/)) && req.method === 'POST') {
+    const r = S.rows.find(x => x.id === m[1]);
+    if (!accountsRole()) return bad(res, 'FORBIDDEN', 403, 'FORBIDDEN');
+    if (r.paymentStatus !== 'PAYMENT_RECEIVED') return bad(res, 'Confirm that the payment was received first. An invoice is made only for a verified payment.', 409, 'CONFLICT');
+    if (!r.customerAddress) return bad(res, 'The invoice needs the customer\'s billing address.');
+    if (!S.invoices[r.id]) { S.invoices[r.id] = { id: `inv-${r.id}`, number: `GST/26-27/${String(S.nextInvoice++).padStart(3, '0')}`, invoiceDate: ymd(new Date()), pdfStatus: S.pdfFails > 0 ? 'FAILED' : 'READY', pdfError: S.pdfFails > 0 ? 'The invoice PDF could not be created or stored.' : null, deliveries: [] }; if (S.pdfFails > 0) S.pdfFails--; r.invoiceStatus = 'GENERATED'; }
+    const i = S.invoices[r.id];
+    return ok(res, { invoice: invoiceView(r), pdf: { status: i.pdfStatus, message: i.pdfError } }, 201);
+  }
+  if ((m = route.match(/^\/support\/recharges\/([^/]+)\/invoice\/pdf$/))) {
+    const r = S.rows.find(x => x.id === m[1]);
+    S.invoices[r.id].pdfStatus = 'READY'; S.invoices[r.id].pdfError = null;
+    return ok(res, { invoice: invoiceView(r), pdf: { status: 'READY', message: null } });
+  }
+  if ((m = route.match(/^\/support\/recharges\/([^/]+)\/invoice\/file$/))) return ok(res, { url: `${base}/__img/invoice.png`, expiresInSeconds: 120, fileName: 'invoice.pdf' });
+  if ((m = route.match(/^\/support\/recharges\/([^/]+)\/invoice\/send$/))) {
+    const r = S.rows.find(x => x.id === m[1]);
+    const i = S.invoices[r.id];
+    if (!accountsRole()) return bad(res, 'FORBIDDEN', 403, 'FORBIDDEN');
+    if (!Array.isArray(b.channels) || b.channels.length === 0) return bad(res, 'Choose e-mail, WhatsApp or both.');
+    const results = [];
+    for (const ch of b.channels) {
+      const already = i.deliveries.some(d => d.channel === ch && d.status === 'SENT');
+      if (already && !b.resend) { results.push({ channel: ch, status: 'REFUSED', message: `The invoice was already sent by ${ch.toLowerCase()}. Use "Send again" if you really want to send it once more.` }); continue; }
+      const d = { id: `d-${i.deliveries.length + 1}`, channel: ch, status: ch === 'WHATSAPP' ? (S.waMode ?? 'NOT_SENT') : 'SENT', isResend: already, requestedAt: new Date().toISOString(), recipient: ch === 'EMAIL' ? r.customerEmail : r.customerPhone,
+        detail: ch === 'WHATSAPP' ? 'Test mode: the WhatsApp message was prepared but NOT sent to the customer.' : 'Sent from meta@amuwa.com' };
+      i.deliveries.unshift(d);
+      results.push({ channel: ch, status: d.status, message: d.detail, deliveryId: d.id });
+    }
+    refreshInvoiceStatus(r);
+    return ok(res, { results, invoiceStatus: r.invoiceStatus });
+  }
+  if ((m = route.match(/^\/support\/recharges\/([^/]+)\/contact$/))) {
+    const r = S.rows.find(x => x.id === m[1]);
+    if (!accountsRole()) return bad(res, 'FORBIDDEN', 403, 'FORBIDDEN');
+    Object.assign(r, { customerEmail: b.customerEmail, customerPhone: b.customerPhone });
+    if (S.invoices[r.id]) Object.assign(S.invoices[r.id], {});
+    return ok(res, view(r));
   }
   if ((m = route.match(/^\/support\/recharges\/([^/]+)$/)) && req.method === 'GET') {
     const r = S.rows.find(x => x.id === m[1] && visible(x));
@@ -170,7 +231,7 @@ const lastList = () => lists().at(-1);
 const settle = page => page.waitForTimeout(450);
 const dialogSays = async (page, re) => { await page.waitForFunction(src => new RegExp(src).test(document.querySelector('[role="dialog"]')?.textContent ?? ''), re.source, { timeout: 5000 }).catch(() => undefined); return re.test(await text(page, '[role="dialog"]')); };
 const noSideways = async (page, what) => check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${what}: no sideways scrolling`, await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]));
-const reset = (role = 'MEMBER') => { S.nextRef = 900; S.role = role; S.rows = seed(); S.fail = false; S.calls.length = 0; };
+const reset = (role = 'MEMBER') => { S.invoices = {}; S.pdfFails = 0; S.waMode = undefined; S.nextInvoice = 14; S.nextRef = 900; S.role = role; S.rows = seed(); S.fail = false; S.calls.length = 0; };
 const open = async (page, role, mount = 'mountRecharges') => { reset(role); await page.goto(base); await page.evaluate(m => window[m](), mount); await page.getByTestId('recharge-summary').waitFor(); await page.waitForFunction(() => !document.querySelector('[data-testid^="stat-"]')?.textContent?.includes('–')); };
 const setFile = (page, name, mimeType, buffer) => page.getByTestId('recharge-file').setInputFiles({ name, mimeType, buffer });
 
@@ -385,6 +446,70 @@ try {
     await acc.getByText('The billing details were corrected.').waitFor();
     check(S.calls.filter(c => /\/correct$/.test(c.route)).at(-1).body.customerEmail === 'billing@alpha.example.com' && !('rmId' in S.calls.filter(c => /\/correct$/.test(c.route)).at(-1).body), `${label}: the correction is sent with its reason, and never names an RM or customer`);
     await noSideways(acc, `${label}: the Accounts detail`);
+
+    // ---- the invoice: generate, review, send (nothing is sent by itself), retry, send again
+    await acc.getByTestId('recharge-generate').waitFor();
+    check(/Panel recharge \(PRC-00001\)/.test(await text(acc, '[data-testid="recharge-plan"]')) && /Same state: CGST \+ SGST/.test(await text(acc, '[data-testid="recharge-plan"]')) && /Taxable amount/.test(await text(acc, '[data-testid="recharge-plan"]')), `${label}: before generating, Accounts see what the invoice will hold`);
+    check(S.calls.filter(c => /\/invoice$/.test(c.route) && c.method === 'POST').length === 0, `${label}: no invoice is made by confirming the payment`);
+    S.pdfFails = 1;
+    await acc.getByRole('button', { name: 'Generate invoice' }).click();
+    await acc.getByTestId('recharge-pdf-problem').waitFor();
+    check(/GST\/26-27\/014/.test(await text(acc, '[data-testid="recharge-invoice-controls"]')) && /PDF is not ready/.test(await text(acc, '[data-testid="recharge-pdf-problem"]')) && await acc.getByTestId('recharge-send').count() === 0, `${label}: a failed PDF leaves the invoice with the reason, and nothing can be sent yet`);
+    await acc.getByRole('button', { name: 'Retry the PDF' }).click();
+    await acc.getByTestId('recharge-send').waitFor();
+    check(S.calls.some(c => /\/invoice\/pdf$/.test(c.route)), `${label}: Retry the PDF finishes it`);
+    check(S.calls.filter(c => /\/invoice\/send$/.test(c.route)).length === 0, `${label}: and still nothing was sent`);
+    await acc.getByRole('button', { name: /Review invoice/ }).click();
+    await acc.waitForFunction(() => true); await settle(acc);
+    check(S.calls.some(c => /\/invoice\/file$/.test(c.route) && c.query.action === 'view'), `${label}: Accounts can review the PDF through a short-lived link before sending`);
+    check(await acc.getByLabel('Send by E-mail').isChecked() && await acc.getByLabel('Send by WhatsApp').isChecked(), `${label}: both channels are offered, e-mail and WhatsApp separately`);
+    check(/billing@alpha\.example\.com/.test(await text(acc, '[data-testid="channel-EMAIL"]')) && /9000000711/.test(await text(acc, '[data-testid="channel-WHATSAPP"]')), `${label}: with the address and the number they go to`);
+    await acc.getByTestId('recharge-send').dblclick();
+    await acc.getByTestId('recharge-send-results').waitFor();
+    const sends = S.calls.filter(c => /\/invoice\/send$/.test(c.route));
+    check(sends.length >= 1 && sends[0].body.channels.join() === 'EMAIL,WHATSAPP' && sends[0].body.resend === false, `${label}: Send asks for both channels, not as a re-send`, sends.map(x => x.body));
+    const resText = await text(acc, '[data-testid="recharge-send-results"]');
+    check(/E-mail: sent/.test(resText) && /WhatsApp: not sent\. Test mode/.test(resText), `${label}: e-mail sent; WhatsApp in test mode is reported as not sent, never as sent`, resText);
+    check(S.rows.find(r => r.id === lastVerified(vcall.route)).invoiceStatus === 'EMAIL_SENT', `${label}: the recharge's invoice status is Email sent`);
+    check(await acc.getByLabel('Send by E-mail').isChecked() === false && await acc.getByLabel('Send by WhatsApp').isChecked() === true, `${label}: the channel that went is not ticked again (a second send must be a choice)`);
+    check(/Sent/.test(await text(acc, '[data-testid="channel-EMAIL"]')) && /Not sent/.test(await text(acc, '[data-testid="channel-WHATSAPP"]')), `${label}: each channel shows its own state`);
+    check((await acc.getByTestId('recharge-delivery').count()) === 2, `${label}: the delivery history lists both attempts`);
+    await acc.getByLabel('Send by E-mail').check();
+    check(/Send again/.test(await text(acc, '[data-testid="recharge-send"]')), `${label}: ticking a channel that already went turns the button into "Send again"`);
+    await acc.getByLabel('Send by WhatsApp').uncheck();
+    await acc.getByTestId('recharge-send').click();
+    await acc.waitForFunction(() => /E-mail: sent/.test(document.querySelector('[data-testid="recharge-send-results"]')?.textContent ?? '') && document.querySelectorAll('[data-testid="recharge-delivery"]').length === 3);
+    check(S.calls.filter(c => /\/invoice\/send$/.test(c.route)).at(-1).body.resend === true, `${label}: the re-send is sent as a deliberate re-send`);
+    S.waMode = 'FAILED';
+    await acc.getByLabel('Send by WhatsApp').check(); await acc.getByLabel('Send by E-mail').uncheck();
+    await acc.getByTestId('recharge-send').click();
+    await acc.waitForFunction(() => /WhatsApp: failed/.test(document.querySelector('[data-testid="recharge-send-results"]')?.textContent ?? ''));
+    check(S.rows.find(r => r.id === lastVerified(vcall.route)).invoiceStatus === 'PARTIALLY_SENT', `${label}: e-mail sent and WhatsApp failed: Partially sent`);
+    await acc.getByRole('button', { name: 'Update contact' }).click();
+    await acc.locator('#rc-ct-phone').fill('+91 98765 43210'); await acc.locator('#rc-ct-note').fill('number confirmed by phone');
+    await acc.getByRole('button', { name: 'Save contact' }).click();
+    await acc.getByTestId('recharge-detail-notice').filter({ hasText: 'contact was updated' }).waitFor();
+    check(S.calls.filter(c => /\/contact$/.test(c.route)).at(-1).body.customerPhone === '+91 98765 43210' && S.calls.filter(c => /\/contact$/.test(c.route)).at(-1).body.note === 'number confirmed by phone', `${label}: the contact can be corrected after the invoice exists, with a reason`);
+    S.waMode = 'SENT';
+    await acc.getByLabel('Send by WhatsApp').check();
+    await acc.getByTestId('recharge-send').click();
+    await acc.waitForFunction(() => /WhatsApp: sent/.test(document.querySelector('[data-testid="recharge-send-results"]')?.textContent ?? ''));
+    check(S.rows.find(r => r.id === lastVerified(vcall.route)).invoiceStatus === 'SENT', `${label}: the retry is sent: the invoice shows Sent`);
+    await noSideways(acc, `${label}: the invoice controls`);
+    // the queue 'Invoice delivery'
+    await acc.getByRole('button', { name: 'Close' }).first().click().catch(() => undefined);
+    await acc.getByTestId('section-delivery').click(); await settle(acc);
+    check(lastList().query.invoiceStatus === 'DELIVERY_ANY' && await arows().count() === 1, `${label}: the Invoice delivery queue lists the sent invoice`);
+    // ---- what Support see of that invoice: its number and how each channel went, not the customer's contact or the provider's answer
+    S.role = 'MEMBER'; S.calls.length = 0;
+    await acc.goto(base); await acc.evaluate(() => window.mountRecharges()); await acc.getByTestId('recharge-summary').waitFor();
+    await acc.locator('#rc-f-search').fill('alpha'); await settle(acc);
+    await acc.getByRole('button', { name: /View PRC-00001/ }).first().click();
+    await acc.getByTestId('recharge-invoice-summary').waitFor();
+    const sup = await text(acc, '[data-testid="recharge-invoice-summary"]');
+    check(/GST\/26-27\/014/.test(sup) && /E-mail/.test(sup) && /WhatsApp/.test(sup) && /Sent/.test(sup), `${label}: Support see the invoice number and each channel's state`, sup);
+    check(!/billing@alpha|9000000711|98765|Test mode|meta@amuwa/.test(sup), `${label}: but not the customer's contact or the provider's answer`);
+    check(await acc.getByTestId('recharge-invoice-controls').count() === 0 && await acc.getByTestId('recharge-generate').count() === 0 && await acc.getByTestId('recharge-send').count() === 0, `${label}: and no way to generate or send it`);
     check(errors.length === 0, `${label}: no script errors (Support)`);
     await ctxA.close();
 
