@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import type { Department, IncomePage } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { financeApi, organizationApi } from '../../../lib/api/endpoints';
 import { Badge, METHOD_LABEL, TYPE_LABEL } from '../../payments/PaymentBits';
 import { Empty, ErrorBanner, inputClass, Loading, PageHeader, Pager } from '../../support-member/SupportParts';
 import { fmtDay, money, useFinanceRefresh } from './FinanceBits';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const PAGE = 15;
 
@@ -62,7 +62,7 @@ export const IncomeList: React.FC<{ fixedDepartment?: string; refreshKey?: numbe
           setData(r);
           setError(null);
         },
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       );
   }, [term, dept, from, to, page, refreshKey]);
   useEffect(load, [load]);

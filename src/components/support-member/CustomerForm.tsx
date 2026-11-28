@@ -17,6 +17,7 @@ import {
   type WhatsAppDetails
 } from '../../lib/support';
 import { FormField, inputClass } from './SupportParts';
+import { userMessage } from '../../lib/feedback/errors';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -157,7 +158,7 @@ export const CustomerForm: React.FC<CustomerFormProps> = ({ initial, people, sub
     try {
       await onSubmit({ ...form, services: list });
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Could not save the customer.');
+      setServerError(userMessage(err, 'The customer could not be saved. Please try again.'));
       setSaving(false);
     }
   };

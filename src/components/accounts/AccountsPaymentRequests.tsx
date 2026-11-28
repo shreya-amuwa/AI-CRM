@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { BadgeCheck, Building2, CheckCircle2, ChevronRight, MessageSquare, Phone, Search, Undo2 } from 'lucide-react';
 import type { PaymentOverview, PaymentRequestItem } from '../../../shared/contracts';
 import { pipelineApi } from '../../lib/api/endpoints';
-import { errorMessage } from '../../lib/api/client';
 import { Empty, ErrorBanner, inputClass, Loading, Modal } from '../support-member/SupportParts';
 import { fmtDate, fmtDateTime, PaymentStatusBadge, rupees } from '../payments/PaymentBits';
 import { AccountsPaymentPanel, ReasonDialog } from './AccountsPaymentPanel';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
 import { ClientLoginCard, JourneyStrip, useJourney } from '../journey/JourneyPanel';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 type Tab = 'PENDING' | 'CONFIRMED' | 'RETURNED';
 
@@ -205,7 +206,6 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setTerm(search.trim()), 300);
@@ -225,7 +225,7 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
       setPendingTotal(pending.total);
       setSelectedId(cur => (cur && page.items.some(i => i.requestId === cur) ? cur : null));
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setLoading(false);
     }
@@ -238,7 +238,7 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
 
   const selected = items.find(i => i.requestId === selectedId) || null;
   const resolved = (message: string) => {
-    setNotice(message);
+    toast.success(message);
     setSelectedId(null);
     onCountsChanged?.();
     void load();
@@ -262,7 +262,6 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
               aria-selected={tab === k}
               onClick={() => {
                 setTab(k);
-                setNotice(null);
               }}
               className={`px-3.5 py-1.5 rounded-lg ${tab === k ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}
             >
@@ -277,11 +276,6 @@ export const AccountsPaymentRequests: React.FC<{ onCountsChanged?: () => void }>
         </label>
       </div>
 
-      {notice && (
-        <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" role="status">
-          {notice}
-        </p>
-      )}
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
 
       {loading && items.length === 0 ? (

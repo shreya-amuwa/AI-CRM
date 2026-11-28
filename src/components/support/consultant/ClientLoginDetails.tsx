@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ExternalLink, KeyRound, Link2 } from 'lucide-react';
 import type { PanelDetails, PanelDetailsService } from '../../../../shared/contracts';
 import { checkPanelUrl } from '../../../../shared/panelUrl';
-import { errorMessage } from '../../../lib/api/client';
 import { workflowApi } from '../../../lib/api/endpoints';
 import { btn, Dialog, ErrorBanner, inputCls, longDate, longDateTime, Spinner, usePipelineRealtime } from '../../team-member/pipeline/shared';
+import { toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * The password the Meta Verifier set on the customer's WhatsApp panel (the CRM cannot set it on the external panel). It is typed once, sent to
@@ -30,7 +31,7 @@ const PanelPasswordDialog: React.FC<{ customerId: string; service: PanelDetailsS
       setConfirm('');
       onSent(d);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -75,7 +76,6 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
   const [url, setUrl] = useState(service.panelUrl ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const requestId = useRef(crypto.randomUUID());
   const check = checkPanelUrl(url);
   // compared as it will be saved (host in lower case, spaces trimmed), so a saved address never looks "unsaved"
@@ -93,14 +93,13 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
     if (problem || busy || !dirty) return;
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       onSaved(await workflowApi.setPanelUrl(customerId, service.code, check.ok ? check.url : null));
       if (check.ok) setUrl(check.url ?? '');
-      setNotice('Panel URL saved. Nothing was sent to the customer yet.');
+      toast.success('Panel URL saved. Nothing was sent to the customer yet.');
       requestId.current = crypto.randomUUID();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }
@@ -109,14 +108,15 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
     if (busy) return;
     setBusy(true);
     setError(null);
-    setNotice(null);
     try {
       const d = await workflowApi.sendPanelLink(customerId, service.code, { requestId: requestId.current, resend });
       onSaved(d);
-      setNotice(d.link.queued ? 'The panel link is on its way to the customer.' : d.link.reason === 'IN_PROGRESS' ? 'This link is already being sent.' : 'This link was already sent. Use "Send again" to send it once more.');
+      // only a newly queued link is a success; "already being sent" / "already sent" are information (nothing new happened)
+      if (d.link.queued) toast.success('The panel link was sent successfully. It is on its way to the customer.');
+      else toast.info(d.link.reason === 'IN_PROGRESS' ? 'This link is already being sent.' : 'This link was already sent. Use "Send again" to send it once more.');
       requestId.current = crypto.randomUUID();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }
@@ -136,7 +136,7 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
             maxLength={500}
             autoComplete="off"
             spellCheck={false}
-            onChange={e => { setUrl(e.target.value); setNotice(null); }}
+            onChange={e => { setUrl(e.target.value); }}
             disabled={!canEdit || busy}
             placeholder="https://panel.example.com/login"
             aria-invalid={!!problem}
@@ -145,7 +145,6 @@ const PanelUrlBox: React.FC<{ customerId: string; service: PanelDetailsService; 
         <p className="text-[11px] text-slate-500">The address where the customer signs in to this panel. A secure (https) link only, with no password or token in it.</p>
         {problem && <p role="alert" className="text-xs font-semibold text-rose-700">{problem}</p>}
         {error && <p role="alert" className="text-xs font-semibold text-rose-700">{error}</p>}
-        {notice && <p role="status" className="text-xs font-semibold text-emerald-700">{notice}</p>}
         {canEdit && (
           <div className="flex justify-end">
             <button type="submit" className={btn.secondary} disabled={busy || !dirty || !!problem}>{busy ? 'Saving…' : service.panelUrl && !url.trim() ? 'Remove the URL' : 'Save the URL'}</button>
@@ -222,7 +221,7 @@ const ServiceRow: React.FC<{ customerId: string; service: PanelDetailsService; c
       onSaved(await workflowApi.setPanelDetails(customerId, service.code, { platform: platform.trim() || null, account: account.trim() || null }));
       setSaved(true);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
     } finally {
       setBusy(false);
     }
@@ -322,7 +321,7 @@ export const ClientLoginDetails: React.FC<{ customerId: string }> = ({ customerI
         setData(d);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [customerId]);
   useEffect(load, [load]);

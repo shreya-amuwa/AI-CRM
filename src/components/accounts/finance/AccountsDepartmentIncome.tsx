@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Building2, ChevronRight, Search } from 'lucide-react';
 import type { DepartmentFinance } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { financeApi } from '../../../lib/api/endpoints';
 import { Empty, ErrorBanner, inputClass, Loading, PageHeader } from '../../support-member/SupportParts';
 import { money, useFinanceRefresh } from './FinanceBits';
 import { useDepartments } from './AccountsIncome';
 import { DepartmentBusinessDetail } from '../../reports/DepartmentBusinessDetail';
+import { userMessage } from '../../../lib/feedback/errors';
 
 /**
  * Department Income: one box per department in the CRM, with that department's
@@ -26,7 +26,7 @@ export const AccountsDepartmentIncome: React.FC = () => {
         setRows(r);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, []);
   useEffect(load, [load]);

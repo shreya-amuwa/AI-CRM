@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyRound, Mail, RefreshCw, Search } from 'lucide-react';
 import type { AccountNotificationState, ClientAccessMethod, ClientEmailProblem, ClientLoginStatus, ProvisioningFilter, ProvisioningQueue, ProvisioningRow } from '../../../shared/contracts';
-import { errorMessage } from '../../lib/api/client';
 import { pipelineApi } from '../../lib/api/endpoints';
 import { useRealtime } from '../../lib/support';
 import { btn, Dialog, ErrorBanner, Field, inputCls, longDate, money, notifyPipelineChanged, Pager, Pill, Spinner, useDebounced, usePipelineRealtime, type Tone } from '../team-member/pipeline/shared';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 const TABS: { key: ProvisioningFilter; label: string }[] = [
   { key: 'ALL', label: 'All' },
@@ -56,7 +57,7 @@ const FixEmailDialog: React.FC<{ row: ProvisioningRow; onClose: () => void; onDo
       notifyPipelineChanged();
       onDone();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err));
       setBusy(false);
     }
   };
@@ -132,7 +133,6 @@ export const ClientLogins: React.FC = () => {
   const [data, setData] = useState<ProvisioningQueue | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [fixing, setFixing] = useState<ProvisioningRow | null>(null);
   const [creating, setCreating] = useState<ProvisioningRow | null>(null);
 
@@ -142,7 +142,7 @@ export const ClientLogins: React.FC = () => {
         setData(d);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [status, debounced, page, pageSize]);
   useEffect(load, [load]);
@@ -154,14 +154,13 @@ export const ClientLogins: React.FC = () => {
   const act = async (row: ProvisioningRow, run: () => Promise<unknown>, done: string) => {
     if (busyId) return;
     setBusyId(row.customerId);
-    setNotice(null);
     setError(null);
     try {
       await run();
-      setNotice(done);
+      toast.success(done);
       notifyPipelineChanged();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setBusyId(null);
       load();
@@ -199,11 +198,6 @@ export const ClientLogins: React.FC = () => {
         </label>
       </div>
 
-      {notice && (
-        <p role="status" className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
-          {notice}
-        </p>
-      )}
       {error && <ErrorBanner message={error} onRetry={load} />}
       {!data && !error && <Spinner label="Loading client logins…" />}
 
@@ -311,7 +305,7 @@ export const ClientLogins: React.FC = () => {
           onClose={() => setFixing(null)}
           onDone={() => {
             setFixing(null);
-            setNotice('The e-mail on the record was corrected.');
+            toast.success('The e-mail on the record was corrected.');
             load();
           }}
         />

@@ -27,6 +27,8 @@ import type { TicketAttachment } from '../../../shared/contracts';
 import { ticketFilesApi } from '../../lib/api/endpoints';
 import { MessageFiles, StagedFiles, TicketFileButton, useTicketFiles } from '../tickets/TicketFiles';
 import { staffTicketFiles } from '../tickets/staffTransport';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -579,7 +581,6 @@ export const TicketPane: React.FC<{
   const [assignee, setAssignee] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [internal, setInternal] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -599,7 +600,6 @@ export const TicketPane: React.FC<{
     setPanel(null);
     setDetails(false);
     setError(null);
-    setDone(null);
     setResolution('');
     setReason('');
     setAssignee('');
@@ -647,16 +647,15 @@ export const TicketPane: React.FC<{
   const run = async (fn: () => Promise<unknown>, message: string) => {
     setBusy(true);
     setError(null);
-    setDone(null);
     try {
       await fn();
       await data.reload();
       setPanel(null);
       setResolution('');
       setReason('');
-      setDone(message);
+      toast.success(message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save the change.');
+      setError(userMessage(err, 'The change could not be saved. Please try again.'));
     } finally {
       setBusy(false);
     }
@@ -678,7 +677,7 @@ export const TicketPane: React.FC<{
         await ticketApi.send(ticket.id, p.text, p.internal, p.key, p.files.map(f => f.id));
         await data.reload();
       } catch (err) {
-        setPending(list => list.map(x => (x.key === p.key ? { ...x, state: 'failed', error: err instanceof Error ? err.message : 'Not sent.' } : x)));
+        setPending(list => list.map(x => (x.key === p.key ? { ...x, state: 'failed', error: userMessage(err, 'Not sent.') } : x)));
       }
     },
     [ticket.id, data]
@@ -912,11 +911,6 @@ export const TicketPane: React.FC<{
         {error && (
           <p className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2" role="alert">
             {error}
-          </p>
-        )}
-        {done && (
-          <p className="text-xs text-emerald-700" role="status">
-            {done}
           </p>
         )}
 

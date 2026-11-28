@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { BadgeCheck, Building2, CheckCircle2, ChevronRight, IndianRupee, Phone, Search } from 'lucide-react';
 import type { AccountsConfirmation } from '../../../shared/contracts';
 import { pipelineApi } from '../../lib/api/endpoints';
-import { errorMessage } from '../../lib/api/client';
 import { fmtDay, fmtMoney, fmtWhen } from '../../lib/support';
 import { Empty, ErrorBanner, inputClass, Loading, Modal, PageHeader } from '../support-member/SupportParts';
 import { AccountsPaymentRequests } from './AccountsPaymentRequests';
 import { usePipelineRealtime } from '../team-member/pipeline/shared';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 
 type Tab = 'PENDING' | 'CONFIRMED';
 
@@ -154,7 +155,6 @@ const OnboardingConfirmations: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -175,7 +175,7 @@ const OnboardingConfirmations: React.FC<{
       setPendingTotal(pending.total);
       setSelectedId(cur => (cur && page.items.some(i => i.id === cur) ? cur : null));
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     } finally {
       setLoading(false);
     }
@@ -197,13 +197,13 @@ const OnboardingConfirmations: React.FC<{
     setActionError(null);
     try {
       await pipelineApi.confirmAccountsPayment(selected.id, note);
-      setNotice(`${selected.company || selected.name} confirmed and sent to the Technical Consultant.`);
+      toast.success(`${selected.company || selected.name} confirmed and sent to the Technical Consultant.`);
       setNote('');
       setSelectedId(null);
       onCountsChanged?.();
       await load();
     } catch (e) {
-      setActionError(errorMessage(e));
+      setActionError(userMessage(e));
     } finally {
       setBusy(false);
     }
@@ -226,7 +226,6 @@ const OnboardingConfirmations: React.FC<{
               aria-selected={tab === k}
               onClick={() => {
                 setTab(k);
-                setNotice(null);
               }}
               className={`px-3.5 py-1.5 rounded-lg ${tab === k ? 'bg-white shadow-xs text-slate-900' : 'text-slate-600'}`}
             >
@@ -241,11 +240,6 @@ const OnboardingConfirmations: React.FC<{
         </label>
       </div>
 
-      {notice && (
-        <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" role="status">
-          {notice}
-        </p>
-      )}
       {error && <ErrorBanner message={error} onRetry={() => void load()} />}
 
       {loading && items.length === 0 ? (

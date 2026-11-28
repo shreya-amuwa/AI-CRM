@@ -2,7 +2,6 @@ import { rowOpen } from '../../../lib/rowClick';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, CheckCircle2, FolderOpen, Search, Send } from 'lucide-react';
 import type { AddonRequest, ChecklistItem, CustomerOnboarding, Paginated, PipelineCustomer, PipelineCustomerDetail } from '../../../../shared/contracts';
-import { errorMessage } from '../../../lib/api/client';
 import { addonsApi, pipelineApi } from '../../../lib/api/endpoints';
 import { ChecklistPanel } from '../../team-member/pipeline/ChecklistPanel';
 import {
@@ -22,6 +21,8 @@ import { addonPaymentState, AddonStatusPill, rupees } from '../../invoices/invoi
 import { AddonRequestEditor } from './AddonRequestPanel';
 import { OpenClientRequests } from './ClientServiceRequests';
 import { ConsultationNotes } from './ConsultationNotes';
+import { toast } from '../../feedback/AppFeedback';
+import { userMessage } from '../../../lib/feedback/errors';
 
 const PAGE_SIZE = 10;
 type Sort = 'newest' | 'oldest' | 'name';
@@ -72,7 +73,6 @@ export const ConsultantAddons: React.FC<{ onCountsChanged: () => void; onGoToOnb
   const [data, setData] = useState<Paginated<PipelineCustomer> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const debounced = useDebounced(search.trim());
   const seq = useRef(0);
@@ -84,7 +84,7 @@ export const ConsultantAddons: React.FC<{ onCountsChanged: () => void; onGoToOnb
       .list({ stage: 'ONBOARDING', addons: true, search: debounced || undefined, page, pageSize: PAGE_SIZE, sort })
       .then(
         r => n === seq.current && setData(r),
-        e => n === seq.current && setError(errorMessage(e))
+        e => n === seq.current && setError(userMessage(e))
       )
       .finally(() => n === seq.current && setLoading(false));
   }, [debounced, page, sort]);
@@ -96,12 +96,12 @@ export const ConsultantAddons: React.FC<{ onCountsChanged: () => void; onGoToOnb
     setError(null);
     try {
       await pipelineApi.consultantStartOnboarding(c.id);
-      setNotice(`${c.company || c.name} was sent for onboarding.`);
+      toast.success(`${c.company || c.name} was sent for onboarding.`);
       notifyPipelineChanged();
       onCountsChanged();
       load();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(userMessage(e));
     }
   };
 
@@ -134,14 +134,6 @@ export const ConsultantAddons: React.FC<{ onCountsChanged: () => void; onGoToOnb
 
       <OpenClientRequests onOpenCustomer={setOpenId} />
 
-      {notice && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2" role="status">
-          <span>{notice}</span>
-          <button type="button" onClick={onGoToOnboarding} className="inline-flex items-center gap-1 font-bold text-emerald-900 hover:underline">
-            Open Onboarding Customers <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-        </div>
-      )}
       {error && <ErrorBanner message={error} onRetry={load} />}
 
       {loading && !data ? (
@@ -289,7 +281,7 @@ const AddonDetailsDialog: React.FC<{ id: string; serviceName: (code: string) => 
         setChecklist(c);
         setError(null);
       },
-      e => setError(errorMessage(e))
+      e => setError(userMessage(e))
     );
   }, [id]);
   useEffect(load, [load]);
@@ -308,7 +300,7 @@ const AddonDetailsDialog: React.FC<{ id: string; serviceName: (code: string) => 
       setEditorKey(k => k + 1);
       changed();
     } catch (e) {
-      setActionError(errorMessage(e));
+      setActionError(userMessage(e));
     } finally {
       setBusy(false);
     }
