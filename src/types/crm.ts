@@ -67,6 +67,8 @@ export interface Lead {
   departmentId: DepartmentId;
   assignedTo?: string; // userId
   stage?: 'New' | 'New Lead' | 'Contacted' | 'Interested' | 'Demo' | 'Proposal' | 'Negotiation' | 'Won' | 'Lost';
+  /** The lead's tag (lead tags, migration 20270305000100). */
+  leadTagId?: string | null;
   priority?: 'High' | 'Medium' | 'Low';
   lastActionDate?: string;
   receivedAt: string; // ISO 8601 string

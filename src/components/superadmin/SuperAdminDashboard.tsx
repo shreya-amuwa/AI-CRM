@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useMemo, useState } from 'react';
-import { Activity, AtSign, BarChart3, Bell, Building2, Eye, FileBarChart, LayoutDashboard, LineChart, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
+import { Activity, AtSign, BarChart3, Bell, Building2, Eye, FileBarChart, LayoutDashboard, LineChart, MessageCircle, PhoneCall, RotateCcw, ShieldCheck, SlidersHorizontal, Sparkles, Tag, Trophy, UserPlus, Users, Wallet } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDepartments } from '../../context/DepartmentContext';
 import { TeamMemberManagement, type TeamMemberTab } from '../common/TeamMemberManagement';
@@ -18,6 +18,7 @@ import { ghostBtn, primaryBtn } from '../tasks/head/headParts';
 import { CompanyOverview } from './CompanyOverview';
 import { SecurityAuditLogs } from './SecurityAuditLogs';
 import { LeadWhatsAppSettingsPage } from '../leads/LeadWhatsApp';
+import { LeadTagsPage } from '../leadTags/LeadTagsPage';
 import { CrocodialAdminPage } from '../crocodial/CrocodialAdminPage';
 import { CrocodialTeamPanel } from '../crocodial/CrocodialTeamPanel';
 import { useRememberedPage } from '../../hooks/useRememberedPage';
@@ -31,7 +32,7 @@ const WalletAdmin = lazy(() => import('../wallet/WalletAdmin'));
 const DashboardExplorer = lazy(() => import('../dashboard-explorer/DashboardExplorer'));
 const AiStudioWorkspace = lazy(() => import('../ai-studio/AiStudioWorkspace').then(m => ({ default: m.AiStudioWorkspace })));
 
-const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email', 'dashboard-explorer'] as const;
+const SUPER_ADMIN_PAGES = ['overview', 'departments', 'team', 'reports', 'income', 'incentives', 'wallet-admin', 'top-performers', 'report-performance', 'performance', 'security', 'lead-whatsapp', 'crocodial', 'crocodial-activity', 'lead-tags', 'ai-studio', 'chat', 'notifications', 'notification-health', 'email', 'dashboard-explorer'] as const;
 type Page = (typeof SUPER_ADMIN_PAGES)[number];
 
 /**
@@ -47,7 +48,7 @@ type Page = (typeof SUPER_ADMIN_PAGES)[number];
  */
 export const SuperAdminDashboard: React.FC = () => {
   const { user, logout, selectDepartment } = useAuth();
-  const { refreshDepartments } = useDepartments();
+  const { refreshDepartments, departments } = useDepartments();
   const [page, setPage] = useRememberedPage<Page>('super-admin', 'overview', SUPER_ADMIN_PAGES);
   // the header's "Add Team Member" opens Team Member Management on its Add tab
   const [teamTab, setTeamTab] = useState<{ tab: TeamMemberTab; n: number }>({ tab: 'members', n: 0 });
@@ -83,7 +84,7 @@ export const SuperAdminDashboard: React.FC = () => {
       // Dashboard Explorer: what every position sees, with demonstration data (separate from Team Members and account management)
       { label: 'Management', items: [{ id: 'dashboard-explorer', label: 'Dashboard Explorer', icon: Eye }] },
       { label: 'Governance', items: [{ id: 'security', label: 'Security & Audit Logs', icon: ShieldCheck }] },
-      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }, { id: 'crocodial', label: 'Crocodial Integration', icon: PhoneCall }, { id: 'crocodial-activity', label: 'Crocodial Activity', icon: PhoneCall }] },
+      { label: 'Automations', items: [{ id: 'lead-whatsapp', label: 'Lead Welcome WhatsApp', icon: MessageCircle }, { id: 'lead-tags', label: 'Lead tags', icon: Tag }, { id: 'crocodial', label: 'Crocodial Integration', icon: PhoneCall }, { id: 'crocodial-activity', label: 'Crocodial Activity', icon: PhoneCall }] },
       {
         label: 'Communication',
         items: [
@@ -159,6 +160,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {page === 'performance' && <Suspense fallback={<div role="status" className="p-8 text-sm text-slate-500">Loading</div>}><SuperAdminPerformance /></Suspense>}
       {page === 'reports' && <BusinessReports />}
       {page === 'security' && <SecurityAuditLogs />}
+      {page === 'lead-tags' && <LeadTagsPage departments={departments.flatMap(d => (d.dbId ? [{ id: d.dbId, name: d.name }] : []))} canCompanyWide />}
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'crocodial' && <CrocodialAdminPage />}
       {page === 'crocodial-activity' && <CrocodialTeamPanel />}

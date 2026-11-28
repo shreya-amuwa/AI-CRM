@@ -38,7 +38,7 @@ import type {
 import type { AiWebsiteOnboardingInput, LeadCreateInput, LeadUpdateInput, PartPaymentsQuery, PipelineListQuery } from '../../shared/validation.js';
 import { likePattern, pageRange, unwrap, unwrapOne } from './base.js';
 
-const BASE_COLUMNS = `id, lifecycle_stage, lead_status, name, company, phone, whatsapp, email, city, address, business_category,
+const BASE_COLUMNS = `id, lifecycle_stage, lead_status, lead_tag_id, name, company, phone, whatsapp, email, city, address, business_category,
   lead_source, notes, next_follow_up_at, expected_budget, deal_amount, amount_received, amount_verified, payment_status, payment_workflow, payment_due_date,
   owner_id, team_id, department_id, stage_changed_at, created_at, updated_at,
   owner:profiles!customers_owner_id_fkey(id, full_name),
@@ -66,6 +66,7 @@ export function mapPipelineCustomer(r: any): PipelineCustomer {
     id: r.id,
     lifecycleStage: r.lifecycle_stage,
     leadStatus: r.lead_status,
+    leadTagId: r.lead_tag_id ?? null,
     name: r.name,
     company: r.company,
     phone: r.phone,
@@ -296,6 +297,7 @@ export class PipelineRepository {
     if (q.service) query = query.eq('service_filter.service_code', q.service);
     if (q.source) query = query.eq('lead_source', q.source);
     if (q.leadStatus) query = query.eq('lead_status', q.leadStatus);
+    if (q.leadTagId) query = query.eq('lead_tag_id', q.leadTagId);
     if (q.noFollowUp) query = query.is('next_follow_up_at', null);
     if (q.followUpFrom) query = query.gte('next_follow_up_at', q.followUpFrom);
     if (q.followUpTo) query = query.lt('next_follow_up_at', q.followUpTo);

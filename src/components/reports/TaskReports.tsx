@@ -30,7 +30,7 @@ const FILTERS: { id: '' | TaskReportStatus; label: string }[] = [
 ];
 
 // ------------------------------------------------------------------------------------------------ the Team Member's form
-// (20270305000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50); progress and the reason for delay
+// (20270308000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50); progress and the reason for delay
 // are no longer asked for (the report keeps the task's own progress)
 interface Draft { taskId: string; reportDate: string; workCompleted: string; pendingWork: string; remarks: string }
 const emptyDraft = (taskId = ''): Draft => ({ taskId, reportDate: officeToday(), workCompleted: '', pendingWork: '', remarks: '' });
@@ -127,7 +127,7 @@ const ReportCard: React.FC<{ r: TaskDailyReport; onReview?: (r: TaskDailyReport)
       <ApprovalPill status={r.status} />
     </div>
     <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-      {/* the three fields of the report (20270305000100); a reason for delay is shown only on an older report that has one */}
+      {/* the three fields of the report (20270308000100); a reason for delay is shown only on an older report that has one */}
       {r.workCompleted ? <div><dt className="font-semibold text-slate-500">Work Completed</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.workCompleted}</dd></div> : null}
       {r.pendingWork ? <div><dt className="font-semibold text-slate-500">Work Pending</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.pendingWork}</dd></div> : null}
       {r.remarks ? <div><dt className="font-semibold text-slate-500">Additional Note</dt><dd className="text-slate-800 whitespace-pre-wrap break-words">{r.remarks}</dd></div> : null}
@@ -184,7 +184,7 @@ export const ChangeList: React.FC<{ changes: FieldChanges }> = ({ changes }) => 
 );
 
 // ------------------------------------------------------------------------------------------------ the Team Lead edits a waiting report
-// (20270305000100) the same three fields as the member's form; progress and the reason for delay stay as the report has them
+// (20270308000100) the same three fields as the member's form; progress and the reason for delay stay as the report has them
 interface EditDraft { workCompleted: string; pendingWork: string; remarks: string; reason: string }
 const ReviewerEditForm: React.FC<{ r: TaskDailyReport; onSaved: (r: TaskDailyReport) => void; onCancel: () => void }> = ({ r, onSaved, onCancel }) => {
   const [d, setD] = useState<EditDraft>({ workCompleted: r.workCompleted ?? '', pendingWork: r.pendingWork ?? '', remarks: r.remarks ?? '', reason: '' });

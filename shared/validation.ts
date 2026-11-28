@@ -32,6 +32,7 @@ import {
   INVOICE_STAGES,
   TAX_TREATMENTS,
   LEAD_STATUSES,
+  LEAD_TAG_COLOURS,
   LEAD_SCOPES,
   FIELD_VISIT_FILTERS,
   LEAD_VISIT_STATUSES,
@@ -679,6 +680,8 @@ export const pipelineListQuerySchema = z.object({
   service: z.string().regex(/^[A-Z][A-Z0-9_]{1,59}$/).optional(),
   source: trimmed(60).optional(),
   leadStatus: z.enum(LEAD_STATUSES).optional(),
+  /** Leads with this tag (migration 20270308000100). */
+  leadTagId: uuidSchema.optional(),
   /** Follow-up window computed by the client in the user's timezone. */
   followUpFrom: datetime.optional(),
   followUpTo: datetime.optional(),
@@ -3244,7 +3247,7 @@ export const adsReportSchema = z
     reportDate: z.preprocess(v => (v === '' ? undefined : v), isoDate.optional()),
     clientId: adsOptionalId,
     assignmentId: adsOptionalId,
-    // (20270305000100) Work Completed / Work Pending / Additional Note (remarks): optional, at least one, with word limits
+    // (20270308000100) Work Completed / Work Pending / Additional Note (remarks): optional, at least one, with word limits
     workCompleted: optionalText(4000),
     workInProgress: optionalText(4000),
     pendingWork: optionalText(4000),
@@ -3368,7 +3371,7 @@ export const aiStudioReportSchema = z
   })
   .strict()
   .refine(v => !v.submit || (v.workCompleted ?? '').length > 0, { message: 'Describe the work completed today before you submit.', path: ['workCompleted'] })
-  // (20270305000100) the same word limits as every daily report (this older one-task form is only used to correct reports made with it)
+  // (20270308000100) the same word limits as every daily report (this older one-task form is only used to correct reports made with it)
   .superRefine((v, ctx) => { if (v.submit) addReportWordIssues(ctx, { workCompleted: v.workCompleted ?? undefined, pendingWork: v.pendingWork ?? undefined, remarks: v.remarks ?? undefined }); });
 export type AiStudioReportInput = z.infer<typeof aiStudioReportSchema>;
 
@@ -3428,12 +3431,12 @@ export const aiStudioDailyReportSchema = z
   .strict()
   .superRefine((v, ctx) => {
     if (!v.submit) return;
-    // (20270305000100) the three fields' word limits; the Daily Work Description is no longer asked for
+    // (20270308000100) the three fields' word limits; the Daily Work Description is no longer asked for
     addReportWordIssues(ctx, { workCompleted: v.workCompleted, pendingWork: v.pendingWork, remarks: v.remarks });
   });
 export type AiStudioDailyReportInput = z.infer<typeof aiStudioDailyReportSchema>;
 
-// ---- Daily report fields, every department (20270305000100): Work Completed / Work Pending / Additional Note, all optional, each with a word limit ----
+// ---- Daily report fields, every department (20270308000100): Work Completed / Work Pending / Additional Note, all optional, each with a word limit ----
 export const DAILY_REPORT_FIELDS = [
   { key: 'workCompleted', label: 'Work Completed', maxWords: 150 },
   { key: 'pendingWork', label: 'Work Pending', maxWords: 100 },
@@ -3484,10 +3487,15 @@ export const crocodialConnectionSaveSchema = z
     id: uuidSchema.optional(),
     name: z.string().trim().min(2, 'Give the connection a name.').max(120),
     externalAccountLabel: z.string().trim().max(200).optional().nullable(),
-    credentialRef: crocodialCredentialRefSchema,
-    enabled: z.boolean().optional()
+    // optional (Task 8): a CEO's connection has no server setting (its key is stored by the CRM); only the MD may name one (the database checks)
+    credentialRef: crocodialCredentialRefSchema.optional().nullable(),
+    enabled: z.boolean().optional(),
+    // a CEO creating a connection: the departments they run that it serves (at least one; the database checks each)
+    departmentIds: z.array(uuidSchema).min(1, 'Choose at least one department you run.').max(20).optional()
   })
   .strict();
+// A Crocodial key pasted by its manager (Task 8): only its size here; the server normalises it and checks its shape and a live read
+export const crocodialKeySchema = z.object({ key: z.string({ required_error: 'Paste the Crocodial key.' }).max(5000, 'That is too long to be a Crocodial key.') }).strict();
 export const crocodialRolloutSchema = z
   .object({ departmentId: uuidSchema, division: z.literal('SALES'), allowed: z.boolean(), note: z.string().trim().max(300).optional().nullable() })
   .strict();
@@ -3500,6 +3508,8 @@ export const crocodialDepartmentLinkSchema = z
     stage: z.enum(['PILOT', 'PRODUCTION']).default('PILOT')
   })
   .strict();
+// (20270307000100) GET /crocodial/connections/:id/mapping-candidates
+export const crocodialMappingCandidatesQuerySchema = z.object({ departmentId: uuidSchema }).strict();
 export const crocodialMappingSchema = z
   .object({
     connectionId: uuidSchema,
@@ -3527,9 +3537,20 @@ export const crocodialRefreshSchema = z
 // ---- Crocodial -> CRM lead pipeline (20270304000100)
 export const CROCODIAL_DISPOSITIONS = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'INTERESTED', 'DEMO_SCHEDULED', 'NOT_INTERESTED', 'LOST', 'CONVERTED', 'IGNORE'] as const;
 export const crocodialLeadImportSchema = z.object({ departmentId: uuidSchema, mode: z.enum(['OFF', 'PREVIEW', 'IMPORT']) }).strict();
+/**
+ * A Crocodial status mapped to a lead tag (tagId), to Ignore (ignore), or removed (neither) (20270306000100). The old body
+ * ({ status, disposition }) is still accepted; the database translates it to the seed tag of the disposition's stage.
+ */
 export const crocodialStatusMappingSchema = z
-  .object({ status: z.string().trim().min(1, 'Enter the Crocodial status.').max(80), disposition: z.enum(CROCODIAL_DISPOSITIONS).nullable() })
-  .strict();
+  .object({
+    status: z.string().trim().min(1, 'Enter the Crocodial status.').max(80),
+    tagId: uuidSchema.nullable().optional(),
+    ignore: z.boolean().optional(),
+    disposition: z.enum(CROCODIAL_DISPOSITIONS).nullable().optional()
+  })
+  .strict()
+  .refine(b => b.disposition === undefined || (b.tagId === undefined && b.ignore === undefined), { message: 'Send a tag or a disposition, not both.', path: ['disposition'] })
+  .refine(b => !(b.ignore && b.tagId), { message: 'Choose a tag or Ignore, not both.', path: ['ignore'] });
 export const crocodialLinksQuerySchema = z
   .object({
     status: z.enum(['LINKED', 'PENDING_CREATE', 'PENDING_LINK', 'UNMAPPED_ASSIGNEE', 'OUT_OF_SCOPE', 'NOT_ENABLED', 'AMBIGUOUS', 'OWNER_CONFLICT', 'PROTECTED', 'IGNORED', 'FAILED']).optional(),
@@ -4009,7 +4030,7 @@ export const hrRoleOfferFieldsSchema = z.object({
 export const offerTemplateVersionParamSchema = z.coerce.number().int().min(1).max(100000);
 
 // ---- Task daily reports and performance approval ----
-// (20270305000100) three optional fields with word limits (at least one written); progress and the reason for delay are no longer asked for (the report
+// (20270308000100) three optional fields with word limits (at least one written); progress and the reason for delay are no longer asked for (the report
 // keeps the task's own progress) but an older client may still send them
 export const taskReportSubmitSchema = z
   .object({
@@ -4177,3 +4198,17 @@ export const rechargeUploadSchema = z
     sizeBytes: z.coerce.number().int().positive().max(RECHARGE_MAX_FILE_BYTES, 'Files can be at most 5 MB.')
   })
   .strict();
+
+/** Lead tags (20270305000100). The database checks who may manage which tag, duplicates and departments again. */
+export const leadTagListQuerySchema = z.object({ departmentId: uuidSchema.optional().or(z.literal('').transform(() => undefined)) }).strict();
+export const leadTagSaveSchema = z
+  .object({
+    id: uuidSchema.optional(),
+    label: z.string().trim().min(1, 'Give the tag a label.').max(40, 'Keep the label to 40 characters.'),
+    colour: z.enum(LEAD_TAG_COLOURS, { errorMap: () => ({ message: 'Choose one of the tag colours.' }) }),
+    stage: z.enum(LEAD_STATUSES, { errorMap: () => ({ message: 'Choose the stage the tag counts as.' }) }),
+    departmentIds: z.array(uuidSchema).max(20, 'Choose up to 20 departments.').optional()
+  })
+  .strict();
+export const leadTagRetireSchema = z.object({ retired: z.boolean() }).strict();
+export const leadTagSetSchema = z.object({ tagId: uuidSchema }).strict();

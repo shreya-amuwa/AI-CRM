@@ -1,18 +1,31 @@
 import type {
-  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialReconcileRun, CrocodialTeamLeads
+  CrocodialHealthReport, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRuntimeReport, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialReconcileRun, CrocodialTeamLeads
 } from '../../shared/contracts.js';
 import {
   crocodialActivityQuerySchema, crocodialConnectionSaveSchema, crocodialCountFromSchema, crocodialLeadsQuerySchema, crocodialTeamActivityQuerySchema, crocodialDepartmentLinkSchema, crocodialMappingSchema, crocodialRevokeSchema, crocodialRolloutSchema, crocodialRefreshSchema, uuidSchema,
-  crocodialLeadImportSchema, crocodialStatusMappingSchema, crocodialLinksQuerySchema, crocodialLinkResolveSchema, crocodialTeamLeadsQuerySchema
+  crocodialLeadImportSchema, crocodialStatusMappingSchema, crocodialLinksQuerySchema, crocodialLinkResolveSchema, crocodialTeamLeadsQuerySchema,
+  crocodialKeySchema, crocodialMappingCandidatesQuerySchema
 } from '../../shared/validation.js';
-import { crocodialToken } from '../crocodial/client.js';
-import { credentialCheck, reportRuntime, runtimeInfo } from '../crocodial/runtime.js';
+import { crocodialToken, type ClientOptions } from '../crocodial/client.js';
+import { KEY_UNREADABLE_MESSAGE, keyFingerprint, keyLast4, keySecret, normaliseKey, openKey, sealKey } from '../crocodial/keys.js';
+import { credentialCheck, reportRuntime, runtimeInfo, tokenFormatValid } from '../crocodial/runtime.js';
+import { enforce, type Bucket } from '../http/rateLimit.js';
 import { getServiceClient, hasServiceClient } from '../db/supabase.js';
 import { testCrocodialConnection } from '../crocodial/directory.js';
 import { reconcileLeads, runCrocodialSync } from '../crocodial/sync.js';
 import { AppError } from '../http/errors.js';
 import { parse } from '../http/validate.js';
-import type { CrocodialRepository } from '../repositories/CrocodialRepository.js';
+import { CrocodialRepository } from '../repositories/CrocodialRepository.js';
+
+/** What saveKey / removeKey / testConnection use besides the user's repository (tests pass stubs). */
+export interface CrocodialKeyDeps {
+  /** the service-role functions (croc_token_store / croc_token_clear / croc_token_ciphertext); default: the server's service client */
+  keyStore?: Pick<CrocodialRepository, 'tokenStore' | 'tokenClear' | 'tokenCiphertext'>;
+  /** the Crocodial client's options for the live read (fetch, sleep, base) */
+  client?: ClientOptions;
+  /** the per-person limit; default: the shared (database) rate limiter */
+  limit?: (buckets: Bucket[]) => Promise<unknown>;
+}
 
 /**
  * The Crocodial integration's configuration (Super Admin) and an employee's own switch. Every rule (who may configure, the rollout, who can
@@ -21,10 +34,53 @@ import type { CrocodialRepository } from '../repositories/CrocodialRepository.js
  */
 export class CrocodialService {
   // env: only tests pass one; the server reads its own settings (process.env, then the Worker's bindings: server/crocodial/runtime.ts)
-  constructor(private readonly repo: CrocodialRepository, private readonly env?: NodeJS.ProcessEnv) {}
+  constructor(private readonly repo: CrocodialRepository, private readonly env?: NodeJS.ProcessEnv, private readonly deps: CrocodialKeyDeps = {}) {}
 
   private withCredential(c: CrocodialConnection): CrocodialConnection {
-    return { ...c, credentialConfigured: crocodialToken(c.credentialRef, this.env) !== null };
+    return { ...c, credentialConfigured: c.keySource === 'DATABASE' || crocodialToken(c.credentialRef, this.env) !== null };
+  }
+
+  private keyStore(): NonNullable<CrocodialKeyDeps['keyStore']> {
+    if (this.deps.keyStore) return this.deps.keyStore;
+    if (!hasServiceClient()) throw new AppError('SERVICE_UNAVAILABLE', "Crocodial keys can't be stored on this server. Ask the Managing Director.");
+    return new CrocodialRepository(getServiceClient());
+  }
+
+  /**
+   * Save (or replace) a connection's Crocodial key: the database checks the caller manages the connection (as the user), then the person's
+   * limit (5 in 10 minutes), the server's AUTOMATION_SECRET_KEY, the key's shape and one live read of 1 user with it. Only then is it
+   * encrypted and stored by the service role (which checks the actor again). Nothing is stored when any step fails, and the key is never
+   * part of an answer, an error or a log line.
+   */
+  async saveKey(id: string, raw: string, actorId: string): Promise<{ ok: true; last4: string; users: number }> {
+    const connectionId = parse(uuidSchema, id);
+    await this.repo.canManageCheck(connectionId);
+    await (this.deps.limit ?? (b => enforce(b, 'shared')))([{ key: 'croc-key:' + actorId, limit: 5, window: 600 }]);
+    const secret = keySecret(this.env);
+    if (!secret) throw new AppError('SERVICE_UNAVAILABLE', "Crocodial keys can't be stored on this server. Ask the Managing Director.");
+    const key = normaliseKey(typeof raw === 'string' ? raw : '');
+    if (!tokenFormatValid(key)) {
+      throw new AppError('VALIDATION_ERROR', "That doesn't look like a Crocodial key. Copy it again from Crocodial (Setup, Outbound API) and paste only the key.");
+    }
+    const probe = await testCrocodialConnection({ id: connectionId, credentialRef: null }, { ...this.deps.client, env: this.env, token: key, probe: true });
+    if (!probe.ok) {
+      if (probe.health === 'AUTH_FAILED' || probe.health === 'DISABLED_AT_SOURCE') throw new AppError('VALIDATION_ERROR', 'Crocodial refused this key.');
+      throw new AppError('SERVICE_UNAVAILABLE', 'Crocodial could not be reached. Nothing was saved; try again.');
+    }
+    const last4 = keyLast4(key);
+    await this.keyStore().tokenStore(connectionId, sealKey(key, secret), keyFingerprint(key), last4, actorId);
+    return { ok: true, last4, users: probe.employees };
+  }
+
+  /** "Disconnect": the caller is checked as the user; the service role clears the key and switches the connection off (synced data stays). */
+  async removeKey(id: string, actorId: string): Promise<CrocodialConnection> {
+    const connectionId = parse(uuidSchema, id);
+    await this.repo.canManageCheck(connectionId);
+    return this.withCredential(await this.keyStore().tokenClear(connectionId, actorId));
+  }
+  /** POST /crocodial/connections/:id/key */
+  saveKeyFromBody(id: string, body: unknown, actorId: string) {
+    return this.saveKey(id, parse(crocodialKeySchema, body ?? {}).key, actorId);
   }
 
   async overview(): Promise<CrocodialAdminOverview> {
@@ -43,11 +99,26 @@ export class CrocodialService {
   async testConnection(id: string, host?: string | null): Promise<CrocodialTestResult> {
     // the database checks the caller is the Super Admin and returns the setting's NAME; the server reads the token from its own environment
     const c = await this.repo.connection(parse(uuidSchema, id));
+    if (c.keySource === 'DATABASE') {
+      // a key stored by the CRM: opened here, never sent anywhere but Crocodial's Authorization header
+      const cipher = await this.keyStore().tokenCiphertext(c.id);
+      const token = cipher ? openKey(cipher, keySecret(this.env)) : null;
+      if (!token) {
+        if (hasServiceClient()) await getServiceClient().rpc('croc_connection_status', { p_connection: c.id, p_health: 'KEY_UNREADABLE', p_error: null });
+        return { ok: false, health: 'KEY_UNREADABLE', message: `${KEY_UNREADABLE_MESSAGE}.`, employees: 0, branches: 0, timezone: null, requests: 0 } as CrocodialTestResult;
+      }
+      return testCrocodialConnection({ id: c.id, credentialRef: c.credentialRef }, { ...this.deps.client, env: this.env, host, token }) as Promise<CrocodialTestResult>;
+    }
     return testCrocodialConnection({ id: c.id, credentialRef: c.credentialRef }, { env: this.env, host }) as Promise<CrocodialTestResult>;
   }
   departmentLinkSave(body: unknown) {
     const b = parse(crocodialDepartmentLinkSchema, body);
     return this.repo.departmentLinkSave(b.connectionId, b.departmentId, b.division, b.enabled, b.stage);
+  }
+  /** Who can be mapped in a linked department: the manager of the connection only (the database checks it, and the department link). */
+  mappingCandidates(id: string, query: unknown): Promise<CrocodialMappingCandidate[]> {
+    const q = parse(crocodialMappingCandidatesQuerySchema, query ?? {});
+    return this.repo.mappingCandidates(parse(uuidSchema, id), q.departmentId);
   }
   mappingCheck(body: unknown): Promise<CrocodialMappingCheck> {
     const b = parse(crocodialMappingSchema, body);
@@ -155,7 +226,9 @@ export class CrocodialService {
   }
   statusMappingSet(id: string, body: unknown) {
     const b = parse(crocodialStatusMappingSchema, body ?? {});
-    return this.repo.statusMappingSet(parse(uuidSchema, id), b.status, b.disposition);
+    // the old body (a disposition) is translated by the database with the migration's table
+    if (b.disposition !== undefined) return this.repo.statusMappingSet(parse(uuidSchema, id), b.status, b.disposition);
+    return this.repo.statusMappingTagSet(parse(uuidSchema, id), b.status, b.tagId ?? null, b.ignore ?? false);
   }
   /** "Reconcile now": the Super Admin check is the overview call (as the signed-in user); the batches run with the service key. */
   async reconcileNow(id: string): Promise<CrocodialReconcileRun> {

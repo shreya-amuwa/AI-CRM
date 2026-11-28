@@ -31,7 +31,7 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
   const [date, setDate] = useState(existing?.reportDate ?? todayIso());
   const [selected, setSelected] = useState<string[]>(() => existing?.work?.map(w => w.taskId) ?? []);
   const [text, setText] = useState<Extra>(() => extraOf(existing));
-  // (20270305000100) the form asks three fields only: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). The Daily Work
+  // (20270308000100) the form asks three fields only: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). The Daily Work
   // Description, the challenges and tomorrow's plan of an older report are kept as they are (sent back unchanged), never asked for.
   const withinLimits = reportWordsWithinLimits(text);
   const [search, setSearch] = useState('');
@@ -220,7 +220,7 @@ export const DailyReportForm: React.FC<{ existing?: AiStudioReportDetail; onDone
         </Card>
       )}
 
-      {/* 4. The report: three optional fields with word limits (20270305000100) */}
+      {/* 4. The report: three optional fields with word limits (20270308000100) */}
       <Card className="p-5 space-y-3">
         <div>
           <h3 className="text-sm font-extrabold text-slate-900">Your report</h3>

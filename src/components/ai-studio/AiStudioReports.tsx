@@ -16,7 +16,7 @@ import { TaskDialog } from './AiStudioTasks';
 import { Paged } from '../common/Paged';
 
 // the person's own additional remarks on a consolidated report (the work itself comes from the tasks)
-// (20270305000100) the report's three fields; the challenges and tomorrow's plan are shown only on an older report that has them
+// (20270308000100) the report's three fields; the challenges and tomorrow's plan are shown only on an older report that has them
 const DAILY_EXTRA: { key: 'workCompleted' | 'pendingWork' | 'blockers' | 'tomorrowPlan' | 'remarks'; label: string }[] = [
   { key: 'workCompleted', label: 'Work Completed' },
   { key: 'pendingWork', label: 'Work Pending' },
@@ -28,7 +28,7 @@ const isDaily = (r: { kind?: string; projectId: string | null }) => r.kind === '
 
 // The daily report asks three things: what was completed, what is pending, and any challenge. "Work In Progress" (the same as pending work) and "Remarks" were
 // dropped from the form to keep it short; they are shown (and kept when the report is edited) only on an older report that already has them.
-// (20270305000100) the three fields of every daily report; "Challenges / Blockers" and "Work In Progress" are shown only on an older report that has them
+// (20270308000100) the three fields of every daily report; "Challenges / Blockers" and "Work In Progress" are shown only on an older report that has them
 const PARTS: { key: 'workCompleted' | 'workInProgress' | 'pendingWork' | 'blockers' | 'remarks'; label: string; required?: boolean; legacy?: boolean }[] = [
   { key: 'workCompleted', label: 'Work Completed', required: true },
   { key: 'pendingWork', label: 'Work Pending' },

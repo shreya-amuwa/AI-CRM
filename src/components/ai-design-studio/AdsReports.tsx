@@ -48,7 +48,7 @@ export const ReportForm: React.FC<{ initial?: AdsReport; onSaved: (text: string)
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const requestId = useRef(newRequestId());
-  // (20270305000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). Work in progress,
+  // (20270308000100) the report has three optional fields: Work Completed (150 words), Work Pending (100), Additional Note (50, stored as remarks). Work in progress,
   // challenges and links are no longer asked for; an older report that has them keeps them unchanged when it is sent again.
   const withinLimits = reportWordsWithinLimits({ workCompleted, pendingWork, remarks });
 

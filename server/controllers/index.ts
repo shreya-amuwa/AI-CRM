@@ -180,12 +180,28 @@ export const searchController = {
   record: (async ctx => ok(await svc(ctx).search.record(ctx.params.type, ctx.params.id))) as Handler
 };
 
+// Lead tags (20270305000100): the database decides who manages which tag; tagging a lead follows the lead's own edit rules
+export const leadTagsController = {
+  list: (async ctx => ok(await svc(ctx).leadTags.list(ctx.req.query))) as Handler,
+  save: (async ctx => {
+    const body = ctx.req.body as { id?: unknown } | null;
+    const created = !(body && typeof body === 'object' && body.id);
+    return ok(await svc(ctx).leadTags.save(ctx.actor.id, ctx.req.body), created ? 201 : 200);
+  }) as Handler,
+  retire: (async ctx => ok(await svc(ctx).leadTags.retire(ctx.params.id, ctx.req.body))) as Handler,
+  setOnLead: (async ctx => ok(await svc(ctx).leadTags.setOnLead(ctx.params.id, ctx.req.body))) as Handler
+};
+
 export const crocodialController = {
   overview: (async ctx => ok(await svc(ctx).crocodial.overview())) as Handler,
   rolloutSet: (async ctx => ok(await svc(ctx).crocodial.rolloutSet(ctx.req.body))) as Handler,
   connectionSave: (async ctx => ok(await svc(ctx).crocodial.connectionSave(ctx.req.body))) as Handler,
   testConnection: (async ctx => ok(await svc(ctx).crocodial.testConnection(ctx.params.id, ctx.req.headers.host))) as Handler,
+  // a Crocodial key: checked, tested and encrypted by the server; the answer carries only its last 4 characters
+  saveKey: (async ctx => ok(await svc(ctx).crocodial.saveKeyFromBody(ctx.params.id, ctx.req.body, ctx.actor.id))) as Handler,
+  removeKey: (async ctx => ok(await svc(ctx).crocodial.removeKey(ctx.params.id, ctx.actor.id))) as Handler,
   departmentLinkSave: (async ctx => ok(await svc(ctx).crocodial.departmentLinkSave(ctx.req.body))) as Handler,
+  mappingCandidates: (async ctx => ok(await svc(ctx).crocodial.mappingCandidates(ctx.params.id, ctx.req.query))) as Handler,
   mappingCheck: (async ctx => ok(await svc(ctx).crocodial.mappingCheck(ctx.req.body))) as Handler,
   mappingCreate: (async ctx => ok(await svc(ctx).crocodial.mappingCreate(ctx.req.body))) as Handler,
   mappingApprove: (async ctx => ok(await svc(ctx).crocodial.mappingApprove(ctx.params.id))) as Handler,

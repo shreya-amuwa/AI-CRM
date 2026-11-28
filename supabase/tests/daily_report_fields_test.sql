@@ -1,5 +1,5 @@
 -- =============================================================================
--- Daily reports, every department: Work Completed (150 words), Work Pending (100), Additional Note (50), all optional (migration 20270305000100).
+-- Daily reports, every department: Work Completed (150 words), Work Pending (100), Additional Note (50), all optional (migration 20270308000100).
 -- Runs after the AI Studio, AI Design Studio and task report suites; uses their people: th_wab (Wabastore Sales Team Lead), ai_tm1b / ai_tl1 (AI Studio),
 -- ads_m0 (AI Design Studio member). Creates its own Wabastore member (drf_m). Report dates used: today (task report), 26-27 days back (AI Studio).
 -- =============================================================================
@@ -9,8 +9,8 @@
 reset role;
 select set_config('request.jwt.claims', '', false);
 -- earlier suites run older copies of these functions again: this migration is applied last, twice (it must be safe to run twice)
-\i supabase/migrations/20270305000100_daily_report_three_fields.sql
-\i supabase/migrations/20270305000100_daily_report_three_fields.sql
+\i supabase/migrations/20270308000100_daily_report_three_fields.sql
+\i supabase/migrations/20270308000100_daily_report_three_fields.sql
 
 create or replace function test.dw(n integer) returns text language sql immutable as $$ select string_agg('word' || g, ' ') from generate_series(1, n) g $$;
 create or replace function test.dtoday() returns date language sql stable as $$ select (now() at time zone 'Asia/Kolkata')::date $$;

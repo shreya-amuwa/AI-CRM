@@ -173,7 +173,7 @@ try {
     check(true, `${label}: "Open task" opens the original task to update it`);
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).last().click();
 
-    // 4. only the three fields are typed (20270305000100): Work Completed, Work Pending, Additional Note
+    // 4. only the three fields are typed (20270308000100): Work Completed, Work Pending, Additional Note
     check(await page.getByLabel(/^Work Completed/).count() === 1 && await page.getByLabel(/^Work Pending/).count() === 1 && await page.getByLabel(/^Additional Note/).count() === 1
       && await page.getByLabel("Tomorrow's work plan").count() === 0 && await page.getByText('Additional information').count() === 0, `${label}: the report has the three fields only (no additional-work section)`);
     await page.getByLabel(/^Work Pending/).fill('Write the tests');

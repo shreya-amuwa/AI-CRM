@@ -1,5 +1,5 @@
 -- =============================================================================
--- Daily reports: three fields with word limits, every department (docs/DAILY_REPORT_FIELDS.md). Run after 20270304000100. Safe to run twice; no temp
+-- Daily reports: three fields with word limits, every department (docs/DAILY_REPORT_FIELDS.md). Run after 20270307000100. Safe to run twice; no temp
 -- tables; nothing is deleted; no column changes meaning.
 --
 -- The daily report of an assigned task has three fields, all optional, each with a maximum:
@@ -51,7 +51,7 @@ alter table public.task_daily_reports add constraint task_daily_reports_work_com
 alter table public.task_daily_reports add column if not exists field_word_limits boolean not null default false;
 alter table public.task_daily_reports alter column field_word_limits set default true;
 
--- copy of 20270209000100, changed where marked (20270305000100)
+-- copy of 20270209000100, changed where marked (20270308000100)
 create or replace function public.task_report_submit(
   p_task uuid, p_date date, p_work text, p_progress integer, p_pending text default null, p_delay text default null, p_remarks text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -90,7 +90,7 @@ begin
   if t.status = 'NOT_COMPLETED' or (t.status = 'COMPLETED' and t.completed_at is not null and (t.completed_at at time zone 'Asia/Kolkata')::date < v_date) then
     raise exception 'VALIDATION_ERROR: This task is already closed on that date.' using errcode = 'P0001';
   end if;
-  -- (20270305000100) three optional fields with word limits; at least one is written (a report is never empty)
+  -- (20270308000100) three optional fields with word limits; at least one is written (a report is never empty)
   if v_work = '' and v_pending is null and v_remarks is null then
     raise exception 'VALIDATION_ERROR: Write the work completed, the work pending or an additional note.' using errcode = 'P0001';
   end if;
@@ -98,7 +98,7 @@ begin
   if length(v_work) > 4000 or length(coalesce(v_pending, '')) > 2000 or length(coalesce(v_delay, '')) > 2000 or length(coalesce(v_remarks, '')) > 2000 then
     raise exception 'VALIDATION_ERROR: One of the fields is too long.' using errcode = 'P0001';
   end if;
-  -- (20270305000100) the form no longer asks for progress or a reason for delay: the report keeps the task's own progress (Performance Management reads it);
+  -- (20270308000100) the form no longer asks for progress or a reason for delay: the report keeps the task's own progress (Performance Management reads it);
   -- an older client that still sends a progress is accepted
   if p_progress is not null and (p_progress < 0 or p_progress > 100) then
     raise exception 'VALIDATION_ERROR: Progress must be between 0 and 100.' using errcode = 'P0001';
@@ -147,7 +147,7 @@ end $$;
 revoke all on function public.task_report_submit(uuid, date, text, integer, text, text, text) from public, anon;
 grant execute on function public.task_report_submit(uuid, date, text, integer, text, text, text) to authenticated;
 
--- copy of 20270213000100, changed where marked (20270305000100)
+-- copy of 20270213000100, changed where marked (20270308000100)
 create or replace function public.task_report_reviewer_edit(
   p_report uuid, p_work text, p_progress integer, p_pending text default null, p_delay text default null, p_remarks text default null, p_reason text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -178,7 +178,7 @@ begin
   end if;
   -- the member's own rules (task_report_submit) apply to the edited report
   select * into t from public.work_tasks where id = r.task_id;
-  -- (20270305000100) the same three optional fields (one at least); the word limits apply to reports made with them
+  -- (20270308000100) the same three optional fields (one at least); the word limits apply to reports made with them
   if v_work = '' and v_pending is null and v_remarks is null then
     raise exception 'VALIDATION_ERROR: Write the work completed, the work pending or an additional note.' using errcode = 'P0001';
   end if;
@@ -186,7 +186,7 @@ begin
   if length(v_work) > 4000 or length(coalesce(v_pending, '')) > 2000 or length(coalesce(v_delay, '')) > 2000 or length(coalesce(v_remarks, '')) > 2000 then
     raise exception 'VALIDATION_ERROR: One of the fields is too long.' using errcode = 'P0001';
   end if;
-  -- (20270305000100) progress is no longer edited in the form: without one the report keeps its own; no reason for delay is required
+  -- (20270308000100) progress is no longer edited in the form: without one the report keeps its own; no reason for delay is required
   if p_progress is not null and (p_progress < 0 or p_progress > 100) then
     raise exception 'VALIDATION_ERROR: Progress must be between 0 and 100.' using errcode = 'P0001';
   end if;
@@ -227,7 +227,7 @@ alter table public.ai_studio_daily_reports alter column description_required set
 alter table public.ai_studio_daily_reports add column if not exists field_word_limits boolean not null default false;
 alter table public.ai_studio_daily_reports alter column field_word_limits set default true;
 
--- copy of 20270302000100, changed where marked (20270305000100)
+-- copy of 20270302000100, changed where marked (20270308000100)
 create or replace function public.ai_studio_daily_report_save(
   p_id uuid, p_date date, p_tasks uuid[], p_work_completed text, p_pending_work text, p_blockers text, p_tomorrow_plan text, p_remarks text,
   p_submit boolean default false, p_expected uuid[] default null, p_description text default null)
@@ -261,7 +261,7 @@ begin
   if length(coalesce(v_description, '')) > 2000 then
     raise exception 'VALIDATION_ERROR: The daily work description can have at most 150 words.' using errcode = 'P0001';
   end if;
-  -- (20270305000100) the form has three fields: Work Completed (150 words), Work Pending (100), Additional Note (50); the description is no longer asked for
+  -- (20270308000100) the form has three fields: Work Completed (150 words), Work Pending (100), Additional Note (50); the description is no longer asked for
   if p_submit then perform private.report_word_limits(v_completed, v_pending, v_remarks); end if;
   v_ids := private.ai_studio_checked_tasks(p_tasks, v_me, p_date);
   -- the entries the report would reference: my progress entries of that day on the chosen tasks
@@ -348,7 +348,7 @@ end $$;
 revoke all on function public.ai_studio_daily_report_save(uuid, date, uuid[], text, text, text, text, text, boolean, uuid[], text) from public, anon;
 grant execute on function public.ai_studio_daily_report_save(uuid, date, uuid[], text, text, text, text, text, boolean, uuid[], text) to authenticated;
 
--- copy of 20270302000100, changed where marked (20270305000100); the trigger now also watches the three fields (a Team Lead's correction of a waiting report)
+-- copy of 20270302000100, changed where marked (20270308000100); the trigger now also watches the three fields (a Team Lead's correction of a waiting report)
 create or replace function private.tg_ai_studio_report_flow()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare
@@ -361,7 +361,7 @@ begin
   if v_submitted and new.description_required and new.project_id is null then
     perform private.ai_studio_check_description(new.work_description);
   end if;
-  -- (20270305000100) the three fields' word limits, on a submission and on a Team Lead's correction of a waiting report
+  -- (20270308000100) the three fields' word limits, on a submission and on a Team Lead's correction of a waiting report
   if new.field_word_limits and new.project_id is null and new.status <> 'DRAFT'
      and (v_submitted or (tg_op = 'UPDATE' and (new.work_completed, new.pending_work, new.remarks) is distinct from (old.work_completed, old.pending_work, old.remarks))) then
     perform private.report_word_limits(new.work_completed, new.pending_work, new.remarks);
@@ -401,7 +401,7 @@ alter table public.ads_reports drop constraint if exists ads_reports_work_comple
 alter table public.ads_reports alter column work_completed drop not null;
 alter table public.ads_reports add constraint ads_reports_work_completed_check check (work_completed is null or length(trim(work_completed)) between 1 and 4000);
 
--- copy of 20270110000100, changed where marked (20270305000100)
+-- copy of 20270110000100, changed where marked (20270308000100)
 create or replace function public.ads_report_submit(p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -435,7 +435,7 @@ begin
   v_lead := case when me.role = 'TEAM_MEMBER' then private.direct_lead_of(me.id) end;
   v_status := case when v_lead is null then 'PENDING_DH' else 'PENDING_TL' end;
 
-  -- (20270305000100) three optional fields with word limits (at least one written): Work Completed, Work Pending, Additional Note (remarks)
+  -- (20270308000100) three optional fields with word limits (at least one written): Work Completed, Work Pending, Additional Note (remarks)
   if nullif(trim(coalesce(p ->> 'workCompleted', '')), '') is null and nullif(trim(coalesce(p ->> 'pendingWork', '')), '') is null
      and nullif(trim(coalesce(p ->> 'remarks', '')), '') is null then
     raise exception 'VALIDATION_ERROR: Write the work completed, the work pending or an additional note.' using errcode = 'P0001';

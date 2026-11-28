@@ -8,7 +8,7 @@ import { api } from './client';
 export interface TaskReportForm {
   taskId: string;
   reportDate?: string;
-  /** (20270305000100) the three optional fields; progress and the reason for delay are no longer asked for */
+  /** (20270308000100) the three optional fields; progress and the reason for delay are no longer asked for */
   workCompleted?: string;
   progress?: number;
   pendingWork?: string;

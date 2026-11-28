@@ -1,5 +1,5 @@
 /**
- * Daily reports, every department (20270305000100), no database: Work Completed (150 words), Work Pending (100), Additional Note (50), all optional, in the
+ * Daily reports, every department (20270308000100), no database: Work Completed (150 words), Work Pending (100), Additional Note (50), all optional, in the
  * shared schemas the forms and the API use (the database's private.report_word_limits holds the same limits). Run: npm run test:unit
  */
 import { DAILY_REPORT_FIELDS, adsReportSchema, aiStudioDailyReportSchema, dailyReportWordProblem, taskReportReviewerEditSchema, taskReportSubmitSchema } from '../../shared/validation.js';

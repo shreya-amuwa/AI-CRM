@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
-import type { LeadStatus, PipelineCounts, ServiceCatalogItem } from '../../../../shared/contracts';
+import type { LeadStatus, LeadTag, PipelineCounts, ServiceCatalogItem } from '../../../../shared/contracts';
+import { LEAD_STATUSES } from '../../../../shared/contracts';
 import { errorMessage } from '../../../lib/api/client';
 import { pipelineApi } from '../../../lib/api/endpoints';
 import { listenToTables } from '../../../lib/realtimeShared';
@@ -152,6 +153,30 @@ export const Pill: React.FC<{ tone: Tone; children: React.ReactNode }> = ({ tone
 );
 
 export const LEAD_STATUS_TONE: Record<LeadStatus, Tone> = { NEW: 'slate', CONTACTED: 'indigo', INTERESTED: 'orange', READY_TO_BUY: 'green' };
+
+/**
+ * The options of a lead tag select: grouped by the stage each tag counts as, in pipeline order, active tags only. `keep` (a lead's own
+ * tag) is listed even when retired, so the select can show it, but it cannot be chosen again.
+ */
+export const LeadTagOptions: React.FC<{ tags: LeadTag[]; keep?: string | null }> = ({ tags, keep }) => (
+  <>
+    {LEAD_STATUSES.map(stage => {
+      const list = tags.filter(t => t.stage === stage && (!t.retired || t.id === keep));
+      if (!list.length) return null;
+      return (
+        <optgroup key={stage} label={LEAD_STATUS_LABEL[stage]}>
+          {list.map(t => (
+            <option key={t.id} value={t.id} disabled={t.retired}>
+              {t.retired ? `${t.label} (retired)` : t.label}
+            </option>
+          ))}
+        </optgroup>
+      );
+    })}
+  </>
+);
+/** The basic (seed) tag of a stage, if the list has it. */
+export const seedTagOf = (tags: LeadTag[], stage: LeadStatus) => tags.find(t => t.seed && t.stage === stage);
 
 export const Breadcrumb: React.FC<{ items: { label: string; onClick?: () => void }[] }> = ({ items }) => (
   <nav aria-label="Breadcrumb" className="text-xs text-slate-500">

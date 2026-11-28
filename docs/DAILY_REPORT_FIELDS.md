@@ -1,6 +1,6 @@
 # Daily reports: three fields, every department
 
-Migration `supabase/migrations/20270305000100_daily_report_three_fields.sql` (safe to run again).
+Migration `supabase/migrations/20270308000100_daily_report_three_fields.sql` (safe to run again).
 
 Every daily report on assigned work has the same three fields. All three are optional, and each has a word limit:
 
@@ -40,7 +40,7 @@ Every daily report on assigned work has the same three fields. All three are opt
 | `ads_reports` | `work_completed` may be empty. |
 
 Functions changed: `task_report_submit`, `task_report_reviewer_edit`, `ai_studio_daily_report_save`, the AI Studio report trigger and
-`ads_report_submit`. Each is a copy of its latest version, with every change marked `(20270305000100)`.
+`ads_report_submit`. Each is a copy of its latest version, with every change marked `(20270308000100)`.
 
 ## Deploying
 

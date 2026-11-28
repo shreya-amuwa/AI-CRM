@@ -97,7 +97,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const r = reports.find(x => x.id === m![1])!;
     if (role !== 'TEAM_HEAD') return fail(403, 'FORBIDDEN', 'Only the Team Lead of this team member can edit this report.');
     if ((body.reason || '').length < 5) return fail(400, 'VALIDATION_ERROR', 'Say why you changed the report (5 to 1000 characters); the team member reads it.');
-    // like the database (20270305000100): without a progress the report keeps its own
+    // like the database (20270308000100): without a progress the report keeps its own
     const next = { ...body, progress: body.progress ?? r.progress };
     const changes: Record<string, unknown> = {};
     for (const k of ['workCompleted', 'progress', 'pendingWork', 'delayReason', 'remarks']) if ((r[k] ?? null) !== (next[k] ?? null)) changes[k] = { from: r[k] ?? null, to: next[k] ?? null };

@@ -55,7 +55,7 @@ try {
   await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
   let t = await text(page);
   check(t.includes('Choose the task you are reporting on.') && t.includes('Write the work completed, the work pending or an additional note.'), 'an empty form shows what is missing', t.slice(0, 400));
-  // (20270305000100) three optional fields with live word counters: Work Completed 150, Work Pending 100, Additional Note 50; no progress, no reason for delay
+  // (20270308000100) three optional fields with live word counters: Work Completed 150, Work Pending 100, Additional Note 50; no progress, no reason for delay
   const formNow = await page.getByTestId('task-report-form').innerText();
   check(/Work Completed/.test(formNow) && /Work Pending/.test(formNow) && /Additional Note/.test(formNow) && !/Progress made/.test(formNow) && !/Reason for delay/.test(formNow)
     && await page.locator('#tr-progress').count() === 0 && await page.getByTestId('task-report-form').locator('textarea').count() === 3, 'the form has exactly Work Completed, Work Pending and Additional Note', formNow);
@@ -82,7 +82,7 @@ try {
   await page.getByRole('button', { name: 'Submit to Team Lead' }).click();
   await page.getByRole('alert').first().waitFor();
   check((await page.getByRole('alert').first().innerText()).includes('already waiting for approval'), 'a second report for the same task and day is refused with the database\'s message');
-  // (20270305000100) an overdue task no longer asks for a reason for the delay (the field is gone); nothing is sent for it here
+  // (20270308000100) an overdue task no longer asks for a reason for the delay (the field is gone); nothing is sent for it here
 
   // ============================================================ the Team Lead returns it
   await mount(page, 'reports-lead');
@@ -278,7 +278,7 @@ try {
   await page.waitForTimeout(150);
   check((await page.getByTestId('people-table').innerText()).includes('Mohan Member'), 'Super Admin: opening a Team Lead shows their members and approval status');
 
-  // ===== AI Studio daily report (the older one-task form): Work Completed, Work Pending and Additional Note (20270305000100)
+  // ===== AI Studio daily report (the older one-task form): Work Completed, Work Pending and Additional Note (20270308000100)
   await page.evaluate(() => window.reset());
   await mount(page, 'ai-report');
   await page.locator('form[aria-label="Daily report"]').waitFor();

@@ -2,7 +2,7 @@ import React from 'react';
 import { DAILY_REPORT_FIELDS, countWords, type DailyReportFieldKey } from '../../../shared/validation';
 
 /**
- * The three fields of a daily report, every department (20270305000100): Work Completed (150 words), Work Pending (100), Additional Note (50). All optional;
+ * The three fields of a daily report, every department (20270308000100): Work Completed (150 words), Work Pending (100), Additional Note (50). All optional;
  * each has a live word counter, turns red over its limit and says so. The same limits are checked by the shared schema, the API and the database.
  */
 export type ReportWordValues = Record<DailyReportFieldKey, string>;
