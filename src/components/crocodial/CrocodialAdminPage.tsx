@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CrocodialConnectionHealth } from './CrocodialConnectionHealth';
 import { CrocodialLeadPipeline } from './CrocodialLeadPipeline';
+import { CrocodialKeyForm } from './CrocodialKeyForm';
 import { CheckCircle2, PlugZap, RefreshCw, ShieldCheck, UserCheck, XCircle } from 'lucide-react';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult, Profile } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialSyncStatus, CrocodialTestResult } from '../../../shared/contracts';
 import { ApiError } from '../../lib/api/client';
-import { crocodialApi, usersApi } from '../../lib/api/endpoints';
+import { crocodialApi } from '../../lib/api/endpoints';
 import { btn, Card, ErrorBanner, Field, inputCls, selectCls, Spinner } from '../team-member/pipeline/shared';
 import { confirmAction, promptInput } from '../feedback/AppFeedback';
 import { Paged } from '../common/Paged';
@@ -16,7 +17,12 @@ import { Paged } from '../common/Paged';
  *   3. Department link: the connection serves that department's Sales (off until switched on).
  *   4. People: each Crocodial user is mapped to ONE CRM employee and approved here. Switching a department on switches nobody on.
  * Every rule is enforced by the database; this page only shows and asks.
+ *
+ * scope="CEO" (20270307000100): a CEO's Crocodial Integration page. The overview already holds only the connections they manage and the
+ * departments they run; the page leaves out what only the MD uses (the rollout, the server credential name, connection health, sync status)
+ * and never calls those endpoints. A connection or link the MD switched off says so, and has no "Switch on".
  */
+const MD_OFF = 'Switched off by the Managing Director. Ask the Managing Director to switch it back on.';
 const errText = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : 'Something went wrong. Please try again.');
 const when = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 const HEALTH: Record<string, [string, string]> = {
@@ -26,69 +32,96 @@ const HEALTH: Record<string, [string, string]> = {
   AUTH_FAILED: ['Token refused by Crocodial', 'bg-rose-50 text-rose-800'],
   DISABLED_AT_SOURCE: ['Token turned off in Crocodial', 'bg-rose-50 text-rose-800'],
   RATE_LIMITED: ['Crocodial rate limit reached', 'bg-amber-50 text-amber-800'],
-  ERROR: ['Error', 'bg-rose-50 text-rose-800']
+  ERROR: ['Error', 'bg-rose-50 text-rose-800'],
+  KEY_UNREADABLE: ['Key needs to be entered again', 'bg-amber-50 text-amber-800']
 };
 const Pill: React.FC<{ tone: string; children: React.ReactNode }> = ({ tone, children }) => (
   <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${tone}`}>{children}</span>
 );
 
-const ConnectionForm: React.FC<{ initial?: CrocodialConnection; onSaved: () => void; onCancel?: () => void }> = ({ initial, onSaved, onCancel }) => {
+/**
+ * Add / edit a connection. The MD names the server setting that holds the token; a CEO never does (their key is stored by the CRM, see
+ * CrocodialKeyForm) and, when connecting, chooses the departments it serves from the ones they run (`departments`, from the overview).
+ */
+const ConnectionForm: React.FC<{ initial?: CrocodialConnection; isMd: boolean; departments?: { id: string; name: string }[]; onSaved: () => void; onCancel?: () => void }> = ({ initial, isMd, departments = [], onSaved, onCancel }) => {
   const [name, setName] = useState(initial?.name ?? '');
   const [label, setLabel] = useState(initial?.externalAccountLabel ?? '');
-  const [ref, setRef] = useState(initial?.credentialRef ?? 'CROCODIAL_TOKEN_');
+  // a connection without a server setting (a CEO's, with a stored key) starts empty: the MD can rename it without inventing a setting
+  const [ref, setRef] = useState(initial ? initial.credentialRef ?? '' : 'CROCODIAL_TOKEN_');
+  const [depts, setDepts] = useState<string[]>(() => (departments.length === 1 ? [departments[0].id] : []));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const choosing = !isMd && !initial;
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (choosing && !depts.length) { setError('Choose at least one department you run.'); return; }
     setBusy(true);
     setError('');
     try {
-      await crocodialApi.saveConnection({ id: initial?.id, name, externalAccountLabel: label || null, credentialRef: ref, enabled: initial?.enabled });
+      await crocodialApi.saveConnection(isMd
+        ? { id: initial?.id, name, externalAccountLabel: label || null, ...(ref.trim() ? { credentialRef: ref } : {}), enabled: initial?.enabled }
+        : { id: initial?.id, name, externalAccountLabel: label || null, enabled: initial?.enabled, ...(choosing ? { departmentIds: depts } : {}) });
       onSaved();
     } catch (err) { setError(errText(err)); } finally { setBusy(false); }
   };
+  const addLabel = isMd ? 'Add connection' : 'Connect Crocodial';
   return (
     <form onSubmit={save} className="grid gap-3 md:grid-cols-3" data-testid="croc-connection-form">
       <Field label="Connection name" htmlFor="croc-name" required><input id="croc-name" className={inputCls} value={name} onChange={e => setName(e.target.value)} maxLength={120} /></Field>
       <Field label="Crocodial account (as named in Crocodial)" htmlFor="croc-label"><input id="croc-label" className={inputCls} value={label} onChange={e => setLabel(e.target.value)} maxLength={200} /></Field>
-      <Field label="Server setting that holds the token" htmlFor="croc-ref" required>
-        <input id="croc-ref" className={`${inputCls} font-mono`} value={ref} onChange={e => setRef(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} maxLength={56} autoComplete="off" spellCheck={false} />
-      </Field>
-      <p className="md:col-span-3 text-[11px] text-slate-500">
-        Never type the token here. Create it in Crocodial (Setup → Outbound API, with “Allow changes” off) and add it to the server’s environment
-        under this name; the CRM only stores the name.
-      </p>
+      {isMd ? (
+        <>
+          <Field label="Server setting that holds the token" htmlFor="croc-ref" required>
+            <input id="croc-ref" className={`${inputCls} font-mono`} value={ref} onChange={e => setRef(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ''))} maxLength={56} autoComplete="off" spellCheck={false} />
+          </Field>
+          <p className="md:col-span-3 text-[11px] text-slate-500">
+            Never type the token here. Create it in Crocodial (Setup → Outbound API, with “Allow changes” off) and add it to the server’s environment
+            under this name; the CRM only stores the name.
+          </p>
+        </>
+      ) : null}
+      {choosing ? (
+        <fieldset className="md:col-span-3 min-w-0">
+          <legend className="block text-xs font-medium text-slate-600 mb-1">Departments it serves (Sales)</legend>
+          {departments.length ? (
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {departments.map(d => (
+                <label key={d.id} className="flex items-center gap-1.5 text-sm text-slate-800">
+                  <input type="checkbox" className="accent-[#2F5BEA]" checked={depts.includes(d.id)}
+                    onChange={e => setDepts(x => (e.target.checked ? [...x, d.id] : x.filter(y => y !== d.id)))} />
+                  {d.name}
+                </label>
+              ))}
+            </div>
+          ) : <p className="text-xs text-slate-500">You do not run a Sales department, so there is nothing to connect.</p>}
+          <p className="mt-1 text-[11px] text-slate-500">The connection starts switched off. Save its Crocodial key next, then switch it on.</p>
+        </fieldset>
+      ) : null}
       {error ? <p className="md:col-span-3 text-xs text-rose-700" role="alert">{error}</p> : null}
-      <div className="md:col-span-3 flex gap-2">
-        <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Saving…' : initial ? 'Save connection' : 'Add connection'}</button>
+      <div className="md:col-span-3 flex flex-wrap gap-2">
+        <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Saving…' : initial ? 'Save connection' : addLabel}</button>
         {onCancel ? <button type="button" className={btn.secondary} onClick={onCancel}>Cancel</button> : null}
       </div>
     </form>
   );
 };
 
-const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string; departmentId: string; onSaved: (text: string) => void }> = ({ data, connectionId, departmentId, onSaved }) => {
-  const [people, setPeople] = useState<Profile[]>([]);
+const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string; departmentId: string; departmentName?: string; onSaved: (text: string) => void }> = ({ data, connectionId, departmentId, departmentName = 'M Pillar', onSaved }) => {
+  const [people, setPeople] = useState<CrocodialMappingCandidate[]>([]);
   const [ext, setExt] = useState('');
   const [profile, setProfile] = useState('');
   const [check, setCheck] = useState<CrocodialMappingCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
-    // every active person of the department (heads have no team, so no Sales-team filter here: the check below says who can be mapped),
-    // 100 at a time - the most the API returns per page
+    // the active people of the department who can be mapped there (croc_mapping_candidates: the same check as proposing). Not the users
+    // list: a CEO can read profiles only of their home department, not of every department they run. The check below still applies.
     let alive = true;
-    (async () => {
-      const all: Profile[] = [];
-      for (let page = 1; page <= 10; page++) {
-        const r = await usersApi.list({ departmentId, status: 'ACTIVE', page, pageSize: 100 });
-        all.push(...r.items);
-        if (all.length >= r.total || r.items.length < 100) break;
-      }
-      if (alive) setPeople(all.sort((a, b) => a.fullName.localeCompare(b.fullName)));
-    })().catch(e => alive && setError(errText(e)));
+    crocodialApi.mappingCandidates(connectionId, departmentId)
+      .then(r => { if (alive) setPeople([...r].sort((a, b) => a.fullName.localeCompare(b.fullName))); })
+      .catch(e => alive && setError(errText(e)));
     return () => { alive = false; };
-  }, [departmentId]);
+  }, [connectionId, departmentId]);
   const unmapped = data.externalEmployees.filter(e => e.connectionId === connectionId && !e.mappingStatus && !e.missingSince);
   useEffect(() => {
     setCheck(null);
@@ -108,14 +141,14 @@ const MappingForm: React.FC<{ data: CrocodialAdminOverview; connectionId: string
   return (
     <div className="space-y-3" data-testid="croc-mapping-form">
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Crocodial user" htmlFor="croc-ext">
-          <select id="croc-ext" className={selectCls} value={ext} onChange={e => setExt(e.target.value)}>
+        <Field label="Crocodial user" htmlFor={`croc-ext-${connectionId}`}>
+          <select id={`croc-ext-${connectionId}`} className={selectCls} value={ext} onChange={e => setExt(e.target.value)}>
             <option value="">Choose a Crocodial user…</option>
             {unmapped.map(e => <option key={e.externalId} value={e.externalId}>{e.name || 'No name'} · Crocodial id {e.externalId}{e.isActive === false ? ' · inactive' : ''}</option>)}
           </select>
         </Field>
-        <Field label="CRM employee (M Pillar Sales)" htmlFor="croc-profile">
-          <select id="croc-profile" className={selectCls} value={profile} onChange={e => setProfile(e.target.value)}>
+        <Field label={`CRM employee (${departmentName} Sales)`} htmlFor={`croc-profile-${connectionId}`}>
+          <select id={`croc-profile-${connectionId}`} className={selectCls} value={profile} onChange={e => setProfile(e.target.value)}>
             <option value="">Choose the CRM employee…</option>
             {people.map(x => <option key={x.id} value={x.id}>{x.fullName}{x.email ? ` · ${x.email}` : ''}</option>)}
           </select>
@@ -224,7 +257,8 @@ const CountFrom: React.FC<{ mapping: CrocodialMapping; disabled: boolean; onSet:
   );
 };
 
-export const CrocodialAdminPage: React.FC = () => {
+export const CrocodialAdminPage: React.FC<{ scope?: 'MD' | 'CEO' }> = ({ scope = 'MD' }) => {
+  const isMd = scope === 'MD';
   const [data, setData] = useState<CrocodialAdminOverview | null>(null);
   const [error, setError] = useState('');
   const [flash, setFlash] = useState('');
@@ -234,22 +268,31 @@ export const CrocodialAdminPage: React.FC = () => {
   const [tests, setTests] = useState<Record<string, CrocodialTestResult>>({});
   const [sync, setSync] = useState<CrocodialSyncStatus[]>([]);
   const [reloads, setReloads] = useState(0);
+  // a refusal of an action on one connection, shown in that connection's card
+  const [cardError, setCardError] = useState<{ id: string; text: string } | null>(null);
+  // the department whose people are mapped, per connection (a connection may serve several)
+  const [mapDept, setMapDept] = useState<Record<string, string>>({});
   const load = useCallback(() => {
     crocodialApi.overview().then(d => { setData(d); setError(''); }).catch(e => setError(errText(e)));
-    crocodialApi.syncStatus().then(setSync).catch(() => setSync([]));
+    // sync status is the MD's (a CEO is refused it): not asked for on a CEO's page
+    if (isMd) crocodialApi.syncStatus().then(setSync).catch(() => setSync([]));
     setReloads(n => n + 1);
-  }, []);
+  }, [isMd]);
   useEffect(load, [load]);
-  const run = async (key: string, fn: () => Promise<unknown>, text?: string) => {
+  const run = async (key: string, fn: () => Promise<unknown>, text?: string, at?: string) => {
     setBusy(key);
     setFlash('');
+    setCardError(null);
     try {
       await fn();
       if (text) setFlash(text);
       load();
-    } catch (e) { setError(errText(e)); } finally { setBusy(null); }
+    } catch (e) { if (at) setCardError({ id: at, text: errText(e) }); else setError(errText(e)); } finally { setBusy(null); }
   };
-  const allowed = useMemo(() => (data?.rollout ?? []).filter(r => r.allowed), [data]);
+  // the departments a connection may serve: the MD's allowed rollout; a CEO's own departments (from the overview)
+  const allowed = useMemo(() => (isMd
+    ? (data?.rollout ?? []).filter(r => r.allowed).map(r => ({ departmentId: r.departmentId, departmentName: r.departmentName }))
+    : (data?.departments ?? []).map(d => ({ departmentId: d.id, departmentName: d.name }))), [data, isMd]);
 
   if (error && !data) return <ErrorBanner message={error} onRetry={load} />;
   if (!data) return <Spinner />;
@@ -258,16 +301,17 @@ export const CrocodialAdminPage: React.FC = () => {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-extrabold text-slate-900">Crocodial Integration</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Read-only calling activity from Crocodial. Pilot: M Pillar Sales, only the employees you approve here.</p>
+          <p className="text-sm text-slate-500 mt-0.5">{isMd ? 'Read-only calling activity from Crocodial. Pilot: M Pillar Sales, only the employees you approve here.'
+            : 'Read-only calling activity from Crocodial for the Sales departments you run. Only the employees you approve here are counted.'}</p>
         </div>
         <button type="button" className={btn.secondary} onClick={load}><RefreshCw className="w-3.5 h-3.5" aria-hidden /> Refresh</button>
       </div>
       {flash ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" role="status">{flash}</p> : null}
       {error ? <ErrorBanner message={error} onRetry={load} /> : null}
 
-      <CrocodialConnectionHealth reloadKey={reloads} />
+      {isMd ? <CrocodialConnectionHealth reloadKey={reloads} /> : null}
 
-      <Card className="p-4 space-y-3">
+      {isMd ? <Card className="p-4 space-y-3">
         <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><ShieldCheck className="w-4 h-4" aria-hidden /> 1. Rollout</h2>
         <p className="text-xs text-slate-500">Only these departments may use Crocodial. Every other department is <b>not configured</b> and is never contacted.</p>
         <ul className="divide-y divide-slate-100 text-sm" data-testid="croc-rollout">
@@ -284,26 +328,38 @@ export const CrocodialAdminPage: React.FC = () => {
             </li>
           ))}
         </ul>
-      </Card>
+      </Card> : null}
 
       <Card className="p-4 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><PlugZap className="w-4 h-4" aria-hidden /> 2. Connections</h2>
-          {!adding ? <button type="button" className={btn.secondary} onClick={() => setAdding(true)}>Add connection</button> : null}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2"><PlugZap className="w-4 h-4" aria-hidden /> {isMd ? '2. Connections' : 'Connections'}</h2>
+          {!adding ? <button type="button" className={btn.secondary} onClick={() => setAdding(true)}>{isMd ? 'Add connection' : 'Connect Crocodial'}</button> : null}
         </div>
-        {adding ? <ConnectionForm onSaved={() => { setAdding(false); setFlash('Connection added (switched off). Test it next.'); load(); }} onCancel={() => setAdding(false)} /> : null}
-        {!data.connections.length && !adding ? <p className="text-xs text-slate-500">No connection yet.</p> : null}
+        {adding ? <ConnectionForm isMd={isMd} departments={(data.departments ?? []).map(d => ({ id: d.id, name: d.name }))}
+          onSaved={() => { setAdding(false); setFlash(isMd ? 'Connection added (switched off). Test it next.' : 'Connection added (switched off). Save its Crocodial key next.'); load(); }} onCancel={() => setAdding(false)} /> : null}
+        {!data.connections.length && !adding ? <p className="text-xs text-slate-500">{isMd ? 'No connection yet.' : 'No connection yet. Use “Connect Crocodial” to connect a department you run.'}</p> : null}
         {data.connections.map(c => {
           const [hl, tone] = HEALTH[c.health] ?? HEALTH.ERROR;
           const t = tests[c.id];
           const links = data.departmentLinks.filter(l => l.connectionId === c.id);
+          // only the MD switches on what the MD switched off
+          const mdOff = !!c.mdDisabledAt;
+          const mapLink = links.find(l => l.departmentId === mapDept[c.id]) ?? links[0];
           return (
-            <div key={c.id} className="rounded-xl border border-slate-200 p-3 space-y-3" data-testid="croc-connection">
-              {editing === c.id ? <ConnectionForm initial={c} onSaved={() => { setEditing(null); load(); }} onCancel={() => setEditing(null)} /> : (
+            <div key={c.id} className="rounded-xl border border-slate-200 p-3 space-y-3 min-w-0" data-testid="croc-connection">
+              {editing === c.id ? <ConnectionForm initial={c} isMd={isMd} onSaved={() => { setEditing(null); load(); }} onCancel={() => setEditing(null)} /> : (
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="text-sm">
+                  <div className="text-sm min-w-0 break-words">
                     <p className="font-semibold text-slate-900">{c.name} {c.externalAccountLabel ? <span className="text-slate-500 font-normal">· {c.externalAccountLabel}</span> : null}</p>
-                    <p className="text-xs text-slate-500 font-mono">{c.credentialRef} {c.credentialConfigured ? <span className="text-emerald-700">(set on this server)</span> : <span className="text-amber-700">(not set on this server: see Connection health)</span>}</p>
+                    {isMd && c.credentialRef ? <p className="text-xs text-slate-500 font-mono break-all">{c.credentialRef} {c.credentialConfigured ? <span className="text-emerald-700">(set on this server)</span> : <span className="text-amber-700">(not set on this server: see Connection health)</span>}</p> : null}
+                    {isMd ? (
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
+                        <p data-testid="croc-managed-by">Managed by: {c.managedBy?.length ? c.managedBy.map(m => m.name).join(', ') : 'Managing Director only'}</p>
+                        <p data-testid="croc-key-source">Key: {c.keySource === 'DATABASE' ? `Stored (•••• ${c.keyLast4 ?? '????'})` : (c.keySource === 'SERVER_SETTING' || (!c.keySource && c.credentialRef)) ? 'Server setting' : 'No key'}</p>
+                      </div>
+                    ) : null}
+                    {mdOff && !isMd ? <p className="text-xs text-amber-800" role="status">{MD_OFF}</p> : null}
+                    {mdOff && isMd && !c.enabled ? <p className="text-xs text-slate-500">Switched off by you. A CEO cannot switch it back on.</p> : null}
                     <p className="text-xs text-slate-500">Last test / sync: {when(c.lastAttemptAt)} · last success: {when(c.lastSuccessAt)}{c.timezone ? ` · ${c.timezone}` : ''}</p>
                     {c.lastError ? <p className="text-xs text-rose-700">{c.health === 'NO_CREDENTIAL' && c.credentialConfigured ? `Recorded ${when(c.lastAttemptAt)} (this server has the token now; Test connection clears it): ` : ''}{c.lastError}</p> : null}
                   </div>
@@ -314,34 +370,42 @@ export const CrocodialAdminPage: React.FC = () => {
                       onClick={() => void run(`t-${c.id}`, async () => { const r = await crocodialApi.testConnection(c.id); setTests(x => ({ ...x, [c.id]: r })); })}>
                       {busy === `t-${c.id}` ? 'Testing…' : 'Test connection'}
                     </button>
-                    <button type="button" className={btn.secondary} disabled={busy !== null}
-                      onClick={() => void run(`e-${c.id}`, () => crocodialApi.saveConnection({ id: c.id, name: c.name, externalAccountLabel: c.externalAccountLabel, credentialRef: c.credentialRef, enabled: !c.enabled }))}>
+                    {isMd || c.enabled || !mdOff ? <button type="button" className={btn.secondary} disabled={busy !== null}
+                      onClick={() => void run(`e-${c.id}`, () => crocodialApi.saveConnection(isMd
+                        ? { id: c.id, name: c.name, externalAccountLabel: c.externalAccountLabel, credentialRef: c.credentialRef ?? undefined, enabled: !c.enabled }
+                        : { id: c.id, name: c.name, externalAccountLabel: c.externalAccountLabel, enabled: !c.enabled }), undefined, c.id)}>
                       {c.enabled ? 'Switch off' : 'Switch on'}
-                    </button>
+                    </button> : null}
                     <button type="button" className={btn.secondary} onClick={() => setEditing(c.id)}>Edit</button>
                   </div>
                 </div>
               )}
+              {cardError?.id === c.id ? <p className="text-xs text-rose-700" role="alert">{cardError.text}</p> : null}
+              <CrocodialKeyForm connectionId={c.id} keySource={c.keySource ?? (c.credentialRef ? 'SERVER_SETTING' : 'NONE')} keyLast4={c.keyLast4} health={c.health}
+                onSaved={text => { if (text) setFlash(text); load(); }} />
               {t ? <p className={`text-xs ${t.ok ? 'text-emerald-800' : 'text-rose-700'}`} role="status" data-testid="croc-test-result">{t.ok ? <CheckCircle2 className="inline w-3.5 h-3.5" aria-hidden /> : <XCircle className="inline w-3.5 h-3.5" aria-hidden />} {t.message}</p> : null}
 
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-700">3. Departments this connection serves</p>
+                <p className="text-xs font-bold text-slate-700">{isMd ? '3. ' : ''}Departments this connection serves</p>
                 {allowed.map(r => {
                   const l = links.find(x => x.departmentId === r.departmentId);
+                  const linkMdOff = !!l?.mdDisabledAt;
                   return (
                     <div key={r.departmentId} className="flex flex-wrap items-center justify-between gap-2 text-sm" data-testid="croc-link">
-                      <span>{r.departmentName} · Sales {l ? <Pill tone={l.enabled ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}>{l.enabled ? `On · ${l.stage === 'PILOT' ? 'pilot' : 'production'}` : 'Linked, off'}</Pill> : <Pill tone="bg-slate-100 text-slate-700">Not linked</Pill>}</span>
-                      <button type="button" className={btn.secondary} disabled={busy !== null}
-                        onClick={() => void run(`l-${c.id}-${r.departmentId}`, () => crocodialApi.saveDepartmentLink({ connectionId: c.id, departmentId: r.departmentId, division: 'SALES', enabled: l ? !l.enabled : false, stage: l?.stage ?? 'PILOT' }))}>
+                      <span className="min-w-0">{r.departmentName} · Sales {l ? <Pill tone={l.enabled ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}>{l.enabled ? `On · ${l.stage === 'PILOT' ? 'pilot' : 'production'}` : 'Linked, off'}</Pill> : <Pill tone="bg-slate-100 text-slate-700">Not linked</Pill>}
+                        {linkMdOff && !l?.enabled && !isMd ? <span className="block text-xs text-amber-800">{MD_OFF}</span> : null}
+                        {linkMdOff && !l?.enabled && isMd ? <span className="block text-xs text-slate-500">Switched off by you</span> : null}</span>
+                      {isMd || !linkMdOff || l?.enabled ? <button type="button" className={btn.secondary} disabled={busy !== null}
+                        onClick={() => void run(`l-${c.id}-${r.departmentId}`, () => crocodialApi.saveDepartmentLink({ connectionId: c.id, departmentId: r.departmentId, division: 'SALES', enabled: l ? !l.enabled : false, stage: l?.stage ?? 'PILOT' }), undefined, c.id)}>
                         {!l ? 'Link (stays off)' : l.enabled ? 'Switch off' : 'Switch on'}
-                      </button>
+                      </button> : null}
                     </div>
                   );
                 })}
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-bold text-slate-700">4. People</p>
+                <p className="text-xs font-bold text-slate-700">{isMd ? '4. ' : ''}People</p>
                 {data.mappings.filter(m => m.connectionId === c.id && m.status !== 'REVOKED').map(m => (
                   <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 text-sm rounded-lg bg-slate-50 px-3 py-2" data-testid="croc-mapping">
                     <span>
@@ -364,7 +428,14 @@ export const CrocodialAdminPage: React.FC = () => {
                     </span>
                   </div>
                 ))}
-                {links.length ? <MappingForm data={data} connectionId={c.id} departmentId={links[0].departmentId} onSaved={text => { setFlash(text); load(); }} />
+                {links.length > 1 ? (
+                  <Field label="Map people of" htmlFor={`croc-map-dept-${c.id}`}>
+                    <select id={`croc-map-dept-${c.id}`} className={selectCls} value={mapLink.departmentId} onChange={e => setMapDept(x => ({ ...x, [c.id]: e.target.value }))}>
+                      {links.map(l => <option key={l.departmentId} value={l.departmentId}>{l.departmentName} Sales</option>)}
+                    </select>
+                  </Field>
+                ) : null}
+                {mapLink ? <MappingForm key={mapLink.departmentId} data={data} connectionId={c.id} departmentId={mapLink.departmentId} departmentName={mapLink.departmentName} onSaved={text => { setFlash(text); load(); }} />
                   : <p className="text-xs text-slate-500">Link a department first; people are mapped within it.</p>}
               </div>
 

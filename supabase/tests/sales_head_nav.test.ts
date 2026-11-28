@@ -65,6 +65,14 @@ check(m.all.includes('crocodial') && !m.all.includes('crocodial-me'), 'a head wh
   const label = (o: Partial<SalesHeadNavOptions>) => salesHeadNavGroups({ ...base, ...o }).flatMap(g => g.items).find(i => i.id === 'crocodial')?.label;
   check(label({ crocodialTeam: true, operationsHead: true }) === 'Crocodial Overview' && label({ crocodialTeam: true }) === 'Department Crocodial Activity', 'the CEO sees Crocodial Overview, a Department Head Department Crocodial Activity');
 }
+{
+  // (20270307000100) a CEO always has Crocodial Integration (their own connections), next to the Crocodial Overview; a Department Head never does
+  const ceo = ids({ operationsHead: true });
+  check(ceo.labels.includes('Crocodial') && ceo.all.includes('crocodial-setup') && !ceo.all.includes('crocodial'), 'a CEO sees Crocodial Integration even before anything is connected', ceo.all);
+  const both = salesHeadNavGroups({ ...base, operationsHead: true, crocodialTeam: true }).find(g => g.label === 'Crocodial')!.items;
+  check(both.map(i => i.id).join() === 'crocodial,crocodial-setup' && both[1].label === 'Crocodial Integration', 'next to their Crocodial Overview', both.map(i => i.id));
+  check(!ids({ crocodialTeam: true }).all.includes('crocodial-setup') && PATHS['crocodial-setup'] === 'crocodial/setup', 'a Department Head has no Crocodial Integration; the page has its own address');
+}
 m = ids({ crocodialSelf: true, crocodialTeam: true });
 check(['crocodial-me', 'crocodial-leads', 'crocodial'].every(id => m.all.includes(id)) && m.all.filter(id => !PARENTS.has(id)).every(id => pages.includes(id)), 'both: all three, and each is a real page');
 

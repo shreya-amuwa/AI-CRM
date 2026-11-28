@@ -82,8 +82,14 @@ function api(req, res, body) {
     return ok(res, l);
   }
   // like the real API: at most 100 a page
-  if (p === '/users' && Number(new URL(req.url, 'http://x').searchParams.get('pageSize')) > 100) return fail(res, 422, 'VALIDATION_ERROR', 'Number must be less than or equal to 100');
-  if (p === '/users') return ok(res, { items: [{ id: SACHIN, fullName: 'Sachin Kumar', email: 'sachin@amuwa.com' }, { id: SUPPORT, fullName: 'Support Person', email: 'sp@amuwa.com' }], total: 2, page: 1, pageSize: 200 });
+  // who can be mapped: the connection's mapping candidates for a linked department (the real server lists only people who can be mapped;
+  // the fake also lists a Support person, so the check below is still seen to stop one)
+  const mc = p.match(/^\/crocodial\/connections\/([^/]+)\/mapping-candidates$/);
+  if (mc) {
+    if (!o.departmentLinks.some(l => l.connectionId === mc[1] && l.departmentId === new URL(req.url, 'http://x').searchParams.get('departmentId'))) return fail(res, 422, 'VALIDATION_ERROR', "Link this connection to the department's Sales first.");
+    return ok(res, [{ id: SACHIN, fullName: 'Sachin Kumar', email: 'sachin@amuwa.com', role: 'TEAM_MEMBER', salesSubRole: 'TELECALLER', teamName: 'Sales' },
+      { id: SUPPORT, fullName: 'Support Person', email: 'sp@amuwa.com', role: 'TEAM_MEMBER', salesSubRole: null, teamName: 'Support' }]);
+  }
   if (p === '/crocodial/mappings/check') {
     const eligible = body.profileId === SACHIN;
     return ok(res, { profile: { profileId: body.profileId, name: eligible ? 'Sachin Kumar' : 'Support Person', status: 'ACTIVE', role: 'TEAM_MEMBER', salesSubRole: eligible ? 'TELECALLER' : null,
@@ -180,9 +186,9 @@ try {
     await page.getByLabel(/CRM employee/).selectOption(SUPPORT);
     await page.getByTestId('croc-mapping-check').getByText('✗ Not Sales', { exact: false }).waitFor();
     check(await page.getByRole('button', { name: /Propose mapping/ }).isDisabled(), `${label}: someone outside Sales cannot be proposed`);
-    const usersQ = new URL('http://x' + [...state.calls].reverse().find(c => c.path === '/users').raw).searchParams;
-    check(Number(usersQ.get('pageSize')) <= 100 && !usersQ.has('division') && usersQ.get('departmentId') === MP,
-      `${label}: the CRM employees of the department are loaded within the API's page limit (heads included: no team filter)`);
+    const candQ = [...state.calls].reverse().find(c => /\/mapping-candidates$/.test(c.path));
+    check(candQ && new URL('http://x' + candQ.raw).searchParams.get('departmentId') === MP && !state.calls.some(c => c.path === '/users'),
+      `${label}: the CRM employees come from the connection's mapping candidates for the department (not the users list)`, candQ);
     await page.getByLabel(/CRM employee/).selectOption(SACHIN);
     await page.getByTestId('croc-mapping-check').getByText(/✓ Sales/).waitFor();
     check(await page.getByText(/Names are not proof of identity/).isVisible(), `${label}: the check reminds that names are not proof`);

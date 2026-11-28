@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialTeamLeads, CrocodialStatusMappingResult } from '../../shared/contracts.js';
+import type { CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialConnectionHealth, CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCandidate, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncStatus, CrocodialActivity, CrocodialLeads, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialLeadActivity, CrocodialTeamLeads, CrocodialStatusMappingResult } from '../../shared/contracts.js';
 import { unwrap } from './base.js';
 
 /** The Crocodial integration's database functions, called with the signed-in user's own login (the database decides who may do what). */
@@ -20,6 +20,9 @@ export class CrocodialRepository {
     return this.rpc<{ id: string }>('croc_department_link_save', {
       p_connection: connectionId, p_department: departmentId, p_division: division, p_enabled: enabled, p_stage: stage
     });
+  }
+  mappingCandidates(connectionId: string, departmentId: string) {
+    return this.rpc<CrocodialMappingCandidate[]>('croc_mapping_candidates', { p_connection: connectionId, p_department: departmentId });
   }
   mappingCheck(connectionId: string, externalEmployeeId: number, profileId: string, departmentId: string) {
     return this.rpc<CrocodialMappingCheck>('croc_mapping_check', {
@@ -68,5 +71,16 @@ export class CrocodialRepository {
   teamLeads(departmentId: string | null, teamId: string | null) { return this.rpc<CrocodialTeamLeads>('croc_team_leads', { p_department: departmentId, p_team: teamId }); }
   leadActivity(customerId: string) { return this.rpc<CrocodialLeadActivity>('croc_lead_activity', { p_customer: customerId }); }
   /** Checks the caller (Super Admin), the connection is on, and the 5-minute limit; records the request. */
-  syncRequest(id: string) { return this.rpc<{ id: string; credentialRef: string }>('croc_sync_request', { p_connection: id }); }
+  syncRequest(id: string) { return this.rpc<{ id: string; credentialRef: string | null }>('croc_sync_request', { p_connection: id }); }
+  // ---- stored Crocodial keys (20270307000100)
+  /** As the signed-in user: refused (FORBIDDEN) unless they manage the connection. */
+  canManageCheck(id: string) { return this.rpc<void>('croc_can_manage_check', { p_connection: id }); }
+  /** Service role only: the ciphertext, fingerprint and last 4 of a key the server encrypted (never the key itself). */
+  tokenStore(id: string, ciphertext: string, fingerprint: string, last4: string, actorId: string) {
+    return this.rpc<CrocodialConnection>('croc_token_store', { p_connection: id, p_ciphertext: ciphertext, p_fingerprint: fingerprint, p_last4: last4, p_actor: actorId });
+  }
+  /** Service role only: clears the key and switches the connection off. */
+  tokenClear(id: string, actorId: string) { return this.rpc<CrocodialConnection>('croc_token_clear', { p_connection: id, p_actor: actorId }); }
+  /** Service role only: the stored ciphertext (the server decrypts it), or null. */
+  tokenCiphertext(id: string) { return this.rpc<string | null>('croc_token_ciphertext', { p_connection: id }); }
 }
