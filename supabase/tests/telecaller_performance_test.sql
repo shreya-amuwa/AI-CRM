@@ -243,6 +243,18 @@ select test.check((select (c ->> 'low')::int >= 1 and (c ->> 'achieved')::int >=
   'HR''s cards count the categories');
 select test.check((select bool_and(r -> 'unavailable' ? 'dispositions') from jsonb_array_elements(tc_performance_list('{"weekStart":"2026-11-02"}') -> 'rows') r),
   'what Crocodial does not provide is marked unavailable, not zero');
+select test.check(jsonb_array_length(tc_targets_list()) >= 1, 'HR sees the call targets');
+select test.login('dh_wab');
+select test.check(not exists (select 1 from jsonb_array_elements(tc_targets_list()) t where t ->> 'department' = (select name from departments where id = test.dept('whatsbox'))),
+  'another department''s head does not see this department''s targets');
+select test.login('dh_wbx');
+select test.check(exists (select 1 from jsonb_array_elements(tc_targets_list()) t where t ->> 'department' = (select name from departments where id = test.dept('whatsbox'))),
+  'the department''s own head does');
+select test.login('tp_b');
+select test.must_fail($$select tc_targets_list()$$, 'a Telecaller cannot list the targets', 'Not allowed');
+select test.check(tc_performance_list('{}') -> 'sync' = '[]'::jsonb, 'a Telecaller does not see the call-log sync errors');
+select test.must_fail($$select tc_target_set(jsonb_build_object('scopeType', 'EMPLOYEE', 'profileId', test.id('tp_b'), 'dailyCalls', 1, 'effectiveFrom', '2026-11-30'))$$,
+  'a Telecaller cannot change their own target', 'Only the department');
 reset role;
 update telecaller_review_policy set enabled = false, approved_at = null, approved_by = null where id;
 delete from crocodial_connections where credential_ref = 'CROCODIAL_TOKEN_TPTEST';

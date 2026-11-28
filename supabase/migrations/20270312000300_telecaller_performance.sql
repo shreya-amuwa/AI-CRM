@@ -618,8 +618,11 @@ begin
                    'completedMeetings', (select count(*) from public.telecaller_weekly_performance z where z.review_status = 'COMPLETED' and private.tc_can_view(z.profile_id)))
             from vis v)
     into v_rows, v_cards;
-  select jsonb_agg(jsonb_build_object('connection', c.name, 'lastOkAt', s.last_ok_at, 'error', s.last_error)) into v_sync
-    from public.crocodial_connections c left join public.crocodial_sync_state s on s.connection_id = c.id and s.resource = 'call-logs';
+  -- the call-log sync state is for HR and the managers; a Telecaller sees only their own figures
+  if private.is_hr_staff() or exists (select 1 from public.profiles me where me.id = auth.uid() and me.role in ('DEPARTMENT_HEAD', 'TEAM_HEAD')) then
+    select jsonb_agg(jsonb_build_object('connection', c.name, 'lastOkAt', s.last_ok_at, 'error', s.last_error)) into v_sync
+      from public.crocodial_connections c left join public.crocodial_sync_state s on s.connection_id = c.id and s.resource = 'call-logs';
+  end if;
   return jsonb_build_object('weekStart', v_week, 'weekEnd', v_week + 6, 'rows', v_rows, 'cards', v_cards, 'sync', coalesce(v_sync, '[]'::jsonb),
     'policy', (select jsonb_build_object('enabled', pol.enabled, 'approvedAt', pol.approved_at, 'achievedPct', pol.achieved_pct, 'onTrackPct', pol.on_track_pct,
                  'needsImprovementPct', pol.needs_improvement_pct, 'reviewBelowPct', pol.review_below_pct) from public.telecaller_review_policy pol where pol.id),
@@ -723,7 +726,14 @@ begin
             'by', (select x.full_name from public.profiles x where x.id = t.created_by), 'at', t.created_at,
             'canManage', private.tc_can_manage(coalesce(t.department_id, (select x.department_id from public.teams x where x.id = t.team_id), (select x.department_id from public.profiles x where x.id = t.profile_id))))
           order by (t.effective_to is null) desc, t.effective_from desc)
-     from public.telecaller_targets t), '[]'::jsonb);
+     from public.telecaller_targets t
+     -- HR and the Super Admin see every target; a head, CEO or Team Lead only the targets of their own scope (never another department's)
+     where private.is_hr_staff()
+        or private.tc_can_manage(coalesce(t.department_id, (select x.department_id from public.teams x where x.id = t.team_id), (select x.department_id from public.profiles x where x.id = t.profile_id)))
+        or (t.scope_type = 'EMPLOYEE' and private.tc_can_view(t.profile_id))
+        or exists (select 1 from public.profiles me where me.id = auth.uid() and me.role = 'TEAM_HEAD'
+                     and ((t.scope_type = 'TEAM' and t.team_id = me.team_id)
+                       or (t.scope_type in ('DEPARTMENT', 'DESIGNATION') and t.department_id = private.base_department(me.department_id))))), '[]'::jsonb);
 end $$;
 revoke all on function public.tc_targets_list() from public, anon;
 grant execute on function public.tc_targets_list() to authenticated;

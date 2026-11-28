@@ -244,3 +244,103 @@ export interface AttendanceStatementOptions {
   designations: string[]; shifts: string[]; organization: string; timeZone: string; canExport: boolean;
 }
 export interface AttendanceExportPage { type: string; total: number; offset: number; rows: Record<string, unknown>[]; generatedAt: string; generatedBy: string; organization: string; timeZone: string }
+
+// ---------------------------------------------------------------------------
+// Phase 3: Telecaller performance, targets, review meetings, meeting reports, improvement plans (20270312000300)
+// ---------------------------------------------------------------------------
+export const TC_CATEGORIES = ['TARGET_ACHIEVED', 'ON_TRACK', 'NEEDS_IMPROVEMENT', 'LOW_PERFORMANCE', 'INSUFFICIENT_DATA', 'SYNC_PENDING', 'NOT_EVALUATED', 'DATA_PENDING'] as const;
+export const TC_REVIEW_STATUSES = ['NONE', 'PENDING_SCHEDULING', 'SCHEDULED', 'COMPLETED', 'CANCELLED', 'NOT_REQUIRED'] as const;
+export const TC_OUTCOMES = [
+  { value: 'PERFORMANCE_REVIEWED', label: 'Performance reviewed' }, { value: 'TRAINING_REQUIRED', label: 'Training required' },
+  { value: 'TECHNICAL_ISSUE', label: 'Technical issue identified' }, { value: 'TARGET_ADJUSTMENT_RECOMMENDED', label: 'Target adjustment recommended' },
+  { value: 'COACHING_REQUIRED', label: 'Coaching required' }, { value: 'IMPROVEMENT_PLAN', label: 'Improvement plan agreed' },
+  { value: 'FOLLOW_UP_MEETING', label: 'Follow-up meeting needed' }, { value: 'CONCERN_RESOLVED', label: 'Concern resolved' },
+  { value: 'MANAGEMENT_DISCUSSION', label: 'Management discussion required' }
+] as const;
+export const TC_REPORT_FIELDS = [
+  { key: 'performanceGap', label: 'Performance gap discussed', required: true }, { key: 'reasons', label: 'Reasons given by the Telecaller' },
+  { key: 'hrObservations', label: 'HR observations', required: true }, { key: 'supportNeeded', label: 'Support or training needed' },
+  { key: 'agreedActions', label: 'Agreed actions' }
+] as const;
+
+const uuid = z.string().uuid();
+export const tcListQuerySchema = z.object({
+  weekStart: isoDate.optional(), departmentId: uuid.optional(), teamId: uuid.optional(), profileId: uuid.optional(),
+  category: z.enum(TC_CATEGORIES).optional(), reviewStatus: z.enum(TC_REVIEW_STATUSES).optional()
+}).strict();
+export const tcProfileQuerySchema = z.object({ weeks: z.coerce.number().int().min(1).max(52).optional() }).strict();
+export const tcTargetSchema = z.object({
+  scopeType: z.enum(['DEPARTMENT', 'TEAM', 'DESIGNATION', 'EMPLOYEE']),
+  departmentId: uuid.optional(), teamId: uuid.optional(), profileId: uuid.optional(), designation: text(80).optional(),
+  dailyCalls: z.number().int().min(1, 'The daily target is at least 1 call.').max(2000, 'The daily target is at most 2000 calls.'),
+  weeklyCalls: z.number().int().min(1).max(14000).optional(),
+  effectiveFrom: isoDate, note: text(500).optional()
+}).strict().superRefine((t, ctx) => {
+  const need = { DEPARTMENT: 'departmentId', TEAM: 'teamId', EMPLOYEE: 'profileId', DESIGNATION: 'designation' } as const;
+  const key = need[t.scopeType];
+  if (!t[key]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: 'Choose where the target applies.' });
+  if (t.scopeType === 'DESIGNATION' && !t.departmentId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['departmentId'], message: 'Choose the department of the designation.' });
+});
+const pct = z.number().min(1).max(500);
+export const tcPolicySchema = z.object({
+  enabled: z.boolean(),
+  achievedPct: pct.optional(), onTrackPct: pct.optional(), needsImprovementPct: pct.optional(), reviewBelowPct: pct.optional(),
+  minWorkingDays: z.number().min(0).max(7).optional(), consecutiveWeeks: z.number().int().min(1).max(8).optional(),
+  minDaysBetweenReviews: z.number().int().min(0).max(180).optional(), maxAutoReviews: z.number().int().min(0).max(52).optional(),
+  meetingMinutes: z.number().int().min(15).max(120).optional(),
+  inviteDepartmentHead: z.boolean().optional(), inviteTeamLead: z.boolean().optional(), inviteOperationsHead: z.boolean().optional(),
+  hrReviewerId: z.union([uuid, z.literal('')]).optional(), excludedProfiles: z.array(uuid).max(500).optional()
+}).strict().refine(p => p.achievedPct === undefined || p.onTrackPct === undefined || p.achievedPct >= p.onTrackPct, { message: 'Achieved must be at least On track.', path: ['onTrackPct'] })
+  .refine(p => p.onTrackPct === undefined || p.needsImprovementPct === undefined || p.onTrackPct >= p.needsImprovementPct, { message: 'On track must be at least Needs improvement.', path: ['needsImprovementPct'] });
+export const tcRecalcSchema = z.object({ reason: text(1000).min(5, 'Say why the week is recalculated.') }).strict();
+export const tcScheduleSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }).optional(), cancel: z.boolean().default(false), note: text(300).optional()
+}).strict().refine(s => s.cancel || !!s.startsAt, { message: 'Choose the meeting time.', path: ['startsAt'] });
+export const tcReportSchema = z.object({
+  outcome: z.enum(TC_OUTCOMES.map(o => o.value) as [string, ...string[]]),
+  fields: z.record(z.enum(TC_REPORT_FIELDS.map(f => f.key) as [string, ...string[]]), z.string().max(4000))
+    .refine(f => (f.performanceGap ?? '').trim().length >= 5 && (f.hrObservations ?? '').trim().length >= 5, 'Record the performance gap and your observations.'),
+  actionItems: z.array(z.object({ action: text(300).min(2), owner: text(120).optional(), due: isoDate.optional() }).strict()).max(20).default([]),
+  followUpDate: isoDate.optional(),
+  plan: z.object({ targets: text(4000).min(5, 'Write the agreed targets.'), support: text(4000).optional(), startDate: isoDate.optional(), deadline: isoDate }).strict().optional()
+}).strict().refine(r => r.outcome !== 'IMPROVEMENT_PLAN' || !!r.plan, { message: 'An improvement plan needs the agreed targets and the review deadline.', path: ['plan'] })
+  .refine(r => !r.plan || !r.plan.startDate || r.plan.startDate <= r.plan.deadline, { message: 'The review deadline cannot be before the start date.', path: ['plan', 'deadline'] });
+export const tcPlanCloseSchema = z.object({ remarks: text(4000).min(5, 'Add closing remarks.') }).strict();
+
+export type TcCategory = (typeof TC_CATEGORIES)[number];
+export interface TcWeekRow {
+  id: string; profileId: string; name: string; employeeCode: string; department: string | null; team: string | null; weekStart: string; weekEnd: string;
+  status: 'PRELIMINARY' | 'FINAL'; category: TcCategory; reason: string | null; scheduledDays: number; leaveDays: number; eligibleDays: number;
+  dailyTarget: number | null; weeklyTarget: number | null; adjustedTarget: number | null; actualCalls: number; connectedCalls: number; notConnectedCalls: number;
+  incomingCalls: number; missedCalls: number; uniqueContacts: number; talkSeconds: number; averageConnectedSeconds: number | null; connectionRate: number | null;
+  achievement: number | null; mappingOk: boolean; dataComplete: boolean; breakdown: Record<string, unknown>; computedAt: string; finalizedAt: string | null;
+  recalcCount: number; reviewStatus: (typeof TC_REVIEW_STATUSES)[number]; reviewReason: string | null; meetingId: string | null;
+  meeting: { id: string; startsAt: string; status: string } | null; previousAchievement: number | null; unavailable: string[];
+}
+export interface TcCards {
+  telecallers: number; evaluated: number; achieved: number; onTrack: number; needsImprovement: number; low: number; insufficient: number;
+  average: number | null; pendingMeetings: number; completedMeetings: number;
+}
+export interface TcPolicySummary { enabled: boolean; approvedAt: string | null; achievedPct: number; onTrackPct: number; needsImprovementPct: number; reviewBelowPct: number }
+export interface TcPerformanceList {
+  weekStart: string; weekEnd: string; rows: TcWeekRow[]; cards: TcCards; sync: { connection: string; lastOkAt: string | null; error: string | null }[];
+  policy: TcPolicySummary; canManage: boolean; isHr: boolean; lastRun: unknown;
+}
+export interface TcReport { id: string; meetingId: string | null; outcome: string; fields: Record<string, string>; actionItems: { action: string; owner?: string; due?: string }[];
+  followUpDate: string | null; by: string | null; at: string }
+export interface TcPlan { id: string; targets: string; support: string | null; startDate: string; deadline: string; status: 'OPEN' | 'CLOSED'; closedRemarks: string | null; closedAt: string | null }
+export interface TcProfile {
+  profileId: string; name: string; isSelf: boolean; isHr: boolean; today: string; dailyTarget: number | null; weeklyTarget: number | null; todayCalls: number;
+  thisWeek: TcWeekRow | null; days: { day: string; calls: number; connected: number; talkSeconds: number }[]; weeks: TcWeekRow[];
+  reports: TcReport[]; plans: TcPlan[]; meetings: { id: string; title: string; startsAt: string; status: string }[]; actionItems: { action: string; owner?: string; due?: string }[];
+}
+export interface TcTarget {
+  id: string; scopeType: 'DEPARTMENT' | 'TEAM' | 'DESIGNATION' | 'EMPLOYEE'; department: string | null; team: string | null; designation: string | null; employee: string | null;
+  dailyCalls: number; weeklyCalls: number | null; effectiveFrom: string; effectiveTo: string | null; note: string | null; by: string | null; at: string; canManage: boolean;
+}
+export interface TcPolicy {
+  enabled: boolean; achieved_pct: number; on_track_pct: number; needs_improvement_pct: number; review_below_pct: number; min_working_days: number;
+  consecutive_weeks: number; min_days_between_reviews: number; max_auto_reviews: number; meeting_minutes: number; invite_department_head: boolean;
+  invite_team_lead: boolean; invite_operations_head: boolean; hr_reviewer_id: string | null; excluded_profiles: string[]; approved_at: string | null;
+  approvedByName: string | null; canEdit: boolean;
+}

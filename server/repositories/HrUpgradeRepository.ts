@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../shared/hrUpgrade.js';
+import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue, TcPerformanceList, TcPolicy, TcProfile, TcTarget,
+  TcWeekRow } from '../../shared/hrUpgrade.js';
 import { unwrap } from './base.js';
 
 /**
@@ -32,4 +33,17 @@ export class HrUpgradeRepository {
   }
   exportHistory() { return this.rpc<unknown[]>('attendance_export_history', { p_limit: 50 }); }
   setBiometricId(profileId: string, biometricId: string | null) { return this.rpc<unknown>('hr_set_biometric_id', { p_profile: profileId, p_biometric: biometricId }); }
+  // Phase 3: Telecaller performance (the database scopes every row: the Telecaller, their Team Lead, Department Head, CEO, HR)
+  tcList(f: Record<string, unknown>) { return this.rpc<TcPerformanceList>('tc_performance_list', { f }); }
+  tcProfile(profileId: string, weeks: number) { return this.rpc<TcProfile>('tc_performance_profile', { p: profileId, p_weeks: weeks }); }
+  tcTargets() { return this.rpc<TcTarget[]>('tc_targets_list'); }
+  tcSetTarget(p: Record<string, unknown>) { return this.rpc<TcTarget[]>('tc_target_set', { p }); }
+  tcPolicy() { return this.rpc<TcPolicy>('tc_policy_get'); }
+  tcSetPolicy(p: Record<string, unknown>) { return this.rpc<TcPolicy>('tc_policy_set', { p }); }
+  tcRecalculate(id: string, reason: string) { return this.rpc<TcWeekRow>('tc_recalculate', { p_id: id, p_reason: reason }); }
+  tcSchedule(id: string, startsAt: string | null, cancel: boolean, note: string | null) {
+    return this.rpc<TcWeekRow>('tc_review_schedule', { p_id: id, p_starts_at: startsAt, p_cancel: cancel, p_note: note });
+  }
+  tcReport(id: string, p: Record<string, unknown>) { return this.rpc<TcProfile>('tc_review_report', { p_id: id, p }); }
+  tcClosePlan(id: string, remarks: string) { return this.rpc<TcProfile>('tc_plan_close', { p_plan: id, p_remarks: remarks }); }
 }

@@ -480,7 +480,7 @@ revoke all on function private.rv_row(public.hr_probation_cycles) from public, a
 -- 5. Opening cycles and the reminders (called by the existing daily planner)
 -- ---------------------------------------------------------------------------
 -- Probation cycles exactly as before (6 calendar months; recent joiners and everyone marked "Training / Probation"; interns have none here).
--- 20270312000300 (Phase 4) adds the internship cycles to this function.
+-- 20270312000400 (Phase 4) adds the internship cycles to this function.
 create or replace function private.rv_open_cycles(p_today date)
 returns integer language plpgsql security definer set search_path = '' as $$
 declare
@@ -1199,6 +1199,22 @@ begin
 end $$;
 revoke all on function private.rv_extend(uuid, date, text, text) from public, anon, authenticated;
 
+-- The internship outcomes (Complete, Convert). 20270312000400 (Phase 4) replaces this placeholder; until it runs they are refused.
+-- Created only when missing, so running this file again never replaces the real function.
+do $do$
+begin
+  if to_regprocedure('private.rv_internship_outcome(uuid, text, jsonb, text, boolean)') is null then
+    execute $f$
+      create function private.rv_internship_outcome(p_cycle uuid, p_decision text, p jsonb, p_reason text, p_exceptional boolean)
+      returns public.hr_probation_cycles language plpgsql security definer set search_path = '' as $b$
+      begin
+        raise exception 'VALIDATION_ERROR: Run the internship migration first.' using errcode = 'P0001';
+      end $b$
+    $f$;
+  end if;
+end $do$;
+revoke all on function private.rv_internship_outcome(uuid, text, jsonb, text, boolean) from public, anon, authenticated;
+
 -- p: { decision, reason, effectiveDate, extensionMonths | newDate, expectations, nextReviewDate, exceptional, hrEvaluation: {ratings, answers} }
 create or replace function public.hr_review_decide(p_cycle uuid, p jsonb)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -1307,8 +1323,8 @@ begin
            hold_owner = coalesce(case when p ->> 'ownerId' ~* '^[0-9a-f-]{36}$' then (p ->> 'ownerId')::uuid end, auth.uid()), updated_at = now()
      where id = c.id returning * into c;
   else
-    -- COMPLETE / CONVERT: 20270312000300 (Phase 4)
-    raise exception 'VALIDATION_ERROR: Run the internship migration first.' using errcode = 'P0001';
+    -- COMPLETE / CONVERT: the internship outcomes (20270312000400, Phase 4)
+    c := private.rv_internship_outcome(c.id, v_dec, p, v_reason, v_exc);
   end if;
 
   perform private.write_audit('EMPLOYEE_REVIEW_DECIDED', 'hr_review', c.id, c.department_id, null,

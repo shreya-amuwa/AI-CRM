@@ -1,6 +1,6 @@
 import type { AttendanceExportPage, AttendanceStatement, AttendanceStatementOptions, OfficeHoliday, ReviewDetail, ReviewList, ReviewQueue } from '../../shared/hrUpgrade.js';
 import { attendanceExportSchema, attendanceStatementSchema, biometricIdSchema, holidayQuerySchema, holidaySchema, reviewDecisionSchema, reviewEvaluationSchema, reviewListQuerySchema, reviewReassignSchema,
-  reviewReturnSchema } from '../../shared/hrUpgrade.js';
+  reviewReturnSchema, tcListQuerySchema, tcPlanCloseSchema, tcPolicySchema, tcProfileQuerySchema, tcRecalcSchema, tcReportSchema, tcScheduleSchema, tcTargetSchema } from '../../shared/hrUpgrade.js';
 import { uuidSchema } from '../../shared/validation.js';
 import { sendHrCycleEmails } from '../automations/hrDispatcher.js';
 import { parse } from '../http/validate.js';
@@ -63,4 +63,18 @@ export class HrUpgradeService {
     const i = parse(biometricIdSchema, body);
     return this.repo.setBiometricId(i.profileId, i.biometricId || null);
   }
+  // Phase 3: Telecaller performance (the database decides who sees which Telecaller and who may change targets, the policy, meetings and reports)
+  tcList(query: unknown) { return this.repo.tcList(parse(tcListQuerySchema, query ?? {})); }
+  tcProfile(profileId: string, query: unknown) { return this.repo.tcProfile(parse(uuidSchema, profileId), parse(tcProfileQuerySchema, query ?? {}).weeks ?? 12); }
+  tcTargets() { return this.repo.tcTargets(); }
+  tcSetTarget(body: unknown) { return this.repo.tcSetTarget(parse(tcTargetSchema, body)); }
+  tcPolicy() { return this.repo.tcPolicy(); }
+  tcSetPolicy(body: unknown) { return this.repo.tcSetPolicy(parse(tcPolicySchema, body)); }
+  tcRecalculate(id: string, body: unknown) { return this.repo.tcRecalculate(parse(uuidSchema, id), parse(tcRecalcSchema, body).reason); }
+  tcSchedule(id: string, body: unknown) {
+    const i = parse(tcScheduleSchema, body);
+    return this.repo.tcSchedule(parse(uuidSchema, id), i.startsAt ?? null, i.cancel, i.note?.trim() || null);
+  }
+  tcReport(id: string, body: unknown) { return this.repo.tcReport(parse(uuidSchema, id), parse(tcReportSchema, body)); }
+  tcClosePlan(id: string, body: unknown) { return this.repo.tcClosePlan(parse(uuidSchema, id), parse(tcPlanCloseSchema, body).remarks); }
 }

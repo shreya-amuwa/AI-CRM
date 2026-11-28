@@ -475,7 +475,18 @@ export const hrUpgradeController = {
   statementOptions: (async ctx => ok(await svc(ctx).hrUpgrade.statementOptions())) as Handler,
   exportPage: (async ctx => ok(await svc(ctx).hrUpgrade.exportPage(ctx.req.body))) as Handler,
   exportHistory: (async ctx => ok(await svc(ctx).hrUpgrade.exportHistory())) as Handler,
-  setBiometricId: (async ctx => ok(await svc(ctx).hrUpgrade.setBiometricId(ctx.req.body))) as Handler
+  setBiometricId: (async ctx => ok(await svc(ctx).hrUpgrade.setBiometricId(ctx.req.body))) as Handler,
+  // Phase 3: Telecaller performance
+  tcList: (async ctx => ok(await svc(ctx).hrUpgrade.tcList(ctx.req.query))) as Handler,
+  tcProfile: (async ctx => ok(await svc(ctx).hrUpgrade.tcProfile(ctx.params.id, ctx.req.query))) as Handler,
+  tcTargets: (async ctx => ok(await svc(ctx).hrUpgrade.tcTargets())) as Handler,
+  tcSetTarget: (async ctx => ok(await svc(ctx).hrUpgrade.tcSetTarget(ctx.req.body))) as Handler,
+  tcPolicy: (async ctx => ok(await svc(ctx).hrUpgrade.tcPolicy())) as Handler,
+  tcSetPolicy: (async ctx => ok(await svc(ctx).hrUpgrade.tcSetPolicy(ctx.req.body))) as Handler,
+  tcRecalculate: (async ctx => ok(await svc(ctx).hrUpgrade.tcRecalculate(ctx.params.id, ctx.req.body))) as Handler,
+  tcSchedule: (async ctx => ok(await svc(ctx).hrUpgrade.tcSchedule(ctx.params.id, ctx.req.body))) as Handler,
+  tcReport: (async ctx => ok(await svc(ctx).hrUpgrade.tcReport(ctx.params.id, ctx.req.body))) as Handler,
+  tcClosePlan: (async ctx => ok(await svc(ctx).hrUpgrade.tcClosePlan(ctx.params.id, ctx.req.body))) as Handler
 };
 
 export const hrAwardsController = {
