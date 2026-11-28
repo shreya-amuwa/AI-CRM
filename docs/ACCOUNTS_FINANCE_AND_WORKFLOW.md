@@ -97,5 +97,5 @@ select private.invoice_series_set_next('NON_GST', '26-27', 251);
 ```
 
 Every change is written to the audit log (`INVOICE_SERIES_SET_NEXT`, with the number before and after). Tests: `supabase/tests/invoice_numbering_requirements_test.sql` (52 checks),
-`invoice_series_test.sql` and `part_payment_invoice_number_test.sql` (existing), `invoice_series_validation.test.ts`, and the "Invoice numbering" block of `api_integration.test.ts`
+`invoice_series_test.sql` and `part_payment_invoice_number_test.sql` (existing), `invoice_series_validation.test.ts` (and `recharge_invoice_service.test.ts`, now also run by `npm run test:unit`), and the "Invoice numbering" block of `api_integration.test.ts`
 (25 connections taking numbers at the same moment, a rolled-back invoice, busy GST and Non-GST series).
