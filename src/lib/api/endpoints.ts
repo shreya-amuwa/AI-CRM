@@ -8,7 +8,7 @@ import type { EmailHistoryDetail, EmailHistoryPage, EmailOverview, EmailProvider
 import type { PaidLeaveBalance, PaidLeaveDetail, PaidLeaveList, PaidLeavePolicy } from '../../../shared/contracts';
 import type { OnboardingReviewScope } from '../../../shared/contracts';
 import type { FieldVisitLeadQueue, FieldVisitLeadRoute, FieldVisitTelecaller, TrackedPosition, TrackingBoard, TrackingTrail, VisitTrackingIssue, VisitTrackingState } from '../../../shared/contracts';
-import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialReconcileRun, CrocodialLeadActivity, CrocodialTeamLeads } from '../../../shared/contracts';
+import type { CrocodialAdminOverview, CrocodialConnection, CrocodialMapping, CrocodialMappingCheck, CrocodialMyStatus, CrocodialSyncRunResult, CrocodialSyncStatus, CrocodialTestResult, CrocodialKeySaveResult, CrocodialActivity, CrocodialLeads, CrocodialRefreshCapabilities, CrocodialRefreshRequest, CrocodialRefreshScope, CrocodialHealthReport, CrocodialTeamActivity, CrocodialReconcileOverview, CrocodialLeadLinkList, CrocodialReconcileRun, CrocodialLeadActivity, CrocodialTeamLeads } from '../../../shared/contracts';
 import type { LeadUploadBatch, LeadUploadCheckResult, LeadUploadChunkResult, LeadUploadIssues, LeadUploadRawRow } from '../../../shared/contracts';
 import type {
   AiWebsiteOnboarding,
@@ -1106,6 +1106,9 @@ export const crocodialApi = {
   saveConnection: (body: { id?: string; name: string; externalAccountLabel?: string | null; credentialRef?: string | null; enabled?: boolean; departmentIds?: string[] }) =>
     api.post<CrocodialConnection>('/crocodial/connections', body),
   testConnection: (id: string) => api.post<CrocodialTestResult>(`/crocodial/connections/${id}/test`, {}),
+  /** (20270307000100) test a Crocodial key with one live read, then store it encrypted; DELETE: "Disconnect" (the key is cleared, the connection switched off) */
+  saveKey: (id: string, key: string) => api.post<CrocodialKeySaveResult>(`/crocodial/connections/${id}/key`, { key }),
+  removeKey: (id: string) => api.delete<CrocodialConnection>(`/crocodial/connections/${id}/key`),
   saveDepartmentLink: (body: { connectionId: string; departmentId: string; division: 'SALES'; enabled: boolean; stage?: 'PILOT' | 'PRODUCTION' }) =>
     api.post<{ id: string }>('/crocodial/department-links', body),
   checkMapping: (body: { connectionId: string; externalEmployeeId: number; profileId: string; departmentId: string }) =>

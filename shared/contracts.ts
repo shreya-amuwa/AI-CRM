@@ -6670,6 +6670,10 @@ export interface CrocodialConnection {
   keyLast4?: string | null;
   /** Whether the server has that setting (added by the server; the database cannot know). */
   credentialConfigured?: boolean;
+  /** (20270307000100) when the Managing Director switched it off: only the MD can switch it on again */
+  mdDisabledAt?: string | null;
+  /** (20270307000100, croc_admin_overview only) the CEOs who could manage it (they run every linked department) */
+  managedBy?: { id: string; name: string }[];
   enabled: boolean;
   health: CrocodialHealth;
   lastError: string | null;
@@ -6840,12 +6844,18 @@ export interface CrocodialMapping {
 export interface CrocodialAdminOverview {
   rollout: { departmentId: string; departmentName: string; departmentSlug: string; division: 'SALES'; allowed: boolean; note: string | null; updatedAt: string }[];
   connections: CrocodialConnection[];
-  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string }[];
+  departmentLinks: { id: string; connectionId: string; departmentId: string; departmentName: string; division: 'SALES'; enabled: boolean; stage: 'PILOT' | 'PRODUCTION'; updatedAt: string;
+    /** (20270307000100) when the Managing Director switched the link off */
+    mdDisabledAt?: string | null }[];
+  /** (20270307000100) the Sales departments a connection may be linked to: every one for the MD, the ones they run for a CEO */
+  departments?: { id: string; name: string; slug: string }[];
   mappings: CrocodialMapping[];
   externalEmployees: { connectionId: string; externalId: number; name: string | null; isActive: boolean | null; branchIds: number[]; lastSeenAt: string; missingSince: string | null; mappingStatus: 'PENDING' | 'APPROVED' | null }[];
   externalBranches: { connectionId: string; externalId: number; name: string | null; status: string | null; missingSince: string | null }[];
   audit: { at: string; action: string; actorName: string | null; entityId: string | null; metadata: Record<string, unknown> }[];
 }
+/** POST /crocodial/connections/:id/key (20270307000100): the key was tested and stored; never the key itself. */
+export interface CrocodialKeySaveResult { ok: true; last4: string; users: number }
 export interface CrocodialProfileCheck {
   profileId: string;
   name: string;
