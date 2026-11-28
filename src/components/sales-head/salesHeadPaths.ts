@@ -1,7 +1,7 @@
 /** The pages of the Sales Department Head dashboard and their addresses (kept apart from the component so they can be tested without a browser). */
 export type SalesHeadPage =
   | 'overview' | 'operations' | 'leads-list' | 'leads-assign' | 'sheet-upload' | 'my-leads' | 'my-potential' | 'my-onboarding' | 'my-part-payments' | 'tasks' | 'assign-task' | 'performance' | 'top-performers' | 'income' | 'reports' | 'work-reports' | 'telecaller-sheets' | 'service-prices' | 'notices' | 'team' | 'chat' | 'raise-issue' | 'notifications' | 'field-visit-leads' | 'field-tracking' | 'lead-whatsapp' | 'crocodial' | 'crocodial-me' | 'crocodial-leads' | 'work-updates'
-  | 'telecallers' | 'business-associates' | 'my-income' | 'incentive-setup' | 'lead-tags';
+  | 'telecallers' | 'business-associates' | 'my-income' | 'incentive-setup' | 'lead-tags' | 'crocodial-setup';
 
 export interface SalesHeadNavigate {
   (page: SalesHeadPage, options?: { filter?: string }): void;
@@ -46,7 +46,9 @@ export const PATHS: Record<SalesHeadPage, string> = {
   'my-income': 'my-income',
   'incentive-setup': 'incentive-setup',
   // lead tags (20270305000100): the CEO's tags (Operations Head only)
-  'lead-tags': 'lead-tags'
+  'lead-tags': 'lead-tags',
+  // the CEO's Crocodial connections (20270307000100, Operations Head only)
+  'crocodial-setup': 'crocodial/setup'
 };
 /** The role-wise pages that open one person's full-page dashboard at <path>/<profile id>. */
 export const ROLE_PAGES = ['telecallers', 'business-associates'] as const;

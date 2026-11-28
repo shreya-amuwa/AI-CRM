@@ -102,7 +102,7 @@ export class AiStudioRepository {
   hrAccess() { return this.rpc<AiStudioHrAccess>('ai_studio_hr_access_info'); }
   setHrViewer(profileId: string, allowed: boolean) { return this.rpc<AiStudioHrAccess>('ai_studio_hr_viewer_set', { p_profile: profileId, p_allowed: allowed }); }
   hrPerformance(from: string | null, to: string | null) { return this.rpc<AiStudioHrPerformance>('ai_studio_hr_performance', { p_from: from, p_to: to }); }
-  // AI Studio weekly report (20270306000100): Team Lead -> the Super Admin; the database checks the caller
+  // AI Studio weekly report (20270308000100): Team Lead -> the Super Admin; the database checks the caller
   weeklyWeek(weekStart: string) { return this.rpc<AiStudioWeeklyWeek>('ai_studio_weekly_report_get', { p_week_start: weekStart }); }
   weeklySave(i: { weekStart: string; completedWork?: string | null; pendingWork?: string | null; achievements?: string | null; challenges?: string | null; remarks?: string | null; submit: boolean }) {
     return this.rpc<AiStudioWeeklyReport>('ai_studio_weekly_report_save', {

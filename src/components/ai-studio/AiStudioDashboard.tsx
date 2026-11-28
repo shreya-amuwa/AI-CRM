@@ -64,7 +64,7 @@ export const AiStudioDashboard: React.FC = () => {
   const [rawPage, setPage] = useState<AiStudioPage>(() => parseAiStudioPage(window.location.pathname));
   // Performance Management is the Team Lead's and the Department Head's (20270213000100): a Team Member who opens its address gets the Overview
   // (the database refuses them too)
-  // the Weekly Report is the Team Lead's (20270306000100: Team Lead -> the Super Admin); anyone else who opens its address gets the Overview
+  // the Weekly Report is the Team Lead's (20270308000100: Team Lead -> the Super Admin); anyone else who opens its address gets the Overview
   const page: AiStudioPage = (rawPage === 'performance' && who === 'MEMBER') || (rawPage === 'weekly-report' && who !== 'LEAD') ? 'overview' : rawPage;
   // a notification opens the item again even when its page is already on screen
   const [nonce, setNonce] = useState(0);
@@ -97,7 +97,7 @@ export const AiStudioDashboard: React.FC = () => {
           { id: 'projects', label: 'Projects', icon: ClipboardList },
           { id: 'daily-report', label: 'Daily Report', icon: FileText, badge: who === 'LEAD' ? waiting : 0 },
           // its own side-panel entry for the Team Lead (not a tab of Daily Report); the Team Member has none
-          // (20270306000100) the Team Lead's weekly team report for the Super Admin
+          // (20270308000100) the Team Lead's weekly team report for the Super Admin
           ...(who === 'LEAD' ? [{ id: 'weekly-report', label: 'Weekly Report', icon: CalendarRange }] : []),
           ...(who === 'LEAD' ? [{ id: 'performance', label: 'Performance Management', icon: LineChart }] : [])
         ]),

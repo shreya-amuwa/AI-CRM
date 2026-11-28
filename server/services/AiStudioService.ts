@@ -62,7 +62,7 @@ export class AiStudioService {
     const q = parse(aiStudioHrPerformanceQuerySchema, query);
     return this.repo.hrPerformance(q.from ?? null, q.to ?? null);
   }
-  // the AI Studio weekly report (20270306000100): a Team Lead writes it for the Super Admin; nobody else reads it (the database decides)
+  // the AI Studio weekly report (20270308000100): a Team Lead writes it for the Super Admin; nobody else reads it (the database decides)
   weeklyWeek(query: unknown): Promise<AiStudioWeeklyWeek> { return this.repo.weeklyWeek(parse(aiStudioWeeklyQuerySchema, query).weekStart); }
   weeklySave(body: unknown): Promise<AiStudioWeeklyReport> { return this.repo.weeklySave(parse(aiStudioWeeklySaveSchema, body)); }
   weeklyList(query: unknown): Promise<AiStudioWeeklyReport[]> {

@@ -67,7 +67,7 @@ export const aiStudioApi = {
   hrAccess: () => api.get<AiStudioHrAccess>('/ai-studio/hr-performance/access'),
   setHrViewer: (profileId: string, allowed: boolean) => api.post<AiStudioHrAccess>('/ai-studio/hr-performance/viewers', { profileId, allowed }),
   hrPerformance: (from?: string, to?: string) => api.get<AiStudioHrPerformance>('/ai-studio/hr-performance', { from, to }),
-  // the AI Studio weekly report: Team Lead -> the Super Admin (20270306000100)
+  // the AI Studio weekly report: Team Lead -> the Super Admin (20270308000100)
   weeklyWeek: (weekStart: string) => api.get<AiStudioWeeklyWeek>('/ai-studio/weekly-reports/week', { weekStart }),
   weeklySave: (w: { weekStart: string; completedWork?: string; pendingWork?: string; achievements?: string; challenges?: string; remarks?: string; submit: boolean }) =>
     api.post<AiStudioWeeklyReport>('/ai-studio/weekly-reports', w),

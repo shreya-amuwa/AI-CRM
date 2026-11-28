@@ -55,16 +55,17 @@ export function tokenFormatValid(value: string): boolean {
   return value.length >= 8 && value.length <= 4096 && !/[\s"'`]/.test(value) && !/^bearer/i.test(value);
 }
 
-export function credentialCheck(credentialRef: string, env?: NodeJS.ProcessEnv): CredentialCheck {
-  if (!CREDENTIAL_NAME.test(credentialRef)) return { nameValid: false, detected: false, formatValid: false };
+export function credentialCheck(credentialRef: string | null, env?: NodeJS.ProcessEnv): CredentialCheck {
+  // (a connection whose key is stored by the CRM has no setting name)
+  if (!credentialRef || !CREDENTIAL_NAME.test(credentialRef)) return { nameValid: false, detected: false, formatValid: false };
   const v = (readSetting(credentialRef, env) ?? '').trim();
   return { nameValid: true, detected: v.length > 0, formatValid: v.length > 0 && tokenFormatValid(v) };
 }
 
 /** The token, only when its name and format are valid (used only as the Authorization header). */
-export function resolveCredential(credentialRef: string, env?: NodeJS.ProcessEnv): string | null {
+export function resolveCredential(credentialRef: string | null, env?: NodeJS.ProcessEnv): string | null {
   const check = credentialCheck(credentialRef, env);
-  return check.formatValid ? (readSetting(credentialRef, env) ?? '').trim() : null;
+  return check.formatValid && credentialRef ? (readSetting(credentialRef, env) ?? '').trim() : null;
 }
 
 const clean = (v: unknown, max: number): string | null => {

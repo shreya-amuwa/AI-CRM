@@ -50,8 +50,10 @@ insert into cr select 'c2', (croc_connection_save('{"name":"Other account","cred
 reset role;
 select test.check((select credential_ref = 'CROCODIAL_TOKEN_TEST_MP' and not enabled and health = 'UNKNOWN' from crocodial_connections where id = (select id from cr where k = 'c1')),
   'a new connection is stored disabled, with the credential name in capitals');
-select test.check((select count(*) = 0 from information_schema.columns where table_name = 'crocodial_connections' and column_name ~ 'token|secret|key$'),
-  'no column can hold a token');
+-- (20270307000100 stores a key the SERVER encrypted: its ciphertext, fingerprint and last 4 only; crocodial_ceo_connections_test.sql)
+select test.check((select count(*) = 0 from information_schema.columns where table_name = 'crocodial_connections' and column_name ~ 'token|secret|key$'
+                     and column_name not in ('token_ciphertext', 'token_fingerprint', 'token_last4', 'token_set_by', 'token_set_at')),
+  'no column can hold a plain token (only the encrypted key, its fingerprint and last 4)');
 set role authenticated;
 select test.login('sa');
 select test.must_fail($$select croc_connection_save('{"name":"Dup","credentialRef":"CROCODIAL_TOKEN_TEST_MP"}'::jsonb)$$, 'two connections cannot share one credential', 'CONFLICT');

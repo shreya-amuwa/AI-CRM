@@ -2532,7 +2532,7 @@ export const reportWeeklySaveSchema = z
     assignedOverview: optionalText(2000),
     completedOverview: optionalText(2000),
     remarks: optionalText(2000),
-    // (20270306000100) the weekly report also says what is pending, what was achieved and what got in the way
+    // (20270308000100) the weekly report also says what is pending, what was achieved and what got in the way
     pendingOverview: optionalText(2000),
     achievements: optionalText(2000),
     challenges: optionalText(2000),
@@ -3452,7 +3452,7 @@ export const aiStudioHrPerformanceQuerySchema = z
   .refine(v => !v.from || !v.to || v.from <= v.to, { message: 'The start date is after the end date.', path: ['from'] });
 export const aiStudioHrViewerSchema = z.object({ profileId: uuidSchema, allowed: z.boolean() }).strict();
 
-// ---- AI Studio weekly report: Team Lead -> the Super Admin, AI Studio's Department Head (migration 20270306000100) ----------------------------------------
+// ---- AI Studio weekly report: Team Lead -> the Super Admin, AI Studio's Department Head (migration 20270308000100) ----------------------------------------
 const aiStudioMonday = isoDate.refine(d => new Date(`${d}T00:00:00Z`).getUTCDay() === 1, { message: 'Choose a week that starts on a Monday.' });
 const weeklyPart = z.preprocess(v => (v === '' ? null : v), z.string().trim().max(4000, 'Keep each part under 4000 characters.').nullable().optional());
 export const aiStudioWeeklyQuerySchema = z.object({ weekStart: aiStudioMonday }).strict();
@@ -3491,10 +3491,15 @@ export const crocodialConnectionSaveSchema = z
     id: uuidSchema.optional(),
     name: z.string().trim().min(2, 'Give the connection a name.').max(120),
     externalAccountLabel: z.string().trim().max(200).optional().nullable(),
-    credentialRef: crocodialCredentialRefSchema,
-    enabled: z.boolean().optional()
+    // optional (Task 8): a CEO's connection has no server setting (its key is stored by the CRM); only the MD may name one (the database checks)
+    credentialRef: crocodialCredentialRefSchema.optional().nullable(),
+    enabled: z.boolean().optional(),
+    // a CEO creating a connection: the departments they run that it serves (at least one; the database checks each)
+    departmentIds: z.array(uuidSchema).min(1, 'Choose at least one department you run.').max(20).optional()
   })
   .strict();
+// A Crocodial key pasted by its manager (Task 8): only its size here; the server normalises it and checks its shape and a live read
+export const crocodialKeySchema = z.object({ key: z.string({ required_error: 'Paste the Crocodial key.' }).max(5000, 'That is too long to be a Crocodial key.') }).strict();
 export const crocodialRolloutSchema = z
   .object({ departmentId: uuidSchema, division: z.literal('SALES'), allowed: z.boolean(), note: z.string().trim().max(300).optional().nullable() })
   .strict();
@@ -3507,6 +3512,8 @@ export const crocodialDepartmentLinkSchema = z
     stage: z.enum(['PILOT', 'PRODUCTION']).default('PILOT')
   })
   .strict();
+// (20270307000100) GET /crocodial/connections/:id/mapping-candidates
+export const crocodialMappingCandidatesQuerySchema = z.object({ departmentId: uuidSchema }).strict();
 export const crocodialMappingSchema = z
   .object({
     connectionId: uuidSchema,
@@ -3534,9 +3541,20 @@ export const crocodialRefreshSchema = z
 // ---- Crocodial -> CRM lead pipeline (20270304000100)
 export const CROCODIAL_DISPOSITIONS = ['NEW', 'CONTACTED', 'FOLLOW_UP', 'INTERESTED', 'DEMO_SCHEDULED', 'NOT_INTERESTED', 'LOST', 'CONVERTED', 'IGNORE'] as const;
 export const crocodialLeadImportSchema = z.object({ departmentId: uuidSchema, mode: z.enum(['OFF', 'PREVIEW', 'IMPORT']) }).strict();
+/**
+ * A Crocodial status mapped to a lead tag (tagId), to Ignore (ignore), or removed (neither) (20270306000100). The old body
+ * ({ status, disposition }) is still accepted; the database translates it to the seed tag of the disposition's stage.
+ */
 export const crocodialStatusMappingSchema = z
-  .object({ status: z.string().trim().min(1, 'Enter the Crocodial status.').max(80), disposition: z.enum(CROCODIAL_DISPOSITIONS).nullable() })
-  .strict();
+  .object({
+    status: z.string().trim().min(1, 'Enter the Crocodial status.').max(80),
+    tagId: uuidSchema.nullable().optional(),
+    ignore: z.boolean().optional(),
+    disposition: z.enum(CROCODIAL_DISPOSITIONS).nullable().optional()
+  })
+  .strict()
+  .refine(b => b.disposition === undefined || (b.tagId === undefined && b.ignore === undefined), { message: 'Send a tag or a disposition, not both.', path: ['disposition'] })
+  .refine(b => !(b.ignore && b.tagId), { message: 'Choose a tag or Ignore, not both.', path: ['ignore'] });
 export const crocodialLinksQuerySchema = z
   .object({
     status: z.enum(['LINKED', 'PENDING_CREATE', 'PENDING_LINK', 'UNMAPPED_ASSIGNEE', 'OUT_OF_SCOPE', 'NOT_ENABLED', 'AMBIGUOUS', 'OWNER_CONFLICT', 'PROTECTED', 'IGNORED', 'FAILED']).optional(),

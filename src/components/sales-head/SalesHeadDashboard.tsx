@@ -46,6 +46,7 @@ import { SalesRoleListPage, SalesRolePersonPage } from './roles/SalesRoleSection
 import { CrocodialTeamPanel, useCrocodialNav } from '../crocodial/CrocodialTeamPanel';
 import { CrocodialActivityPanel } from '../crocodial/CrocodialActivity';
 import { CrocodialLeadsPanel } from '../crocodial/CrocodialLeads';
+import { CrocodialAdminPage } from '../crocodial/CrocodialAdminPage';
 export { SALES_HEAD_BASE, parseSalesHeadPage };
 export type { SalesHeadNavigate, SalesHeadPage };
 
@@ -173,6 +174,7 @@ export const SalesHeadDashboard: React.FC = () => {
       {page === 'lead-whatsapp' && <LeadWhatsAppSettingsPage />}
       {page === 'crocodial' && <CrocodialTeamPanel title={operationsHead ? 'Crocodial Overview — My Sales Departments' : 'Department Crocodial Activity'} />}
       {page === 'crocodial-me' && <CrocodialActivityPanel title="My Crocodial Activity" showDemos={false} />}
+      {page === 'crocodial-setup' && operationsHead && <CrocodialAdminPage scope="CEO" />}
       {page === 'crocodial-leads' && <CrocodialLeadsPanel title="My Crocodial Leads" hideWhenOff={false} />}
       {page === 'notices' && <ClientNotices />}
       {page === 'team' && <TeamMemberManagement departmentSlug={profile?.department?.slug || ''} subDept="sales" />}

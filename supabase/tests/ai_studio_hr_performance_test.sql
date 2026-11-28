@@ -12,8 +12,8 @@ select set_config('request.jwt.claims', '', false);
 -- earlier suites run older copies of the report functions again: this migration is applied last, twice (it must be safe to run twice)
 \i supabase/migrations/20270302000100_ai_studio_hr_performance.sql
 \i supabase/migrations/20270302000100_ai_studio_hr_performance.sql
--- 20270306000100: the Team Lead's approval of a Team Member's report is final (Team Member -> Team Lead -> HR); report_hierarchy_test.sql tests it in full
-\i supabase/migrations/20270306000100_report_hierarchy.sql
+-- 20270308000100: the Team Lead's approval of a Team Member's report is final (Team Member -> Team Lead -> HR); report_hierarchy_test.sql tests it in full
+\i supabase/migrations/20270308000100_report_hierarchy.sql
 
 create or replace function test.hd(p_day integer) returns date language sql stable as $$ select (now() at time zone 'Asia/Kolkata')::date + p_day $$;
 create or replace function test.words(n integer) returns text language sql immutable as $$ select string_agg('word' || g, ' ') from generate_series(1, n) g $$;
@@ -107,7 +107,7 @@ select test.login('ai_tl1');
 select test.check(exists (select 1 from jsonb_array_elements(ai_studio_reports_page('team', p_status => 'PENDING_TL_APPROVAL') -> 'items') x where x ->> 'id' = test.hr('m1')::text),
   'the member''s Team Lead has it in their approval list');
 select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT')$$, 'a rejection needs a reason', 'reason');
-select test.check((ai_studio_report_review(test.hr('m1'), 'APPROVE') ->> 'status') = 'APPROVED', 'the Team Lead approves: final (20270306000100)');
+select test.check((ai_studio_report_review(test.hr('m1'), 'APPROVE') ->> 'status') = 'APPROVED', 'the Team Lead approves: final (20270308000100)');
 reset role;
 select test.check((test.hrow('m1')).tl_reviewed_by = test.id('ai_tl1') and (test.hrow('m1')).tl_reviewed_at is not null and (test.hrow('m1')).hr_sent_at is not null
                   and (test.hrow('m1')).hr_sent_revision = 1, 'the approver and the time are recorded, and it is sent to HR');
@@ -148,7 +148,7 @@ select test.login('ai_tm2a');
 select test.must_fail($$select ai_studio_daily_report_save(test.hr('m2x'), test.hd(-21), '{}'::uuid[], 'x', null, null, null, null, true, p_description => test.words(12))$$,
   'a rejected report cannot be resubmitted', 'already submitted');
 select test.login('ai_dh');
-select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT', 'Not needed today')$$, 'the Department Head no longer decides a report its Team Lead approved (20270306000100)', 'not waiting for your decision');
+select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'REJECT', 'Not needed today')$$, 'the Department Head no longer decides a report its Team Lead approved (20270308000100)', 'not waiting for your decision');
 
 \echo '   the Team Lead report'
 select test.login('ai_tl1');
@@ -180,7 +180,7 @@ select test.check((select exists (select 1 from jsonb_array_elements(j -> 'teams
 select test.check((select jsonb_array_length(j -> 'projects') > 0 from hp_v), 'projects with the people on them');
 select test.must_fail($$select ai_studio_hr_performance(test.hd(-200), test.hd(0))$$, 'a period of more than 93 days is refused', 'at most 93 days');
 
-\echo '   the Team Lead''s approval is final (20270306000100): the Department Head cannot send it back; a corrected revision is sent to HR once more'
+\echo '   the Team Lead''s approval is final (20270308000100): the Department Head cannot send it back; a corrected revision is sent to HR once more'
 select test.login('ai_dh');
 select test.must_fail($$select ai_studio_report_review(test.hr('m1'), 'RETURN', 'Please add the API work')$$, 'the Department Head cannot return a report the Team Lead approved', 'not waiting for your decision');
 select test.login('hrp_viewer');

@@ -433,7 +433,7 @@ export const routes: RouteDef[] = [
   { method: 'GET', path: '/ai-studio/hr-performance/access', handler: aiStudio.hrAccess },
   { method: 'POST', path: '/ai-studio/hr-performance/viewers', handler: aiStudio.setHrViewer, options: S },
   { method: 'GET', path: '/ai-studio/hr-performance', handler: aiStudio.hrPerformance },
-  // the AI Studio weekly report: Team Lead -> the Super Admin (20270306000100)
+  // the AI Studio weekly report: Team Lead -> the Super Admin (20270308000100)
   { method: 'GET', path: '/ai-studio/weekly-reports/week', handler: aiStudio.weeklyWeek },
   { method: 'POST', path: '/ai-studio/weekly-reports', handler: aiStudio.weeklySave, options: S },
   { method: 'GET', path: '/ai-studio/weekly-reports', handler: aiStudio.weeklyList },
@@ -501,7 +501,10 @@ export const routes: RouteDef[] = [
   { method: 'POST', path: '/crocodial/rollout', handler: crocodial.rolloutSet, options: S },
   { method: 'POST', path: '/crocodial/connections', handler: crocodial.connectionSave, options: S },
   { method: 'POST', path: '/crocodial/connections/:id/test', handler: crocodial.testConnection, options: S },
+  { method: 'POST', path: '/crocodial/connections/:id/key', handler: crocodial.saveKey, options: S },
+  { method: 'DELETE', path: '/crocodial/connections/:id/key', handler: crocodial.removeKey, options: S },
   { method: 'POST', path: '/crocodial/department-links', handler: crocodial.departmentLinkSave, options: S },
+  { method: 'GET', path: '/crocodial/connections/:id/mapping-candidates', handler: crocodial.mappingCandidates },
   { method: 'POST', path: '/crocodial/mappings/check', handler: crocodial.mappingCheck },
   { method: 'POST', path: '/crocodial/mappings', handler: crocodial.mappingCreate, options: S },
   { method: 'POST', path: '/crocodial/mappings/:id/approve', handler: crocodial.mappingApprove, options: S },

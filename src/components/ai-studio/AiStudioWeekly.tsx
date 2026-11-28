@@ -10,7 +10,7 @@ import { Card, ghostBtn, fieldCls, primaryBtn, textareaCls } from '../tasks/head
 import { TableWrap, dateText, dateTimeText, tdCls, thCls, todayIso, useLoad } from './ui';
 
 /**
- * AI Studio weekly report (20270306000100): a Team Lead writes one report per week about their team for the Super Admin, who receives it as AI Studio's
+ * AI Studio weekly report (20270308000100): a Team Lead writes one report per week about their team for the Super Admin, who receives it as AI Studio's
  * Department Head (Acknowledge, or Return for a revision). The figures (team-wise and project-wise) come from the database: the week's approved daily
  * reports and tasks, fixed when the report is submitted. HR and the Operations Head never receive it; the database refuses them.
  */

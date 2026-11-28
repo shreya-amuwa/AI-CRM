@@ -70,7 +70,7 @@ export const WeeklyDepartmentReport: React.FC<{ reloadKey: number }> = ({ reload
   const [assigned, setAssigned] = useState('');
   const [completed, setCompleted] = useState('');
   const [remarks, setRemarks] = useState('');
-  // (20270306000100) what is still pending, what the department achieved, what got in the way
+  // (20270308000100) what is still pending, what the department achieved, what got in the way
   const [pending, setPending] = useState('');
   const [achievements, setAchievements] = useState('');
   const [challenges, setChallenges] = useState('');

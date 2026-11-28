@@ -63,7 +63,7 @@ export const AiStudioWorkspace: React.FC<{ onExit: () => void }> = ({ onExit }) 
     { id: 'members', label: 'Team Members', icon: Users },
     { id: 'tasks', label: 'Tasks', icon: ListChecks },
     { id: 'reports', label: 'Daily Reports', icon: FileText, badge: awaiting },
-    // (20270306000100) the Team Leads' weekly team reports, received as AI Studio's Department Head
+    // (20270308000100) the Team Leads' weekly team reports, received as AI Studio's Department Head
     { id: 'weekly', label: 'Weekly Reports', icon: CalendarRange },
     { ...CHAT_NAV, badge: chatUnread },
     { id: 'notifications', label: 'Notification Center', icon: Bell, badge: unreadCount }

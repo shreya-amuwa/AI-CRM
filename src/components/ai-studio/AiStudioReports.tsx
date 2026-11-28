@@ -317,7 +317,7 @@ export const ReportList: React.FC<{
     view === 'department'
       ? [{ id: 'PENDING_DH_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'With Team Leads', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 }, { id: '', label: 'All' }]
       : view === 'team'
-      // (20270306000100) the Team Lead's approval is final: Approved · sent to HR (reports approved before then may still read Pending Department Head)
+      // (20270308000100) the Team Lead's approval is final: Approved · sent to HR (reports approved before then may still read Pending Department Head)
       ? [{ id: 'PENDING_TL_APPROVAL', label: 'Awaiting my approval', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved · sent to HR', count: (counts.APPROVED ?? 0) + (counts.PENDING_DH_APPROVAL ?? 0) },
          { id: 'RETURNED_BY_TL', label: 'Returned', count: counts.RETURNED_BY_TL ?? 0 }, { id: 'REJECTED_BY_TL', label: 'Rejected', count: counts.REJECTED_BY_TL ?? 0 }, { id: '', label: 'All' }]
       : [{ id: '', label: 'All' }, { id: 'DRAFT', label: 'Drafts', count: counts.DRAFT ?? 0 }, { id: 'PENDING_TL_APPROVAL', label: 'Pending Team Lead', count: counts.PENDING_TL_APPROVAL ?? 0 }, { id: 'PENDING_DH_APPROVAL', label: 'Pending Department Head', count: counts.PENDING_DH_APPROVAL ?? 0 }, { id: 'APPROVED', label: 'Approved', count: counts.APPROVED ?? 0 },

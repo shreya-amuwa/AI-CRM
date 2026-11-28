@@ -1,6 +1,6 @@
 # Daily and weekly reporting hierarchy
 
-Migration `supabase/migrations/20270306000100_report_hierarchy.sql` (additive, safe to run twice). It builds on the existing modules; no separate
+Migration `supabase/migrations/20270308000100_report_hierarchy.sql` (additive, safe to run twice). It builds on the existing modules; no separate
 reporting system was added: the hierarchical work reports (`docs/WORK_REPORTS.md`, `docs/COMPANY_REPORTING.md`) for every department, and AI Studio's own
 daily reports (`docs/AI_STUDIO_DAILY_REPORTS.md`, `docs/AI_STUDIO_HR_PERFORMANCE.md`).
 
@@ -63,7 +63,7 @@ Head scope (so the Super Admin's routing review no longer lists it as "missing a
 
 ## Deploying
 
-Run `20270306000100_report_hierarchy.sql` in the Supabase SQL editor, then deploy the app. Before the migration the app works as before, except the new
+Run `20270308000100_report_hierarchy.sql` in the Supabase SQL editor, then deploy the app. Before the migration the app works as before, except the new
 AI Studio weekly pages answer with an error and the three new weekly fields are not saved.
 
 ## Tests

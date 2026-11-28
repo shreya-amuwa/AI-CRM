@@ -1,5 +1,5 @@
 -- =============================================================================
--- Daily and weekly reporting hierarchy (docs/REPORTING_HIERARCHY.md). Run after 20270305000100_lead_tags.sql. Additive and safe to run twice; no temp
+-- Daily and weekly reporting hierarchy (docs/REPORTING_HIERARCHY.md). Run after 20270307000100_crocodial_ceo_connections.sql. Additive and safe to run twice; no temp
 -- tables; no report, approval or history row is deleted; no column changes meaning.
 --
 --                                    DAILY                                              WEEKLY
@@ -22,7 +22,7 @@
 -- ---------------------------------------------------------------------------
 -- 1. AI Studio daily: the Team Lead's approval is final
 -- ---------------------------------------------------------------------------
--- (copy of 20270302000100; changed where marked 20270306000100)
+-- (copy of 20270302000100; changed where marked 20270308000100)
 create or replace function public.ai_studio_report_review(p_report uuid, p_decision text, p_comment text default null)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
@@ -60,7 +60,7 @@ begin
   if v_from = 'PENDING_TL_APPROVAL' then
     v_stage := 'TEAM_LEAD';
     update public.ai_studio_daily_reports
-       -- (20270306000100) the Team Lead's approval is final for a Team Member's report: Approved, and sent to HR (the trigger)
+       -- (20270308000100) the Team Lead's approval is final for a Team Member's report: Approved, and sent to HR (the trigger)
        set status = case p_decision when 'APPROVE' then 'APPROVED' when 'REJECT' then 'REJECTED_BY_TL' else 'RETURNED_BY_TL' end,
            lead_id = v_me, lead_name = v_name, tl_reviewed_by = v_me, tl_reviewed_at = now(), tl_comment = v_comment,
            approved_at = case when p_decision = 'APPROVE' then now() else approved_at end
@@ -87,7 +87,7 @@ begin
     perform private.notify(r.author_id, 'AI_STUDIO_REPORT_REJECTED', 'Your Team Lead rejected your daily report',
       format('%s · %s: %s', coalesce(pr_name, 'Daily report'), to_char(r.report_date, 'DD Mon YYYY'), v_comment), 'ai_studio_report', r.id);
   elsif v_stage = 'TEAM_LEAD' and p_decision = 'APPROVE' then
-    -- (20270306000100) final: no Department Head step follows; the report has gone to HR
+    -- (20270308000100) final: no Department Head step follows; the report has gone to HR
     perform private.notify(r.author_id, 'AI_STUDIO_REPORT_TL_APPROVED', 'Your daily report was approved by your Team Lead',
       format('%s · %s. Approved and sent to HR.', coalesce(pr_name, 'Daily report'), to_char(r.report_date, 'DD Mon YYYY')), 'ai_studio_report', r.id);
   elsif v_stage = 'TEAM_LEAD' then
@@ -403,7 +403,7 @@ returns table (department_id uuid, division text) language sql stable security d
     cross join lateral private.scopes_of(h.id) s
     cross join lateral private.weekly_scope_options(s.department_id, s.division) o
    where h.role = 'DEPARTMENT_HEAD' and not h.is_operations_head and h.status = 'ACTIVE'
-     and s.department_id is distinct from private.ai_studio_department()   -- (20270306000100)
+     and s.department_id is distinct from private.ai_studio_department()   -- (20270308000100)
 $$;
 revoke all on function private.weekly_scopes() from public, anon, authenticated;
 
@@ -451,7 +451,7 @@ returns jsonb language sql stable security definer set search_path = '' as $$
 $$;
 revoke all on function private.package_json(public.work_report_packages) from public, anon, authenticated;
 
--- the save (copy of 20270217000100; adds the three parts and refuses AI Studio, marked 20270306000100) as a ten-argument function WITHOUT defaults, so no
+-- the save (copy of 20270217000100; adds the three parts and refuses AI Studio, marked 20270308000100) as a ten-argument function WITHOUT defaults, so no
 -- call can be ambiguous; the seven-argument version stays as a wrapper below (the earlier six-argument wrapper keeps calling it).
 create or replace function public.work_report_weekly_save(
   p_week_start date, p_title text, p_assigned_overview text, p_completed_overview text, p_remarks text, p_submit boolean,
@@ -488,7 +488,7 @@ begin
   end if;
   select * into me from public.profiles where id = auth.uid();
   select s.department_id, s.division into v_dept, v_div from private.my_weekly_scope(p_division) s;
-  -- (20270306000100) AI Studio is not in the Department Head -> Operations Head cycle: its Team Leads report to the Super Admin
+  -- (20270308000100) AI Studio is not in the Department Head -> Operations Head cycle: its Team Leads report to the Super Admin
   if v_dept is not distinct from private.ai_studio_department() then
     raise exception 'FORBIDDEN: AI Studio weekly reports are written by its Team Leads for the Super Admin, not sent to an Operations Head.' using errcode = '42501';
   end if;

@@ -1,5 +1,5 @@
 -- =============================================================================
--- Daily and weekly reporting hierarchy (migration 20270306000100).
+-- Daily and weekly reporting hierarchy (migration 20270308000100).
 --   every department but AI Studio: daily Team Member -> Team Lead -> Department Head; weekly Department Head -> Operations Head
 --   AI Studio: daily Team Member -> Team Lead -> HR (the named viewers); weekly Team Lead -> the Super Admin (AI Studio's Department Head)
 -- Runs last. Reuses: AI Studio ai_tl1 (Team Lead of ai_tm1a / ai_tm1b), ai_tl2 (Team Lead of ai_tm2a), ai_dh, sa; HR hrp_viewer (named viewer, from
@@ -11,8 +11,8 @@
 \echo '--- 210. Reporting hierarchy: AI Studio daily to HR, AI Studio weekly to the Super Admin, the rest unchanged'
 reset role;
 select set_config('request.jwt.claims', '', false);
-\i supabase/migrations/20270306000100_report_hierarchy.sql
-\i supabase/migrations/20270306000100_report_hierarchy.sql
+\i supabase/migrations/20270308000100_report_hierarchy.sql
+\i supabase/migrations/20270308000100_report_hierarchy.sql
 
 create or replace function test.rh_week() returns date language sql stable as $$ select date_trunc('week', private.ai_studio_today())::date - 7 $$;
 create or replace function test.rh_notes(p_person text, p_type text, p_entity uuid) returns bigint language sql stable security definer set search_path = '' as $$
@@ -96,7 +96,7 @@ insert into ai_studio_daily_reports (project_id, author_id, author_name, author_
 values (null, test.id('ai_tm1b'), 'AI Member 1B', 'MEMBER', test.rh_week() + 2, 'PENDING_DH_APPROVAL', 'Old flow report', 'An older report approved by the Team Lead and waiting for the Department Head here.',
         test.id('ai_tl1'), test.id('ai_tl1'), now() - interval '2 days', now() - interval '3 days', false)
 returning id \gset old_
-\i supabase/migrations/20270306000100_report_hierarchy.sql
+\i supabase/migrations/20270308000100_report_hierarchy.sql
 select test.check((select status = 'APPROVED' and approved_at = tl_reviewed_at from ai_studio_daily_reports where id = :'old_id'), 'it is Approved at the Team Lead''s time; nothing is deleted');
 
 -- ---------------------------------------------------------------------------

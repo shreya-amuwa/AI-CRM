@@ -1,5 +1,5 @@
 /**
- * Reporting hierarchy (20270306000100) without a database: the shared schemas of the AI Studio weekly report (Team Lead -> the Super Admin) and the extra
+ * Reporting hierarchy (20270308000100) without a database: the shared schemas of the AI Studio weekly report (Team Lead -> the Super Admin) and the extra
  * parts of the weekly department report. Who may write, read and review is decided by the database (report_hierarchy_test.sql).
  */
 import { readFileSync } from 'node:fs';
@@ -25,7 +25,7 @@ check(aiStudioWeeklyReviewSchema.safeParse({ decision: 'ACKNOWLEDGE' }).success 
 check(aiStudioWeeklyListQuerySchema.safeParse({}).success && !aiStudioWeeklyListQuerySchema.safeParse({ status: 'APPROVED' }).success, 'the list filters by week and known statuses');
 check(reportWeeklySaveSchema.safeParse({ weekStart: monday, title: 'Week', pendingOverview: 'Two escalations', achievements: 'Faster replies', challenges: 'One agent away', submit: false }).success,
   'the weekly department report takes pending work, achievements and challenges');
-const mig = readFileSync('supabase/migrations/20270306000100_report_hierarchy.sql', 'utf8');
+const mig = readFileSync('supabase/migrations/20270308000100_report_hierarchy.sql', 'utf8');
 check(!/simran/i.test(mig.replace(/--.*$/gm, '')), 'no person is named in the database code (HR viewers are chosen by the Super Admin)');
 check(/private\.ai_studio_department\(\)/.test(mig) && /ai_studio_weekly_receiver_ids/.test(mig), 'AI Studio is found from the department, and the weekly report goes to the Super Admins');
 console.log(`\n${passed} checks passed`);

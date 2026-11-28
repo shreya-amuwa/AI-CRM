@@ -74,7 +74,7 @@ const apiScript = (admin) => {
       return json(access());
     }
     if (p === '/ai-studio/hr-performance') return json(perf);
-    // the AI Studio weekly report (20270306000100)
+    // the AI Studio weekly report (20270308000100)
     const stats = { weekStart: day, weekEnd: day, team: "Asha Lead's team", members: [{ id: 'l1', name: 'Asha Lead', isLead: true, reportsSubmitted: 3, reportsApproved: 0, tasksCompleted: 1, tasksPending: 0, tasksOverdue: 0 },
       { id: 'm1', name: 'Ravi Member', isLead: false, reportsSubmitted: 5, reportsApproved: 4, tasksCompleted: 3, tasksPending: 1, tasksOverdue: 0 }],
       projects: [{ id: 'p1', name: 'AI CRM', tasksCompleted: 4, tasksPending: 1, people: 2 }], totals: { members: 1, reportsSubmitted: 8, reportsApproved: 4, tasksCompleted: 4, tasksPending: 1, projects: 1 } };
@@ -134,7 +134,7 @@ try {
   check(/QR studio/.test(await page.innerText('[data-testid="hr-project-history"]')) || (await page.locator('[data-testid="hr-project-history"] [data-testid="hr-member-report"]').count()) === 1, 'Project-wise: the project\'s history');
   await page.close();
 
-  // ---- (20270306000100) Simran's side-panel section is "Daily Reports – AI Studio"
+  // ---- (20270308000100) Simran's side-panel section is "Daily Reports – AI Studio"
   page = await open('mountHr');
   await page.waitForSelector('[data-testid="ai-studio-hr-performance"]');
   check(await page.getByRole('heading', { name: 'Daily Reports – AI Studio' }).isVisible() && /Team Member → Team Lead → HR/.test(await page.innerText('[data-testid="ai-studio-hr-performance"]')),

@@ -362,7 +362,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ...(user?.profile?.hrSubRole !== 'HR_RECRUITER' ? [{ id: 'hr_recharge_calls' as ActiveTab, label: 'Recharge Reminder Calls', icon: PhoneCall }] : []),
     // weekly department reports approved by the Operations Head: individual reviews and the consolidated report (the Super Admin has her own page)
     ...(user?.role !== 'superadmin' ? [{ id: 'hr_reviews' as ActiveTab, label: 'Performance Reviews', icon: ClipboardCheck }] : []),
-    // (20270306000100) its own side-panel entry: only the HR employees the Super Admin named (e.g. Simran Kumari) and the Super Admin
+    // (20270308000100) its own side-panel entry: only the HR employees the Super Admin named (e.g. Simran Kumari) and the Super Admin
     ...(aiStudioHrAccess ? [{ id: 'hr_ai_studio_performance' as ActiveTab, label: 'Daily Reports – AI Studio', icon: BarChart3 }] : []),
     ...(canSendClientNotices ? [{ id: 'client_notices' as ActiveTab, label: 'Client Notices', icon: Megaphone }] : []),
     // Employee Letters (own section below): generated from the HR record and stored per employee; the database refuses HR Recruiters

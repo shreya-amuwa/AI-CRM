@@ -36,7 +36,7 @@ export const AiStudioHrPerformance: React.FC = () => {
   const d = data.data;
   return (
     <section className="space-y-5" aria-label="Daily Reports – AI Studio" data-testid="ai-studio-hr-performance">
-      {/* (20270306000100) AI Studio's daily reports go Team Member -> Team Lead -> HR: the Team Lead's approval is final and the report arrives here */}
+      {/* (20270308000100) AI Studio's daily reports go Team Member -> Team Lead -> HR: the Team Lead's approval is final and the report arrives here */}
       <HrPageHeader as="h2" icon={BarChart3} title="Daily Reports – AI Studio"
         subtitle="AI Studio daily reports go Team Member → Team Lead → HR. The reports the Team Leads approved, and the Team Leads' own reports: employee-wise, team-wise and project-wise, with the Team Lead's approval." />
       {access.data?.canManage && <AccessManager access={access.data} onChanged={access.reload} />}
