@@ -13594,8 +13594,14 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   const rcmId = await mkUser('rcm', 'TEAM_MEMBER', support.id);
   const rcm2Id = await mkUser('rcm2', 'TEAM_MEMBER', support.id);
   await mkUser('rcl', 'TEAM_HEAD', support.id);
-  const cust = async (owner: string, name: string, phone: string) =>
-    (await db.query(`insert into public.customers (owner_id, name, company, phone, lifecycle_stage) values ($1, $2, $2, $3, 'CUSTOMER') returning id`, [owner, name, phone])).rows[0].id as string;
+  // a fresh connection with no login on it: earlier blocks leave a session login on pooled connections, and a customer insert with a login is checked as that person's assignment
+  const cust = async (owner: string, name: string, phone: string) => {
+    const c = await db.connect();
+    try {
+      await c.query(`select set_config('request.jwt.claims', '', false)`);
+      return (await c.query(`insert into public.customers (owner_id, name, company, phone, lifecycle_stage) values ($1, $2, $2, $3, 'CUSTOMER') returning id`, [owner, name, phone])).rows[0].id as string;
+    } finally { c.release(); }
+  };
   const c1 = await cust(rcmId, 'RCX Alpha Traders', '+919810000711');
   const c2 = await cust(rcm2Id, 'RCX Beta Stores', '+919810000712');
   const png = Buffer.concat([Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a5f645400000000049454e44ae426082', 'hex'), Buffer.alloc(600, 0)]);
