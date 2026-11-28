@@ -596,6 +596,35 @@ yet (phase 2). When they are built, they will read calls and demos only through 
   re-read (which marks records Crocodial no longer returns as missing) happens when the Super Admin presses **Sync now**.
 - To check: `crocodial_sync_runs` (one row per list per run: pages, rows, full or not) and Supabase → Reports → Disk IO.
 
+## CEOs connect their own departments (migration `20270307000100_crocodial_ceo_connections.sql`)
+
+A CEO no longer needs the Managing Director to connect Crocodial. On the Crocodial Integration page a CEO can connect Crocodial for the departments they run, paste the key, and switch it on.
+
+**Who can do what**
+
+- A CEO sees and changes only the connections that serve a department they run. They never see the rollout table or other departments' connections.
+- A CEO runs the Sales side of every department linked to their connection: linking it, switching it on or off, and mapping people.
+- The Managing Director sees every connection. The page shows who manages each one ("Managed by": the CEO names, or "Managing Director only") and where its key comes from.
+
+**The key**
+
+- The CEO pastes the Crocodial key into a password field. The server tests it with one live read, and only if that works does it save it.
+- The key is encrypted with `AUTOMATION_SECRET_KEY` before it is stored. Only the last 4 characters are ever shown ("Stored (•••• 1a2b)"). It is not shown again, not written to logs, and not sent back to the browser.
+- The same Crocodial account cannot be connected twice. The second attempt is refused with "This Crocodial account is already connected".
+- "Replace key" tests and swaps the key. "Disconnect" removes the key and switches the connection off.
+
+**The Managing Director's switch-off**
+
+The Managing Director can switch off any connection or department link. A CEO cannot switch it back on: they see "Switched off by the Managing Director. Ask the Managing Director to switch it back on." The Managing Director sees "Switched off by you". When the Managing Director switches it on again, the CEO can use it as before.
+
+**If `AUTOMATION_SECRET_KEY` changes**
+
+Stored keys can only be read with the `AUTOMATION_SECRET_KEY` they were saved with. If it is changed (rotated), every stored key becomes unreadable. Those connections show "Key needs to be entered again", and each key must be pasted in again. Plan a rotation for a quiet time and tell the CEOs.
+
+**M Pillar is unchanged**
+
+The M Pillar connection still uses its server setting (the `credential_ref` Worker secret) and keeps working. It shows "Server setting". The Managing Director can optionally paste M Pillar's key on the page to move it into the database; nothing requires it.
+
 ## Migration to run (Supabase SQL editor)
 
 - `supabase/migrations/20270115000100_crocodial_integration.sql`, then `20270115000200_crocodial_sync.sql`, then `20270115000300_crocodial_activity.sql`, then `20270115000400_crocodial_team_activity.sql`, then `20270115000500_crocodial_sync_now_minute.sql`, then `20270116000300_crocodial_count_from.sql`, then `20270116000400_crocodial_leads.sql`, then `20270117000200_crocodial_field_alignment.sql`, then `20270127000100_crocodial_sync_quiet.sql`, then `20270204000100_crocodial_scoped_refresh.sql`, then `20270303000100_sales_ceo_lead_assignment.sql`, then `20270304000100_crocodial_crm_lead_links.sql`

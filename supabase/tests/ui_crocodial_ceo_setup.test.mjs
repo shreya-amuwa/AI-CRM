@@ -69,7 +69,7 @@ function api(req, res, body) {
   const o = state.o;
   // the MD-only reads: a CEO's page must not depend on them (the real server refuses a CEO)
   if (state.md && p === '/crocodial/sync') return ok(res, []);
-  if (state.md && p === '/crocodial/connection-health') return ok(res, { connections: [], departments: [], items: [] });
+  if (state.md && p === '/crocodial/connection-health') return ok(res, { server: { runtime: 'cloudflare:production', platform: 'cloudflare', environment: 'production', deployment: 'v-42', host: 'crm.example.com' }, connections: [] });
   if (p === '/crocodial/sync' || p === '/crocodial/connection-health' || p === '/crocodial/rollout') return fail(res, 403, 'FORBIDDEN', 'Only the Super Admin can do this.');
   if (p === '/crocodial/admin') return ok(res, o);
   if (p === '/crocodial/connections' && req.method === 'POST') {

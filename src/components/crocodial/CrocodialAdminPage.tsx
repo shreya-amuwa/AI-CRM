@@ -356,9 +356,14 @@ export const CrocodialAdminPage: React.FC<{ scope?: 'MD' | 'CEO' }> = ({ scope =
                   <div className="text-sm min-w-0 break-words">
                     <p className="font-semibold text-slate-900">{c.name} {c.externalAccountLabel ? <span className="text-slate-500 font-normal">· {c.externalAccountLabel}</span> : null}</p>
                     {isMd && c.credentialRef ? <p className="text-xs text-slate-500 font-mono break-all">{c.credentialRef} {c.credentialConfigured ? <span className="text-emerald-700">(set on this server)</span> : <span className="text-amber-700">(not set on this server: see Connection health)</span>}</p> : null}
-                    {isMd ? <p className="text-xs text-slate-500">Managed by: {c.managedBy?.length ? c.managedBy.map(m => m.name).join(', ') : 'the Managing Director only'}</p> : null}
+                    {isMd ? (
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-slate-600">
+                        <p data-testid="croc-managed-by">Managed by: {c.managedBy?.length ? c.managedBy.map(m => m.name).join(', ') : 'Managing Director only'}</p>
+                        <p data-testid="croc-key-source">Key: {c.keySource === 'DATABASE' ? `Stored (•••• ${c.keyLast4 ?? '????'})` : (c.keySource === 'SERVER_SETTING' || (!c.keySource && c.credentialRef)) ? 'Server setting' : 'No key'}</p>
+                      </div>
+                    ) : null}
                     {mdOff && !isMd ? <p className="text-xs text-amber-800" role="status">{MD_OFF}</p> : null}
-                    {mdOff && isMd ? <p className="text-xs text-slate-500">Switched off by the Managing Director: a CEO cannot switch it back on.</p> : null}
+                    {mdOff && isMd && !c.enabled ? <p className="text-xs text-slate-500">Switched off by you. A CEO cannot switch it back on.</p> : null}
                     <p className="text-xs text-slate-500">Last test / sync: {when(c.lastAttemptAt)} · last success: {when(c.lastSuccessAt)}{c.timezone ? ` · ${c.timezone}` : ''}</p>
                     {c.lastError ? <p className="text-xs text-rose-700">{c.health === 'NO_CREDENTIAL' && c.credentialConfigured ? `Recorded ${when(c.lastAttemptAt)} (this server has the token now; Test connection clears it): ` : ''}{c.lastError}</p> : null}
                   </div>
@@ -392,7 +397,8 @@ export const CrocodialAdminPage: React.FC<{ scope?: 'MD' | 'CEO' }> = ({ scope =
                   return (
                     <div key={r.departmentId} className="flex flex-wrap items-center justify-between gap-2 text-sm" data-testid="croc-link">
                       <span className="min-w-0">{r.departmentName} · Sales {l ? <Pill tone={l.enabled ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-700'}>{l.enabled ? `On · ${l.stage === 'PILOT' ? 'pilot' : 'production'}` : 'Linked, off'}</Pill> : <Pill tone="bg-slate-100 text-slate-700">Not linked</Pill>}
-                        {linkMdOff && !l?.enabled && !isMd ? <span className="block text-xs text-amber-800">{MD_OFF}</span> : null}</span>
+                        {linkMdOff && !l?.enabled && !isMd ? <span className="block text-xs text-amber-800">{MD_OFF}</span> : null}
+                        {linkMdOff && !l?.enabled && isMd ? <span className="block text-xs text-slate-500">Switched off by you</span> : null}</span>
                       {isMd || !linkMdOff || l?.enabled ? <button type="button" className={btn.secondary} disabled={busy !== null}
                         onClick={() => void run(`l-${c.id}-${r.departmentId}`, () => crocodialApi.saveDepartmentLink({ connectionId: c.id, departmentId: r.departmentId, division: 'SALES', enabled: l ? !l.enabled : false, stage: l?.stage ?? 'PILOT' }), undefined, c.id)}>
                         {!l ? 'Link (stays off)' : l.enabled ? 'Switch off' : 'Switch on'}
