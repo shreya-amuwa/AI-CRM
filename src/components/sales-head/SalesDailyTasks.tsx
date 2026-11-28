@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus, Search } from 'lucide-react';
 import { SALES_TASK_FILTERS, type SalesTaskAssignee, type SalesTaskFilter, type SalesTaskList, type SalesTaskRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 import { salesHeadApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
 import { Avatar, Card, Tabs } from '../tasks/head/headParts';
@@ -31,7 +33,6 @@ export const SalesDailyTasks: React.FC<{ initialFilter?: string }> = ({ initialF
   const [error, setError] = useState<string | null>(null);
   const [leads, setLeads] = useState<SalesTaskAssignee[]>([]);
   const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setPage(1), [filter, query, assignee, pageSize]);
   useEffect(() => {
@@ -58,7 +59,6 @@ export const SalesDailyTasks: React.FC<{ initialFilter?: string }> = ({ initialF
         actions={<button type="button" className={tcBtn.primary} onClick={() => setCreating(true)}><Plus className="w-4 h-4" aria-hidden="true" /> New task</button>}
       />
       {error && <ErrorBanner message={error} onRetry={load} />}
-      {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
 
       <Tabs label="Task filter" value={filter} onChange={setFilter} options={SALES_TASK_FILTERS.map(f => ({ id: f, label: FILTER_LABEL[f], count: counts ? counts[COUNT_KEY[f]] : undefined }))} />
 
@@ -123,8 +123,7 @@ export const SalesDailyTasks: React.FC<{ initialFilter?: string }> = ({ initialF
           onClose={() => setCreating(false)}
           onDone={name => {
             setCreating(false);
-            setNotice(`The task was given to ${name}.`);
-            setTimeout(() => setNotice(null), 5000);
+            toast.success(`Task assigned successfully to ${name}.`);
             setPage(1);
             load();
           }}
@@ -151,7 +150,7 @@ const NewTask: React.FC<{ leads: SalesTaskAssignee[]; onClose: () => void; onDon
       await salesHeadApi.createTask({ assigneeId: who, title: title.trim(), description: description.trim() || null, priority, dueDate: due || null });
       onDone(leads.find(l => l.id === who)?.name ?? 'the Team Lead');
     } catch (err) {
-      setError(errorMessage(err));
+      setError(userMessage(err, 'The task could not be created. Please try again.'));
       setBusy(false);
     }
   };

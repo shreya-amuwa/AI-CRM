@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownUp, Eye, MapPinned, Search, UserCheck } from 'lucide-react';
 import { SALES_LEAD_FILTERS, type SalesTeamPerson, type SalesLeadDetail, type SalesLeadFilter, type SalesLeadList, type SalesLeadRow } from '../../../shared/contracts';
 import { errorMessage } from '../../lib/api/client';
+import { toast } from '../feedback/AppFeedback';
+import { userMessage } from '../../lib/feedback/errors';
 import { salesHeadApi } from '../../lib/api/endpoints';
 import { PageTitle } from '../layout/shell';
 import { Avatar, Card, Tabs } from '../tasks/head/headParts';
@@ -49,7 +51,6 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
   const [detail, setDetail] = useState<{ id: string; lead: SalesLeadDetail | null; error?: string } | null>(null);
   const [assigning, setAssigning] = useState<SalesLeadRow | null>(null);
   const [visitFor, setVisitFor] = useState<SalesLeadRow | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setPage(1), [filter, query, assignee, sort, dir, pageSize]);
   useEffect(() => {
@@ -81,7 +82,6 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
     <div className="space-y-5">
       <PageTitle title="Lead List" subtitle="Every lead of the Sales teams: who owns it, how warm it is and when it was last followed up." />
       {error && <ErrorBanner message={error} onRetry={load} />}
-      {notice && <div role="status" className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-medium">{notice}</div>}
 
       <Tabs
         label="Lead filter"
@@ -191,8 +191,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
           onClose={() => setVisitFor(null)}
           onDone={message => {
             setVisitFor(null);
-            setNotice(message);
-            setTimeout(() => setNotice(null), 5000);
+            toast.success(message);
           }}
         />
       )}
@@ -203,8 +202,7 @@ export const LeadList: React.FC<{ initialFilter?: string; go: SalesHeadNavigate 
           onClose={() => setAssigning(null)}
           onDone={name => {
             setAssigning(null);
-            setNotice(`${assigning.name} was assigned to ${name}.`);
-            setTimeout(() => setNotice(null), 5000);
+            toast.success(`Lead assigned successfully: ${assigning.name} is now with ${name}.`);
             load();
           }}
         />
@@ -265,7 +263,8 @@ const AssignInbound: React.FC<{ lead: SalesLeadRow; people: SalesTeamPerson[]; o
       const r = await salesHeadApi.assignInbound(lead.id, who);
       onDone(r.assignee);
     } catch (e) {
-      setError(errorMessage(e));
+      // shown inside the dialog, so the person can choose someone else and try again (never raw server text)
+      setError(userMessage(e, 'The lead could not be assigned. Please try again.'));
       setBusy(false);
     }
   };
