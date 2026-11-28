@@ -1,4 +1,4 @@
-// Browser test of Recharges (20270228000200, 20270306000100) at desktop and phone width: Support's Panel / Message tabs (separate records, summaries, filters),
+// Browser test of Recharges (20270228000200, 20270308000100) at desktop and phone width: Support's Panel / Message tabs (separate records, summaries, filters),
 // the customer picker that shows the Relationship Manager (never lets anyone choose it), GST / Non-GST and the total, the screenshot checks, the double click,
 // editing, the status timeline, the RM performance tab, and Accounts' Recharge verification page (queues, "payment received" with the amount seen, not received,
 // reject, correcting the billing details). The server is a stand-in with synthetic data that follows the database's rules; the real rules are tested in

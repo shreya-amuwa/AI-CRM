@@ -35,8 +35,9 @@ export interface LeadTagsPageProps {
   canCompanyWide: boolean;
 }
 
-const TagForm: React.FC<{ tag: LeadTag | null; departments: { id: string; name: string }[]; canCompanyWide: boolean; onClose: () => void; onSaved: () => void }> = ({ tag, departments, canCompanyWide, onClose, onSaved }) => {
-  const [label, setLabel] = useState(tag?.label ?? '');
+/** The tag form; `initialLabel` pre-fills a new tag (e.g. from a Crocodial status), `submitLabel` names the save button, `onSaved` gets the saved tag. */
+export const TagForm: React.FC<{ tag: LeadTag | null; departments: { id: string; name: string }[]; canCompanyWide: boolean; initialLabel?: string; submitLabel?: string; onClose: () => void; onSaved: (saved: LeadTag) => void | Promise<void> }> = ({ tag, departments, canCompanyWide, initialLabel, submitLabel, onClose, onSaved }) => {
+  const [label, setLabel] = useState(tag?.label ?? initialLabel ?? '');
   const [colour, setColour] = useState<LeadTagColour>(tag?.colour ?? 'slate');
   const [stage, setStage] = useState<LeadStatus>(tag?.stage ?? 'NEW');
   const [deptIds, setDeptIds] = useState<string[]>(tag ? tag.departmentIds : (!canCompanyWide ? departments.map(d => d.id) : []));
@@ -53,8 +54,8 @@ const TagForm: React.FC<{ tag: LeadTag | null; departments: { id: string; name: 
     setBusy(true);
     setError('');
     try {
-      await leadTagsApi.save({ ...(tag ? { id: tag.id } : {}), label: label.trim(), colour, stage, departmentIds: deptIds });
-      onSaved();
+      const saved = await leadTagsApi.save({ ...(tag ? { id: tag.id } : {}), label: label.trim(), colour, stage, departmentIds: deptIds });
+      await onSaved(saved);
     } catch (err) {
       setError(errText(err));
       setBusy(false);
@@ -94,7 +95,7 @@ const TagForm: React.FC<{ tag: LeadTag | null; departments: { id: string; name: 
         {error && <ErrorBanner message={error} />}
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" className={btn.secondary} onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Saving…' : 'Save tag'}</button>
+          <button type="submit" className={btn.primary} disabled={busy}>{busy ? 'Saving…' : (submitLabel ?? 'Save tag')}</button>
         </div>
       </form>
     </Card>
