@@ -11032,6 +11032,11 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   // ---- daily reports
   r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, status: 'APPROVED' });
   check(r.status === 422, 'AI Design Studio: a report cannot set its own status', r);
+  // (20270308000100) Work Completed / Work Pending / Additional Note: optional, at least one, with word limits
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { clientId, clientRequestId: 'ads-empty' });
+  check(r.status === 422 && /Write the work completed/.test(r.json.error?.message ?? ''), 'AI Design Studio: an empty report is refused', r);
+  r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { pendingWork: Array.from({ length: 101 }, (_, i) => `w${i}`).join(' '), clientId, clientRequestId: 'ads-long' });
+  check(r.status === 422 && /at most 100 words/.test(r.json.error?.message ?? ''), 'AI Design Studio: Work Pending over 100 words is refused', r);
   r = await api('ads_m1', 'POST', '/ai-design-studio/reports', { workCompleted: 'Three logos drafted', clientId, clientRequestId: 'ads-r1' });
   check(r.status === 201 && r.json.data.status === 'PENDING_TL', 'AI Design Studio: a member\'s report waits for their Team Lead', r);
   const repId = r.json.data.id as string;
@@ -11257,12 +11262,12 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   check(q.status === 422, 'AI Studio daily report: another member cannot pull this task into their report', q);
   q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, completionNote: 'copy' });
   check(q.status === 422, 'AI Studio daily report: no task text can be sent with the report', q);
-  // (20270302000100) submitting needs a Daily Work Description of 10-150 words
+  // (20270308000100) the three fields' word limits (Work Completed 150, Work Pending 100, Additional Note 50); the description is optional
   const aiDesc = 'Finished the onboarding task, merged the pull request and updated the project documentation today.';
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: 'Too short' });
-  check(q.status === 422 && /at least 10 words/.test(q.json.error.message), 'AI Studio daily report: a description of fewer than 10 words is refused', q);
-  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' ') });
-  check(q.status === 422 && /at most 150 words/.test(q.json.error.message), 'AI Studio daily report: a description of more than 150 words is refused', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, pendingWork: Array.from({ length: 101 }, (_, i) => `w${i}`).join(' ') });
+  check(q.status === 422 && /at most 100 words/.test(q.json.error.message), 'AI Studio daily report: Work Pending over 100 words is refused', q);
+  q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, remarks: Array.from({ length: 51 }, (_, i) => `w${i}`).join(' ') });
+  check(q.status === 422 && /at most 50 words/.test(q.json.error.message), 'AI Studio daily report: an Additional Note over 50 words is refused', q);
   q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: [dailyUpdates[0]], workDescription: aiDesc });
   check(q.status === 409, 'AI Studio daily report: a report the author did not see in full is not submitted', q);
   q = await api('aim1', 'POST', '/ai-studio/daily-reports', { reportDate: aiToday, taskIds: [task1], tomorrowPlan: 'Docs', submit: true, expectedUpdateIds: dailyUpdates, workDescription: aiDesc });
@@ -13055,14 +13060,19 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
   try {
     let r = await api('plpMem', 'GET', `/performance-approval/overview${q}`);
     check(r.status === 403, 'every department: a Team Member has no performance view (403)', r);
+    // (20270308000100) three optional fields with word limits: an empty report and a field over its limit are refused (the API and the database)
+    r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today });
+    check(r.status === 422 && /Write the work completed/.test(r.json.error?.message ?? ''), 'every department: an empty daily report is refused (422)', r);
+    r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' ') });
+    check(r.status === 422 && /at most 150 words/.test(r.json.error?.message ?? ''), 'every department: Work Completed over 150 words is refused (422)', r);
     r = await api('plpMem', 'POST', '/task-reports', { taskId: task.id, reportDate: today, workCompleted: 'Prepared the first draft of the renewal list', progress: 40, pendingWork: 'The rest of the list' });
-    check(r.status === 201 && r.json.data.status === 'PENDING', 'every department: the member submits a daily report', r);
+    check(r.status === 201 && r.json.data.status === 'PENDING', 'every department: the member submits a daily report (an older client may still send progress)', r);
     const reportId = r.json.data.id;
     const edit = { workCompleted: 'Prepared and checked the first draft of the renewal list', progress: 50, pendingWork: 'The rest of the list', reason: 'Progress checked against the sheet' };
     r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, reason: '' });
     check(r.status === 422 && r.json.error?.code === 'VALIDATION_ERROR', 'every department: a Team Lead\'s edit needs a reason (422)', r);
-    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, progress: 60, pendingWork: undefined });
-    check(r.status === 422 && /still pending/.test(r.json.error?.message ?? ''), 'every department: the member\'s rules apply to the edit (pending work below 100%)', r);
+    r = await api('plpLead', 'POST', `/task-reports/${reportId}/edit`, { ...edit, remarks: Array.from({ length: 51 }, (_, i) => `w${i}`).join(' ') });
+    check(r.status === 422 && /at most 50 words/.test(r.json.error?.message ?? ''), 'every department: the member\'s rules apply to the edit (the Additional Note has at most 50 words)', r);
     r = await api('plpMem', 'POST', `/task-reports/${reportId}/edit`, edit);
     check(r.status === 403, 'every department: the member cannot edit as reviewer (403)', r);
     r = await api('plpHead', 'POST', `/task-reports/${reportId}/edit`, edit);
@@ -14004,8 +14014,8 @@ await db.query(`alter function public.rate_limit_consume_hidden(jsonb) rename to
 
   const today = (await api('hpxm', 'GET', '/ai-studio/reports/context')).json.data.today as string;
   const desc = 'Prepared the client onboarding screens, fixed the mobile layout and reviewed the open tasks with the team.';
-  r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: 'Onboarding screens', remarks: 'Good day', workDescription: 'one two', submit: true });
-  check(r.status === 422, 'AI Studio HR API: fewer than 10 words are refused', r);
+  r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' '), submit: true });
+  check(r.status === 422, 'AI Studio HR API: Work Completed over 150 words is refused (20270308000100)', r);
   r = await api('hpxm', 'POST', '/ai-studio/daily-reports', { reportDate: today, taskIds: [], workCompleted: 'Onboarding screens', remarks: 'Good day', workDescription: desc, submit: true });
   check(r.status === 201 && r.json.data.status === 'PENDING_TL_APPROVAL' && r.json.data.workDescription === desc && !r.json.data.sentToHrAt, 'AI Studio HR API: a valid report waits for the Team Lead', r);
   const reportId = r.json.data.id as string;

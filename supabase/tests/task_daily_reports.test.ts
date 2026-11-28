@@ -20,8 +20,10 @@ const good = { taskId: ID, reportDate: '2027-02-09', workCompleted: 'Updated hal
 // ---- the report form
 check(taskReportSubmitSchema.safeParse(good).success, 'a complete report is valid');
 check(taskReportSubmitSchema.safeParse({ ...good, progress: 100, pendingWork: undefined }).success, 'a finished task needs no pending work');
-check(!taskReportSubmitSchema.safeParse({ ...good, pendingWork: undefined }).success, 'an unfinished task needs the pending work');
-check(!taskReportSubmitSchema.safeParse({ ...good, workCompleted: 'Short' }).success, 'the work completed must be described');
+// 20270308000100: the three fields are optional (at least one), with word limits; the pending-work and 10-character rules are gone
+check(taskReportSubmitSchema.safeParse({ ...good, pendingWork: undefined }).success && taskReportSubmitSchema.safeParse({ ...good, workCompleted: 'Short' }).success, 'one field is enough (no pending-work or length rule)');
+check(!taskReportSubmitSchema.safeParse({ ...good, workCompleted: undefined, pendingWork: undefined }).success, 'an empty report is refused');
+check(!taskReportSubmitSchema.safeParse({ ...good, workCompleted: Array.from({ length: 151 }, (_, i) => `w${i}`).join(' ') }).success, 'Work Completed over 150 words is refused');
 check(!taskReportSubmitSchema.safeParse({ ...good, progress: 101 }).success && !taskReportSubmitSchema.safeParse({ ...good, progress: -1 }).success && !taskReportSubmitSchema.safeParse({ ...good, progress: 50.5 }).success, 'progress is a whole number from 0 to 100');
 check(!taskReportSubmitSchema.safeParse({ ...good, reportDate: '09/02/2027' }).success, 'the date is YYYY-MM-DD');
 check(!taskReportSubmitSchema.safeParse({ ...good, taskId: 'nope' }).success, 'the task is an identifier');
@@ -51,7 +53,7 @@ check(calls[1].fn === 'list' && (calls[1].args[0] as { offset: number; limit: nu
 await svc.review(ID, { decision: 'RETURN', remarks: 'Please add the numbers' });
 check(calls[2].fn === 'review' && calls[2].args[1] === 'RETURN' && calls[2].args[2] === 'Please add the numbers', 'a return reaches the repository with its reason');
 let refused = 0;
-for (const bad of [() => svc.submit({ ...good, workCompleted: '' }), () => svc.review('not-an-id', { decision: 'APPROVE' }), () => svc.review(ID, { decision: 'RETURN' }), () => svc.reviewRecord(ID, { decision: 'RETURN' }), () => svc.overview({ start: '2027-02-02', end: '2027-02-01' }), () => svc.get('x'), () => svc.recordHistory('x'), () => svc.resubmitRecord('x')]) {
+for (const bad of [() => svc.submit({ ...good, workCompleted: '', pendingWork: '' }), () => svc.review('not-an-id', { decision: 'APPROVE' }), () => svc.review(ID, { decision: 'RETURN' }), () => svc.reviewRecord(ID, { decision: 'RETURN' }), () => svc.overview({ start: '2027-02-02', end: '2027-02-01' }), () => svc.get('x'), () => svc.recordHistory('x'), () => svc.resubmitRecord('x')]) {
   try { await bad(); } catch { refused++; }
 }
 check(refused === 8 && calls.length === 3, 'malformed requests are refused before the database is called', { refused, calls: calls.length });
@@ -73,8 +75,8 @@ check(badId && calls.length === 6, 'a malformed person id is refused');
 const edit = { workCompleted: 'Updated and checked half of the account list', progress: 60, pendingWork: 'The other half', reason: 'Checked against the sheet' };
 check(taskReportReviewerEditSchema.safeParse(edit).success, 'a reviewer edit with a reason is valid');
 check(!taskReportReviewerEditSchema.safeParse({ ...edit, reason: '' }).success && !taskReportReviewerEditSchema.safeParse({ ...edit, reason: 'ok' }).success, 'an edit needs a reason (5 characters) the member reads');
-check(!taskReportReviewerEditSchema.safeParse({ ...edit, pendingWork: undefined }).success && taskReportReviewerEditSchema.safeParse({ ...edit, progress: 100, pendingWork: undefined }).success,
-  'the member\'s rule applies to an edit: pending work below 100%');
+check(!taskReportReviewerEditSchema.safeParse({ ...edit, workCompleted: undefined, pendingWork: undefined }).success && taskReportReviewerEditSchema.safeParse({ ...edit, pendingWork: undefined }).success,
+  'the member\'s rule applies to an edit (20270308000100): at least one of the three fields');
 check(!taskReportReviewerEditSchema.safeParse({ ...edit, status: 'APPROVED' }).success && !taskReportReviewerEditSchema.safeParse({ ...edit, authorId: ID }).success && !taskReportReviewerEditSchema.safeParse({ ...edit, taskId: ID }).success,
   'an edit cannot change the status, the author or the task');
 check(performanceEvaluationUpdateSchema.safeParse({ rating: 3, remarks: 'Adjusted' }).success && !performanceEvaluationUpdateSchema.safeParse({ remarks: 'no rating' }).success

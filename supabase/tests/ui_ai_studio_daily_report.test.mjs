@@ -140,8 +140,6 @@ try {
     check(await page.locator('fieldset label').count() === 1, `${label}: the search narrows the list`);
     await page.getByPlaceholder('Search tasks or projects').fill('');
 
-    // (20270302000100) the Daily Work Description (10-150 words) is needed before Submit is enabled
-    await page.fill('[data-testid="daily-description"]', 'Worked on the website module, fixed the layout bugs and reviewed the open tasks today.');
     // nothing picked and nothing typed: the in-app message, no request
     await page.getByRole('button', { name: 'Submit Daily Report' }).click();
     await page.getByText('Select a task with work recorded on this date, or describe the work you completed.').waitFor();
@@ -175,9 +173,11 @@ try {
     check(true, `${label}: "Open task" opens the original task to update it`);
     await page.getByRole('dialog').getByRole('button', { name: 'Close' }).last().click();
 
-    // 4. only new remarks are typed
-    await page.getByLabel('Additional pending work').fill('Write the tests');
-    await page.getByLabel("Tomorrow's work plan").fill('Final testing');
+    // 4. only the three fields are typed (20270308000100): Work Completed, Work Pending, Additional Note
+    check(await page.getByLabel(/^Work Completed/).count() === 1 && await page.getByLabel(/^Work Pending/).count() === 1 && await page.getByLabel(/^Additional Note/).count() === 1
+      && await page.getByLabel("Tomorrow's work plan").count() === 0 && await page.getByText('Additional information').count() === 0, `${label}: the report has the three fields only (no additional-work section)`);
+    await page.getByLabel(/^Work Pending/).fill('Write the tests');
+    await page.getByLabel(/^Additional Note/).fill('Final testing');
 
     // 5. the confirmation: "Review report" goes back without sending
     await page.getByRole('button', { name: 'Submit Daily Report' }).click();
@@ -197,7 +197,7 @@ try {
     await page.getByTestId('confirm-dialog-confirm').click();
     await page.getByText(/updated while you were preparing this report/).first().waitFor();
     await page.getByText('Late fix.').waitFor();
-    check(calls.filter(c => c.path.endsWith('/preview')).length > previewsBefore && await page.getByLabel('Additional pending work').inputValue() === 'Write the tests',
+    check(calls.filter(c => c.path.endsWith('/preview')).length > previewsBefore && await page.getByLabel(/^Work Pending/).inputValue() === 'Write the tests',
       `${label}: a report the tasks changed under is refreshed (not submitted), and what was typed is kept`);
 
     // and submitted for real
@@ -206,7 +206,7 @@ try {
     await page.waitForFunction(() => !!window.done);
     const post = calls.filter(c => c.method === 'POST' && c.path.endsWith('/daily-reports')).pop();
     check(JSON.stringify(post.body.taskIds) === JSON.stringify([id(1), id(2), id(3)]) && JSON.stringify([...post.body.expectedUpdateIds].sort()) === JSON.stringify([id(201), id(202), id(203), id(204)])
-      && post.body.pendingWork === 'Write the tests' && post.body.tomorrowPlan === 'Final testing' && post.body.submit === true,
+      && post.body.pendingWork === 'Write the tests' && post.body.remarks === 'Final testing' && !post.body.tomorrowPlan && post.body.submit === true,
       `${label}: the request carries the task ids and the exact entries shown, plus the new remarks`, post.body);
     check(!/Leads responding|Mobile responsiveness|github\.com|vercel\.app/.test(JSON.stringify(post.body)) && !('attachments' in post.body) && !('files' in post.body),
       `${label}: no task text, link or file is sent with the report (references only)`);
@@ -224,7 +224,7 @@ try {
     check(/AI Member 1A · Team Member · AI Studio Team/.test(dlgText) && /Project 1 · AI CRM/i.test(dlgText) && /Project 2 · AI Website/i.test(dlgText),
       `${label}: the reviewer sees who, their team, and the work project by project`, dlgText.slice(0, 400));
     check(/Now 100% \(after this report\)/.test(dlgText) && /50% → 80%/.test(dlgText), `${label}: a submitted report keeps its day's progress and says where the task is now`);
-    check(/Additional remarks from AI Member 1A/.test(dlgText) && /Write the tests/.test(dlgText) && /Final testing/.test(dlgText), `${label}: the employee's own remarks are shown apart from the task work`);
+    check(/AI Member 1A's report/.test(dlgText) && /Write the tests/.test(dlgText) && /Final testing/.test(dlgText), `${label}: the employee's own fields are shown apart from the task work`);
     check(await dlg.getByRole('button', { name: 'Approve (final)' }).isVisible(), `${label}: the existing review buttons are there`);
     check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${label}: the report has no sideways scrolling`);
     // 12b. the report pop-up on a phone: it fits the visible screen, is the one scroll area (the layer and the page behind are locked), and its end is reachable

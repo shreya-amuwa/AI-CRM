@@ -17,9 +17,9 @@ export class TaskReportRepository {
   }
 
   myTasks() { return this.rpc<TaskReportTaskOption[]>('task_reports_my_tasks'); }
-  submit(r: { taskId: string; reportDate?: string; workCompleted: string; progress: number; pendingWork?: string; delayReason?: string; remarks?: string }) {
+  submit(r: { taskId: string; reportDate?: string; workCompleted?: string; progress?: number; pendingWork?: string; delayReason?: string; remarks?: string }) {
     return this.rpc<TaskDailyReport>('task_report_submit', {
-      p_task: r.taskId, p_date: r.reportDate ?? null, p_work: r.workCompleted, p_progress: r.progress,
+      p_task: r.taskId, p_date: r.reportDate ?? null, p_work: r.workCompleted ?? null, p_progress: r.progress ?? null,
       p_pending: r.pendingWork ?? null, p_delay: r.delayReason ?? null, p_remarks: r.remarks ?? null
     });
   }
@@ -27,9 +27,9 @@ export class TaskReportRepository {
     return this.rpc<TaskDailyReport>('task_report_review', { p_report: id, p_decision: decision, p_remarks: remarks ?? null });
   }
   /** The Team Lead edits a member's waiting report before deciding it (20270213000100). */
-  reviewerEdit(id: string, e: { workCompleted: string; progress: number; pendingWork?: string; delayReason?: string; remarks?: string; reason: string }) {
+  reviewerEdit(id: string, e: { workCompleted?: string; progress?: number; pendingWork?: string; delayReason?: string; remarks?: string; reason: string }) {
     return this.rpc<TaskDailyReport>('task_report_reviewer_edit', {
-      p_report: id, p_work: e.workCompleted, p_progress: e.progress, p_pending: e.pendingWork ?? null, p_delay: e.delayReason ?? null, p_remarks: e.remarks ?? null, p_reason: e.reason
+      p_report: id, p_work: e.workCompleted ?? null, p_progress: e.progress ?? null, p_pending: e.pendingWork ?? null, p_delay: e.delayReason ?? null, p_remarks: e.remarks ?? null, p_reason: e.reason
     });
   }
   list(q: { scope: 'MINE' | 'TEAM'; status?: string; from?: string; to?: string; memberId?: string; taskId?: string; limit: number; offset: number }) {

@@ -194,24 +194,24 @@ try {
     await page.close();
   }
 
-  // ---- the Team Member's form: the live word counter, and no submission outside 10-150 words
+  // ---- the Team Member's form (20270308000100): Work Completed 150 / Work Pending 100 / Additional Note 50, all optional, each with a live counter
   page = await open('mountForm');
-  await page.waitForSelector('[data-testid="daily-description"]');
+  await page.waitForSelector('[data-testid="report-word-fields"]');
+  const formText = await page.innerText('form[aria-label="Daily report"]').catch(() => page.innerText('body'));
+  check(/Work Completed/.test(formText) && /Work Pending/.test(formText) && /Additional Note/.test(formText) && !/Daily work description/.test(formText)
+    && !/Additional information/.test(formText) && !/Tomorrow/.test(formText) && !/Challenges/.test(formText), 'only the three fields are asked (no description, no additional-work section)', formText.slice(0, 600));
   await page.fill('#ai-dr-workCompleted', 'Worked on the onboarding screens');
-  await page.fill('[data-testid="daily-description"]', 'Too short a description');
-  check(/4 \/ 150 words/.test(await page.innerText('[data-testid="daily-description-count"]')) && /6 more needed/.test(await page.innerText('[data-testid="daily-description-count"]')), 'the counter counts words and says how many more are needed');
-  check(await page.isDisabled('[data-testid="daily-submit"]'), 'fewer than 10 words: Submit is disabled');
-  await page.fill('[data-testid="daily-description"]', Array.from({ length: 151 }, (_, i) => `w${i}`).join(' '));
-  check(/151 \/ 150 words/.test(await page.innerText('[data-testid="daily-description-count"]')) && /1 over the limit/.test(await page.innerText('[data-testid="daily-description-count"]')) && await page.isDisabled('[data-testid="daily-submit"]'),
-    'more than 150 words: the counter says so and Submit is disabled');
-  await page.fill('[data-testid="daily-description"]', 'Built the onboarding screens and fixed the layout of the client dashboard today.');
-  check(/13 \/ 150 words/.test(await page.innerText('[data-testid="daily-description-count"]')) && /137 words remaining/.test(await page.innerText('[data-testid="daily-description-count"]')) && !(await page.isDisabled('[data-testid="daily-submit"]')),
-    'a valid description: the remaining words are shown and Submit is enabled');
+  check((await page.innerText('[data-testid="report-count-workCompleted"]')) === '5/150 words', 'the counter counts words');
+  await page.fill('#ai-dr-pendingWork', Array.from({ length: 101 }, (_, i) => `w${i}`).join(' '));
+  check(/101\/100 words · 1 over the limit/.test(await page.innerText('[data-testid="report-count-pendingWork"]')) && await page.isDisabled('[data-testid="daily-submit"]'),
+    'Work Pending over 100 words: the counter says so and Submit is disabled');
+  await page.fill('#ai-dr-pendingWork', 'Tests for the screens');
+  check(!(await page.isDisabled('[data-testid="daily-submit"]')), 'within the limits Submit is enabled (the description is no longer needed)');
   await page.click('[data-testid="daily-submit"]');
   await page.click('text=Confirm submission');
   await page.waitForFunction(() => window.__posts.length === 1);
   const sent = await page.evaluate(() => window.__posts[0]);
-  check(sent.submit === true && sent.workDescription.startsWith('Built the onboarding screens'), 'the description is sent with the report', sent);
+  check(sent.submit === true && sent.workCompleted === 'Worked on the onboarding screens' && sent.pendingWork === 'Tests for the screens' && !sent.workDescription, 'the three fields are sent with the report', sent);
   await page.close();
 } finally {
   await browser.close();

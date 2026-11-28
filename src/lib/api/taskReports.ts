@@ -8,8 +8,9 @@ import { api } from './client';
 export interface TaskReportForm {
   taskId: string;
   reportDate?: string;
-  workCompleted: string;
-  progress: number;
+  /** (20270308000100) the three optional fields; progress and the reason for delay are no longer asked for */
+  workCompleted?: string;
+  progress?: number;
   pendingWork?: string;
   delayReason?: string;
   remarks?: string;
@@ -23,7 +24,7 @@ export const taskReportsApi = {
   get: (id: string) => api.get<TaskDailyReportDetail>(`/task-reports/${id}`),
   review: (id: string, decision: 'APPROVE' | 'RETURN', remarks?: string) => api.post<TaskDailyReport>(`/task-reports/${id}/review`, { decision, remarks }),
   /** The Team Lead edits a member's waiting report before deciding it; `reason` is shown to the member. */
-  reviewerEdit: (id: string, e: { workCompleted: string; progress: number; pendingWork?: string; delayReason?: string; remarks?: string; reason: string }) =>
+  reviewerEdit: (id: string, e: { workCompleted?: string; progress?: number; pendingWork?: string; delayReason?: string; remarks?: string; reason: string }) =>
     api.post<TaskDailyReport>(`/task-reports/${id}/edit`, e)
 };
 
